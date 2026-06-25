@@ -1,0 +1,143 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ConstraintModel",
+  "description": "需求约束模型：严格映射 C = <B0, O, H, U> 结构，提供全局边界约束与任务级补充约束的持续监督",
+  "type": "object",
+  "properties": {
+    "observableObjects": {
+      "type": "array",
+      "description": "异构可观测对象空间 (O)。跨层融合资源对象与流程进度",
+      "items": {
+        "type": "object",
+        "properties": {
+          "observableId": { "type": "string" },
+          "name": { "type": "string" },
+          "sourceLayer": { "type": "string", "enum": ["R", "F"], "description": "数据来源：资源层(R) 或 工作流层(F)" },
+          "sourceType": { 
+            "type": "string", 
+            "enum": ["DEVICE_ATTRIBUTE", "DEVICE_OPERATION_STATE", "NODE_LIFECYCLE_STATE"] 
+          },
+          "dataType": { "type": "string" }
+        },
+        "required": ["observableId", "sourceLayer", "sourceType"],
+        "allOf": [
+          {
+            "if": { "properties": { "sourceLayer": { "const": "R" } } },
+            "then": {
+              "properties": {
+                "deviceModelRef": { "type": "string" },
+                "targetRef": { "type": "string", "description": "对应 attributeId 或 stateMachine 的 regionId" }
+              },
+              "required": ["deviceModelRef", "targetRef"]
+            }
+          },
+          {
+            "if": { "properties": { "sourceLayer": { "const": "F" } } },
+            "then": {
+              "properties": {
+                "workflowTemplateRef": { "type": "string" },
+                "nodeRef": { "type": "string" }
+              },
+              "required": ["workflowTemplateRef", "nodeRef"]
+            }
+          }
+        ]
+      }
+    },
+    "handlingActions": {
+      "type": "array",
+      "description": "违规后置处理动作集 (H)",
+      "items": {
+        "type": "object",
+        "properties": {
+          "handlingActionId": { "type": "string" },
+          "actionType": { "type": "string", "enum": ["WARNING", "ALARM", "STOP_NODE", "ABORT_SYSTEM"] },
+          "target": { 
+            "type": "object",
+            "description": "基于动作强度的作用域定向",
+            "properties": {
+              "nodeRef": { "type": "string", "description": "针对 STOP_NODE 必须指定目标节点" },
+              "interfaceRef": { "type": "string", "description": "强制终止信号发射的接口路径" }
+            }
+          },
+          "signalType": { "type": "string" }
+        },
+        "required": ["handlingActionId", "actionType"]
+      }
+    },
+    "globalConstraints0": {
+      "type": "array",
+      "description": "全局边界约束集合 (B0)。持续活跃并长期约束整个实验室运行状态",
+      "items": {
+        "$ref": "#/definitions/ConstraintRuleTuple"
+      }
+    },
+    "rules": {
+      "type": "array",
+      "description": "任务级约束规则集合",
+      "items": {
+        "$ref": "#/definitions/ConstraintRuleTuple"
+      }
+    },
+    "observableObjects_O": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "handlingActions_H": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "globalConstraints_B0": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/ConstraintRuleTuple"
+      }
+    },
+    "taskRequirements": {
+      "type": "object",
+      "description": "任务级补充需求约束 (U_tau)。仅在特定任务执行期挂载生效",
+      "properties": {
+        "goals_G": {
+          "type": "array",
+          "description": "任务目标定义 (G_tau)",
+          "items": {
+            "type": "object",
+            "properties": {
+              "goalId": { "type": "string" },
+              "description": { "type": "string" }
+            },
+            "required": ["goalId"]
+          }
+        },
+        "taskConstraints": {
+          "type": "array",
+          "description": "特定于该任务的动态边界约束集 (B_tau)",
+          "items": {
+            "$ref": "#/definitions/ConstraintRuleTuple"
+          }
+        }
+      },
+      "required": ["goals_G", "taskConstraints"]
+    }
+  },
+  "additionalProperties": true,
+  "definitions": {
+    "ConstraintRuleTuple": {
+      "type": "object",
+      "description": "统一边界检查规则四元组 β = <o, ⊙, v, h>",
+      "properties": {
+        "constraintRuleId": { "type": "string" },
+        "observedObjectRef": { "type": "string", "description": "被观测对象 o，指向 observableObjects 中的 ID" },
+        "operator": { "type": "string", "enum": ["<", "<=", "==", "!=", ">=", ">", "in", "not_in", "contains"], "description": "比较运算符 ⊙。默认语义为命中该谓词即违规；predicateType=SAFE 时表示必须满足该谓词。" },
+        "threshold": { "type": ["number", "string", "array", "boolean"], "description": "约束边界、枚举集合或取值范围 v" },
+        "predicateType": { "type": "string", "enum": ["VIOLATION", "SAFE"], "default": "VIOLATION", "description": "VIOLATION 表示条件成立即违规；SAFE 表示条件不成立才违规。" },
+        "violationHandlingRef": { "type": "string", "description": "违规处理动作 h，指向 handlingActions 中的 ID" }
+      },
+      "required": ["constraintRuleId", "observedObjectRef", "operator", "threshold", "violationHandlingRef"]
+    }
+  }
+}

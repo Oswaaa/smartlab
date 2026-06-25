@@ -1,0 +1,183 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DeviceCapabilityModel",
+  "description": "设备能力模型：定义设备的属性空间、操作能力空间和约束限制空间。",
+  "type": "object",
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "modelId": { "type": "integer", "description": "设备模型在数据库中的ID" },
+        "modelName": { "type": "string", "description": "设备模型名称" },
+        "deviceCategoryId": { "type": "integer", "description": "设备类别在数据库中的ID" }
+      },
+      "required": ["modelId", "modelName", "deviceCategoryId"]
+    },
+    "attributes": {
+      "type": "array",
+      "description": "设备属性空间",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "属性唯一标识名" },
+          "displayName": { "type": "string", "description": "前端UI渲染显示名" },
+          "valueKind": { "type": "string", "enum": ["DISCRETE", "CONTINUOUS"] },
+          "dataType": { "$ref": "protocol-dict.json#/definitions/DataType" },
+          "unit": { "type": "string", "description": "物理单位" }
+        },
+        "required": ["name", "valueKind", "dataType"]
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "description": "设备对外暴露的操作能力",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "操作能力唯一标识名" },
+          "adapterCommandName": { "type": "string", "description": "映射并指向adapterContract.commands中的commandName" },
+          "displayName": { "type": "string", "example": "反应釜加热" },
+          "parameters": {
+            "type": "array",
+            "description": "capability对外暴露的操作参数列表",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string", "description": "参数标识名" },
+                "displayName": { "type": "string", "example": "目标温度" },
+                "dataType": { "$ref": "protocol-dict.json#/definitions/DataType" }
+              },
+              "required": ["name", "displayName", "dataType"]
+            }
+          },
+          "parameterMapping": {
+            "type": "array",
+            "description": "参数映射关系",
+            "items": {
+              "type": "object",
+              "properties": {
+                "commandParamName": { "type": "string", "description": "adapter命令的paramName" },
+                "capabilityParamName": { "type": "string", "description": "capability的paramName" },
+                "isFixedValue": { "type": "boolean", "default": false },
+                "fixedValue": { "type": ["string", "number", "boolean"], "description": "固定参数的值" }
+              },
+              "required": ["commandParamName", "isFixedValue"]
+            }
+          }
+        },
+        "required": ["name", "adapterCommandName", "displayName", "parameters", "parameterMapping"]
+      }
+    },
+    "adapterContract": {
+      "type": "object",
+      "description": "adapter适配契约",
+      "properties": {
+        "config": {
+          "type": "object",
+          "description": "Adapter通信配置。主题和消息外壳在protocol-dict中统一规定。此处声明协议类型。",
+          "properties": {
+            "protocol": { 
+              "type": "string", 
+              "enum": ["MQTT", "HTTP"],
+              "description": "通信协议类型" 
+            }
+          },
+          "required": ["protocol"]
+        },
+        "commands": {
+          "type": "array",
+          "description": "adapter执行命令",
+          "items": {
+            "type": "object",
+            "properties": {
+              "commandName": { "type": "string", "description": "adapter命令唯一标识名" },
+              "commandParameters": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "paramName": { "type": "string" },
+                    "dataType": { "$ref": "protocol-dict.json#/definitions/DataType" }
+                  },
+                  "required": ["paramName", "dataType"]
+                }
+              }
+            },
+            "required": ["commandName", "commandParameters"]
+          }
+        },
+        "telemetry": {
+          "type": "object",
+          "description": "adapter遥测数据上报",
+          "properties": {
+            "adapterAttributes": {
+              "type": "array",
+              "description": "声明Adapter能够上报的属性字段列表",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "name": { "type": "string", "description": "Adapter上报data中的字段名" },
+                  "dataType": { "$ref": "protocol-dict.json#/definitions/DataType" },
+                  "description": { "type": "string" }
+                },
+                "required": ["name", "dataType"]
+              }
+            },
+            "attributesMapping": {
+              "type": "array",
+              "description": "将Adapter上报字段映射到设备属性",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "adapterAttrName": { "type": "string", "description": "引用adapterAttributes中的name" },
+                  "modelAttributeName": { "type": "string", "description": "设备模型中对应的属性标识名" }
+                },
+                "required": ["adapterAttrName", "modelAttributeName"]
+              }
+            }
+          },
+          "required": ["adapterAttributes", "attributesMapping"]
+        },
+        "events": {
+          "type": "array",
+          "description": "adapter离散事件反馈",
+          "items": {
+            "type": "object",
+            "properties": {
+              "eventName": { "type": "string", "description": "事件标识名" },
+              "description": { "type": "string", "description": "事件描述" }
+            },
+            "required": ["eventName"]
+          }
+        }
+      },
+      "required": ["config", "commands", "telemetry", "events"]
+    },
+    "ports": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "portName": { "type": "string", "description": "端口标识名" },
+          "direction": { "type": "string", "enum": ["IN", "OUT"] },
+          "bindingAttrName": { "type": "string", "description": "绑定到attributes中的属性标识名" }
+        },
+        "required": ["portName", "direction", "bindingAttrName"]
+      }
+    },
+    "intrinsicConstraints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "objectAttributeName": { "type": "string", "description": "设备属性标识名" },
+          "operator": { "$ref": "protocol-dict.json#/definitions/ConstraintOperator" },
+          "boundaryValue": { "type": "number", "description": "阈值" },
+          "violationStateName": { "type": "string", "description": "对应状态机中的状态名" }
+        },
+        "required": ["objectAttributeName", "operator", "boundaryValue", "violationStateName"]
+      }
+    }
+  },
+  "required": ["metadata", "attributes", "capabilities", "adapterContract", "ports", "intrinsicConstraints"]
+}

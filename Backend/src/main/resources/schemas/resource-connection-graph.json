@@ -1,0 +1,30 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ResourceConnectionGraph",
+  "description": "资源连接图：定义了设备实例之间的连接关系，用于描述系统中资源之间的数据流向。",
+  "type": "object",
+  "properties": {
+    "connections": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "connectionType": { "type": "string", "enum": ["DATA_CHANNEL"] },
+          "source": { 
+            "type": "object",
+            "properties": { "deviceInstanceId": {"type":"integer"}, "devicePortName": {"type":"string"} },
+            "required": ["deviceInstanceId", "devicePortName"]
+          },
+          "target": { 
+            "type": "object",
+            "properties": { "deviceInstanceId": {"type":"integer"}, "devicePortName": {"type":"string"} },
+            "required": ["deviceInstanceId", "devicePortName"]
+          }
+        },
+        "required": ["name", "connectionType", "source", "target"]
+      }
+    }
+  },
+  "required": ["connections"]
+}

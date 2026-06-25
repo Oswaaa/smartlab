@@ -1,0 +1,20 @@
+{
+  "connectionGraphId": "rcg_lab_001",
+  "modelType": "RESOURCE_CONNECTION_GRAPH",
+  "connections": [
+    {
+      "connectionId": "conn_reactor_temp_to_collector",
+      "connectionType": "DATA_CHANNEL",
+      "source": {
+        "deviceInstanceRef": "dev_inst_reactor_01",
+        "devicePortRef": "dport_temp_out"
+      },
+      "target": {
+        "deviceInstanceRef": "dev_inst_data_collector_01",
+        "devicePortRef": "dport_temp_in"
+      },
+      "direction": "SOURCE_TO_TARGET",
+      "description": "反应釜温度数据接入采集器"
+    }
+  ]
+}

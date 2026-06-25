@@ -1,0 +1,266 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DynamicWorkflowModel",
+  "description": "工作流模型：节点融合了设备能力模型+状态机的接口/触发器/动作机制。触发器实时监测条件，条件满足即触发绑定的动作。",
+  "type": "object",
+  "properties": {
+    "workflowTemplateId": { "type": "integer", "description": "工作流模板在数据库中的ID" },
+    "name": { "type": "string", "description": "工作流模板名称" },
+    "description": { "type": "string", "description": "工作流模板描述" },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "节点标识名" },
+          "nodeType": { 
+            "type": "string", 
+            "enum": ["DEVICE_CAPABILITY_NODE", "FUNCTIONAL_NODE", "SUB_FLOW_NODE"] 
+          },
+          "capability": {
+            "type": "object",
+            "description": "节点能力定义"
+          },
+          "internalVariables": {
+            "type": "array",
+            "description": "节点内部变量空间",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string", "description": "内部变量名" },
+                "dataType": { "$ref": "protocol-dict.json#/definitions/DataType" },
+                "attributesMapping": {
+                  "type": "string",
+                  "description": "映射到设备属性（可选）"
+                }
+              },
+              "required": ["name", "dataType"]
+            }
+          },
+          "lifecycle": {
+            "type": "object",
+            "description": "节点生命周期",
+            "properties": {
+              "initialStateName": { "type": "string" },
+              "states": { 
+                "type": "array", 
+                "items": { "type": "string" }
+              },
+              "transitions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "description": { "type": "string" },
+                    "fromStateName": { "type": "string" },
+                    "toStateName": { "type": "string" }
+                  },
+                  "required": ["fromStateName", "toStateName"]
+                }
+              }
+            },
+            "required": ["initialStateName", "states", "transitions"]
+          },
+          "interfaces": {
+            "type": "array",
+            "description": "节点接口集合",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string", "description": "接口标识名" },
+                "direction": { "type": "string", "enum": ["IN", "OUT"] },
+                "interfaceType": { 
+                  "type": "string", 
+                  "enum": ["CONTROL", "SIGNAL"],
+                  "description": "CONTROL：节点控制信号，用于约束层的直接控制；SIGNAL：系统交互信号，用于节点间的交互、与状态机的交互"
+                },
+                "allowedSignals": { "type": "array", "items": { "type": "string" } },
+                "bindingTriggers": { 
+                  "type": "array",
+                  "description": "绑定的触发器列表，实时监测条件。每个触发器独立判断自己的条件（0/1），条件满足即执行绑定的动作。多个触发器互不干扰。",
+                  "items": { 
+                    "type": "object",
+                    "properties": {
+                      "condition": { 
+                        "type": "object",
+                        "description": "结构化条件谓词，后端可直接用if-else求值",
+                        "properties": {
+                          "subject": { "type": "string", "description": "被观测的目标（内部变量名 / 生命周期状态名 / 信号名）" },
+                          "operator": { "$ref": "protocol-dict.json#/definitions/ConstraintOperator" },
+                          "threshold": { "type": ["number", "string", "boolean", "array"] }
+                        },
+                        "required": ["subject", "operator", "threshold"]
+                      },
+                      "actionName": {
+                        "description": "引用actions数组中的动作类型",
+                        "allOf": [
+                          { "$ref": "protocol-dict.json#/definitions/WorkflowNodeAction" }
+                        ]
+                      }
+                    },
+                    "required": ["condition", "actionName"]
+                  } 
+                }
+              },
+              "required": ["name", "direction", "interfaceType"]
+            }
+          },
+          "ports": {
+            "type": "array",
+            "description": "节点数据端口",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "direction": { "type": "string", "enum": ["IN", "OUT"] },
+                "internalVariableName": { "type": "string", "description": "绑定的内部变量名" }
+              },
+              "required": ["name", "direction", "internalVariableName"]
+            }
+          },
+          "actions": {
+            "type": "array",
+            "description": "节点允许的内部动作类型列表。具体动作参数由后端根据动作类型和节点上下文解析",
+            "items": { "$ref": "protocol-dict.json#/definitions/WorkflowNodeAction" }
+          }
+        },
+        "required": ["name", "nodeType", "capability", "lifecycle", "interfaces", "actions"],
+        "allOf": [
+          {
+            "if": { "properties": { "nodeType": { "const": "DEVICE_CAPABILITY_NODE" } } },
+            "then": {
+              "properties": {
+                "deviceModelId": { "type": "integer", "description": "所属设备模型ID（仅DEVICE_CAPABILITY_NODE使用）" },
+                "capability": {
+                  "type": "object",
+                  "properties": {
+                    "capabilityName": { "type": "string", "description": "引用设备能力模型中的capability name" },
+                    "capabilityParameters": { 
+                      "type": "object",
+                      "description": "设备能力的参数"
+                    }
+                  },
+                  "required": ["capabilityName"]
+                }
+              },
+              "required": ["deviceModelId"]
+            }
+          },
+          {
+            "if": { "properties": { "nodeType": { "const": "FUNCTIONAL_NODE" } } },
+            "then": {
+              "properties": {
+                "capability": {
+                  "type": "object",
+                  "properties": {
+                    "functionType": { "$ref": "protocol-dict.json#/definitions/WorkflowNodeFunctionType" },
+                    "expression": { "type": "string", "description": "当functionType为EXPRESSION时，用户自定义的表达式，由后端表达式求值器解析" }
+                  },
+                  "required": ["functionType"]
+                }
+              }
+            }
+          },
+          {
+            "if": { "properties": { "nodeType": { "const": "SUB_FLOW_NODE" } } },
+            "then": {
+              "properties": {
+                "capability": {
+                  "type": "object",
+                  "properties": {
+                    "subFlowModelId": { "type": "integer", "description": "被引用的子流程模型ID" },
+                    "subFlowModelDescription": { "type": "string", "description": "被引用的子流程模型名称" }
+                  },
+                  "required": ["subFlowModelId"]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "interfaceConnections": {
+      "type": "array",
+      "description": "接口连接关系",
+      "items": {
+        "type": "object",
+        "properties": {
+          "description": { "type": "string" },
+          "connectionType": { "type": "string", "enum": ["NODE_TO_NODE", "NODE_TO_STATE_MACHINE", "STATE_MACHINE_TO_NODE"] },
+          "source": { "type": "object" },
+          "target": { "type": "object" }
+        },
+        "required": ["connectionType", "source", "target"],
+        "allOf": [
+          {
+            "if": { "properties": { "connectionType": { "const": "NODE_TO_NODE" } } },
+            "then": {
+              "properties": {
+                "source": { 
+                  "properties": { "nodeName": {"type":"string"}, "interfaceName": {"type":"string"} },
+                  "required": ["nodeName", "interfaceName"]
+                },
+                "target": { 
+                  "properties": { "nodeName": {"type":"string"}, "interfaceName": {"type":"string"} },
+                  "required": ["nodeName", "interfaceName"]
+                }
+              }
+            }
+          },
+          {
+            "if": { "properties": { "connectionType": { "const": "NODE_TO_STATE_MACHINE" } } },
+            "then": {
+              "properties": {
+                "source": { 
+                  "properties": { "nodeName": {"type":"string"}, "interfaceName": {"type":"string"} },
+                  "required": ["nodeName", "interfaceName"]
+                },
+                "target": { 
+                  "properties": { "deviceInstanceId": {"type":"integer"}, "interfaceName": {"type":"string"} },
+                  "required": ["deviceInstanceId", "interfaceName"]
+                }
+              }
+            }
+          },
+          {
+            "if": { "properties": { "connectionType": { "const": "STATE_MACHINE_TO_NODE" } } },
+            "then": {
+              "properties": {
+                "source": { 
+                  "properties": { "deviceInstanceId": {"type":"integer"}, "interfaceName": {"type":"string"} },
+                  "required": ["deviceInstanceId", "interfaceName"]
+                },
+                "target": { 
+                  "properties": { "nodeName": {"type":"string"}, "interfaceName": {"type":"string"} },
+                  "required": ["nodeName", "interfaceName"]
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    "portConnections": {
+      "type": "array",
+      "description": "端口连接关系",
+      "items": {
+        "type": "object",
+        "properties": {
+          "description": { "type": "string" },
+          "source": { 
+            "type": "object",
+            "properties": { "nodeName": {"type": "string"}, "portName": {"type": "string"} },
+            "required": ["nodeName", "portName"]
+          },
+          "target": { 
+            "type": "object",
+            "properties": { "nodeName": {"type": "string"}, "portName": {"type": "string"} },
+            "required": ["nodeName", "portName"]
+          }
+        },
+        "required": ["source", "target"]
+      }
+    }
+  },
+  "required": ["workflowTemplateId", "name", "nodes", "interfaceConnections", "portConnections"]
+}

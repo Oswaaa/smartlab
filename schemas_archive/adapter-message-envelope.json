@@ -1,0 +1,6 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "AdapterMessageEnvelope",
+  "description": "Canonical runtime copy: Backend/src/main/resources/schemas/adapter-message-envelope.json",
+  "$ref": "../Backend/src/main/resources/schemas/adapter-message-envelope.json"
+}

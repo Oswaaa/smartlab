@@ -1,0 +1,102 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DeviceStateMachineModel",
+  "description": "设备状态机模型",
+  "type": "object",
+  "properties": {
+    "deviceModelId": { "type": "integer", "description": "所属设备模型在数据库中的ID" },
+    "interfaces": {
+      "type": "array",
+      "description": "状态机对外接口声明列表",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "example": "if_wf_cmd_in" },
+          "direction": { "type": "string", "enum": ["IN", "OUT"] },
+          "interfaceType": { 
+            "type": "string", 
+            "enum": ["WORKFLOW", "STAT", "ADAPTER","CONTROL"],
+            "description": "接口类型"
+          },
+          "allowedSignals": {
+            "type": "array",
+            "description": "该接口允许通过的信号名列表。当interfaceType为ADAPTER时，此处的信号名必须与device-capability-model中adapterContract.events声明的eventName完全一致。",
+            "items": { "type": "string" }
+          }
+        },
+        "required": ["name", "direction", "interfaceType", "allowedSignals"]
+      }
+    },
+    "opStateSpace": {
+      "type": "object",
+      "description": "设备功能状态空间",
+      "properties": {
+        "initialStateName": { "type": "string" },
+        "states": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "stateName": { "type": "string" },
+              "onEntry": {
+                "type": "array",
+                "items": { "$ref": "protocol-dict.json#/definitions/StateMachineAction" }
+              }
+            },
+            "required": ["stateName"]
+          }
+        }
+      },
+      "required": ["initialStateName", "states"]
+    },
+    "cmdLifecycleSpace": {
+      "type": "object",
+      "description": "设备指令执行生命周期",
+      "properties": {
+        "initialStateName": { "type": "string" },
+        "states": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "stateName": { "type": "string" },
+              "onEntry": {
+                "type": "array",
+                "items": { "$ref": "protocol-dict.json#/definitions/StateMachineAction" }
+              }
+            },
+            "required": ["stateName"]
+          }
+        }
+      },
+      "required": ["initialStateName", "states"]
+    },
+    "transitions": {
+      "type": "array",
+      "description": "全局状态转移规则，对应 STATE_TRANSITIONS 字段",
+      "items": {
+        "type": "object",
+        "properties": {
+          "description": { "type": "string" },
+          "fromStateName": { "type": "string" },
+          "toStateName": { "type": "string" },
+          "trigger": {
+            "type": "object",
+            "description": "触发条件：某个接口收到了某个具体的信号",
+            "properties": {
+              "interfaceName": { "type": "string" },
+              "signalName": { "type": "string", "description": "须在该接口的allowedSignals中" }
+            },
+            "required": ["interfaceName", "signalName"]
+          },
+          "actions": {
+            "type": "array",
+            "items": { "$ref": "protocol-dict.json#/definitions/StateMachineAction" }
+          }
+        },
+        "required": ["fromStateName", "toStateName", "trigger"]
+      }
+    }
+  },
+  "required": ["deviceModelId", "interfaces", "opStateSpace", "cmdLifecycleSpace", "transitions"]
+}

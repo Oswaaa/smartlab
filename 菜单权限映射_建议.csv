@@ -1,0 +1,15 @@
+MENU_NAME,ROUTE,REQUIRED_OBJECT,REQUIRED_ACTION,说明
+首页,/home,,,登录后可见
+设备中心,,device,view,父菜单有任一子菜单权限即可显示
+设备模型管理,/device-model-management,device_model,view,只控制入口显示
+设备实例管理,/device-instance-management,device_instance,view,只控制入口显示
+设备执行代理,/plc-adapter-management,adapter,view,只控制入口显示
+数据中心,/data-template-management,data,view,数据中心入口
+任务中心,,task,view,父菜单有任务或流程权限即可显示
+任务列表,/task-management,task,view,任务列表入口
+流程设计,/task-designer,workflow,view,流程设计入口
+约束管理,/constraint-management,constraint,view,约束规则入口
+用户管理,/user-management,user,view,用户管理入口
+权限管理,/permission-management,permission,view,如果未来拆出单独权限页面使用
+场景管理,/scene-management,scene,view,如果未来恢复场景页面使用
+资源结构,/resource-structure,resource,view,如果未来恢复资源结构页面使用

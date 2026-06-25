@@ -1,0 +1,123 @@
+package com.smartlab.management.controller;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.smartlab.management.dto.ApiResponse;
+import com.smartlab.management.dto.PageResult;
+import com.smartlab.management.entity.DeviceModels;
+import com.smartlab.management.service.db.resource.device.DeviceModelService;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
+import java.util.Map;
+
+@RestController
+@RequestMapping("/api/device")
+public class DeviceModelController {
+
+    private final DeviceModelService deviceModelService;
+
+    public DeviceModelController(DeviceModelService deviceModelService) {
+        this.deviceModelService = deviceModelService;
+    }
+
+    @GetMapping("/model/list")
+    public ApiResponse<List<DeviceModels>> list() {
+        return ApiResponse.ok(deviceModelService.list());
+    }
+
+    @GetMapping("/model/page")
+    public ApiResponse<PageResult<DeviceModels>> page(@RequestParam(defaultValue = "1") long pageNo,
+                                                      @RequestParam(defaultValue = "20") long pageSize,
+                                                      @RequestParam(required = false) String keyword) {
+        return ApiResponse.ok(deviceModelService.page(pageNo, pageSize, keyword));
+    }
+
+    @GetMapping("/model/{id}")
+    public ApiResponse<DeviceModels> getById(@PathVariable String id) {
+        DeviceModels model = deviceModelService.getById(id);
+        return model == null ? ApiResponse.fail("设备模型不存在") : ApiResponse.ok(model);
+    }
+
+    @PostMapping("/model/save")
+    public ApiResponse<Map<String, String>> save(@RequestBody Map<String, Object> payload) {
+        try {
+            DeviceModels model = deviceModelService.savePayload(payload);
+            return ApiResponse.ok(Map.of("modelId", String.valueOf(model.getId())));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    @PutMapping("/model/{modelId}/adapter-contract")
+    public ApiResponse<DeviceModels> updateAdapterContract(@PathVariable Long modelId,
+                                                           @RequestBody JsonNode adapterContract) {
+        try {
+            return ApiResponse.ok(deviceModelService.updateAdapterContract(modelId, adapterContract));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    @GetMapping("/model/state-machine/list")
+    public ApiResponse<List<ObjectNode>> listStateMachines() {
+        return ApiResponse.ok(deviceModelService.listStateMachines());
+    }
+
+    @PostMapping("/model/state-machine/save")
+    public ApiResponse<Map<String, String>> saveStateMachine(@RequestBody Map<String, Object> payload) {
+        try {
+            String stateMachineId = deviceModelService.saveStateMachine(payload);
+            return ApiResponse.ok(Map.of("stateMachineId", stateMachineId));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    @DeleteMapping("/model/state-machine/delete/{id}")
+    public ApiResponse<String> deleteStateMachine(@PathVariable String id) {
+        try {
+            deviceModelService.deleteStateMachine(id);
+            return ApiResponse.ok("删除成功");
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    @GetMapping("/model/constraints/rules")
+    public ApiResponse<List<Map<String, Object>>> listModelConstraintRules() {
+        return ApiResponse.ok(deviceModelService.listModelConstraintRules());
+    }
+
+    @PostMapping("/model/constraints/rule/save")
+    public ApiResponse<String> saveModelConstraintRule(@RequestBody Map<String, Object> payload) {
+        try {
+            deviceModelService.saveModelConstraintRule(payload);
+            return ApiResponse.ok("保存成功");
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    @DeleteMapping("/model/constraints/rule/delete")
+    public ApiResponse<String> deleteModelConstraintRule(@RequestParam String modelId,
+                                                         @RequestParam String constraintRuleId) {
+        try {
+            deviceModelService.deleteModelConstraintRule(modelId, constraintRuleId);
+            return ApiResponse.ok("删除成功");
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    @DeleteMapping("/model/delete/{id}")
+    public ApiResponse<String> delete(@PathVariable String id) {
+        try {
+            deviceModelService.delete(id);
+            return ApiResponse.ok("删除成功");
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+}
+

@@ -1,0 +1,41 @@
+1.下行控制指令 (Downlink Command)
+Topic: smartlab/device/{deviceId}/cmd (C++ 订阅)
+Payload:
+{
+  "taskId": "TSK-001",
+  "operation": "MoveAbsolute", 
+  "parameters": {
+    "axis": 1,
+    "position": 50000
+  }
+}
+
+2.状态机事件主动上报 (Uplink Event)
+Topic: smartlab/device/{deviceId}/evt (C++ 发布)
+说明: 严格对齐 Untitled-2.json 中的 adapter_evt_in 接口，用于推动后端 FSM 节点流转。
+Payload:
+{
+  "taskId": "TSK-001",
+  "deviceId": "reactor_001",
+  "interface": "adapter_evt_in", 
+  "value": "evt_success",  // 可选值: evt_ack(已确认), evt_started(开始移动), evt_success(到达目标), evt_error(失败报警)
+  "message": "轴1已到达指定绝对位置 50000"
+}
+
+3.实时遥测数据流 (Uplink Telemetry)
+Topic: smartlab/device/{deviceId}/telemetry (C++ 周期发布)
+说明: 用于后端表达式计算（SpEL）和界面大屏监控。
+Payload:
+{
+  "deviceId": "reactor_001",
+  "timestamp": 1679888888123,
+  "data": {
+    "axis1_pos": 50000,
+    "axis1_status": 1,
+    "limitNstate": 0,
+    "limitPstate": 0
+  }
+}
+
+
+

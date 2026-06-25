@@ -1,0 +1,123 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "ConstraintModel",
+  "description": "需求约束模型：定义约束数据的统一格式。全局约束和任务级约束均遵循此格式。",
+  "type": "object",
+  "properties": {
+    "observableObjects": {
+      "type": "array",
+      "description": "可观测对象空间",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "可观测对象唯一标识名" },
+          "sourceType": { 
+            "type": "string", 
+            "enum": ["DEVICE_ATTRIBUTE", "DEVICE_OPERATION_STATE", "DEVICE_COMMAND_LIFECYCLE", "NODE_LIFECYCLE_STATE"] 
+          },
+          "dataType": { "$ref": "protocol-dict.json#/definitions/DataType" }
+        },
+        "required": ["name", "sourceType", "dataType"],
+        "allOf": [
+          {
+            "if": { "properties": { "sourceType": { "const": "DEVICE_ATTRIBUTE" } } },
+            "then": {
+              "properties": {
+                "deviceModelId": { "type": "integer", "description": "设备模型ID" },
+                "deviceInstanceId": { "type": "integer", "description": "设备实例ID（可选，不填则监控该型号所有实例）" },
+                "targetName": { "type": "string", "description": "对应 attributeName" }
+              },
+              "required": ["deviceModelId", "targetName"]
+            }
+          },
+          {
+            "if": { "properties": { "sourceType": { "const": "DEVICE_OPERATION_STATE" } } },
+            "then": {
+              "properties": {
+                "deviceModelId": { "type": "integer" },
+                "deviceInstanceId": { "type": "integer", "description": "可选，不填则监控该型号所有实例" }
+              },
+              "required": ["deviceModelId"]
+            }
+          },
+          {
+            "if": { "properties": { "sourceType": { "const": "DEVICE_COMMAND_LIFECYCLE" } } },
+            "then": {
+              "properties": {
+                "deviceModelId": { "type": "integer" },
+                "deviceInstanceId": { "type": "integer", "description": "可选，不填则监控该型号所有实例" }
+              },
+              "required": ["deviceModelId"]
+            }
+          },
+          {
+            "if": { "properties": { "sourceType": { "const": "NODE_LIFECYCLE_STATE" } } },
+            "then": {
+              "properties": {
+                "workflowTemplateId": { "type": "integer" },
+                "nodeName": { "type": "string" }
+              },
+              "required": ["workflowTemplateId", "nodeName"]
+            }
+          }
+        ]
+      }
+    },
+    "constraints": {
+      "type": "array",
+      "description": "约束规则集",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "约束规则名" },
+          "observedObjectName": { "type": "string", "description": "引用observableObjects中的name" },
+          "operator": { "$ref": "protocol-dict.json#/definitions/ConstraintOperator" },
+          "threshold": { "type": ["number", "string", "array"] },
+          "violationActions": {
+            "type": "array",
+            "description": "违规处置动作列表，用户自由组合系统动作和设备动作。前端界面：用户点击'+添加动作'，可从系统动作（下拉框）或设备动作（选择设备→选择功能→配置参数）中选择。",
+            "items": {
+              "type": "object",
+              "properties": {
+                "actionType": { 
+                  "type": "string", 
+                  "enum": ["SYSTEM", "DEVICE_CAPABILITY"],
+                  "description": "SYSTEM：系统级动作；DEVICE_CAPABILITY：触发设备能力"
+                }
+              },
+              "required": ["actionType"],
+              "allOf": [
+                {
+                  "if": { "properties": { "actionType": { "const": "SYSTEM" } } },
+                  "then": {
+                    "properties": {
+                      "action": { "$ref": "protocol-dict.json#/definitions/SystemViolationAction" }
+                    },
+                    "required": ["action"]
+                  }
+                },
+                {
+                  "if": { "properties": { "actionType": { "const": "DEVICE_CAPABILITY" } } },
+                  "then": {
+                    "properties": {
+                      "deviceInstanceId": { "type": "integer", "description": "目标设备实例ID" },
+                      "capabilityName": { "type": "string", "description": "引用设备能力模型中的capability name" },
+                      "parameters": { 
+                        "type": "object", 
+                        "description": "设备能力的参数，从设备能力模型中读取"
+                      }
+                    },
+                    "required": ["deviceInstanceId", "capabilityName"]
+                  }
+                }
+              ]
+            },
+            "minItems": 1
+          }
+        },
+        "required": ["name", "observedObjectName", "operator", "threshold", "violationActions"]
+      }
+    }
+  },
+  "required": ["observableObjects", "constraints"]
+}

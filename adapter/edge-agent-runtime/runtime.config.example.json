@@ -1,0 +1,201 @@
+{
+  "tenantId": "default",
+  "labId": "lab1",
+  "gatewayId": "gateway_lab1_01",
+  "gatewayName": "一号实验室边缘网关",
+  "hostAddress": "192.168.1.30",
+  "runtimeVersion": "edge-runtime-python-0.1.0",
+  "heartbeatIntervalSec": 10,
+  "mqtt": {
+    "broker": "tcp://101.42.50.179:1883",
+    "clientId": "edge-runtime-lab1-01",
+    "username": "",
+    "password": ""
+  },
+  "agents": [
+    {
+      "specVersion": "smartlab.edge.v1",
+      "messageType": "AGENT_CONFIG",
+      "tenantId": "default",
+      "labId": "lab1",
+      "gatewayId": "gateway_lab1_01",
+      "agentId": "agent_demo_heater_001",
+      "versionNo": 1,
+      "agent": {
+        "agentId": "agent_demo_heater_001",
+        "agentName": "演示加热器设备执行代理",
+        "agentMode": "CONFIG_DRIVEN",
+        "gatewayId": "gateway_lab1_01",
+        "deviceInstanceId": "HEATER_INS_001",
+        "deviceModelId": "HEATER_MODEL",
+        "deviceType": "HEATER",
+        "deviceSn": "heater001"
+      },
+      "northbound": {
+        "transportType": "MQTT",
+        "contractVersion": "smartlab.adapter.v1",
+        "commandTopic": "smartlab/v1/default/lab1/HEATER/HEATER_MODEL/heater001/cmd/+",
+        "statusTopic": "smartlab/v1/default/lab1/HEATER/HEATER_MODEL/heater001/status",
+        "eventTopic": "smartlab/v1/default/lab1/HEATER/HEATER_MODEL/heater001/evt",
+        "telemetryTopic": "smartlab/v1/default/lab1/HEATER/HEATER_MODEL/heater001/telemetry",
+        "alarmTopic": "smartlab/v1/default/lab1/HEATER/HEATER_MODEL/heater001/alarm",
+        "heartbeatTopic": "smartlab/v1/default/lab1/HEATER/HEATER_MODEL/heater001/heartbeat",
+        "qos": 1,
+        "dataUploadContract": {
+          "enabled": true,
+          "contractVersion": "smartlab.ingestion.v1",
+          "endpoint": "http://127.0.0.1:8080/api/data/ingestion/batch",
+          "templateRef": "HEATER_DATA_TEMPLATE",
+          "deviceInstanceId": "HEATER_INS_001",
+          "batchSize": 100,
+          "flushIntervalMs": 5000,
+          "maxBufferSize": 10000,
+          "timeoutSec": 10,
+          "fieldMapping": {
+            "temperature": "temperature",
+            "pressure": "pressure"
+          }
+        }
+      },
+      "southbound": {
+        "connectorType": "simulated",
+        "simulateDelayMs": 300,
+        "telemetryDefaults": {
+          "temperature": 25.0,
+          "pressure": 1.0
+        },
+        "polling": {
+          "enabled": true,
+          "intervalMs": 2000
+        },
+        "commandMappings": [
+          {
+            "commandId": "start",
+            "simulateDelayMs": 500
+          },
+          {
+            "commandId": "stop",
+            "simulateDelayMs": 200
+          }
+        ]
+      }
+    },
+    {
+      "specVersion": "smartlab.edge.v1",
+      "messageType": "AGENT_CONFIG",
+      "tenantId": "default",
+      "labId": "lab1",
+      "gatewayId": "gateway_lab1_01",
+      "agentId": "agent_demo_modbus_pump_001",
+      "versionNo": 1,
+      "agent": {
+        "agentId": "agent_demo_modbus_pump_001",
+        "agentName": "演示 Modbus 泵设备执行代理",
+        "agentMode": "CONFIG_DRIVEN",
+        "gatewayId": "gateway_lab1_01",
+        "deviceInstanceId": "PUMP_INS_001",
+        "deviceModelId": "PUMP_MODEL",
+        "deviceType": "PUMP",
+        "deviceSn": "pump001"
+      },
+      "northbound": {
+        "transportType": "MQTT",
+        "contractVersion": "smartlab.adapter.v1",
+        "commandTopic": "smartlab/v1/default/lab1/PUMP/PUMP_MODEL/pump001/cmd/+",
+        "statusTopic": "smartlab/v1/default/lab1/PUMP/PUMP_MODEL/pump001/status",
+        "eventTopic": "smartlab/v1/default/lab1/PUMP/PUMP_MODEL/pump001/evt",
+        "telemetryTopic": "smartlab/v1/default/lab1/PUMP/PUMP_MODEL/pump001/telemetry",
+        "alarmTopic": "smartlab/v1/default/lab1/PUMP/PUMP_MODEL/pump001/alarm",
+        "heartbeatTopic": "smartlab/v1/default/lab1/PUMP/PUMP_MODEL/pump001/heartbeat",
+        "qos": 1
+      },
+      "southbound": {
+        "connectorType": "modbus-tcp",
+        "connection": {
+          "host": "192.168.1.20",
+          "port": 502,
+          "unitId": 1,
+          "timeoutSec": 3
+        },
+        "polling": {
+          "enabled": false,
+          "intervalMs": 1000
+        },
+        "commandMappings": [
+          {
+            "commandId": "start",
+            "operation": "writeRegister",
+            "address": 100,
+            "valueTemplate": 1
+          },
+          {
+            "commandId": "set_speed",
+            "operation": "writeRegister",
+            "address": 101,
+            "valueTemplate": "${payload.speed}"
+          }
+        ],
+        "telemetryMappings": [
+          {
+            "field": "speed",
+            "target": "speed",
+            "operation": "readHoldingRegisters",
+            "address": 201,
+            "count": 1,
+            "scale": 1
+          }
+        ]
+      }
+    },
+    {
+      "specVersion": "smartlab.edge.v1",
+      "messageType": "AGENT_CONFIG",
+      "tenantId": "default",
+      "labId": "lab1",
+      "gatewayId": "gateway_lab1_01",
+      "agentId": "agent_demo_proxy_camera_001",
+      "versionNo": 1,
+      "agent": {
+        "agentId": "agent_demo_proxy_camera_001",
+        "agentName": "演示相机服务包装代理",
+        "agentMode": "PROXY",
+        "gatewayId": "gateway_lab1_01",
+        "deviceInstanceId": "CAMERA_INS_001",
+        "deviceModelId": "CAMERA_MODEL",
+        "deviceType": "CAMERA",
+        "deviceSn": "camera001"
+      },
+      "northbound": {
+        "transportType": "MQTT",
+        "contractVersion": "smartlab.adapter.v1",
+        "commandTopic": "smartlab/v1/default/lab1/CAMERA/CAMERA_MODEL/camera001/cmd/+",
+        "statusTopic": "smartlab/v1/default/lab1/CAMERA/CAMERA_MODEL/camera001/status",
+        "eventTopic": "smartlab/v1/default/lab1/CAMERA/CAMERA_MODEL/camera001/evt",
+        "telemetryTopic": "smartlab/v1/default/lab1/CAMERA/CAMERA_MODEL/camera001/telemetry",
+        "alarmTopic": "smartlab/v1/default/lab1/CAMERA/CAMERA_MODEL/camera001/alarm",
+        "heartbeatTopic": "smartlab/v1/default/lab1/CAMERA/CAMERA_MODEL/camera001/heartbeat",
+        "qos": 1
+      },
+      "southbound": {
+        "connectorType": "proxy-http",
+        "baseUrl": "http://127.0.0.1:5678",
+        "polling": {
+          "enabled": false,
+          "intervalMs": 1000,
+          "path": "/status"
+        },
+        "commandMappings": [
+          {
+            "commandId": "capture",
+            "method": "POST",
+            "path": "/capture",
+            "bodyTemplate": {
+              "exposure": "${payload.exposure}",
+              "savePath": "${payload.savePath}"
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

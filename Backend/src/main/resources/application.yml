@@ -1,0 +1,51 @@
+server:
+  port: 8080
+
+spring:
+  datasource:
+    driver-class-name: org.postgresql.Driver
+    url: ${SMARTLAB_DB_URL:jdbc:postgresql://localhost:5432/lab}
+    username: ${SMARTLAB_DB_USERNAME:postgres}
+    password: ${SMARTLAB_DB_PASSWORD:}
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 5
+      idle-timeout: 30000
+      connection-timeout: 20000
+
+  jackson:
+    date-format: yyyy-MM-dd HH:mm:ss
+    time-zone: GMT+8
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: auto
+
+smartlab:
+  auth:
+    jwt-secret: ${SMARTLAB_JWT_SECRET:change_me_to_a_256_bit_secret_for_local_dev}
+    expiration-ms: ${SMARTLAB_JWT_EXPIRATION_MS:86400000}
+
+# MQTT Broker Config
+mqtt:
+  broker: ${SMARTLAB_MQTT_BROKER:tcp://localhost:1883}
+  client-id: ${SMARTLAB_MQTT_CLIENT_ID:smartlab_backend_2.0}
+  username: ${SMARTLAB_MQTT_USERNAME:}
+  password: ${SMARTLAB_MQTT_PASSWORD:}
+  subscribe-topics:
+    - smartlab/v1/+/+/+/+/+/evt
+    - smartlab/v1/+/+/+/+/+/status
+    - smartlab/v1/+/+/+/+/+/telemetry
+    - smartlab/v1/+/+/+/+/+/alarm
+    - smartlab/v1/+/+/+/+/+/heartbeat
+    - smartlab/v1/+/+/gateway/+/heartbeat
+    - smartlab/v1/+/+/gateway/+/agent/+/status
+    - smartlab/v1/+/+/gateway/+/agent/+/event
+
+logging:
+  level:
+    root: INFO
+    com.smartlab: DEBUG

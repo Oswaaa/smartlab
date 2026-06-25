@@ -1,0 +1,59 @@
+# Dependencies
+node_modules/
+Frontend/node_modules/
+
+# Frontend build output
+dist/
+Frontend/dist/
+
+# Java / Maven build output
+target/
+Backend/target/
+
+# Python cache
+__pycache__/
+*.py[cod]
+
+# IDE and editor state
+.idea/
+.vscode/
+.vs/
+*.suo
+*.user
+
+# Visual Studio / C++ build output
+x64/
+Debug/
+Release/
+*.obj
+*.pdb
+*.ilk
+*.ipdb
+*.iobj
+*.tlog
+*.recipe
+*.lastbuildstate
+
+# Local package manager installs
+vcpkg_installed/
+
+# Binary/runtime artifacts
+*.exe
+*.dll
+*.lib
+*.zip
+
+# Logs and local temp files
+*.log
+.cache/
+.temp/
+tmp/
+Thumbs.db
+Desktop.ini
+~$*
+
+# Local secrets/config
+.env
+.env.*
+application-local.yml
+application-dev.yml

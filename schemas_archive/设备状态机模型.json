@@ -1,0 +1,140 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DeviceStateMachineModel",
+  "description": "设备状态机模型：定义常驻设备实体的命令生命周期（逻辑进度）与物理操作状态（设备孪生）的正交并发演化",
+  "type": "object",
+  "properties": {
+    "stateMachineId": { "type": "string", "description": "状态机实体全局唯一编码" },
+    "deviceModelRef": { "type": "string", "description": "指向对应的静态设备能力模型 ID" },
+    "interfaces": {
+      "type": "array",
+      "description": "接口集合（I），确立状态机在系统边界中的通信端点契约",
+      "items": {
+        "type": "object",
+        "properties": {
+          "interfaceId": { "type": "string" },
+          "name": { "type": "string", "example": "if_wf_cmd_in" },
+          "direction": { "type": "string", "enum": ["IN", "OUT"] },
+          "interfaceType": { 
+            "type": "string", 
+            "enum": ["WORKFLOW", "STAT", "ADAPTER"],
+            "description": "WORKFLOW: 接收外部节点控制命令; STAT: 发布指令运行进度状态; ADAPTER: 接收硬件事件或下发动作报文"
+          },
+          "allowedSignals": {
+            "type": "array",
+            "description": "契约验证层：限制并规定该通信接口允许进出的合法信号类型(Type)列表",
+            "items": { "type": "string" }
+          }
+        },
+        "required": ["interfaceId", "name", "direction", "interfaceType", "allowedSignals"]
+      }
+    },
+    "stateRegions": {
+      "type": "array",
+      "description": "正交并发区域空间（Q = Q_cmd x Q_op）。外部输入信号将同时全局广播至所有区域",
+      "minItems": 2,
+      "items": {
+        "type": "object",
+        "properties": {
+          "regionId": { "type": "string" },
+          "regionType": { 
+            "type": "string", 
+            "enum": ["COMMAND_LIFECYCLE", "OPERATION_STATE"],
+            "description": "COMMAND_LIFECYCLE管控任务进度指令响应；OPERATION_STATE管控底层硬件客观状态的孪生映射"
+          },
+          "initialState": { "type": "string", "description": "该并发区域的初试状态节点（q0）" },
+          "states": {
+            "type": "array",
+            "description": "区域包含的状态节点集合",
+            "items": {
+              "type": "object",
+              "properties": {
+                "stateId": { "type": "string" },
+                "stateName": { "type": "string", "example": "EXECUTING" },
+                "onEntry": {
+                  "type": "array",
+                  "description": "进入该状态节点时自动触发并执行的动作流水线",
+                  "items": { "$ref": "#/definitions/Action" }
+                }
+              },
+              "required": ["stateId", "stateName"]
+            }
+          },
+          "transitions": {
+            "type": "array",
+            "description": "状态转移规则集合（T），明确表达‘源状态、接口、触发信号、目标状态、动作集’的控制论语义",
+            "items": {
+              "type": "object",
+              "properties": {
+                "transitionId": { "type": "string" },
+                "from": { "type": "string", "description": "源状态状态ID，允许使用 '*' 关键字声明任意状态跳转" },
+                "to": { "type": "string", "description": "目标状态状态ID" },
+                "trigger": {
+                  "type": "object",
+                  "description": "触发器：基于特定接口接收到的特定路由信号类型（Type）",
+                  "properties": {
+                    "interfaceRef": { "type": "string", "description": "接收到信号的 IN 方向接口唯一编码" },
+                    "signalType": { "type": "string", "description": "匹配信息的 Type 意图标识" }
+                  },
+                  "required": ["interfaceRef", "signalType"]
+                },
+                "actions": {
+                  "type": "array",
+                  "description": "跃迁过程中伴随执行的副作用隔离动作流水线",
+                  "items": { "$ref": "#/definitions/Action" }
+                }
+              },
+              "required": ["transitionId", "from", "to", "trigger"]
+            }
+          }
+        },
+        "required": ["regionId", "regionType", "initialState", "states", "transitions"]
+      }
+    }
+  },
+  "required": ["stateMachineId", "deviceModelRef", "interfaces", "stateRegions"],
+  "definitions": {
+    "Action": {
+      "type": "object",
+      "description": "状态机动作原语模型：利用 JSON Schema 模式条件限制，实现强类型多态字段约束结构",
+      "properties": {
+        "actionType": { 
+          "type": "string", 
+          "enum": ["SEND", "ASSIGN"],
+          "description": "SEND代表向外发送事件或底层委托；ASSIGN代表纯粹的内部更新上下文记忆"
+        },
+        "payload": {
+          "type": "object",
+          "description": "万能动态数据载荷。当ASSIGN时，承载键值对覆盖Context；当SEND时，承载发送正文"
+        }
+      },
+      "required": ["actionType", "payload"],
+      "allOf": [
+        {
+          "if": {
+            "properties": { "actionType": { "const": "SEND" } }
+          },
+          "then": {
+            "properties": {
+              "interfaceRef": { "type": "string", "description": "SEND动作的指定信息出口接口 ID" },
+              "signalType": { "type": "string", "description": "发送信息的协议 Type 标识（如 cmd_heat 或 EXEC_SUCCESS）" }
+            },
+            "required": ["interfaceRef", "signalType"]
+          }
+        },
+        {
+          "if": {
+            "properties": { "actionType": { "const": "ASSIGN" } }
+          },
+          "then": {
+            "properties": {
+              "interfaceRef": { "not": {} },
+              "signalType": { "not": {} }
+            },
+            "description": "确保 ASSIGN 动作结构的纯净性，严格禁止包含网络 I/O 相关的物理通道字段"
+          }
+        }
+      ]
+    }
+  }
+}

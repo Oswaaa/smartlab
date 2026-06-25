@@ -1,0 +1,166 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DeviceCapabilityModel",
+  "description": "设备能力模型：静态定义设备的静态属性空间、暴露的操作能力、底层适配器契约与固有物理约束",
+  "type": "object",
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "modelId": { "type": "string", "description": "设备能力模型唯一全局编码" },
+        "modelName": { "type": "string", "description": "设备模型名称" },
+        "deviceCategory": { "type": "string", "description": "设备物理分类" }
+      },
+      "required": ["modelId", "modelName", "deviceCategory"]
+    },
+    "attributes": {
+      "type": "array",
+      "description": "设备静态及动态属性空间（Att），由状态机直接进行物理映射或读取",
+      "items": {
+        "type": "object",
+        "properties": {
+          "attributeId": { "type": "string", "description": "属性唯一编码" },
+          "name": { "type": "string", "description": "属性英文标识名" },
+          "displayName": { "type": "string", "description": "前端 UI 渲染显示名" },
+          "valueKind": { "type": "string", "enum": ["DISCRETE", "CONTINUOUS"] },
+          "dataType": { "type": "string", "enum": ["integer", "float", "string", "boolean"] },
+          "unit": { "type": "string", "description": "物理单位" }
+        },
+        "required": ["attributeId", "name", "valueKind", "dataType"]
+      }
+    },
+    "capabilities": {
+      "type": "array",
+      "description": "设备向业务层暴露的操作能力集合（Φ）",
+      "items": {
+        "type": "object",
+        "properties": {
+          "capabilityId": { "type": "string", "description": "操作能力唯一编码" },
+          "adapterCommandId": { "type": "string", "description": "映射并指向 adapterContract.commands 中的唯一 ID" },
+          "name": { "type": "string", "example": "cap_heat" },
+          "displayName": { "type": "string", "example": "反应釜加热" },
+          "parameters": {
+            "type": "array",
+            "description": "对外暴露的业务参数列表，供前端生成输入表单及工作流节点配置",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "string", "description": "参数编码" },
+                "name": { "type": "string", "example": "targetTemp" },
+                "displayName": { "type": "string", "example": "目标温度" }
+              },
+              "required": ["id", "name", "displayName"]
+            }
+          },
+          "parameterMapping": {
+            "type": "array",
+            "description": "参数翻译与注入词典：打通业务参数与底层硬件命令参数的转换边界",
+            "items": {
+              "type": "object",
+              "properties": {
+                "commandParamId": { "type": "string", "description": "底层真实硬件命令的参数ID" },
+                "capabilityParamId": { "type": "string", "description": "上层业务能力的参数ID，若为动态映射则填此字段" },
+                "isFixedValue": { "type": "boolean", "default": false, "description": "是否为隐式注入的系统固定参数" },
+                "fixedValue": { "type": "string", "description": "固定参数的值，在后端拼装时强行注入，不暴露给前端" }
+              },
+              "required": ["commandParamId", "isFixedValue"]
+            }
+          }
+        },
+        "required": ["capabilityId", "adapterCommandId", "name", "displayName", "parameters", "parameterMapping"]
+      }
+    },
+    "adapterContract": {
+      "type": "object",
+      "description": "设备执行代理北向契约（Γ）：只描述上位机系统与 adapter 的 MQTT 命令、状态、事件、遥测接口，不描述 Modbus/串口/寄存器等南向硬件细节",
+      "properties": {
+        "transportType": { "type": "string", "enum": ["MQTT", "TCP", "SOCKET_TCP", "HTTP"], "description": "系统到 adapter 的北向协议。推荐 MQTT；GetPLCData 等既有 adapter 可使用 TCP/socket 契约。" },
+        "contractVersion": { "type": "string", "default": "smartlab.adapter.v1" },
+        "commandTopic": { "type": "string" },
+        "statusTopic": { "type": "string" },
+        "eventTopic": { "type": "string" },
+        "telemetryTopic": { "type": "string" },
+        "alarmTopic": { "type": "string" },
+        "heartbeatTopic": { "type": "string" },
+        "topicTemplates": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "标准 topic 模板，允许使用 ${tenantId}/${labId}/${deviceType}/${modelId}/${deviceSn}/${commandId} 占位符"
+        },
+        "commands": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "commandId": { "type": "string", "description": "底层硬件指令唯一编码" },
+              "commandName": { "type": "string", "example": "start_heating" },
+              "topic": { "type": "string", "description": "MQTT/工业协议路由的主题" },
+              "timeoutMs": { "type": "integer", "minimum": 1 },
+              "successEvents": { "type": "array", "items": { "type": "string" } },
+              "failureEvents": { "type": "array", "items": { "type": "string" } },
+              "commandParameters": {
+                "type": "array",
+                "description": "底层硬件指令严格要求的参数声明，用于后端执行引擎在渲染前的类型安全校验",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "paramId": { "type": "string" },
+                    "paramName": { "type": "string", "example": "set_point" },
+                    "dataType": { "type": "string", "enum": ["integer", "float", "string", "boolean"] }
+                  },
+                  "required": ["paramId", "paramName", "dataType"]
+                }
+              },
+              "payloadTemplate": {
+                "type": "object",
+                "description": "发往底层适配器的真实 JSON 骨架结构，含变量占位符。由 Java 引擎拦截动作后自动调用并动态渲染"
+              }
+            },
+            "required": ["commandId", "commandName", "topic", "commandParameters", "payloadTemplate"]
+          }
+        },
+        "feedbackEvents": {
+          "type": "array",
+          "description": "适配器物理层回传的异步反馈事件字典",
+          "items": {
+            "type": "object",
+            "properties": {
+              "eventId": { "type": "string" },
+              "eventName": { "type": "string", "example": "evt_temp_reached" }
+            },
+            "required": ["eventId", "eventName"]
+          }
+        }
+      },
+      "required": ["commands", "feedbackEvents"]
+    },
+    "ports": {
+      "type": "array",
+      "description": "属性-数据交互端口空间（PD），定义资源层节点间持久的数据交换边界",
+      "items": {
+        "type": "object",
+        "properties": {
+          "portId": { "type": "string" },
+          "direction": { "type": "string", "enum": ["IN", "OUT"] },
+          "bindingAttrId": { "type": "string", "description": "直连并绑定的内部属性 attributeId" }
+        },
+        "required": ["portId", "direction", "bindingAttrId"]
+      }
+    },
+    "intrinsicConstraints": {
+      "type": "array",
+      "description": "设备固有物理约束（ΛD）：独立于特定任务上下文、常驻于资源层内部的安全防线",
+      "items": {
+        "type": "object",
+        "properties": {
+          "targetAttrId": { "type": "string", "description": "受监控的设备属性ID" },
+          "operator": { "type": "string", "enum": ["<", "<=", "==", "!=", ">=", ">"] },
+          "boundaryValue": { "type": "number", "description": "触发越界惩罚的阈值边界" },
+          "violationStateRef": { "type": "string", "description": "一旦发生约束破坏，设备状态机功能区应强行跃迁至的异常状态ID（如 op_abnormal）" }
+        },
+        "required": ["targetAttrId", "operator", "boundaryValue", "violationStateRef"]
+      }
+    }
+  },
+  "required": ["metadata", "attributes", "capabilities", "adapterContract", "ports", "intrinsicConstraints"]
+}

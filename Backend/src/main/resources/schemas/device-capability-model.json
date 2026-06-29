@@ -139,16 +139,35 @@
           "required": ["adapterAttributes", "attributesMapping"]
         },
         "events": {
-          "type": "array",
+          "type": "object",
           "description": "adapter离散事件反馈",
-          "items": {
-            "type": "object",
-            "properties": {
-              "eventName": { "type": "string", "description": "事件标识名" },
-              "description": { "type": "string", "description": "事件描述" }
+          "properties": {
+            "cmdEvents": {
+              "type": "array",
+              "description": "adapter命令执行生命周期事件",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "eventName": { "type": "string", "description": "事件标识名" },
+                  "description": { "type": "string", "description": "事件描述" }
+                },
+                "required": ["eventName"]
+              }
             },
-            "required": ["eventName"]
-          }
+            "opEvents": {
+              "type": "array",
+              "description": "adapter功能状态事件",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "eventName": { "type": "string", "description": "事件标识名" },
+                  "description": { "type": "string", "description": "事件描述" }
+                },
+                "required": ["eventName"]
+              }
+            }
+          },
+          "required": ["cmdEvents", "opEvents"]
         }
       },
       "required": ["config", "commands", "telemetry", "events"]

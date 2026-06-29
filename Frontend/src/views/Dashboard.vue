@@ -2,8 +2,20 @@
   <div class="dashboard-container">
     <div class="header-row">
       <h1 class="page-title">首页</h1>
-      <el-tag type="info" class="time-tag">{{ currentTime }}</el-tag>
+      <div class="header-actions">
+        <el-tag :type="mqttStatusTagType" class="mqtt-tag">MQTT {{ mqttStatusLabel }}</el-tag>
+        <el-tag type="info" class="time-tag">{{ currentTime }}</el-tag>
+      </div>
     </div>
+
+    <el-alert
+      v-if="showMqttAlert"
+      class="mqtt-alert"
+      type="warning"
+      show-icon
+      :closable="false"
+      :title="mqttAlertTitle"
+    />
 
     <el-row :gutter="16" class="stats-row">
       <el-col :xs="12" :md="6"><div class="stat-card"><span>设备总数</span><strong>{{ stats.totalDevices || 0 }}</strong></div></el-col>
@@ -137,11 +149,13 @@ import { ElMessage } from 'element-plus'
 
 const currentTime = ref('')
 let timer: number | undefined
+let mqttTimer: number | undefined
 
 const stats = ref<any>({})
 const devices = ref<any[]>([])
 const runningTasks = ref<any[]>([])
 const modelMap = ref<Record<string, any>>({})
+const mqttStatus = ref<any>({ enabled: true, status: 'NOT_STARTED', connected: false })
 
 const labConstraint = ref({
   maxConcurrentTasks: Number(localStorage.getItem('lab:maxConcurrentTasks') || 10),
@@ -159,6 +173,29 @@ const currentDeviceAttrs = computed(() => {
   return modelMap.value[currentDevice.value.modelId]?.capabilitySpec?.attributes || []
 })
 
+const mqttStatusLabel = computed(() => {
+  if (mqttStatus.value?.enabled === false) return '未启用'
+  if (mqttStatus.value?.connected) return '已连接'
+  const status = mqttStatus.value?.status || 'UNKNOWN'
+  if (status === 'CONNECTING') return '连接中'
+  if (status === 'NOT_STARTED') return '未启动'
+  return '未连接'
+})
+
+const mqttStatusTagType = computed(() => {
+  if (mqttStatus.value?.enabled === false) return 'info'
+  return mqttStatus.value?.connected ? 'success' : 'warning'
+})
+
+const showMqttAlert = computed(() => mqttStatus.value?.enabled !== false && mqttStatus.value?.connected === false)
+
+const mqttAlertTitle = computed(() => {
+  const broker = mqttStatus.value?.broker || '未配置 broker'
+  const topic = mqttStatus.value?.registerTopic || 'smartlab/adapter/register'
+  const reason = mqttStatus.value?.lastError ? '，原因：' + mqttStatus.value.lastError : ''
+  return 'MQTT 未连接：' + broker + '。系统已正常启动，正在后台重试；当前待订阅注册话题：' + topic + reason
+})
+
 const updateTime = () => {
   currentTime.value = new Date().toLocaleString('zh-CN', { hour12: false })
 }
@@ -168,6 +205,17 @@ const formatTime = (v?: string) => (v ? new Date(v).toLocaleString('zh-CN', { ho
 const getModelLabel = (modelId: string) => {
   const model = modelMap.value[modelId]
   return model ? model.modelName : modelId
+}
+
+const fetchMqttStatus = async () => {
+  try {
+    const res = await axios.get('/api/adapter/protocol/mqtt/status')
+    if (res.data?.success) {
+      mqttStatus.value = res.data.data || { status: 'UNKNOWN', connected: false }
+    }
+  } catch (err: any) {
+    mqttStatus.value = { enabled: true, status: 'UNKNOWN', connected: false, lastError: err?.response?.data?.message || '无法获取 MQTT 状态' }
+  }
 }
 
 const fetchData = async () => {
@@ -266,16 +314,22 @@ onMounted(() => {
   updateTime()
   timer = window.setInterval(updateTime, 1000)
   fetchData()
+  fetchMqttStatus()
+  mqttTimer = window.setInterval(fetchMqttStatus, 10000)
 })
 
 onUnmounted(() => {
   if (timer) window.clearInterval(timer)
+  if (mqttTimer) window.clearInterval(mqttTimer)
 })
 </script>
 
 <style scoped>
 .dashboard-container { padding: 16px; background: #f2f4f7; min-height: calc(100vh - 52px); }
-.header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+.header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; gap: 12px; }
+.header-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.mqtt-alert { margin-bottom: 12px; }
+.mqtt-tag { font-weight: 600; }
 .page-title { margin: 0; font-size: 20px; color: #1f2937; }
 .time-tag { font-family: 'JetBrains Mono', monospace; }
 .stats-row { margin-bottom: 12px; }

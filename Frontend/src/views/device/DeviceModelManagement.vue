@@ -79,6 +79,9 @@
               <section class="info-section">
                 <div class="section-title"><h3>设备属性</h3></div>
                 <el-table :data="selectedModel.attributes" border size="small" height="230">
+                  <template #empty>
+                    <el-empty description="暂无配置数据" :image-size="60" />
+                  </template>
                   <el-table-column label="属性名" min-width="180">
                     <template #default="{ row }">{{ row.displayName || row.name || '-' }}</template>
                   </el-table-column>
@@ -117,6 +120,9 @@
               <section class="info-section">
                 <div class="section-title"><h3>端口连接</h3></div>
                 <el-table :data="selectedModel.ports" border size="small" height="220">
+                  <template #empty>
+                    <el-empty description="暂无配置数据" :image-size="60" />
+                  </template>
                   <el-table-column label="端口名称" min-width="180">
                     <template #default="{ row }">{{ row.displayName || row.portName || '-' }}</template>
                   </el-table-column>
@@ -155,6 +161,9 @@
               <section class="info-section">
                 <div class="section-title"><h3>Adapter 属性</h3></div>
                 <el-table :data="selectedModel.adapterContract.telemetry.adapterAttributes" border size="small" height="220">
+                  <template #empty>
+                    <el-empty description="暂无配置数据" :image-size="60" />
+                  </template>
                   <el-table-column prop="name" label="属性字段" min-width="180" />
                   <el-table-column prop="dataType" label="数据类型" width="120" />
                   <el-table-column prop="description" label="说明" min-width="220">
@@ -166,6 +175,9 @@
               <section class="info-section">
                 <div class="section-title"><h3>Adapter 事件</h3></div>
                 <el-table :data="selectedModel.adapterContract.events" border size="small" height="200">
+                  <template #empty>
+                    <el-empty description="暂无配置数据" :image-size="60" />
+                  </template>
                   <el-table-column prop="eventName" label="事件名" min-width="180" />
                   <el-table-column prop="description" label="说明" min-width="240">
                     <template #default="{ row }">{{ row.description || '-' }}</template>
@@ -178,6 +190,9 @@
               <section class="info-section">
                 <div class="section-title"><h3>属性映射</h3></div>
                 <el-table :data="selectedModel.adapterContract.telemetry.attributesMapping" border size="small" height="230">
+                  <template #empty>
+                    <el-empty description="暂无配置数据" :image-size="60" />
+                  </template>
                   <el-table-column label="模型属性" min-width="180">
                     <template #default="{ row }">{{ displayAttributeName(row.modelAttributeName, selectedModel.attributes) }}</template>
                   </el-table-column>
@@ -188,6 +203,9 @@
               <section class="info-section">
                 <div class="section-title"><h3>功能映射</h3></div>
                 <el-table :data="capabilityMappingRows(selectedModel.capabilities)" border size="small" height="320">
+                  <template #empty>
+                    <el-empty description="暂无配置数据" :image-size="60" />
+                  </template>
                   <el-table-column prop="capabilityDisplayName" label="模型操作" min-width="160" />
                   <el-table-column prop="adapterCommandName" label="Adapter 命令" min-width="160" />
                   <el-table-column prop="commandParamName" label="命令参数" min-width="160" />
@@ -200,9 +218,20 @@
               <section class="info-section">
                 <div class="section-title"><h3>功能状态</h3></div>
                 <el-table :data="selectedModel.opState.states" border size="small" height="220">
+                  <template #empty>
+                    <el-empty description="暂无配置数据" :image-size="60" />
+                  </template>
                   <el-table-column prop="stateName" label="状态名称" min-width="180" />
-                  <el-table-column label="进入动作" min-width="240">
-                    <template #default="{ row }">{{ stateActionSummary(stateEntryActions(row, 'OP')) }}</template>
+                  <el-table-column label="进入动作" min-width="260">
+                    <template #default="{ row }">
+                      <div class="serious-actions-container">
+                        <div v-for="(act, aIdx) in stateEntryActions(row)" :key="aIdx" class="serious-action-wrapper">
+                          <el-tag size="small" type="info" effect="plain" class="serious-action-tag">
+                            {{ describeAction(act) }}
+                          </el-tag>
+                        </div>
+                      </div>
+                    </template>
                   </el-table-column>
                 </el-table>
               </section>
@@ -210,26 +239,51 @@
               <section class="info-section">
                 <div class="section-title"><h3>指令生命周期</h3></div>
                 <el-table :data="selectedModel.cmdState.states" border size="small" height="220">
+                  <template #empty>
+                    <el-empty description="暂无配置数据" :image-size="60" />
+                  </template>
                   <el-table-column prop="stateName" label="状态名称" min-width="180" />
-                  <el-table-column label="进入动作" min-width="240">
-                    <template #default="{ row }">{{ stateActionSummary(stateEntryActions(row, 'CMD')) }}</template>
+                  <el-table-column label="进入动作" min-width="260">
+                    <template #default="{ row }">
+                      <div class="serious-actions-container">
+                        <div v-for="(act, aIdx) in stateEntryActions(row)" :key="aIdx" class="serious-action-wrapper">
+                          <el-tag size="small" type="info" effect="plain" class="serious-action-tag">
+                            {{ describeAction(act) }}
+                          </el-tag>
+                        </div>
+                      </div>
+                    </template>
                   </el-table-column>
                 </el-table>
               </section>
 
               <section class="info-section">
                 <div class="section-title"><h3>状态转移</h3></div>
-                <el-table :data="selectedModel.stateTransitions" border size="small" height="260">
-                  <el-table-column prop="description" label="说明" min-width="180">
+                <el-table :data="selectedModel.stateTransitions" border size="small" height="280">
+                  <template #empty>
+                    <el-empty description="暂无配置数据" :image-size="60" />
+                  </template>
+                  <el-table-column prop="description" label="说明" min-width="150">
                     <template #default="{ row }">{{ row.description || '-' }}</template>
                   </el-table-column>
-                  <el-table-column prop="fromStateName" label="来源状态" min-width="130" />
-                  <el-table-column prop="toStateName" label="目标状态" min-width="130" />
-                  <el-table-column label="触发事件" min-width="180">
+                  <el-table-column prop="fromStateName" label="来源状态" min-width="120" />
+                  <el-table-column label="触发接口" min-width="150">
+                    <template #default="{ row }">{{ row.trigger?.interfaceName || 'Interface_adapter_in' }}</template>
+                  </el-table-column>
+                  <el-table-column label="触发信号" min-width="180">
                     <template #default="{ row }">{{ row.trigger?.signalName || '-' }}</template>
                   </el-table-column>
-                  <el-table-column label="动作" min-width="160">
-                    <template #default="{ row }">{{ stateActionSummary(row.actions) }}</template>
+                  <el-table-column prop="toStateName" label="目标状态" min-width="120" />
+                  <el-table-column label="转移动作" min-width="240">
+                    <template #default="{ row }">
+                      <div class="serious-actions-container">
+                        <div v-for="(act, aIdx) in row.actions" :key="aIdx" class="serious-action-wrapper">
+                          <el-tag size="small" type="info" effect="plain" class="serious-action-tag">
+                            {{ describeAction(act) }}
+                          </el-tag>
+                        </div>
+                      </div>
+                    </template>
                   </el-table-column>
                 </el-table>
               </section>
@@ -239,6 +293,9 @@
               <section class="info-section">
                 <div class="section-title"><h3>内置约束</h3></div>
                 <el-table :data="selectedModel.intrinsicConstraints" border size="small" height="320">
+                  <template #empty>
+                    <el-empty description="暂无配置数据" :image-size="60" />
+                  </template>
                   <el-table-column label="约束属性" min-width="170">
                     <template #default="{ row }">{{ displayAttributeName(row.objectAttributeName, selectedModel.attributes) }}</template>
                   </el-table-column>
@@ -293,7 +350,8 @@
                 <h3>设备属性</h3>
                 <el-button type="primary" plain size="small" :icon="Plus" @click="addAttribute">新增属性</el-button>
               </div>
-              <el-table :data="draft.attributes" border size="small">
+              <div v-if="draft.attributes.length === 0" class="compact-empty block-empty">暂无设备属性，请点击右上角“新增属性”进行配置</div>
+              <el-table v-else :data="draft.attributes" border size="small">
                 <el-table-column label="属性名" min-width="180">
                   <template #default="{ row }"><el-input v-model="row.displayName" size="small" placeholder="例如：当前温度" /></template>
                 </el-table-column>
@@ -322,7 +380,7 @@
                 <h3>设备操作</h3>
                 <el-button type="primary" plain size="small" :icon="Plus" @click="addCapability">新增操作</el-button>
               </div>
-              <div class="editor-card-list capability-editor-list">
+              <div v-if="draft.capabilities.length > 0" class="editor-card-list capability-editor-list">
                 <article v-for="(capability, capIndex) in draft.capabilities" :key="capability._key" class="editor-card capability-editor-card">
                   <div class="editor-card-head">
                     <div class="editor-card-title">
@@ -349,7 +407,7 @@
                   <div v-if="capability.parameters.length === 0" class="compact-empty inline-empty">暂无参数</div>
                 </article>
               </div>
-              <div v-if="draft.capabilities.length === 0" class="compact-empty">暂无设备操作，请点击“新增操作”。</div>
+              <div v-else class="compact-empty block-empty">暂无设备操作，请点击右上角“新增操作”进行配置</div>
             </section>
 
             <section class="drawer-section">
@@ -357,7 +415,8 @@
                 <h3>端口连接</h3>
                 <el-button type="primary" plain size="small" :icon="Plus" @click="addPort">新增端口</el-button>
               </div>
-              <el-table :data="draft.ports" border size="small">
+              <div v-if="draft.ports.length === 0" class="compact-empty block-empty">暂无端口连接，请点击右上角“新增端口”进行配置</div>
+              <el-table v-else :data="draft.ports" border size="small">
                 <el-table-column label="端口名称" min-width="180">
                   <template #default="{ row }"><el-input v-model="row.displayName" size="small" placeholder="例如：温度输出口" /></template>
                 </el-table-column>
@@ -410,7 +469,7 @@
                 <h3>Adapter 命令</h3>
                 <el-button type="primary" plain size="small" :icon="Plus" @click="addAdapterCommand">新增命令</el-button>
               </div>
-              <div class="editor-card-list command-editor-list">
+              <div v-if="draft.adapterContract.commands.length > 0" class="editor-card-list command-editor-list">
                 <article v-for="(command, commandIndex) in draft.adapterContract.commands" :key="command._key" class="editor-card command-editor-card">
                   <div class="editor-card-head">
                     <div class="editor-card-title">
@@ -423,7 +482,7 @@
                     <span>命令参数</span>
                     <el-button size="small" type="primary" plain circle :icon="Plus" title="添加参数" @click="addCommandParameter(command)" />
                   </div>
-                  <el-table :data="command.commandParameters" border size="small" class="nested-table">
+                  <el-table :data="visibleCommandParameters(command)" border size="small" class="nested-table">
                     <el-table-column label="参数名" min-width="180">
                       <template #default="{ row }"><el-input v-model="row.paramName" size="small" placeholder="例如：target_temp" /></template>
                     </el-table-column>
@@ -431,13 +490,13 @@
                       <template #default="{ row }"><data-type-select v-model="row.dataType" :options="adapterDataTypes" /></template>
                     </el-table-column>
                     <el-table-column label="" width="54" fixed="right">
-                      <template #default="{ $index }"><el-button link type="danger" :icon="Delete" @click="removeRow(command.commandParameters, $index)" /></template>
+                      <template #default="{ row }"><el-button link type="danger" :icon="Delete" @click="removeObjectRow(command.commandParameters, row)" /></template>
                     </el-table-column>
                   </el-table>
-                  <div v-if="command.commandParameters.length === 0" class="compact-empty inline-empty">暂无参数</div>
+                  <div v-if="visibleCommandParameters(command).length === 0" class="compact-empty inline-empty">暂无系统参数</div>
                 </article>
               </div>
-              <el-empty v-if="draft.adapterContract.commands.length === 0" description="暂无 Adapter 命令" :image-size="80" />
+              <div v-else class="compact-empty block-empty">暂无 Adapter 命令，请点击右上角“新增命令”进行配置</div>
             </section>
 
             <section class="drawer-section">
@@ -445,7 +504,8 @@
                 <h3>Adapter 属性</h3>
                 <el-button type="primary" plain size="small" :icon="Plus" @click="addAdapterAttribute">新增属性</el-button>
               </div>
-              <el-table :data="draft.adapterContract.telemetry.adapterAttributes" border size="small">
+              <div v-if="draft.adapterContract.telemetry.adapterAttributes.length === 0" class="compact-empty block-empty">暂无 Adapter 属性，请点击右上角“新增属性”进行配置</div>
+              <el-table v-else :data="draft.adapterContract.telemetry.adapterAttributes" border size="small">
                 <el-table-column label="属性字段" min-width="180">
                   <template #default="{ row }"><el-input v-model="row.name" size="small" placeholder="例如：temperature" /></template>
                 </el-table-column>
@@ -466,7 +526,8 @@
                 <h3>Adapter 事件</h3>
                 <el-button type="primary" plain size="small" :icon="Plus" @click="addAdapterEvent">新增事件</el-button>
               </div>
-              <el-table :data="draft.adapterContract.events" border size="small">
+              <div v-if="draft.adapterContract.events.length === 0" class="compact-empty block-empty">暂无 Adapter 事件，请点击右上角“新增事件”进行配置</div>
+              <el-table v-else :data="draft.adapterContract.events" border size="small">
                 <el-table-column label="事件名" min-width="180">
                   <template #default="{ row }"><el-input v-model="row.eventName" size="small" placeholder="例如：COMMAND_DONE" /></template>
                 </el-table-column>
@@ -486,7 +547,8 @@
                 <h3>属性映射</h3>
                 <el-button type="primary" plain size="small" :icon="Plus" @click="addAttributeMapping">新增映射</el-button>
               </div>
-              <el-table :data="draft.adapterContract.telemetry.attributesMapping" border size="small">
+              <div v-if="draft.adapterContract.telemetry.attributesMapping.length === 0" class="compact-empty block-empty">暂无属性映射，请点击右上角“新增映射”进行配置</div>
+              <el-table v-else :data="draft.adapterContract.telemetry.attributesMapping" border size="small">
                 <el-table-column label="模型属性" min-width="200">
                   <template #default="{ row }">
                     <el-select v-model="row.modelAttributeKey" size="small" filterable @change="handleAttributeMappingModelChange(row)">
@@ -512,7 +574,8 @@
                 <h3>功能映射</h3>
                 <el-button type="primary" plain size="small" :icon="Plus" @click="addFunctionMapping">新增映射</el-button>
               </div>
-              <el-table :data="draft.functionMappings" border size="small" class="function-mapping-table">
+              <div v-if="draft.functionMappings.length === 0" class="compact-empty block-empty">暂无功能映射，请点击右上角“新增映射”进行配置</div>
+              <el-table v-else :data="draft.functionMappings" border size="small" class="function-mapping-table">
                 <el-table-column label="模型操作" min-width="180">
                   <template #default="{ row }">
                     <el-select v-model="row.capabilityKey" size="small" filterable>
@@ -548,7 +611,11 @@
                         <el-button link type="danger" :icon="Delete" @click="removeRow(row.parameterMapping, index)" />
                         <span v-if="isParameterMappingInvalid(row, mapping)" class="map-warning">{{ parameterMappingWarning(row, mapping) }}</span>
                       </div>
-                      <el-button size="small" type="primary" plain :icon="Plus" @click="addParameterMapping(row)">参数映射</el-button>
+                      <div class="param-map-toolbar">
+                        <span v-if="row.parameterMapping.length === 0" class="no-mapping-placeholder">未配置参数映射</span>
+                        <span v-else></span>
+                        <el-button size="small" type="primary" plain :icon="Plus" class="add-mapping-btn" @click="addParameterMapping(row)">新增参数映射</el-button>
+                      </div>
                     </div>
                   </template>
                 </el-table-column>
@@ -556,7 +623,6 @@
                   <template #default="{ $index }"><el-button link type="danger" :icon="Delete" @click="removeRow(draft.functionMappings, $index)" /></template>
                 </el-table-column>
               </el-table>
-              <div v-if="draft.functionMappings.length === 0" class="compact-empty">暂无功能映射，请点击“新增映射”。</div>
             </section>
           </el-tab-pane>
 
@@ -565,47 +631,29 @@
               <div class="section-title">
                 <div class="locked-heading">
                   <el-icon><Lock /></el-icon>
-                  <h3>接口生成</h3>
-                  <el-tag size="small" effect="plain" :type="interfaceLocked ? 'info' : 'warning'">
-                    {{ interfaceLocked ? '系统生成，已锁定' : '已解锁，可修改' }}
-                  </el-tag>
+                  <h3>对外接口定义</h3>
+                  <el-tag size="small" effect="plain" type="info">系统自动生成</el-tag>
                 </div>
-                <el-button type="primary" plain size="small" :icon="interfaceLocked ? Unlock : Lock" @click="toggleInterfaceLock">
-                  {{ interfaceLocked ? '解锁' : '锁定' }}
-                </el-button>
               </div>
-              <el-table :data="stateMachineInterfaceRows" border size="small" :class="{ 'locked-table': interfaceLocked }">
+              <el-table :data="stateMachineInterfaceRows" border size="small" class="locked-table">
                 <el-table-column label="接口名称" min-width="140">
                   <template #default="{ row }">
-                    <el-input v-if="!interfaceLocked" v-model="row.name" size="small" />
-                    <span v-else>{{ row.name }}</span>
+                    <span>{{ row.name }}</span>
                   </template>
                 </el-table-column>
                 <el-table-column label="方向" width="100">
                   <template #default="{ row }">
-                    <el-select v-if="!interfaceLocked" v-model="row.direction" size="small">
-                      <el-option label="IN" value="IN" />
-                      <el-option label="OUT" value="OUT" />
-                    </el-select>
-                    <span v-else>{{ row.direction }}</span>
+                    <span>{{ row.direction }}</span>
                   </template>
                 </el-table-column>
                 <el-table-column label="类型" width="120">
                   <template #default="{ row }">
-                    <el-select v-if="!interfaceLocked" v-model="row.interfaceType" size="small">
-                      <el-option v-for="t in interfaceTypes" :key="t" :label="t" :value="t" />
-                    </el-select>
-                    <span v-else>{{ row.interfaceType }}</span>
+                    <span>{{ row.interfaceType }}</span>
                   </template>
                 </el-table-column>
                 <el-table-column label="允许的信号" min-width="240">
                   <template #default="{ row }">
-                    <el-select v-if="!interfaceLocked" v-model="row.allowedSignals" multiple filterable allow-create size="small" style="width: 100%;">
-                      <el-option v-for="signal in adapterEventOptions" :key="signal" :label="signal" :value="signal" />
-                    </el-select>
-                    <span v-else>
-                      <el-tag v-for="sig in row.allowedSignals" :key="sig" size="small" class="tag-gap">{{ sig }}</el-tag>
-                    </span>
+                    <el-tag v-for="sig in row.allowedSignals" :key="sig" size="small" class="tag-gap">{{ sig }}</el-tag>
                   </template>
                 </el-table-column>
               </el-table>
@@ -615,14 +663,17 @@
               <div class="section-title">
                 <div class="locked-heading">
                   <h3>功能状态</h3>
-                  <el-tag size="small" effect="plain" type="info"><el-icon><Lock /></el-icon> 进入动作锁定</el-tag>
+                  <el-tag size="small" effect="plain" type="info" class="lock-tag-flex">
+                    <el-icon><Lock /></el-icon>
+                    <span>进入动作锁定</span>
+                  </el-tag>
                 </div>
                 <el-button type="primary" plain size="small" :icon="Plus" @click="addOpState">新增状态</el-button>
               </div>
               <el-form label-width="86px" size="small" class="mapping-form">
                 <el-form-item label="初始状态">
                   <el-select v-model="draft.opState.initialStateName" filterable allow-create>
-                    <el-option v-for="name in opStateNameOptions" :key="name" :label="name" :value="name" />
+                     <el-option v-for="name in opStateNameOptions" :key="name" :label="name" :value="name" />
                   </el-select>
                 </el-form-item>
               </el-form>
@@ -630,9 +681,19 @@
                 <el-table-column label="状态名称" min-width="180">
                   <template #default="{ row }"><el-input v-model="row.stateName" size="small" placeholder="例如：IDLE" /></template>
                 </el-table-column>
-                <el-table-column label="进入动作（系统生成）" min-width="260">
+                <el-table-column label="进入动作" min-width="320">
                   <template #default="{ row }">
-                    <span class="locked-action"><el-icon><Lock /></el-icon>{{ stateActionSummary(stateEntryActions(row, 'OP')) }}</span>
+                    <div class="locked-action-container">
+                      <el-tag size="small" effect="plain" type="info" class="lock-tag-flex">
+                        <el-icon><Lock /></el-icon>
+                        <span>进入动作锁定</span>
+                      </el-tag>
+                      <div v-for="(act, aIdx) in stateEntryActions(row)" :key="aIdx" class="serious-action-wrapper inline-action">
+                        <el-tag size="small" type="info" effect="plain" class="serious-action-tag">
+                          {{ describeAction(act) }}
+                        </el-tag>
+                      </div>
+                    </div>
                   </template>
                 </el-table-column>
                 <el-table-column label="" width="54" fixed="right">
@@ -658,8 +719,20 @@
                 <el-table-column label="状态名称" min-width="180">
                   <template #default="{ row }"><span>{{ row.stateName }}</span></template>
                 </el-table-column>
-                <el-table-column label="进入动作（系统生成）" min-width="360">
-                  <template #default="{ row }"><span class="locked-action"><el-icon><Lock /></el-icon>{{ stateActionSummary(stateEntryActions(row, 'CMD')) }}</span></template>
+                <el-table-column label="进入动作" min-width="320">
+                  <template #default="{ row }">
+                    <div class="locked-action-container">
+                      <el-tag size="small" effect="plain" type="info" class="lock-tag-flex">
+                        <el-icon><Lock /></el-icon>
+                        <span>进入动作锁定</span>
+                      </el-tag>
+                      <div v-for="(act, aIdx) in stateEntryActions(row)" :key="aIdx" class="serious-action-wrapper inline-action">
+                        <el-tag size="small" type="info" effect="plain" class="serious-action-tag">
+                          {{ describeAction(act) }}
+                        </el-tag>
+                      </div>
+                    </div>
+                  </template>
                 </el-table-column>
               </el-table>
             </section>
@@ -676,8 +749,22 @@
                 <el-table-column prop="description" label="规则" min-width="160" />
                 <el-table-column prop="fromStateName" label="来源状态" min-width="120" />
                 <el-table-column prop="toStateName" label="目标状态" min-width="120" />
-                <el-table-column label="触发事件" min-width="180">
+                <el-table-column label="触发接口" min-width="190">
+                  <template #default="{ row }">{{ row.trigger.interfaceName }}</template>
+                </el-table-column>
+                <el-table-column label="接收信号" min-width="190">
                   <template #default="{ row }">{{ row.trigger.signalName }}</template>
+                </el-table-column>
+                <el-table-column label="转移动作" min-width="240">
+                  <template #default="{ row }">
+                    <div class="serious-actions-container">
+                      <div v-for="(act, aIdx) in row.actions" :key="aIdx" class="serious-action-wrapper">
+                        <el-tag size="small" type="info" effect="plain" class="serious-action-tag">
+                          {{ describeAction(act) }}
+                        </el-tag>
+                      </div>
+                    </div>
+                  </template>
                 </el-table-column>
               </el-table>
             </section>
@@ -687,21 +774,43 @@
                 <h3>功能状态转移规则</h3>
                 <el-button type="primary" plain size="small" :icon="Plus" @click="addStateTransition">新增规则</el-button>
               </div>
-              <el-table :data="draft.stateTransitions" border size="small" class="transition-table">
-                <el-table-column label="说明" min-width="140">
+              <div v-if="draft.stateTransitions.length === 0" class="compact-empty block-empty">暂无功能状态转移规则，请点击右上角“新增规则”进行配置</div>
+              <el-table v-else :data="draft.stateTransitions" border size="small" class="transition-table">
+                <el-table-column label="说明" min-width="150">
                   <template #default="{ row }"><el-input v-model="row.description" size="small" placeholder="可选" /></template>
                 </el-table-column>
                 <el-table-column label="来源状态" min-width="130">
                   <template #default="{ row }"><state-select v-model="row.fromStateName" :options="opStateNameOptions" /></template>
                 </el-table-column>
+                <el-table-column label="触发接口" min-width="160">
+                  <template #default>
+                    <span class="locked-action"><el-icon><Lock /></el-icon><span>Interface_adapter_in</span></span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="触发信号" min-width="190">
+                  <template #default="{ row }"><state-select v-model="row.trigger.signalName" :options="signalOptionsForInterface('Interface_adapter_in')" /></template>
+                </el-table-column>
                 <el-table-column label="目标状态" min-width="130">
                   <template #default="{ row }"><state-select v-model="row.toStateName" :options="opStateNameOptions" /></template>
                 </el-table-column>
-                <el-table-column label="触发事件" min-width="180">
-                  <template #default="{ row }"><state-select v-model="row.trigger.signalName" :options="adapterEventOptions" /></template>
-                </el-table-column>
-                <el-table-column label="动作" min-width="320">
-                  <template #default="{ row }"><action-editor :actions="row.actions" /></template>
+                <el-table-column label="转移动作" min-width="360">
+                  <template #default="{ row }">
+                    <div v-if="row.actions?.length" class="serious-action-editor">
+                      <span class="action-editor-label">输出</span>
+                      <el-select v-model="row.actions[0].payload.interfaceName" size="small" style="width: 170px" placeholder="选择接口" @change="onActionInterfaceChange(row.actions[0])">
+                        <el-option label="状态接口" value="Interface_status_out" />
+                        <el-option label="Adapter 接口" value="Interface_adapter_out" />
+                      </el-select>
+                      <el-select v-model="row.actions[0].payload.signalName" size="small" style="width: 150px" placeholder="选择信号">
+                        <el-option v-for="sig in getSignalsForInterface(row.actions[0].payload.interfaceName)" :key="sig" :label="sig" :value="sig" />
+                      </el-select>
+                      <el-button link type="danger" :icon="Delete" @click="removeTransitionAction(row)" />
+                    </div>
+                    <div v-else class="no-action-cell">
+                      <span>无转移动作</span>
+                      <el-button size="small" plain :icon="Plus" class="compact-action-btn" @click="ensureTransitionAction(row)">添加</el-button>
+                    </div>
+                  </template>
                 </el-table-column>
                 <el-table-column label="" width="54" fixed="right">
                   <template #default="{ $index }"><el-button link type="danger" :icon="Delete" @click="removeRow(draft.stateTransitions, $index)" /></template>
@@ -716,7 +825,8 @@
                 <h3>内置约束</h3>
                 <el-button type="primary" plain size="small" :icon="Plus" @click="addIntrinsicConstraint">新增约束</el-button>
               </div>
-              <el-table :data="draft.intrinsicConstraints" border size="small">
+              <div v-if="draft.intrinsicConstraints.length === 0" class="compact-empty block-empty">暂无内置约束，请点击右上角“新增约束”进行配置</div>
+              <el-table v-else :data="draft.intrinsicConstraints" border size="small">
                 <el-table-column label="约束属性" min-width="170">
                   <template #default="{ row }">
                     <el-select v-model="row.objectAttributeKey" size="small" filterable>
@@ -769,20 +879,65 @@
 import { computed, defineComponent, h, onMounted, reactive, ref, resolveComponent, watch } from 'vue'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
-import { Delete, Download, EditPen, Lock, Plus, Refresh, Search, Unlock, Upload } from '@element-plus/icons-vue'
+import { Connection, Cpu, Delete, Download, EditPen, Lock, Notification, Plus, Refresh, Search, Unlock, Upload } from '@element-plus/icons-vue'
 import { useAuthStore } from '../../stores/authStore'
 
 const authStore = useAuthStore()
+
+function getSignalTagType(signalName) {
+  if (signalName === 'OP_STATE') return 'success'
+  if (signalName === 'CMD_STATE') return 'primary'
+  if (signalName === 'CMD_START') return 'danger'
+  if (signalName === 'CMD_CANCEL') return 'warning'
+  return 'info'
+}
+
+function formatSignalName(signalName) {
+  if (signalName === 'OP_STATE') return '输出功能状态 (OP_STATE)'
+  if (signalName === 'CMD_STATE') return '输出指令周期 (CMD_STATE)'
+  if (signalName === 'CMD_START') return '下发启动命令 (CMD_START)'
+  if (signalName === 'CMD_CANCEL') return '下发取消命令 (CMD_CANCEL)'
+  return signalName || ''
+}
+
+function formatSignalShortName(signalName) {
+  if (signalName === 'OP_STATE') return '输出状态'
+  if (signalName === 'CMD_STATE') return '输出指令'
+  if (signalName === 'CMD_START') return '启动命令'
+  if (signalName === 'CMD_CANCEL') return '取消命令'
+  if (signalName === 'CMD_PAUSE') return '暂停命令'
+  if (signalName === 'CMD_RESUME') return '恢复命令'
+  if (signalName === 'CMD_RESET') return '重置命令'
+  return signalName || ''
+}
+
+function getSignalsForInterface(interfaceName) {
+  if (interfaceName === 'Interface_status_out') return ['OP_STATE', 'CMD_STATE']
+  if (interfaceName === 'Interface_adapter_out') return ['CMD_START', 'CMD_CANCEL', 'CMD_PAUSE', 'CMD_RESUME', 'CMD_RESET']
+  return []
+}
+
+function onActionInterfaceChange(act) {
+  if (!act.payload) act.payload = {}
+  const sigs = getSignalsForInterface(act.payload.interfaceName)
+  if (sigs.length > 0) {
+    act.payload.signalName = sigs[0]
+  } else {
+    act.payload.signalName = ''
+  }
+}
 const attributeDataTypes = ['INTEGER', 'DOUBLE', 'BOOLEAN']
 const adapterDataTypes = ['INTEGER', 'DOUBLE', 'BOOLEAN', 'STRING']
 const operators = ['GT', 'LT', 'GE', 'LE', 'EQ', 'NE', 'BETWEEN', 'IN']
-const interfaceTypes = ['WORKFLOW', 'STAT', 'ADAPTER', 'CONTROL']
+const interfaceTypes = ['WORKFLOW', 'STAT', 'ADAPTER', 'CONTROL', 'CONSTRAINT']
 const stateActionNames = ['SEND', 'ASSIGN']
+const standardCmdEvents = ['COMMAND_RECEIVED', 'COMMAND_RUNNING', 'COMMAND_COMPLETED', 'COMMAND_FAILED', 'COMMAND_TIMEOUT', 'COMMAND_CANCELLED']
+const adapterOutSignals = ['CMD_START', 'CMD_CANCEL', 'CMD_PAUSE', 'CMD_RESUME', 'CMD_RESET']
 
 const DataTypeSelect = defineComponent({
   name: 'DataTypeSelect',
   props: { modelValue: String, options: { type: Array, default: () => [] } },
-  emits: ['update:modelValue'],
+  emits: ['update:modelValue', 'change'],
   setup(props, { emit }) {
     const ElSelect = resolveComponent('ElSelect')
     const ElOption = resolveComponent('ElOption')
@@ -797,7 +952,7 @@ const DataTypeSelect = defineComponent({
 const StateSelect = defineComponent({
   name: 'StateSelect',
   props: { modelValue: String, options: { type: Array, default: () => [] } },
-  emits: ['update:modelValue'],
+  emits: ['update:modelValue', 'change'],
   setup(props, { emit }) {
     const ElSelect = resolveComponent('ElSelect')
     const ElOption = resolveComponent('ElOption')
@@ -806,42 +961,11 @@ const StateSelect = defineComponent({
       size: 'small',
       filterable: true,
       allowCreate: true,
-      'onUpdate:modelValue': value => emit('update:modelValue', value)
+      'onUpdate:modelValue': value => { emit('update:modelValue', value); emit('change', value) }
     }, () => props.options.map(option => h(ElOption, { key: option, label: option, value: option })))
   }
 })
 
-const ActionEditor = defineComponent({
-  name: 'ActionEditor',
-  props: { actions: { type: Array, required: true } },
-  setup(props) {
-    const ElSelect = resolveComponent('ElSelect')
-    const ElOption = resolveComponent('ElOption')
-    const ElInput = resolveComponent('ElInput')
-    const ElButton = resolveComponent('ElButton')
-    const addAction = () => props.actions.push({ _key: makeUiKey('action'), actionName: 'SEND', payload: {} })
-    const removeAction = index => props.actions.splice(index, 1)
-    return () => h('div', { class: 'action-editor' }, [
-      ...props.actions.map((action, index) => h('div', { class: 'action-row', key: action._key || index }, [
-        h(ElSelect, {
-          modelValue: action.actionName,
-          size: 'small',
-          'onUpdate:modelValue': value => { action.actionName = value }
-        }, () => stateActionNames.map(name => h(ElOption, { key: name, label: name, value: name }))),
-        h(ElInput, {
-          modelValue: actionPayloadText(action),
-          size: 'small',
-          placeholder: '动作载荷 JSON',
-          'onUpdate:modelValue': value => updateActionPayload(action, value)
-        }),
-        h(ElButton, { link: true, type: 'danger', icon: Delete, onClick: () => removeAction(index) })
-      ])),
-      h('div', { class: 'action-toolbar' }, [
-        h(ElButton, { type: 'primary', plain: true, size: 'small', circle: true, icon: Plus, title: '添加动作', onClick: addAction })
-      ])
-    ])
-  }
-})
 
 const models = ref([])
 const categories = ref([])
@@ -873,9 +997,11 @@ const drawerTitle = computed(() => drawerMode.value === 'create' ? '新建设备
 const attributeOptions = computed(() => draft.attributes.map((item, index) => ({ key: item._key, label: item.displayName || item.name || '属性' + (index + 1) })).filter(item => item.key))
 const adapterAttributeNameOptions = computed(() => draft.adapterContract.telemetry.adapterAttributes.map(item => item.name).filter(Boolean))
 const commandNameOptions = computed(() => draft.adapterContract.commands.map(item => item.commandName).filter(Boolean))
-const adapterEventOptions = computed(() => draft.adapterContract.events.map(item => item.eventName).filter(Boolean))
+const adapterEventOptions = computed(() => opEventNames(draft.adapterContract.events))
+const adapterSignalOptions = computed(() => uniqueStrings([...standardCmdEvents, ...adapterEventOptions.value]))
+const inboundInterfaceNameOptions = computed(() => stateMachineInterfaceRows.value.filter(item => item.direction !== 'OUT').map(item => item.name).filter(Boolean))
 const capabilitySelectOptions = computed(() => draft.capabilities.map((item, index) => ({ key: item._key, label: item.displayName || item.name || '操作' + (index + 1) })).filter(item => item.key))
-const generatedInterfaces = computed(() => defaultInterfaces(adapterEventOptions.value))
+const generatedInterfaces = computed(() => defaultInterfaces(adapterSignalOptions.value))
 const stateMachineInterfaceRows = computed(() => interfaceLocked.value ? generatedInterfaces.value : draft.stateMachineInterfaces)
 const commandLifecycleTransitionRows = computed(() => defaultCommandLifecycleTransitions())
 const opStateNameOptions = computed(() => draft.opState.states.map(item => item.stateName).filter(Boolean))
@@ -907,30 +1033,32 @@ function defaultAdapterContract() {
 }
 
 function defaultStateSpace(initialStateName) {
-  return { initialStateName, states: [{ _key: makeUiKey('state'), stateName: initialStateName, onEntry: [] }] }
+  return { initialStateName, states: [{ _key: makeUiKey('state'), stateName: initialStateName, onEntry: [{ actionName: 'SEND', payload: { interfaceName: 'Interface_status_out', signalName: 'OP_STATE' } }] }] }
 }
 
 function defaultCommandLifecycle() {
-  return { initialStateName: 'PENDING', states: commandLifecycleStateNames().map(stateName => ({ _key: makeUiKey('cmd_state'), stateName, onEntry: [] })) }
+  return { initialStateName: 'IDLE', states: commandLifecycleStateNames().map(stateName => ({ _key: makeUiKey('cmd_state'), stateName, onEntry: [{ actionName: 'SEND', payload: { interfaceName: 'Interface_status_out', signalName: 'CMD_STATE' } }] })) }
 }
 
 function commandLifecycleStateNames() {
-  return ['PENDING', 'SENT', 'ACKED', 'DONE', 'FAILED']
+  return ['IDLE', 'SENT', 'RECEIVED', 'RUNNING', 'DONE', 'FAILED', 'TIMEOUT', 'CANCELLED']
 }
 
 function defaultInterfaces(adapterSignals = []) {
-  const signals = asArray(adapterSignals).filter(Boolean)
+  const signals = uniqueStrings([...standardCmdEvents, ...asArray(adapterSignals).filter(Boolean)])
   return [
-    { _key: 'iface_workflow', name: 'if_workflow', direction: 'IN', interfaceType: 'WORKFLOW', allowedSignals: ['COMMAND_REQUEST', 'CANCEL_REQUEST'] },
-    { _key: 'iface_stat', name: 'if_stat', direction: 'OUT', interfaceType: 'STAT', allowedSignals: ['STATE_CHANGED', 'COMMAND_LIFECYCLE_CHANGED'] },
-    { _key: 'iface_control', name: 'if_control', direction: 'IN', interfaceType: 'CONTROL', allowedSignals: ['PAUSE', 'RESUME', 'RESET'] },
-    { _key: 'iface_adapter', name: 'if_adapter_event', direction: 'IN', interfaceType: 'ADAPTER', allowedSignals: signals }
+    { _key: 'iface_workflow', name: 'Interface_workflow_in', direction: 'IN', interfaceType: 'WORKFLOW', allowedSignals: ['EXECUTE_START', 'EXECUTE_PAUSE', 'EXECUTE_RESUME', 'EXECUTE_CANCEL', 'EXECUTE_RESET'] },
+    { _key: 'iface_status', name: 'Interface_status_out', direction: 'OUT', interfaceType: 'STAT', allowedSignals: ['OP_STATE', 'CMD_STATE'] },
+    { _key: 'iface_control', name: 'Interface_control_in', direction: 'IN', interfaceType: 'CONTROL', allowedSignals: ['MANUAL_EXECUTE', 'MANUAL_CANCEL', 'MANUAL_PAUSE', 'MANUAL_RESUME', 'MANUAL_RESET'] },
+    { _key: 'iface_constraint', name: 'Interface_constraint_in', direction: 'IN', interfaceType: 'CONSTRAINT', allowedSignals: ['CONSTRAINT_CANCEL', 'CONSTRAINT_PAUSE', 'CONSTRAINT_RESUME', 'CONSTRAINT_RESET'] },
+    { _key: 'iface_adapter_in', name: 'Interface_adapter_in', direction: 'IN', interfaceType: 'ADAPTER', allowedSignals: signals },
+    { _key: 'iface_adapter_out', name: 'Interface_adapter_out', direction: 'OUT', interfaceType: 'ADAPTER', allowedSignals: adapterOutSignals }
   ]
 }
 
-watch(adapterEventOptions, (newEvents) => {
+watch(adapterSignalOptions, (newEvents) => {
   if (interfaceLocked.value) {
-    const adapterIface = draft.stateMachineInterfaces.find(i => i.interfaceType === 'ADAPTER' || i.name === 'if_adapter_event');
+    const adapterIface = draft.stateMachineInterfaces.find(i => i.name === 'Interface_adapter_in' || (i.interfaceType === 'ADAPTER' && i.direction !== 'OUT'));
     if (adapterIface) {
       adapterIface.allowedSignals = [...newEvents];
     }
@@ -938,7 +1066,7 @@ watch(adapterEventOptions, (newEvents) => {
 }, { deep: true });
 
 function adapterInterfaceName() {
-  return 'if_adapter_event'
+  return 'Interface_adapter_in'
 }
 
 function toggleInterfaceLock() {
@@ -948,28 +1076,36 @@ function toggleInterfaceLock() {
   interfaceLocked.value = !interfaceLocked.value
 }
 
-function defaultEntryActions(kind, stateName) {
-  const signalName = kind === 'CMD' ? 'COMMAND_LIFECYCLE_CHANGED' : 'STATE_CHANGED'
-  return [{ actionName: 'SEND', payload: { interfaceName: 'if_stat', signalName, payload: { stateName } } }]
+function defaultEntryActions() {
+  return []
 }
 
-function stateEntryActions(row, kind) {
-  const actions = asArray(row?.onEntry)
-  return actions.length ? actions : defaultEntryActions(kind, row?.stateName || '')
+function stateEntryActions(row) {
+  return asArray(row?.onEntry)
+}
+
+function adapterOutAction(signalName) {
+  return { actionName: 'SEND', payload: { interfaceName: 'Interface_adapter_out', signalName } }
 }
 
 function defaultCommandLifecycleTransitions() {
   return [
-    { description: '指令下发', fromStateName: 'PENDING', toStateName: 'SENT', trigger: { interfaceName: 'if_workflow', signalName: 'COMMAND_REQUEST' } },
-    { description: 'Adapter 确认', fromStateName: 'SENT', toStateName: 'ACKED', trigger: { interfaceName: adapterInterfaceName(), signalName: 'COMMAND_ACK' } },
-    { description: '执行完成', fromStateName: 'ACKED', toStateName: 'DONE', trigger: { interfaceName: adapterInterfaceName(), signalName: 'COMMAND_DONE' } },
-    { description: '执行失败', fromStateName: 'ACKED', toStateName: 'FAILED', trigger: { interfaceName: adapterInterfaceName(), signalName: 'COMMAND_FAILED' } }
+    { description: '工作流触发指令下发', fromStateName: 'IDLE', toStateName: 'SENT', trigger: { interfaceName: 'Interface_workflow_in', signalName: 'EXECUTE_START' }, actions: [adapterOutAction('CMD_START')] },
+    { description: '用户手动触发指令下发', fromStateName: 'IDLE', toStateName: 'SENT', trigger: { interfaceName: 'Interface_control_in', signalName: 'MANUAL_EXECUTE' }, actions: [adapterOutAction('CMD_START')] },
+    { description: 'Adapter 已接收', fromStateName: 'SENT', toStateName: 'RECEIVED', trigger: { interfaceName: adapterInterfaceName(), signalName: 'COMMAND_RECEIVED' }, actions: [] },
+    { description: 'Adapter 执行中', fromStateName: 'RECEIVED', toStateName: 'RUNNING', trigger: { interfaceName: adapterInterfaceName(), signalName: 'COMMAND_RUNNING' }, actions: [] },
+    { description: '执行完成', fromStateName: 'RUNNING', toStateName: 'DONE', trigger: { interfaceName: adapterInterfaceName(), signalName: 'COMMAND_COMPLETED' }, actions: [] },
+    { description: '执行失败', fromStateName: 'RUNNING', toStateName: 'FAILED', trigger: { interfaceName: adapterInterfaceName(), signalName: 'COMMAND_FAILED' }, actions: [] },
+    { description: '执行超时', fromStateName: 'RUNNING', toStateName: 'TIMEOUT', trigger: { interfaceName: adapterInterfaceName(), signalName: 'COMMAND_TIMEOUT' }, actions: [] },
+    { description: 'Adapter 确认取消', fromStateName: 'SENT', toStateName: 'CANCELLED', trigger: { interfaceName: adapterInterfaceName(), signalName: 'COMMAND_CANCELLED' }, actions: [] },
+    { description: '工作流取消指令', fromStateName: 'RUNNING', toStateName: 'CANCELLED', trigger: { interfaceName: 'Interface_workflow_in', signalName: 'EXECUTE_CANCEL' }, actions: [adapterOutAction('CMD_CANCEL')] },
+    { description: '用户手动取消指令', fromStateName: 'RUNNING', toStateName: 'CANCELLED', trigger: { interfaceName: 'Interface_control_in', signalName: 'MANUAL_CANCEL' }, actions: [adapterOutAction('CMD_CANCEL')] },
+    { description: '约束引擎取消指令', fromStateName: 'RUNNING', toStateName: 'CANCELLED', trigger: { interfaceName: 'Interface_constraint_in', signalName: 'CONSTRAINT_CANCEL' }, actions: [adapterOutAction('CMD_CANCEL')] }
   ]
 }
 
 function isCommandLifecycleTransition(row) {
-  const names = commandLifecycleStateNames()
-  return names.includes(row?.fromStateName) && names.includes(row?.toStateName)
+  return defaultCommandLifecycleTransitions().some(item => item.fromStateName === row?.fromStateName && item.toStateName === row?.toStateName && item.trigger.interfaceName === row?.trigger?.interfaceName && item.trigger.signalName === row?.trigger?.signalName)
 }
 
 async function loadData() {
@@ -1010,8 +1146,8 @@ function normalizeModel(raw) {
     ports: normalizePorts(firstDefined(raw?.ports, raw?.capabilitySpec?.ports), attributes),
     intrinsicConstraints: normalizeIntrinsicConstraints(firstDefined(raw?.intrinsicConstraints, raw?.intrinsicConstraint), attributes),
     stateMachineInterfaces: normalizeInterfaces(raw?.stateMachineInterfaces),
-    opState: normalizeStateSpace(raw?.opState, 'IDLE'),
-    cmdState: normalizeStateSpace(raw?.cmdState, 'PENDING'),
+    opState: normalizeStateSpace(raw?.opState, 'IDLE', 'OP'),
+    cmdState: normalizeStateSpace(raw?.cmdState, 'IDLE', 'CMD'),
     stateTransitions: normalizeTransitions(firstDefined(raw?.stateTransitions, raw?.opState?.transitions)).filter(row => !isCommandLifecycleTransition(row)),
     componentsBom: asArray(raw?.componentsBom)
   }
@@ -1105,7 +1241,7 @@ function buildSavePayload(includeBlankBasic = true) {
   const functionMappings = materializeFunctionMappings(draft.functionMappings)
   const capabilities = materializeCapabilities(draft.capabilities, functionMappings)
   const payload = {
-    modelId: draft.basic.modelId,
+    modelId: numericOrNull(draft.basic.modelId),
     modelName: includeBlankBasic ? draft.basic.modelName.trim() : draft.basic.modelName?.trim() || '',
     attributes,
     capabilities,
@@ -1114,7 +1250,7 @@ function buildSavePayload(includeBlankBasic = true) {
     intrinsicConstraints: materializeIntrinsicConstraints(draft.intrinsicConstraints, attrNameByKey),
     stateMachineInterfaces: cleanInterfaces(stateMachineInterfaceRows.value),
     opState: cleanStateSpace(draft.opState, 'IDLE', 'OP'),
-    cmdState: cleanStateSpace(draft.cmdState, 'PENDING', 'CMD'),
+    cmdState: cleanStateSpace(draft.cmdState, 'IDLE', 'CMD'),
     stateTransitions: cleanTransitions(draft.stateTransitions),
     componentsBom: asArray(draft.componentsBom)
   }
@@ -1151,11 +1287,11 @@ function replaceDraft(next) {
   draft.intrinsicConstraints.splice(0, draft.intrinsicConstraints.length, ...normalizeIntrinsicConstraints(next.intrinsicConstraints, draft.attributes))
   draft.adapterContract = normalizeAdapterContract(next.adapterContract, draft.attributes)
   const nextInterfaces = normalizeInterfaces(next.stateMachineInterfaces)
-  draft.stateMachineInterfaces.splice(0, draft.stateMachineInterfaces.length, ...(nextInterfaces.length ? nextInterfaces : defaultInterfaces(adapterEventOptions.value)))
+  draft.stateMachineInterfaces.splice(0, draft.stateMachineInterfaces.length, ...(nextInterfaces.length ? nextInterfaces : defaultInterfaces(adapterSignalOptions.value)))
   draft.stateTransitions.splice(0, draft.stateTransitions.length, ...normalizeTransitions(next.stateTransitions).filter(row => !isCommandLifecycleTransition(row)))
   draft.componentsBom.splice(0, draft.componentsBom.length, ...asArray(next.componentsBom))
-  draft.opState = normalizeStateSpace(next.opState, 'IDLE')
-  draft.cmdState = normalizeStateSpace(next.cmdState, 'PENDING')
+  draft.opState = normalizeStateSpace(next.opState, 'IDLE', 'OP')
+  draft.cmdState = normalizeStateSpace(next.cmdState, 'IDLE', 'CMD')
 }
 
 function addAttribute() { draft.attributes.push({ _key: makeUiKey('attr'), name: '', displayName: '', valueKind: 'CONTINUOUS', dataType: 'DOUBLE', unit: '' }) }
@@ -1283,7 +1419,11 @@ function capabilityParameterOptionsDetailedByKey(key) {
 }
 
 function commandParameterOptionsDetailed(commandName) {
-  return asArray(commandByName(commandName)?.commandParameters)
+  return visibleCommandParameters(commandByName(commandName))
+}
+
+function visibleCommandParameters(command) {
+  return asArray(command?.commandParameters).filter(param => param.hidden !== true)
 }
 
 function commandByName(commandName) {
@@ -1371,12 +1511,26 @@ function isFixedValueCompatible(dataType, value) {
 
 const adapterAttributeNameOptionsDetailed = computed(() => draft.adapterContract.telemetry.adapterAttributes)
 
-function addOpState() { draft.opState.states.push({ _key: makeUiKey('op_state'), stateName: '', onEntry: [] }) }
+function addOpState() { draft.opState.states.push({ _key: makeUiKey('op_state'), stateName: '', onEntry: [{ actionName: 'SEND', payload: { interfaceName: 'Interface_status_out', signalName: 'OP_STATE' } }] }) }
 function addStateTransition() {
-  draft.stateTransitions.push({ _key: makeUiKey('transition'), description: '', fromStateName: opStateNameOptions.value[0] || '', toStateName: opStateNameOptions.value[1] || opStateNameOptions.value[0] || '', trigger: { interfaceName: defaultAdapterInterfaceName(), signalName: adapterEventOptions.value[0] || '' }, actions: [] })
+  const interfaceName = defaultAdapterInterfaceName()
+  draft.stateTransitions.push({ _key: makeUiKey('transition'), description: '', fromStateName: opStateNameOptions.value[0] || '', toStateName: opStateNameOptions.value[1] || opStateNameOptions.value[0] || '', trigger: { interfaceName, signalName: signalOptionsForInterface(interfaceName)[0] || '' }, actions: [] })
+}
+
+function ensureTransitionAction(row) {
+  row.actions = [{ actionName: 'SEND', payload: { interfaceName: 'Interface_status_out', signalName: 'OP_STATE' } }]
+}
+
+function removeTransitionAction(row) {
+  row.actions = []
 }
 
 function defaultAdapterInterfaceName() { return adapterInterfaceName() }
+
+function handleTransitionInterfaceChange(row) {
+  const options = signalOptionsForInterface(row?.trigger?.interfaceName)
+  if (!options.includes(row.trigger.signalName)) row.trigger.signalName = options[0] || ''
+}
 
 function addIntrinsicConstraint() {
   draft.intrinsicConstraints.push({ _key: makeUiKey('constraint'), objectAttributeKey: draft.attributes[0]?._key || '', objectAttributeName: '', operator: 'GT', boundaryValue: '', violationStateName: opStateNameOptions.value[0] || 'FAULT' })
@@ -1390,7 +1544,24 @@ function buildCapabilityModel(model) {
 }
 
 function buildStateMachineModel(model) {
-  return { deviceModelId: numericOrNull(model.modelId), interfaces: cleanInterfaces(defaultInterfaces(asArray(model.adapterContract?.events).map(event => event.eventName).filter(Boolean))), opStateSpace: cleanStateSpace(model.opState, 'IDLE', 'OP'), cmdLifecycleSpace: cleanStateSpace(model.cmdState, 'PENDING', 'CMD'), transitions: cleanTransitions(model.stateTransitions) }
+  return { deviceModelId: numericOrNull(model.modelId), interfaces: cleanInterfaces(defaultInterfaces(opEventNames(model.adapterContract?.events))), opStateSpace: cleanStateSpace(model.opState, 'IDLE', 'OP'), cmdLifecycleSpace: cleanStateSpace(model.cmdState, 'IDLE', 'CMD'), transitions: allStateTransitions(model.stateTransitions) }
+}
+
+function opEventNames(events) {
+  return asArray(events).filter(event => event.eventType !== 'CMD' && !standardCmdEvents.includes(event.eventName)).map(event => event.eventName).filter(Boolean)
+}
+
+function allStateTransitions(rows) {
+  return [...defaultCommandLifecycleTransitions(), ...cleanTransitions(rows)]
+}
+
+function signalOptionsForInterface(interfaceName) {
+  const iface = stateMachineInterfaceRows.value.find(item => item.name === interfaceName) || defaultInterfaces(adapterEventOptions.value).find(item => item.name === interfaceName)
+  return asArray(iface?.allowedSignals).filter(Boolean)
+}
+
+function uniqueStrings(values) {
+  return [...new Set(asArray(values).map(stringValue).filter(Boolean))]
 }
 
 function buildCapabilityModelFromPayload(payload) {
@@ -1398,7 +1569,7 @@ function buildCapabilityModelFromPayload(payload) {
 }
 
 function buildStateMachineModelFromPayload(payload) {
-  return { deviceModelId: numericOrNull(payload.modelId), interfaces: cleanInterfaces(payload.stateMachineInterfaces), opStateSpace: cleanStateSpace(payload.opState, 'IDLE', 'OP'), cmdLifecycleSpace: cleanStateSpace(payload.cmdState, 'PENDING', 'CMD'), transitions: cleanTransitions(payload.stateTransitions) }
+  return { deviceModelId: numericOrNull(payload.modelId), interfaces: cleanInterfaces(payload.stateMachineInterfaces), opStateSpace: cleanStateSpace(payload.opState, 'IDLE', 'OP'), cmdLifecycleSpace: cleanStateSpace(payload.cmdState, 'IDLE', 'CMD'), transitions: allStateTransitions(payload.stateTransitions) }
 }
 
 function downloadModelBundle() {
@@ -1441,13 +1612,74 @@ function applyAdapterConfigText() {
 
 function extractAdapterContract(source) {
   const root = source?.adapterContract || source?.contract || source?.parsedConfig || source?.parsed_config || source || {}
+  if (asArray(root.deviceTemplates).length) return extractManifestAdapterContract(root)
   const telemetry = root.telemetry || {}
   return {
-    config: { protocol: root.config?.protocol || root.protocol || 'MQTT' },
-    commands: asArray(root.commands || root.commandDefs || root.adapterCommands).map(command => ({ commandName: stringValue(command.commandName || command.name || command.command), commandParameters: asArray(command.commandParameters || command.parameters || command.params).map(param => ({ paramName: stringValue(param.paramName || param.name || param.key), dataType: normalizeDataType(param.dataType || param.type, 'DOUBLE', adapterDataTypes) })) })),
+    config: { protocol: root.config?.protocol || root.protocol || 'MQTT', adapterName: root.config?.adapterName || root.adapterName || '', templateName: root.config?.templateName || root.templateName || '' },
+    commands: asArray(root.commands || root.commandDefs || root.adapterCommands).map(command => ({ commandName: stringValue(command.commandName || command.name || command.command), description: stringValue(command.description || command.desc), commandParameters: asArray(command.commandParameters || command.parameters || command.params).map(normalizeCommandParameter) })),
     telemetry: { adapterAttributes: asArray(telemetry.adapterAttributes || telemetry.fields || root.adapterAttributes || root.telemetryFields).map(attr => ({ name: stringValue(attr.name || attr.fieldName || attr.key), dataType: normalizeDataType(attr.dataType || attr.type, 'DOUBLE', adapterDataTypes), description: stringValue(attr.description || attr.desc) })), attributesMapping: asArray(telemetry.attributesMapping || root.attributesMapping) },
-    events: asArray(root.events || root.adapterEvents).map(event => ({ eventName: stringValue(event.eventName || event.name), description: stringValue(event.description || event.desc) }))
+    events: normalizeEventsToFlatList(root.events || root.adapterEvents)
   }
+}
+
+function extractManifestAdapterContract(manifest) {
+  const template = asArray(manifest.deviceTemplates)[0] || {}
+  const eventGroups = normalizeEventGroups(template.events)
+  return {
+    config: { protocol: 'MQTT', adapterName: stringValue(manifest.adapterName), templateName: stringValue(template.templateName) },
+    commands: asArray(template.commands).map(command => ({
+      commandName: stringValue(command.commandName || command.name),
+      description: stringValue(command.description),
+      commandParameters: asArray(command.commandParameters || command.parameters).map(normalizeCommandParameter)
+    })),
+    telemetry: {
+      adapterAttributes: asArray(template.attributes).map(attr => ({ name: stringValue(attr.name), dataType: normalizeDataType(attr.dataType || attr.type, 'DOUBLE', adapterDataTypes), description: stringValue(attr.description) })),
+      attributesMapping: []
+    },
+    events: [...eventGroups.cmdEvents.map(event => ({ ...event, eventType: 'CMD' })), ...eventGroups.opEvents.map(event => ({ ...event, eventType: 'OP' }))]
+  }
+}
+
+function normalizeCommandParameter(param) {
+  const row = { paramName: stringValue(param.paramName || param.name || param.key), dataType: normalizeDataType(param.dataType || param.type, 'DOUBLE', adapterDataTypes), description: stringValue(param.description || param.desc) }
+  if (param.hidden === true) {
+    row.hidden = true
+    row.sourceField = stringValue(param.sourceField)
+  }
+  return row
+}
+
+function normalizeEventGroups(events) {
+  const source = events || {}
+  if (Array.isArray(source)) {
+    const rows = normalizeEventsToFlatList(source)
+    return { cmdEvents: rows.filter(event => event.eventName.startsWith('COMMAND_')), opEvents: rows.filter(event => !event.eventName.startsWith('COMMAND_')) }
+  }
+  return {
+    cmdEvents: normalizeEventsToFlatList(source.cmdEvents || source.commandLifecycleEvents),
+    opEvents: normalizeEventsToFlatList(source.opEvents || source.businessEvents)
+  }
+}
+
+function normalizeEventsToFlatList(events) {
+  const list = []
+  if (events && typeof events === 'object' && !Array.isArray(events)) {
+    asArray(events.cmdEvents).forEach(event => {
+      list.push({ eventName: stringValue(event.eventName || event.name), description: stringValue(event.description || event.desc), eventType: 'CMD' })
+    })
+    asArray(events.opEvents).forEach(event => {
+      list.push({ eventName: stringValue(event.eventName || event.name), description: stringValue(event.description || event.desc), eventType: 'OP' })
+    })
+  } else {
+    asArray(events).forEach(event => {
+      list.push({
+        eventName: stringValue(event.eventName || event.name),
+        description: stringValue(event.description || event.desc),
+        eventType: event.eventType || (event.eventName?.startsWith('COMMAND_') ? 'CMD' : 'OP')
+      })
+    })
+  }
+  return list.filter(event => event.eventName)
 }
 
 function capabilityMappingRows(capabilities) {
@@ -1468,14 +1700,23 @@ function onKeywordInput() {
 }
 
 function categoryNameById(id) { return categories.value.find(item => String(item.id) === String(id))?.categoryName || '' }
-function commandParameterOptions(commandName) { return asArray(draft.adapterContract.commands.find(item => item.commandName === commandName)?.commandParameters).map(item => item.paramName).filter(Boolean) }
+function commandParameterOptions(commandName) { return visibleCommandParameters(draft.adapterContract.commands.find(item => item.commandName === commandName)).map(item => item.paramName).filter(Boolean) }
 function capabilityParameterOptions(capability) { return asArray(capability.parameters).map((item, index) => ({ key: item._key, label: item.displayName || item.name || '参数' + (index + 1) })).filter(item => item.key) }
 function displayAttributeName(name, attributes) { if (!name) return '-'; const attr = asArray(attributes).find(item => item.name === name); return attr?.displayName || name }
 function displayCapabilityParam(capability, name) { if (!name) return '-'; const param = asArray(capability.parameters).find(item => item.name === name); return param?.displayName || name }
 function stateActionSummary(actions) { const names = asArray(actions).map(describeAction).filter(Boolean); return names.length ? names.join('、') : '-' }
-function describeAction(action) { if (!action?.actionName) return ''; if (action.actionName === 'SEND') return '发送 ' + (action.payload?.signalName || '信号'); if (action.actionName === 'ASSIGN') return '赋值 ' + (action.payload?.target || '变量'); return action.actionName }
-function actionPayloadText(action) { return formatJson(action.payload || action.parameters || {}) }
-function updateActionPayload(action, value) { try { action.payload = value?.trim() ? JSON.parse(value) : {} } catch { action.payload = { raw: value } } }
+function describeAction(action) {
+  if (!action?.actionName) return ''
+  if (action.actionName === 'SEND') {
+    const interfaceName = action.payload?.interfaceName || '接口'
+    const signalName = action.payload?.signalName || '信号'
+    const verb = interfaceName === 'Interface_adapter_out' ? '下发' : '输出'
+    return verb + ' ' + interfaceName + ' / ' + signalName
+  }
+  if (action.actionName === 'ASSIGN') return '更新 ' + (action.payload?.target || '状态变量')
+  return action.actionName
+}
+
 function valueKindLabel(value) { return value === 'DISCRETE' ? '离散值' : '连续值' }
 function directionLabel(value) { return value === 'IN' ? '输入' : '输出' }
 function formatTime(value) { return value ? String(value).replace('T', ' ') : '-' }
@@ -1587,18 +1828,62 @@ function cleanCapabilitiesForExport(rows) {
 
 function cleanAdapterContract(contract, attrNameByKey = new Map()) {
   const source = normalizeAdapterContract(contract)
-  return { config: { protocol: source.config.protocol || 'MQTT' }, commands: asArray(source.commands).map(command => ({ commandName: stringValue(command.commandName), commandParameters: asArray(command.commandParameters).map(param => ({ paramName: stringValue(param.paramName), dataType: normalizeDataType(param.dataType, 'DOUBLE', adapterDataTypes) })).filter(param => param.paramName) })).filter(command => command.commandName), telemetry: { adapterAttributes: asArray(source.telemetry.adapterAttributes).map(attr => ({ name: stringValue(attr.name), dataType: normalizeDataType(attr.dataType, 'DOUBLE', adapterDataTypes), description: stringValue(attr.description) })).filter(attr => attr.name), attributesMapping: asArray(source.telemetry.attributesMapping).map(mapping => ({ adapterAttrName: stringValue(mapping.adapterAttrName), modelAttributeName: attrNameByKey.get(mapping.modelAttributeKey) || stringValue(mapping.modelAttributeName) })).filter(mapping => mapping.adapterAttrName && mapping.modelAttributeName) }, events: asArray(source.events).map(event => ({ eventName: stringValue(event.eventName), description: stringValue(event.description) })).filter(event => event.eventName) }
+
+  const cmdEvents = []
+  const opEvents = []
+
+  if (source.events && typeof source.events === 'object' && !Array.isArray(source.events)) {
+    asArray(source.events.cmdEvents).forEach(event => {
+      cmdEvents.push({ eventName: stringValue(event.eventName), description: stringValue(event.description) })
+    })
+    asArray(source.events.opEvents).forEach(event => {
+      opEvents.push({ eventName: stringValue(event.eventName), description: stringValue(event.description) })
+    })
+  } else {
+    asArray(source.events).forEach(event => {
+      const row = { eventName: stringValue(event.eventName), description: stringValue(event.description) }
+      if (event.eventType === 'CMD' || event.eventName.startsWith('COMMAND_')) {
+        cmdEvents.push(row)
+      } else {
+        opEvents.push(row)
+      }
+    })
+  }
+
+  return {
+    config: { protocol: source.config.protocol || 'MQTT', adapterName: stringValue(source.config.adapterName), templateName: stringValue(source.config.templateName) },
+    commands: asArray(source.commands).map(command => ({
+      commandName: stringValue(command.commandName),
+      description: stringValue(command.description),
+      commandParameters: asArray(command.commandParameters)
+        .filter(param => param.hidden !== true) // Filter out hidden parameters
+        .map(param => ({
+          paramName: stringValue(param.paramName),
+          dataType: normalizeDataType(param.dataType, 'DOUBLE', adapterDataTypes),
+          description: stringValue(param.description)
+        })).filter(param => param.paramName)
+    })).filter(command => command.commandName),
+    telemetry: {
+      adapterAttributes: asArray(source.telemetry.adapterAttributes).map(attr => ({ name: stringValue(attr.name), dataType: normalizeDataType(attr.dataType, 'DOUBLE', adapterDataTypes), description: stringValue(attr.description) })).filter(attr => attr.name),
+      attributesMapping: asArray(source.telemetry.attributesMapping).map(mapping => ({ adapterAttrName: stringValue(mapping.adapterAttrName), modelAttributeName: attrNameByKey.get(mapping.modelAttributeKey) || stringValue(mapping.modelAttributeName) })).filter(mapping => mapping.adapterAttrName && mapping.modelAttributeName)
+    },
+    events: {
+      cmdEvents: cmdEvents.filter(e => e.eventName),
+      opEvents: opEvents.filter(e => e.eventName)
+    }
+  }
 }
 
 function cleanPortsForExport(rows) { return asArray(rows).map(item => ({ portName: stringValue(item.portName), direction: item.direction || 'OUT', bindingAttrName: stringValue(item.bindingAttrName) })).filter(item => item.portName && item.bindingAttrName) }
 function cleanIntrinsicConstraintsForExport(rows) { return asArray(rows).map(item => ({ objectAttributeName: stringValue(item.objectAttributeName), operator: normalizeOperator(item.operator), boundaryValue: parseBoundaryValue(item.boundaryValue), violationStateName: stringValue(item.violationStateName) })).filter(item => item.objectAttributeName && item.operator && item.violationStateName) }
 function cleanInterfaces(rows) { return asArray(rows).map(item => ({ name: stringValue(item.name), direction: item.direction || 'IN', interfaceType: item.interfaceType || 'ADAPTER', allowedSignals: asArray(item.allowedSignals).map(stringValue).filter(Boolean) })).filter(item => item.name) }
 function cleanActions(actions) { return asArray(actions).map(action => ({ actionName: stringValue(action.actionName), payload: normalizePayload(action.payload || action.parameters) })).filter(action => action.actionName) }
-function cleanStateSpace(space, fallback, kind = 'OP') { const source = normalizeStateSpace(space, fallback); const states = asArray(source.states).map(item => { const stateName = stringValue(item.stateName); const actions = cleanActions(item.onEntry); return { stateName, onEntry: actions.length ? actions : defaultEntryActions(kind, stateName) } }).filter(item => item.stateName); return { initialStateName: stringValue(source.initialStateName || states[0]?.stateName || fallback), states } }
-function cleanTransitions(rows) { return asArray(rows).filter(row => !isCommandLifecycleTransition(row)).map(item => ({ description: stringValue(item.description), fromStateName: stringValue(item.fromStateName), toStateName: stringValue(item.toStateName), trigger: { interfaceName: adapterInterfaceName(), signalName: stringValue(item.trigger?.signalName) }, actions: cleanActions(item.actions) })).filter(item => item.fromStateName && item.toStateName && item.trigger.signalName) }
+function cleanStateSpace(space, fallback, spaceType) { const source = normalizeStateSpace(space, fallback, spaceType); const states = asArray(source.states).map(item => ({ stateName: stringValue(item.stateName), onEntry: cleanActions(item.onEntry) })).filter(item => item.stateName); return { initialStateName: stringValue(source.initialStateName || states[0]?.stateName || fallback), states } }
+function cleanTransitions(rows) { return asArray(rows).filter(row => !isCommandLifecycleTransition(row)).map(item => ({ description: stringValue(item.description), fromStateName: stringValue(item.fromStateName), toStateName: stringValue(item.toStateName), trigger: { interfaceName: stringValue(item.trigger?.interfaceName || defaultAdapterInterfaceName()), signalName: stringValue(item.trigger?.signalName) }, actions: cleanActions(item.actions) })).filter(item => item.fromStateName && item.toStateName && item.trigger.interfaceName && item.trigger.signalName) }
 
 function normalizeAttributes(value) { return asArray(value).map(item => ({ _key: item._key || makeUiKey('attr'), name: stringValue(item.name), displayName: stringValue(item.displayName || item.name), valueKind: item.valueKind === 'DISCRETE' ? 'DISCRETE' : 'CONTINUOUS', dataType: normalizeDataType(item.dataType, 'DOUBLE', attributeDataTypes), unit: stringValue(item.unit) })) }
 
+// Normalize capabilities
 function normalizeCapabilities(value) {
   return asArray(value).map(item => {
     const params = asArray(item.parameters).map(param => ({ _key: param._key || makeUiKey('param'), name: stringValue(param.name), displayName: stringValue(param.displayName || param.name), dataType: normalizeDataType(param.dataType, 'DOUBLE', attributeDataTypes) }))
@@ -1646,17 +1931,76 @@ function normalizeFunctionMappings(value) {
 function normalizeAdapterContract(value, attributes = []) {
   const contract = value || {}
   const telemetry = contract.telemetry || {}
-  return { config: { protocol: contract.config?.protocol || contract.protocol || 'MQTT' }, commands: asArray(contract.commands).map(command => ({ _key: command._key || makeUiKey('cmd'), commandName: stringValue(command.commandName || command.name), commandParameters: asArray(command.commandParameters || command.parameters).map(param => ({ _key: param._key || makeUiKey('cmd_param'), paramName: stringValue(param.paramName || param.name), dataType: normalizeDataType(param.dataType || param.type, 'DOUBLE', adapterDataTypes) })) })), telemetry: { adapterAttributes: asArray(telemetry.adapterAttributes).map(attr => ({ _key: attr._key || makeUiKey('adapter_attr'), name: stringValue(attr.name), dataType: normalizeDataType(attr.dataType || attr.type, 'DOUBLE', adapterDataTypes), description: stringValue(attr.description) })), attributesMapping: asArray(telemetry.attributesMapping).map(mapping => ({ _key: mapping._key || makeUiKey('attr_map'), adapterAttrName: stringValue(mapping.adapterAttrName), modelAttributeName: stringValue(mapping.modelAttributeName), modelAttributeKey: mapping.modelAttributeKey || findKeyByName(attributes, mapping.modelAttributeName) })) }, events: asArray(contract.events).map(event => ({ _key: event._key || makeUiKey('event'), eventName: stringValue(event.eventName || event.name), description: stringValue(event.description) })) }
+
+  let eventsList = []
+  if (contract.events && typeof contract.events === 'object' && !Array.isArray(contract.events)) {
+    asArray(contract.events.cmdEvents).forEach(event => {
+      eventsList.push({
+        _key: event._key || makeUiKey('event'),
+        eventName: stringValue(event.eventName || event.name),
+        description: stringValue(event.description),
+        eventType: 'CMD'
+      })
+    })
+    asArray(contract.events.opEvents).forEach(event => {
+      eventsList.push({
+        _key: event._key || makeUiKey('event'),
+        eventName: stringValue(event.eventName || event.name),
+        description: stringValue(event.description),
+        eventType: 'OP'
+      })
+    })
+  } else {
+    eventsList = asArray(contract.events || contract.adapterEvents).map(event => ({
+      _key: event._key || makeUiKey('event'),
+      eventName: stringValue(event.eventName || event.name),
+      description: stringValue(event.description),
+      eventType: event.eventType || (event.eventName?.startsWith('COMMAND_') ? 'CMD' : 'OP')
+    }))
+  }
+
+  return {
+    config: { protocol: contract.config?.protocol || contract.protocol || 'MQTT', adapterName: stringValue(contract.config?.adapterName || contract.adapterName), templateName: stringValue(contract.config?.templateName || contract.templateName) },
+    commands: asArray(contract.commands).map(command => ({
+      _key: command._key || makeUiKey('cmd'),
+      commandName: stringValue(command.commandName || command.name),
+      description: stringValue(command.description),
+      commandParameters: asArray(command.commandParameters || command.parameters).map(param => {
+        const row = { _key: param._key || makeUiKey('cmd_param'), paramName: stringValue(param.paramName || param.name), dataType: normalizeDataType(param.dataType || param.type, 'DOUBLE', adapterDataTypes), description: stringValue(param.description) }
+        if (param.hidden === true) {
+          row.hidden = true
+          row.sourceField = stringValue(param.sourceField)
+        }
+        return row
+      })
+    })),
+    telemetry: { adapterAttributes: asArray(telemetry.adapterAttributes).map(attr => ({ _key: attr._key || makeUiKey('adapter_attr'), name: stringValue(attr.name), dataType: normalizeDataType(attr.dataType || attr.type, 'DOUBLE', adapterDataTypes), description: stringValue(attr.description) })), attributesMapping: asArray(telemetry.attributesMapping).map(mapping => ({ _key: mapping._key || makeUiKey('attr_map'), adapterAttrName: stringValue(mapping.adapterAttrName), modelAttributeName: stringValue(mapping.modelAttributeName), modelAttributeKey: mapping.modelAttributeKey || findKeyByName(attributes, mapping.modelAttributeName) })) },
+    events: eventsList
+  }
 }
 
 function normalizePorts(value, attributes = []) { return asArray(value).map(item => ({ _key: item._key || makeUiKey('port'), portName: stringValue(item.portName), displayName: stringValue(item.displayName || item.portName), direction: item.direction || 'OUT', bindingAttrName: stringValue(item.bindingAttrName), bindingAttrKey: item.bindingAttrKey || findKeyByName(attributes, item.bindingAttrName) })) }
 function normalizeIntrinsicConstraints(value, attributes = []) { return asArray(value).map(item => ({ _key: item._key || makeUiKey('constraint'), objectAttributeName: stringValue(item.objectAttributeName || item.targetAttr), objectAttributeKey: item.objectAttributeKey || findKeyByName(attributes, item.objectAttributeName || item.targetAttr), operator: normalizeOperator(item.operator), boundaryValue: firstDefined(item.boundaryValue, item.threshold, ''), violationStateName: stringValue(item.violationStateName || item.violationStateRef) })) }
 function normalizeInterfaces(value) { return asArray(value).map(item => ({ _key: item._key || makeUiKey('iface'), name: stringValue(item.name), direction: item.direction || 'IN', interfaceType: item.interfaceType || 'ADAPTER', allowedSignals: asArray(item.allowedSignals).map(stringValue).filter(Boolean) })) }
 
-function normalizeStateSpace(value, fallback) {
+function normalizeStateSpace(value, fallback, spaceType) {
   const source = value && typeof value === 'object' ? value : defaultStateSpace(fallback)
   const states = asArray(source.states).length ? asArray(source.states) : defaultStateSpace(fallback).states
-  return { initialStateName: stringValue(source.initialStateName || states[0]?.stateName || fallback), states: states.map(item => ({ _key: item._key || makeUiKey('state'), stateName: stringValue(item.stateName || item.name), onEntry: asArray(item.onEntry).map(action => ({ _key: action._key || makeUiKey('action'), actionName: stringValue(action.actionName), payload: normalizePayload(action.payload || action.parameters) })) })) }
+  return {
+    initialStateName: stringValue(source.initialStateName || states[0]?.stateName || fallback),
+    states: states.map(item => {
+      const onEntry = asArray(item.onEntry).map(action => ({
+        _key: action._key || makeUiKey('action'),
+        actionName: stringValue(action.actionName),
+        payload: normalizePayload(action.payload || action.parameters)
+      }))
+      return {
+        _key: item._key || makeUiKey('state'),
+        stateName: stringValue(item.stateName || item.name),
+        onEntry
+      }
+    })
+  }
 }
 
 function normalizeTransitions(value) { return asArray(value).map(item => ({ _key: item._key || makeUiKey('transition'), description: stringValue(item.description), fromStateName: stringValue(item.fromStateName), toStateName: stringValue(item.toStateName), trigger: { interfaceName: stringValue(item.trigger?.interfaceName || adapterInterfaceName()), signalName: stringValue(item.trigger?.signalName) }, actions: asArray(item.actions).map(action => ({ _key: action._key || makeUiKey('action'), actionName: stringValue(action.actionName), payload: normalizePayload(action.payload || action.parameters) })) })) }
@@ -1711,6 +2055,8 @@ onMounted(loadData)
 .editor-card-title :deep(.el-input) { flex: 1; min-width: 180px; }
 .nested-toolbar { justify-content: space-between; margin: 10px 0 8px; color: var(--color-text-sub); font-size: 12px; font-weight: 600; }
 .nested-table { background: #fff; }
+.compact-empty { display: flex; align-items: center; min-height: 34px; padding: 8px 12px; border: 1px dashed #d5dce8; border-radius: 6px; background: #f8fafc; color: #64748b; font-size: 13px; line-height: 1.4; }
+.block-empty { margin-top: 4px; }
 .inline-empty { margin-top: 8px; }
 .model-json-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; min-height: 0; }
 .json-panel { min-width: 0; border: 1px solid #dfe4ed; border-radius: 8px; padding: 12px; background: #fff; }
@@ -1726,16 +2072,117 @@ onMounted(loadData)
 .param-map-row { display: grid; grid-template-columns: minmax(150px, 1fr) 74px minmax(170px, 1fr) 34px; align-items: center; gap: 6px; padding: 6px; border: 1px solid transparent; border-radius: 6px; background: #f8fafc; }
 .param-map-row.invalid { border-color: #f4b4b4; background: #fff7f7; }
 .map-warning { grid-column: 1 / -1; color: #c2410c; font-size: 12px; line-height: 1.4; }
-.locked-heading { min-width: 0; }
+.locked-heading { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .locked-heading h3 { margin: 0; }
-.locked-section { background: #fafafa; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; }
-.locked-table :deep(.el-table__body-wrapper) { background: #fbfbfb; }
-.locked-action { color: #475569; font-size: 12px; }
+.locked-section { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; }
+.locked-table :deep(.el-table__body-wrapper) { background: #ffffff; }
+.locked-action { max-width: 100%; color: #475569; font-size: 12px; line-height: 1.45; display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; white-space: normal; }
 .locked-value { font-weight: 600; color: #334155; }
 .action-editor { display: flex; flex-direction: column; gap: 6px; }
-.action-row { display: grid; grid-template-columns: 112px minmax(160px, 1fr) 34px; align-items: center; gap: 6px; }
+.action-row { display: grid; grid-template-columns: 112px minmax(220px, 1fr) 34px; align-items: center; gap: 6px; }
 .action-toolbar { justify-content: flex-start; }
 .drawer-footer { justify-content: flex-end; }
+
+/* Premium Action & Parameter Mapping Styles */
+.action-visual-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  padding: 2px 6px;
+  margin: 2px 0;
+  max-width: 100%;
+}
+.inline-action {
+  margin-left: 6px !important;
+  vertical-align: middle;
+}
+.compact-payload {
+  font-family: Consolas, Monaco, Lucida Console, monospace;
+  font-size: 11px;
+  color: #0f172a;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 3px;
+  padding: 1px 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 240px;
+}
+.actions-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+  max-width: 100%;
+}
+.locked-action-container {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+}
+.lock-tag-flex {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 24px;
+  line-height: 22px;
+}
+.lock-tag-flex :deep(.el-icon) {
+  margin-right: 2px;
+  font-size: 12px;
+}
+.param-map-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  margin-top: 4px;
+  padding: 2px 4px;
+}
+.no-mapping-placeholder {
+  font-size: 12px;
+  color: var(--el-text-color-placeholder);
+  font-style: italic;
+  display: inline-flex;
+  align-items: center;
+}
+.add-mapping-btn {
+  align-self: flex-end;
+}
+
 @media (max-width: 1120px) { .content-shell { grid-template-columns: 240px minmax(0, 1fr); } .model-json-grid { grid-template-columns: 1fr; } }
 @media (max-width: 820px) { .device-model-page { padding: 10px; } .page-header, .detail-head { align-items: stretch; flex-direction: column; } .content-shell { grid-template-columns: 1fr; } .model-list-panel { min-height: 260px; } .drawer-tabs :deep(.el-tabs__header) { width: 92px; } .param-map-row, .action-row { grid-template-columns: 1fr; } .summary-card-body { padding-left: 0; } }
+
+/* 严肃的函数式动作展示与编辑器排版 */
+.serious-actions-container {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: flex-start;
+}
+.serious-action-wrapper {
+  display: inline-flex;
+  align-items: center;
+}
+.serious-action-tag {
+  font-weight: 500;
+  color: #334155;
+  background-color: #ffffff;
+  border-color: #cbd5e1;
+}
+.serious-action-editor {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.action-editor-label { color: #64748b; font-size: 12px; }
+.no-action-cell { display: inline-flex; align-items: center; gap: 8px; color: #64748b; }
+.compact-action-btn { padding: 4px 8px; }
 </style>

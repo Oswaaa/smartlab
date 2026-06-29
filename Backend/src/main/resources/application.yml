@@ -4,9 +4,9 @@ server:
 spring:
   datasource:
     driver-class-name: org.postgresql.Driver
-    url: ${SMARTLAB_DB_URL:jdbc:postgresql://localhost:5432/lab}
-    username: ${SMARTLAB_DB_USERNAME:postgres}
-    password: ${SMARTLAB_DB_PASSWORD:}
+    url: jdbc:postgresql://101.42.50.179:5432/lab
+    username: user
+    password: 123456
     hikari:
       maximum-pool-size: 10
       minimum-idle: 5
@@ -31,19 +31,16 @@ smartlab:
 
 # MQTT Broker Config
 mqtt:
-  broker: ${SMARTLAB_MQTT_BROKER:tcp://localhost:1883}
-  client-id: ${SMARTLAB_MQTT_CLIENT_ID:smartlab_backend_2.0}
-  username: ${SMARTLAB_MQTT_USERNAME:}
-  password: ${SMARTLAB_MQTT_PASSWORD:}
-  subscribe-topics:
-    - smartlab/v1/+/+/+/+/+/evt
-    - smartlab/v1/+/+/+/+/+/status
-    - smartlab/v1/+/+/+/+/+/telemetry
-    - smartlab/v1/+/+/+/+/+/alarm
-    - smartlab/v1/+/+/+/+/+/heartbeat
-    - smartlab/v1/+/+/gateway/+/heartbeat
-    - smartlab/v1/+/+/gateway/+/agent/+/status
-    - smartlab/v1/+/+/gateway/+/agent/+/event
+  broker: tcp://127.0.0.1:1883
+  client-id: smartlab_backend_2.0
+  username: lab_system
+  password: 123456
+  auto-start: true
+  register-topic: smartlab/adapter/register
+  adapter-heartbeat-topic-pattern: smartlab/adapter/{adapterName}/heartbeat
+  device-telemetry-topic-pattern: smartlab/adapter/{adapterName}/{devicePoint}/telemetry
+  device-event-topic-pattern: smartlab/adapter/{adapterName}/{devicePoint}/event
+  reconnect-delay-ms: 15000
 
 logging:
   level:

@@ -1,5 +1,7 @@
 package com.smartlab.management.controller;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.management.dto.ApiResponse;
 import com.smartlab.management.dto.PageResult;
 import com.smartlab.management.entity.AdapterIndex;
@@ -53,6 +55,59 @@ public class AdapterIndexController {
     public ApiResponse<AdapterIndex> save(@RequestBody AdapterIndex entity) {
         try {
             return ApiResponse.ok(service.save(entity));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    /**
+     * 解析 AdapterRegisterRequest，但不写入 ADAPTER_INDEX。
+     */
+    @PostMapping("/parse-register")
+    public ApiResponse<ObjectNode> parseRegister(@RequestBody Map<String, Object> payload) {
+        try {
+            return ApiResponse.ok(service.previewRegisterPayload(payload));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    /**
+     * 保存 AdapterRegisterRequest 到 ADAPTER_INDEX。
+     */
+    @PostMapping("/register")
+    public ApiResponse<AdapterIndex> register(@RequestBody Map<String, Object> payload) {
+        try {
+            return ApiResponse.ok(service.register(payload));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    @GetMapping("/{adapterName}/templates")
+    public ApiResponse<JsonNode> templates(@PathVariable String adapterName) {
+        try {
+            return ApiResponse.ok(service.listTemplates(adapterName));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    @GetMapping("/{adapterName}/device-points")
+    public ApiResponse<JsonNode> devicePoints(@PathVariable String adapterName,
+                                             @RequestParam(required = false) String templateName) {
+        try {
+            return ApiResponse.ok(service.listDevicePoints(adapterName, templateName));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    @GetMapping("/{adapterName}/adapter-contract")
+    public ApiResponse<ObjectNode> adapterContract(@PathVariable String adapterName,
+                                                   @RequestParam String templateName) {
+        try {
+            return ApiResponse.ok(service.buildAdapterContract(adapterName, templateName));
         } catch (Exception e) {
             return ApiResponse.fail(e.getMessage());
         }

@@ -60,5 +60,17 @@ public class DeviceInstances {
     @TableField("create_time")
     private LocalDateTime createTime;
 
+    public JsonNode getCommConfig() {
+        return instanceConfig;
+    }
+
+    public void setCommConfig(JsonNode commConfig) {
+        this.instanceConfig = commConfig;
+    }
+
+    public Boolean getIsOnline() {
+        return null;
+    }
+
 }
 

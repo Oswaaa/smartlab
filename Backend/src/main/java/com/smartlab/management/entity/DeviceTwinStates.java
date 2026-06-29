@@ -37,5 +37,17 @@ public class DeviceTwinStates {
     @TableField("update_time")
     private LocalDateTime updateTime;
 
+    public String getCurrentCommandState() {
+        return currentCmdState;
+    }
+
+    public String getCurrentOperationState() {
+        return currentOpState;
+    }
+
+    public JsonNode getLatestAttributes() {
+        return currentAttr;
+    }
+
 }
 

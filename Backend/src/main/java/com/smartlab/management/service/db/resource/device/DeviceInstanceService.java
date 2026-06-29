@@ -3,8 +3,9 @@ package com.smartlab.management.service.db.resource.device;
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.global.util.JsonNodeSupport;
-import com.smartlab.management.dto.AdapterRouteDTO;
 import com.smartlab.management.dto.PageResult;
 import com.smartlab.management.entity.DeviceInstances;
 import com.smartlab.management.entity.DeviceTwinStates;
@@ -12,12 +13,11 @@ import com.smartlab.management.mapper.DeviceInstancesMapper;
 import com.smartlab.management.mapper.DeviceTwinStatesMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import com.smartlab.management.service.db.resource.data.DataIndexService;
+import com.smartlab.management.service.protocol.DeviceProtocolMapperService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
-import java.util.Collections;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -25,8 +25,7 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * 设备实例表服务。
- * 对应 DEVICE_INSTANCES 表，并在新增实例时初始化 DEVICE_TWIN_STATES 状态快照。
+ * 设备实例表服务，只负责实例持久化和实例快照基础读写。
  */
 @Service
 public class DeviceInstanceService extends ManagementCrudService<DeviceInstances> {
@@ -34,15 +33,17 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
     private final DeviceInstancesMapper mapper;
     private final DeviceTwinStatesMapper twinStatesMapper;
     private final DataIndexService dataIndexService;
-    private final ConcurrentHashMap<String, AdapterRouteDTO> adapterRouteTable = new ConcurrentHashMap<>();
+    private final DeviceProtocolMapperService protocolMapperService;
 
     public DeviceInstanceService(DeviceInstancesMapper mapper,
                                  DeviceTwinStatesMapper twinStatesMapper,
-                                 DataIndexService dataIndexService) {
+                                 DataIndexService dataIndexService,
+                                 DeviceProtocolMapperService protocolMapperService) {
         super(mapper);
         this.mapper = mapper;
         this.twinStatesMapper = twinStatesMapper;
         this.dataIndexService = dataIndexService;
+        this.protocolMapperService = protocolMapperService;
     }
 
     @Override
@@ -108,17 +109,27 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
         instance.setBoundDevicePoint(stringValue(first(payload, "boundDevicePoint", "devicePoint")));
         instance.setPicture(stringValue(payload.get("picture")));
 
-        Object config = first(payload, "instanceConfig", "commConfig");
-        if (config == null) {
-            config = new HashMap<String, Object>();
+        ObjectNode configNode = toObjectNode(first(payload, "instanceConfig", "commConfig"));
+        if (instance.getBoundAdapterName() == null || instance.getBoundAdapterName().isBlank()) {
+            instance.setBoundAdapterName(text(configNode, "boundAdapterName", text(configNode, "adapterName", null)));
         }
-        if (config instanceof Map<?, ?> configMap && payload.containsKey("localConstraints")) {
-            Map<String, Object> merged = new HashMap<>();
-            configMap.forEach((key, value) -> merged.put(String.valueOf(key), value));
-            merged.put("constraints", payload.get("localConstraints"));
-            config = merged;
+        if (instance.getBoundDevicePoint() == null || instance.getBoundDevicePoint().isBlank()) {
+            instance.setBoundDevicePoint(text(configNode, "boundDevicePoint", text(configNode, "devicePoint", null)));
         }
-        instance.setInstanceConfig(JsonNodeSupport.toNode(config));
+        if (payload.containsKey("localConstraints")) {
+            configNode.set("constraints", JsonNodeSupport.toNode(payload.get("localConstraints")));
+        }
+        if (hasAdapterBinding(instance)) {
+            configNode.put("boundAdapterName", instance.getBoundAdapterName());
+            configNode.put("boundDevicePoint", instance.getBoundDevicePoint());
+            configNode.set("adapterBinding", protocolMapperService.buildAdapterBinding(
+                    instance.getDeviceModelId(),
+                    instance.getBoundAdapterName(),
+                    instance.getBoundDevicePoint()
+            ));
+        }
+        instance.setInstanceConfig(configNode);
+
         if (instance.getId() == null) {
             instance.setCreateTime(LocalDateTime.now());
             mapper.insert(instance);
@@ -131,7 +142,7 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
         } else {
             mapper.updateById(instance);
         }
-        refreshAdapterRouteTable();
+        protocolMapperService.refreshAdapterRouteTable();
         return instance;
     }
 
@@ -139,44 +150,11 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
         Long instanceId = parseId(id);
         long dataSetCount = dataIndexService.countByDeviceInstance(instanceId);
         if (dataSetCount > 0) {
-            throw new IllegalStateException("该设备实例已绑定 " + dataSetCount + " 个数据集，不能硬删除。请保留历史数据链路，后续可改为停用/归档。");
+            throw new IllegalStateException("该设备实例已绑定 " + dataSetCount + " 个数据集，不能硬删除。请保留历史数据链路，后续可改为停用/归档");
         }
         mapper.deleteById(instanceId);
         twinStatesMapper.delete(Wrappers.<DeviceTwinStates>lambdaQuery().eq(DeviceTwinStates::getInstanceId, instanceId));
-        refreshAdapterRouteTable();
-    }
-
-    /**
-     * 刷新内存中的 Adapter 路由表。
-     */
-    public Map<String, AdapterRouteDTO> refreshAdapterRouteTable() {
-        adapterRouteTable.clear();
-        List<DeviceInstances> instances = mapper.selectList(Wrappers.<DeviceInstances>lambdaQuery()
-                .isNotNull(DeviceInstances::getBoundAdapterName)
-                .isNotNull(DeviceInstances::getBoundDevicePoint)
-                .orderByAsc(DeviceInstances::getId));
-        for (DeviceInstances instance : instances) {
-            String key = routeKey(instance.getBoundAdapterName(), instance.getBoundDevicePoint());
-            adapterRouteTable.put(key, toRoute(instance));
-        }
-        return getAdapterRouteTable();
-    }
-
-    /**
-     * 查询当前内存中的 Adapter 路由表。
-     */
-    public Map<String, AdapterRouteDTO> getAdapterRouteTable() {
-        return Collections.unmodifiableMap(new HashMap<>(adapterRouteTable));
-    }
-
-    /**
-     * 根据 Adapter 标识和设备点字段查询绑定的设备实例。
-     */
-    public AdapterRouteDTO resolveAdapterRoute(String adapterName, String devicePoint) {
-        if (adapterRouteTable.isEmpty()) {
-            refreshAdapterRouteTable();
-        }
-        return adapterRouteTable.get(routeKey(adapterName, devicePoint));
+        protocolMapperService.refreshAdapterRouteTable();
     }
 
     public List<DeviceTwinStates> listSnapshots() {
@@ -194,33 +172,17 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
         return twinStatesMapper.selectOne(Wrappers.<DeviceTwinStates>lambdaQuery().eq(DeviceTwinStates::getInstanceId, id));
     }
 
-    public void control(String id, String commandId, Map<String, Object> parameters) {
-        if (commandId == null || commandId.isBlank()) {
-            throw new IllegalArgumentException("commandId 不能为空");
-        }
-        DeviceTwinStates state = getSnapshot(id);
-        if (state == null) {
-            throw new IllegalStateException("设备状态不存在，无法发送指令");
-        }
-        state.setCurrentCmdState("PENDING");
-        state.setUpdateTime(LocalDateTime.now());
-        twinStatesMapper.updateById(state);
-    }
-
     private void createDefaultTwinState(Long instanceId) {
         DeviceTwinStates state = new DeviceTwinStates();
         state.setInstanceId(instanceId);
-        state.setCurrentOpState("Idle");
-        state.setCurrentCmdState("PENDING");
+        state.setCurrentOpState("IDLE");
+        state.setCurrentCmdState("IDLE");
         state.setOnlineStatus("UNKNOWN");
         state.setCurrentAttr(JsonNodeSupport.objectNode());
         state.setUpdateTime(LocalDateTime.now());
         twinStatesMapper.insert(state);
     }
 
-    /**
-     * 查询某个设备模型下的实例 ID 集合，用于按模型统计在线数量。
-     */
     private Set<Long> loadInstanceIds(Long modelId) {
         Set<Long> result = new HashSet<>();
         mapper.selectList(Wrappers.<DeviceInstances>lambdaQuery()
@@ -230,27 +192,18 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
         return result;
     }
 
-    /**
-     * 将设备实例转换为 Adapter 路由表条目。
-     */
-    private AdapterRouteDTO toRoute(DeviceInstances instance) {
-        AdapterRouteDTO route = new AdapterRouteDTO();
-        route.setDeviceInstanceId(instance.getId());
-        route.setDeviceModelId(instance.getDeviceModelId());
-        route.setInstanceName(instance.getInstanceName());
-        route.setBoundAdapterName(instance.getBoundAdapterName());
-        route.setBoundDevicePoint(instance.getBoundDevicePoint());
-        return route;
+    private boolean hasAdapterBinding(DeviceInstances instance) {
+        return instance != null
+                && instance.getBoundAdapterName() != null && !instance.getBoundAdapterName().isBlank()
+                && instance.getBoundDevicePoint() != null && !instance.getBoundDevicePoint().isBlank();
     }
 
-    /**
-     * 生成 Adapter 路由键。
-     */
-    private String routeKey(String adapterName, String devicePoint) {
-        if (adapterName == null || adapterName.isBlank() || devicePoint == null || devicePoint.isBlank()) {
-            throw new IllegalArgumentException("Adapter 标识和设备点字段不能为空");
+    private ObjectNode toObjectNode(Object value) {
+        JsonNode node = JsonNodeSupport.toNode(value);
+        if (node != null && node.isObject()) {
+            return (ObjectNode) node;
         }
-        return adapterName.trim() + "::" + devicePoint.trim();
+        return JsonNodeSupport.objectNode();
     }
 
     private Object first(Map<String, Object> payload, String... keys) {
@@ -262,9 +215,14 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
         return null;
     }
 
+    private String text(JsonNode node, String key, String fallback) {
+        if (node == null || !node.hasNonNull(key)) {
+            return fallback;
+        }
+        return node.path(key).asText(fallback);
+    }
+
     private String stringValue(Object value) {
         return value == null ? null : String.valueOf(value);
     }
 }
-
-

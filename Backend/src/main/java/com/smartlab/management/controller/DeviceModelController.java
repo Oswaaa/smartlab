@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.management.dto.ApiResponse;
 import com.smartlab.management.dto.PageResult;
+import com.smartlab.management.dto.DeviceModelSaveDTO;
+import com.smartlab.management.dto.DeviceStateMachineSaveDTO;
 import com.smartlab.management.entity.DeviceModels;
 import com.smartlab.management.service.db.resource.device.DeviceModelService;
 import org.springframework.web.bind.annotation.*;
@@ -40,7 +42,7 @@ public class DeviceModelController {
     }
 
     @PostMapping("/model/save")
-    public ApiResponse<Map<String, String>> save(@RequestBody Map<String, Object> payload) {
+    public ApiResponse<Map<String, String>> save(@RequestBody DeviceModelSaveDTO payload) {
         try {
             DeviceModels model = deviceModelService.savePayload(payload);
             return ApiResponse.ok(Map.of("modelId", String.valueOf(model.getId())));
@@ -65,7 +67,7 @@ public class DeviceModelController {
     }
 
     @PostMapping("/model/state-machine/save")
-    public ApiResponse<Map<String, String>> saveStateMachine(@RequestBody Map<String, Object> payload) {
+    public ApiResponse<Map<String, String>> saveStateMachine(@RequestBody DeviceStateMachineSaveDTO payload) {
         try {
             String stateMachineId = deviceModelService.saveStateMachine(payload);
             return ApiResponse.ok(Map.of("stateMachineId", stateMachineId));

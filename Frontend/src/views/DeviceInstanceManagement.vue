@@ -78,9 +78,9 @@
               </div>
               <div class="line"><span>实例编号</span><span class="mono">{{ instance.instanceId }}</span></div>
               <div class="line"><span>模型</span><span>{{ getModelName(instance.modelId) }}</span></div>
-              <div class="line"><span>设备SN</span><span class="mono">{{ instance.commConfig?.deviceSn || '-' }}</span></div>
-              <div class="line"><span>实验室</span><span class="mono">{{ instance.commConfig?.labId || 'lab1' }}</span></div>
-              <div class="line"><span>MQTT主题</span><span class="mono">{{ instance.commConfig?.mqttTopic || '-' }}</span></div>
+              <div class="line"><span>Adapter</span><span class="mono">{{ instance.boundAdapterName || instance.commConfig?.boundAdapterName || '-' }}</span></div>
+              <div class="line"><span>设备点</span><span class="mono">{{ instance.boundDevicePoint || instance.commConfig?.boundDevicePoint || '-' }}</span></div>
+              <div class="line"><span>命令主题</span><span class="mono">{{ instance.commConfig?.mqttTopic || commandTopicPreview(instance.boundAdapterName, instance.boundDevicePoint) || '-' }}</span></div>
             </div>
           </div>
           <div v-else class="empty-wrap">
@@ -134,11 +134,18 @@
               <el-form-item label="设备类型">
                 <el-input v-model="activeInstance.commConfig.deviceType" />
               </el-form-item>
-              <el-form-item label="设备SN">
-                <el-input v-model="activeInstance.commConfig.deviceSn" />
+              <el-form-item label="Adapter">
+                <el-select v-model="activeInstance.boundAdapterName" style="width: 100%" filterable @change="onAdapterChangeInDrawer">
+                  <el-option v-for="adapter in adapterOptions" :key="adapter.adapterName" :label="adapter.adapterName" :value="adapter.adapterName" />
+                </el-select>
               </el-form-item>
-              <el-form-item label="MQTT主题">
-                <el-input v-model="activeInstance.commConfig.mqttTopic" />
+              <el-form-item label="设备点">
+                <el-select v-model="activeInstance.boundDevicePoint" style="width: 100%" filterable :disabled="!activeInstance.boundAdapterName">
+                  <el-option v-for="point in drawerDevicePointOptions" :key="point.devicePoint" :label="devicePointLabel(point)" :value="point.devicePoint" />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="命令主题">
+                <el-input :model-value="commandTopicPreview(activeInstance.boundAdapterName, activeInstance.boundDevicePoint)" disabled />
               </el-form-item>
               <el-form-item label="在线状态">
                 <el-switch v-model="activeInstance.isOnline" active-text="在线" inactive-text="离线" />
@@ -297,11 +304,15 @@
         <el-form-item label="设备类型">
           <el-input v-model="createForm.deviceType" />
         </el-form-item>
-        <el-form-item label="设备SN" prop="deviceSn" v-if="showDeviceSnInput">
-          <el-input v-model="createForm.deviceSn" :placeholder="deviceSnPlaceholder" />
+        <el-form-item label="Adapter" prop="boundAdapterName">
+          <el-select v-model="createForm.boundAdapterName" style="width: 100%" filterable :loading="adapterLoading" @change="onAdapterChangeInCreate">
+            <el-option v-for="adapter in adapterOptions" :key="adapter.adapterName" :label="adapter.adapterName" :value="adapter.adapterName" />
+          </el-select>
         </el-form-item>
-        <el-form-item label="设备SN" v-else>
-          <el-input v-model="createForm.deviceSn" placeholder="例如: plc0001" />
+        <el-form-item label="设备点" prop="boundDevicePoint">
+          <el-select v-model="createForm.boundDevicePoint" style="width: 100%" filterable :loading="pointsLoading" :disabled="!createForm.boundAdapterName" @change="updateCreateTopicPreview">
+            <el-option v-for="point in createDevicePointOptions" :key="point.devicePoint" :label="devicePointLabel(point)" :value="point.devicePoint" />
+          </el-select>
         </el-form-item>
         <el-form-item label="命令主题预览">
           <el-input v-model="createForm.mqttTopicPreview" disabled />
@@ -328,16 +339,31 @@ interface DeviceModel {
   capabilitySpec: any
 }
 
+interface AdapterOption {
+  adapterName: string
+  parsedConfig?: any
+}
+
+interface AdapterDevicePoint {
+  devicePoint: string
+  templateName: string
+  description?: string
+}
+
 interface DeviceInstance {
   instanceId: string
   modelId: string
   stateMachineId: string
   instanceName: string
+  boundAdapterName?: string
+  boundDevicePoint?: string
   commConfig: {
     deviceSn?: string
     tenantId?: string
     labId?: string
     deviceType?: string
+    boundAdapterName?: string
+    boundDevicePoint?: string
     mqttTopic?: string
     constraints?: Array<{ targetAttr: string; operator: string; threshold: string }>
   }
@@ -354,6 +380,9 @@ interface DeviceSnapshot {
 const models = ref<DeviceModel[]>([])
 const modelOptions = ref<DeviceModel[]>([])
 const instances = ref<DeviceInstance[]>([])
+const adapterOptions = ref<AdapterOption[]>([])
+const createDevicePointOptions = ref<AdapterDevicePoint[]>([])
+const drawerDevicePointOptions = ref<AdapterDevicePoint[]>([])
 const selectedModelId = ref('')
 const instanceKeyword = ref('')
 const loading = ref(false)
@@ -362,6 +391,8 @@ const modelSearchLoading = ref(false)
 const saving = ref(false)
 const creating = ref(false)
 const sendingControl = ref(false)
+const adapterLoading = ref(false)
+const pointsLoading = ref(false)
 
 const drawerVisible = ref(false)
 const activeInstance = ref<DeviceInstance | null>(null)
@@ -391,13 +422,16 @@ const createForm = ref({
   labId: 'lab1',
   deviceType: '',
   deviceSn: '',
+  boundAdapterName: '',
+  boundDevicePoint: '',
   mqttTopicPreview: ''
 })
 
 const createRules = ref<FormRules>({
   instanceName: [{ required: true, message: '请输入设备名称', trigger: 'blur' }],
   modelId: [{ required: true, message: '请选择设备模型', trigger: 'change' }],
-  deviceSn: [{ required: true, message: '请输入设备SN', trigger: 'blur' }]
+  boundAdapterName: [{ required: true, message: '请选择 Adapter', trigger: 'change' }],
+  boundDevicePoint: [{ required: true, message: '请选择设备点', trigger: 'change' }]
 })
 
 const selectedModelName = computed(() => {
@@ -420,7 +454,7 @@ const selectedCreateModel = computed(() => findModelById(createForm.value.modelI
 const activeInstanceModel = computed(() => activeInstance.value ? findModelById(activeInstance.value.modelId) : null)
 const activeInstanceCommands = computed(() => {
   const commands = activeInstanceModel.value?.capabilitySpec?.adapterContract?.commands
-  return Array.isArray(commands) ? commands : []
+  return Array.isArray(commands) ? commands.map((cmd: any) => ({ ...cmd, commandId: cmd.commandId || cmd.commandName || cmd.name })) : []
 })
 
 const mqttTemplate = computed(() => {
@@ -452,7 +486,7 @@ const deviceSnPlaceholder = computed(() => {
 const loadData = async () => {
   modelsLoading.value = true
   try {
-    await Promise.all([loadSidebarModels(), loadModelOptions()])
+    await Promise.all([loadSidebarModels(), loadModelOptions(), loadAdapters()])
     await loadInstances()
   } catch (err: any) {
     ElMessage.error(err.response?.data?.message || '加载设备数据失败')
@@ -469,7 +503,7 @@ const loadSidebarModels = async () => {
     }
   })
   if (res.data?.success) {
-    models.value = res.data.data?.records || []
+    models.value = (res.data.data?.records || []).map(normalizeModel)
   }
 }
 
@@ -482,11 +516,42 @@ const loadModelOptions = async (keyword = '') => {
     }
   })
   if (res.data?.success) {
-    const records = res.data.data?.records || []
+    const records = (res.data.data?.records || []).map(normalizeModel)
     const selected = findModelById(createForm.value.modelId)
     modelOptions.value = selected && !records.some((v: DeviceModel) => v.modelId === selected.modelId)
       ? [selected, ...records]
       : records
+  }
+}
+
+const loadAdapters = async () => {
+  adapterLoading.value = true
+  try {
+    const res = await axios.get('/api/adapter/index/list')
+    if (res.data?.success) {
+      adapterOptions.value = res.data.data || []
+    }
+  } finally {
+    adapterLoading.value = false
+  }
+}
+
+const loadDevicePoints = async (adapterName: string, target: 'create' | 'drawer' = 'create') => {
+  const listRef = target === 'drawer' ? drawerDevicePointOptions : createDevicePointOptions
+  listRef.value = []
+  if (!adapterName) return
+  pointsLoading.value = true
+  try {
+    const model = target === 'drawer' ? activeInstanceModel.value : selectedCreateModel.value
+    const templateName = model?.capabilitySpec?.adapterContract?.config?.templateName || undefined
+    const res = await axios.get(`/api/adapter/index/${encodeURIComponent(adapterName)}/device-points`, { params: { templateName } })
+    if (res.data?.success) {
+      listRef.value = res.data.data || []
+    }
+  } catch (err: any) {
+    ElMessage.error(err.response?.data?.message || '加载 Adapter 设备点失败')
+  } finally {
+    pointsLoading.value = false
   }
 }
 
@@ -526,7 +591,7 @@ const loadInstances = async () => {
     if (seq !== instanceLoadSeq) return
     if (instancesRes.data?.success) {
       const pageData = instancesRes.data.data || {}
-      instances.value = pageData.records || []
+      instances.value = (pageData.records || []).map(normalizeInstance)
       instanceTotal.value = pageData.total || 0
     }
     if (summaryRes.data?.success) {
@@ -575,8 +640,8 @@ const getModelAttributes = (modelId: string) => {
 
 const getAttributeName = (key: string) => {
   if (!activeInstance.value) return key
-  const attr = getModelAttributes(activeInstance.value.modelId).find((v: any) => v.identifier === key)
-  return attr?.name || key
+  const attr = getModelAttributes(activeInstance.value.modelId).find((v: any) => (v.identifier || v.name) === key)
+  return attr?.displayName || attr?.name || key
 }
 
 const viewDetails = (instance: DeviceInstance) => {
@@ -587,7 +652,11 @@ const viewDetails = (instance: DeviceInstance) => {
   activeInstance.value.commConfig.tenantId ||= 'default'
   activeInstance.value.commConfig.labId ||= 'lab1'
   activeInstance.value.commConfig.deviceType ||= getModelCategory(activeInstance.value.modelId)
+  activeInstance.value.boundAdapterName ||= activeInstance.value.commConfig.boundAdapterName || ''
+  activeInstance.value.boundDevicePoint ||= activeInstance.value.commConfig.boundDevicePoint || ''
+  activeInstance.value.commConfig.mqttTopic = commandTopicPreview(activeInstance.value.boundAdapterName, activeInstance.value.boundDevicePoint)
   localConstraints.value = JSON.parse(JSON.stringify(activeInstance.value.commConfig.constraints || []))
+  loadDevicePoints(activeInstance.value.boundAdapterName, 'drawer')
   controlCommandId.value = activeInstanceCommands.value[0]?.commandId || ''
   controlParamsText.value = '{}'
   activeTab.value = 'info'
@@ -598,6 +667,8 @@ const onModelChangeInDrawer = (modelId: string) => {
   if (!activeInstance.value) return
   activeInstance.value.stateMachineId = `${modelId}StateMachine`
   activeInstance.value.commConfig.deviceType = getModelCategory(modelId)
+  activeInstance.value.boundDevicePoint = ''
+  loadDevicePoints(activeInstance.value.boundAdapterName || '', 'drawer')
 }
 
 const saveInstance = async () => {
@@ -605,6 +676,11 @@ const saveInstance = async () => {
   saving.value = true
   try {
     const payload = JSON.parse(JSON.stringify(activeInstance.value))
+    payload.boundAdapterName = activeInstance.value.boundAdapterName
+    payload.boundDevicePoint = activeInstance.value.boundDevicePoint
+    payload.commConfig.boundAdapterName = activeInstance.value.boundAdapterName
+    payload.commConfig.boundDevicePoint = activeInstance.value.boundDevicePoint
+    payload.commConfig.mqttTopic = commandTopicPreview(activeInstance.value.boundAdapterName, activeInstance.value.boundDevicePoint)
     payload.commConfig.constraints = localConstraints.value
     const res = await axios.post('/api/device/instance/save', payload)
     if (res.data?.success) {
@@ -649,6 +725,11 @@ const saveConstraints = async () => {
   saving.value = true
   try {
     const payload = JSON.parse(JSON.stringify(activeInstance.value))
+    payload.boundAdapterName = activeInstance.value.boundAdapterName
+    payload.boundDevicePoint = activeInstance.value.boundDevicePoint
+    payload.commConfig.boundAdapterName = activeInstance.value.boundAdapterName
+    payload.commConfig.boundDevicePoint = activeInstance.value.boundDevicePoint
+    payload.commConfig.mqttTopic = commandTopicPreview(activeInstance.value.boundAdapterName, activeInstance.value.boundDevicePoint)
     payload.commConfig.constraints = localConstraints.value.filter(v => v.targetAttr && v.threshold)
     const res = await axios.post('/api/device/instance/save', payload)
     if (res.data?.success) {
@@ -717,28 +798,46 @@ const renderMqttTopic = (template: string, deviceSn: string) => {
     .replaceAll('${commandId}', '{commandId}')
 }
 
-const onModelChangeInCreate = () => {
-  const deviceSn = createForm.value.deviceSn || ''
-  createForm.value.deviceType = selectedCreateModel.value?.deviceCategory || ''
-  if (mqttTemplate.value) {
-    createForm.value.mqttTopicPreview = renderMqttTopic(mqttTemplate.value, deviceSn || '{deviceSn}')
-  } else {
-    createForm.value.mqttTopicPreview = ''
-  }
+const commandTopicPreview = (adapterName?: string, devicePoint?: string) => {
+  if (!adapterName || !devicePoint) return ''
+  return `smartlab/adapter/${adapterName}/${devicePoint}/command`
 }
 
-watch(() => createForm.value.deviceSn, (val) => {
-  if (!mqttTemplate.value) {
-    createForm.value.mqttTopicPreview = ''
-    return
-  }
-  createForm.value.mqttTopicPreview = renderMqttTopic(mqttTemplate.value, val || '{deviceSn}')
+const updateCreateTopicPreview = () => {
+  createForm.value.mqttTopicPreview = commandTopicPreview(createForm.value.boundAdapterName, createForm.value.boundDevicePoint)
+}
+
+const devicePointLabel = (point: AdapterDevicePoint) => {
+  return point.description ? `${point.devicePoint} · ${point.description}` : point.devicePoint
+}
+
+const onModelChangeInCreate = async () => {
+  createForm.value.deviceType = selectedCreateModel.value?.deviceCategory || ''
+  const adapterName = selectedCreateModel.value?.capabilitySpec?.adapterContract?.config?.adapterName || createForm.value.boundAdapterName
+  createForm.value.boundAdapterName = adapterName || ''
+  createForm.value.boundDevicePoint = ''
+  await loadDevicePoints(createForm.value.boundAdapterName, 'create')
+  updateCreateTopicPreview()
+}
+
+const onAdapterChangeInCreate = async () => {
+  createForm.value.boundDevicePoint = ''
+  await loadDevicePoints(createForm.value.boundAdapterName, 'create')
+  updateCreateTopicPreview()
+}
+
+const onAdapterChangeInDrawer = async () => {
+  if (!activeInstance.value) return
+  activeInstance.value.boundDevicePoint = ''
+  await loadDevicePoints(activeInstance.value.boundAdapterName || '', 'drawer')
+}
+
+watch(() => createForm.value.deviceSn, () => {
+  updateCreateTopicPreview()
 })
 
 watch(() => [createForm.value.tenantId, createForm.value.labId, createForm.value.deviceType, createForm.value.modelId], () => {
-  if (mqttTemplate.value) {
-    createForm.value.mqttTopicPreview = renderMqttTopic(mqttTemplate.value, createForm.value.deviceSn || '{deviceSn}')
-  }
+  updateCreateTopicPreview()
 })
 
 const openCreateDialog = () => {
@@ -749,11 +848,16 @@ const openCreateDialog = () => {
     labId: 'lab1',
     deviceType: '',
     deviceSn: '',
+    boundAdapterName: '',
+    boundDevicePoint: '',
     mqttTopicPreview: ''
   }
   createDialogVisible.value = true
   if (!models.value.length) {
     searchModels('')
+  }
+  if (!adapterOptions.value.length) {
+    loadAdapters()
   }
 }
 
@@ -763,20 +867,22 @@ const submitCreate = async () => {
     if (!valid) return
     creating.value = true
     try {
-      const mqttTopic = mqttTemplate.value
-        ? renderMqttTopic(mqttTemplate.value, createForm.value.deviceSn)
-        : createForm.value.mqttTopicPreview
+      const mqttTopic = commandTopicPreview(createForm.value.boundAdapterName, createForm.value.boundDevicePoint)
 
       const payload: DeviceInstance = {
         instanceId: '',
         modelId: createForm.value.modelId,
         stateMachineId: `${createForm.value.modelId}StateMachine`,
         instanceName: createForm.value.instanceName,
+        boundAdapterName: createForm.value.boundAdapterName,
+        boundDevicePoint: createForm.value.boundDevicePoint,
         commConfig: {
           tenantId: createForm.value.tenantId || 'default',
           labId: createForm.value.labId || 'lab1',
           deviceType: createForm.value.deviceType || selectedCreateModel.value?.deviceCategory || 'DEVICE',
           deviceSn: createForm.value.deviceSn,
+          boundAdapterName: createForm.value.boundAdapterName,
+          boundDevicePoint: createForm.value.boundDevicePoint,
           mqttTopic,
           constraints: []
         },
@@ -819,8 +925,7 @@ const sendManualCommand = async () => {
       parameters
     })
     if (res.data?.success) {
-      ElMessage.success('指令已发送')
-      await fetchSnapshot()
+      ElMessage.success('指令消息已生成')
     } else {
       ElMessage.error(res.data?.message || '指令发送失败')
     }
@@ -833,6 +938,37 @@ const sendManualCommand = async () => {
 
 const getModelCategory = (modelId: string) => {
   return findModelById(modelId)?.deviceCategory || 'DEVICE'
+}
+
+function normalizeModel(raw: any): DeviceModel {
+  return {
+    ...raw,
+    modelId: String(raw.modelId || raw.id || ''),
+    modelName: raw.modelName || raw.name || '',
+    deviceCategory: raw.deviceCategory || raw.categoryName || '',
+    capabilitySpec: raw.capabilitySpec || {
+      attributes: raw.attributes || [],
+      capabilities: raw.capabilities || [],
+      adapterContract: raw.adapterContract || { config: { protocol: 'MQTT' }, commands: [], telemetry: { adapterAttributes: [], attributesMapping: [] }, events: [] }
+    }
+  }
+}
+
+function normalizeInstance(raw: any): DeviceInstance {
+  const commConfig = raw.commConfig || raw.instanceConfig || {}
+  const boundAdapterName = raw.boundAdapterName || commConfig.boundAdapterName || commConfig.adapterName || ''
+  const boundDevicePoint = raw.boundDevicePoint || commConfig.boundDevicePoint || commConfig.devicePoint || ''
+  return {
+    ...raw,
+    instanceId: String(raw.instanceId || raw.id || ''),
+    modelId: String(raw.modelId || raw.deviceModelId || ''),
+    stateMachineId: raw.stateMachineId || `${raw.modelId || raw.deviceModelId || ''}StateMachine`,
+    instanceName: raw.instanceName || raw.name || '',
+    boundAdapterName,
+    boundDevicePoint,
+    commConfig: { ...commConfig, boundAdapterName, boundDevicePoint, mqttTopic: commConfig.mqttTopic || commandTopicPreview(boundAdapterName, boundDevicePoint) },
+    isOnline: raw.isOnline === true || raw.onlineStatus === 'ONLINE'
+  }
 }
 
 function findModelById(modelId: string) {

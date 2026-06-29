@@ -8,7 +8,6 @@ import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.resource.adapter.AdapterRouteDTO;
 import com.smartlab.management.entity.resource.adapter.AdapterIndex;
 import com.smartlab.management.service.db.resource.adapter.AdapterIndexService;
-import com.smartlab.adapter.AdapterPayloadMapperService;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
 import org.eclipse.paho.client.mqttv3.MqttCallback;
 import org.eclipse.paho.client.mqttv3.MqttClient;
@@ -87,8 +86,8 @@ public class MqttAdapterMessagingService implements MqttCallback {
     private volatile Instant lastConnectedAt;
 
     public MqttAdapterMessagingService(AdapterIndexService adapterIndexService,
-                                       AdapterPayloadMapperService protocolMapperService,
-                                       @Qualifier("workflowTaskExecutor") Executor executor) {
+            AdapterPayloadMapperService protocolMapperService,
+            @Qualifier("workflowTaskExecutor") Executor executor) {
         this.adapterIndexService = adapterIndexService;
         this.protocolMapperService = protocolMapperService;
         this.executor = executor;
@@ -162,8 +161,7 @@ public class MqttAdapterMessagingService implements MqttCallback {
         ObjectNode commandMessage = protocolMapperService.buildCommandMessage(
                 String.valueOf(event.instanceId()),
                 event.commandId(),
-                event.parameters()
-        );
+                event.parameters());
         publishCommand(commandMessage);
     }
 
@@ -203,8 +201,7 @@ public class MqttAdapterMessagingService implements MqttCallback {
         }
         subscribeTopics(
                 topic(deviceTelemetryTopicPattern, adapterName, devicePoint),
-                topic(deviceEventTopicPattern, adapterName, devicePoint)
-        );
+                topic(deviceEventTopicPattern, adapterName, devicePoint));
     }
 
     @Override
@@ -243,7 +240,8 @@ public class MqttAdapterMessagingService implements MqttCallback {
 
     private void routeIncomingMessage(String topic, JsonNode payload) {
         if (registerTopic.equals(topic)) {
-            Map<String, Object> body = JsonNodeSupport.MAPPER.convertValue(payload, new TypeReference<>() {});
+            Map<String, Object> body = JsonNodeSupport.MAPPER.convertValue(payload, new TypeReference<>() {
+            });
             AdapterIndex adapter = adapterIndexService.register(body);
             if (adapter != null) {
                 trySubscribeAdapterHeartbeat(adapter.getAdapterName());
@@ -251,7 +249,8 @@ public class MqttAdapterMessagingService implements MqttCallback {
             return;
         }
         String[] parts = topic.split("/");
-        if (parts.length == 4 && "smartlab".equals(parts[0]) && "adapter".equals(parts[1]) && "heartbeat".equals(parts[3])) {
+        if (parts.length == 4 && "smartlab".equals(parts[0]) && "adapter".equals(parts[1])
+                && "heartbeat".equals(parts[3])) {
             adapterIndexService.heartbeat(parts[2], payload.path("status").asText("ONLINE"));
             return;
         }

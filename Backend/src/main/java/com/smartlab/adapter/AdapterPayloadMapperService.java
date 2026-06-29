@@ -14,7 +14,6 @@ import com.smartlab.management.entity.resource.device.DeviceTwinStates;
 import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
 import com.smartlab.management.mapper.resource.device.DeviceModelsMapper;
 import com.smartlab.management.mapper.resource.device.DeviceTwinStatesMapper;
-import com.smartlab.adapter.AdapterManifestService;
 import com.smartlab.management.service.db.resource.adapter.AdapterIndexService;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
@@ -44,11 +43,11 @@ public class AdapterPayloadMapperService {
     private final ConcurrentHashMap<String, AdapterRouteDTO> adapterRouteTable = new ConcurrentHashMap<>();
 
     public AdapterPayloadMapperService(DeviceInstancesMapper deviceInstancesMapper,
-                                       DeviceModelsMapper deviceModelsMapper,
-                                       DeviceTwinStatesMapper twinStatesMapper,
-                                       AdapterIndexService adapterIndexService,
-                                       AdapterManifestService adapterManifestService,
-                                       @Lazy StateMachineEngineService stateMachineEngineService) {
+            DeviceModelsMapper deviceModelsMapper,
+            DeviceTwinStatesMapper twinStatesMapper,
+            AdapterIndexService adapterIndexService,
+            AdapterManifestService adapterManifestService,
+            @Lazy StateMachineEngineService stateMachineEngineService) {
         this.deviceInstancesMapper = deviceInstancesMapper;
         this.deviceModelsMapper = deviceModelsMapper;
         this.twinStatesMapper = twinStatesMapper;
@@ -64,7 +63,8 @@ public class AdapterPayloadMapperService {
                 .isNotNull(DeviceInstances::getBoundDevicePoint)
                 .orderByAsc(DeviceInstances::getId));
         for (DeviceInstances instance : instances) {
-            adapterRouteTable.put(routeKey(instance.getBoundAdapterName(), instance.getBoundDevicePoint()), toRoute(instance));
+            adapterRouteTable.put(routeKey(instance.getBoundAdapterName(), instance.getBoundDevicePoint()),
+                    toRoute(instance));
         }
         return getAdapterRouteTable();
     }
@@ -97,7 +97,8 @@ public class AdapterPayloadMapperService {
         }
         JsonNode command = resolveCommandDefinition(model, commandId);
         String commandName = command.path("commandName").asText(command.path("name").asText(commandId));
-        ObjectNode mappedParameters = buildOutgoingParameters(model, commandName, commandId, parameters == null ? Map.of() : parameters);
+        ObjectNode mappedParameters = buildOutgoingParameters(model, commandName, commandId,
+                parameters == null ? Map.of() : parameters);
 
         ObjectNode payload = JsonNodeSupport.objectNode();
         payload.put("messageId", UUID.randomUUID().toString());
@@ -153,7 +154,8 @@ public class AdapterPayloadMapperService {
         ArrayNode resolved = binding.putArray("resolvedAttributes");
         Map<String, String> modelAttrTypes = modelAttributeTypes(model.getAttributes());
         Map<String, String> adapterAttrTypes = adapterAttributeTypes(contract);
-        for (JsonNode mapping : iterable(contract == null ? null : contract.path("telemetry").path("attributesMapping"))) {
+        for (JsonNode mapping : iterable(
+                contract == null ? null : contract.path("telemetry").path("attributesMapping"))) {
             String modelAttr = mapping.path("modelAttributeName").asText("");
             String templateAttr = mapping.path("adapterAttrName").asText("");
             String rawAttr = point.path("attributeMapping").path(templateAttr).asText("");
@@ -219,7 +221,8 @@ public class AdapterPayloadMapperService {
         stateMachineEngineService.dispatchAdapterEvent(route.getDeviceInstanceId(), eventName, message);
     }
 
-    private ObjectNode buildOutgoingParameters(DeviceModels model, String commandName, String commandId, Map<String, Object> parameters) {
+    private ObjectNode buildOutgoingParameters(DeviceModels model, String commandName, String commandId,
+            Map<String, Object> parameters) {
         JsonNode capability = findCapability(model.getCapabilities(), commandId);
         if (capability != null && !capability.path("adapterCommandName").asText("").equals(commandName)) {
             capability = null;
@@ -329,7 +332,8 @@ public class AdapterPayloadMapperService {
     }
 
     private DeviceTwinStates getOrCreateTwinState(Long instanceId) {
-        DeviceTwinStates state = twinStatesMapper.selectOne(Wrappers.<DeviceTwinStates>lambdaQuery().eq(DeviceTwinStates::getInstanceId, instanceId));
+        DeviceTwinStates state = twinStatesMapper
+                .selectOne(Wrappers.<DeviceTwinStates>lambdaQuery().eq(DeviceTwinStates::getInstanceId, instanceId));
         if (state != null) {
             return state;
         }
@@ -341,7 +345,8 @@ public class AdapterPayloadMapperService {
         created.setCurrentAttr(JsonNodeSupport.objectNode());
         created.setUpdateTime(LocalDateTime.now());
         twinStatesMapper.insert(created);
-        return twinStatesMapper.selectOne(Wrappers.<DeviceTwinStates>lambdaQuery().eq(DeviceTwinStates::getInstanceId, instanceId));
+        return twinStatesMapper
+                .selectOne(Wrappers.<DeviceTwinStates>lambdaQuery().eq(DeviceTwinStates::getInstanceId, instanceId));
     }
 
     private AdapterRouteDTO toRoute(DeviceInstances instance) {
@@ -356,7 +361,7 @@ public class AdapterPayloadMapperService {
             JsonNode binding = config.path("adapterBinding");
             route.setTemplateName(binding.path("templateName").asText(null));
             route.setResolvedAttributes(binding.path("resolvedAttributes"));
-            
+
             JsonNode rawToModel = binding.path("rawToModelAttribute");
             if (rawToModel != null && rawToModel.isObject()) {
                 Map<String, String> map = new HashMap<>();

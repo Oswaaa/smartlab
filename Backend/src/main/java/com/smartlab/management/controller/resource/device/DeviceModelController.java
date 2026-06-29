@@ -54,6 +54,16 @@ public class DeviceModelController {
         }
     }
 
+    @PostMapping("/model/preview")
+    public ApiResponse<ObjectNode> previewModel(@RequestBody DeviceModelSaveDTO payload) {
+        try {
+            ObjectNode result = deviceModelService.previewModel(payload);
+            return ApiResponse.ok(result);
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
     @PutMapping("/model/{modelId}/adapter-contract")
     public ApiResponse<DeviceModels> updateAdapterContract(@PathVariable Long modelId,
                                                            @RequestBody JsonNode adapterContract) {

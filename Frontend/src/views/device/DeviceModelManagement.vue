@@ -215,26 +215,7 @@
             </el-tab-pane>
 
             <el-tab-pane label="状态机" name="state">
-              <section class="info-section">
-                <div class="section-title"><h3>功能状态</h3></div>
-                <el-table :data="selectedModel.opState.states" border size="small" height="220">
-                  <template #empty>
-                    <el-empty description="暂无配置数据" :image-size="60" />
-                  </template>
-                  <el-table-column prop="stateName" label="状态名称" min-width="180" />
-                  <el-table-column label="进入动作" min-width="260">
-                    <template #default="{ row }">
-                      <div class="serious-actions-container">
-                        <div v-for="(act, aIdx) in stateEntryActions(row)" :key="aIdx" class="serious-action-wrapper">
-                          <el-tag size="small" type="info" effect="plain" class="serious-action-tag">
-                            {{ describeAction(act) }}
-                          </el-tag>
-                        </div>
-                      </div>
-                    </template>
-                  </el-table-column>
-                </el-table>
-              </section>
+              <h2 style="margin: 0 0 16px; padding-bottom: 8px; border-bottom: 1px solid var(--el-border-color-lighter); color: var(--el-text-color-primary); font-size: 16px; font-weight: 600;">状态</h2>
 
               <section class="info-section">
                 <div class="section-title"><h3>指令生命周期</h3></div>
@@ -243,22 +224,25 @@
                     <el-empty description="暂无配置数据" :image-size="60" />
                   </template>
                   <el-table-column prop="stateName" label="状态名称" min-width="180" />
-                  <el-table-column label="进入动作" min-width="260">
-                    <template #default="{ row }">
-                      <div class="serious-actions-container">
-                        <div v-for="(act, aIdx) in stateEntryActions(row)" :key="aIdx" class="serious-action-wrapper">
-                          <el-tag size="small" type="info" effect="plain" class="serious-action-tag">
-                            {{ describeAction(act) }}
-                          </el-tag>
-                        </div>
-                      </div>
-                    </template>
-                  </el-table-column>
+
                 </el-table>
               </section>
 
               <section class="info-section">
-                <div class="section-title"><h3>状态转移</h3></div>
+                <div class="section-title"><h3>功能状态</h3></div>
+                <el-table :data="selectedModel.opState.states" border size="small" height="220">
+                  <template #empty>
+                    <el-empty description="暂无配置数据" :image-size="60" />
+                  </template>
+                  <el-table-column prop="stateName" label="状态名称" min-width="180" />
+
+                </el-table>
+              </section>
+
+              <h2 class="state-group-title">转移规则</h2>
+
+              <section class="info-section">
+                <div class="section-title"><h3>状态转移（全部）</h3></div>
                 <el-table :data="selectedModel.stateTransitions" border size="small" height="280">
                   <template #empty>
                     <el-empty description="暂无配置数据" :image-size="60" />
@@ -327,7 +311,7 @@
 
     <el-drawer v-model="drawerVisible" :title="drawerTitle" direction="rtl" size="78%" destroy-on-close class="model-drawer">
       <div class="drawer-body">
-        <el-tabs v-model="activeEditTab" tab-position="left" class="drawer-tabs">
+        <el-tabs v-model="activeEditTab" tab-position="left" class="drawer-tabs" @tab-change="handleDrawerTabChange">
           <el-tab-pane label="基础信息" name="basic">
             <section class="drawer-section">
               <div class="section-title"><h3>基础信息</h3></div>
@@ -393,7 +377,7 @@
                     <span>操作参数</span>
                     <el-button size="small" type="primary" plain circle :icon="Plus" title="添加参数" @click="addCapabilityParameter(capability)" />
                   </div>
-                  <el-table :data="capability.parameters" border size="small" class="nested-table">
+                  <el-table v-if="capability.parameters.length > 0" :data="capability.parameters" border size="small" class="nested-table">
                     <el-table-column label="参数名" min-width="180">
                       <template #default="{ row }"><el-input v-model="row.displayName" size="small" placeholder="例如：目标温度" /></template>
                     </el-table-column>
@@ -430,7 +414,7 @@
                 </el-table-column>
                 <el-table-column label="绑定属性" min-width="200">
                   <template #default="{ row }">
-                    <el-select v-model="row.bindingAttrKey" size="small" filterable>
+                    <el-select v-model="row.bindingAttrKey" size="small" filterable clearable placeholder="选择绑定属性">
                       <el-option v-for="attr in attributeOptions" :key="attr.key" :label="attr.label" :value="attr.key" />
                     </el-select>
                   </template>
@@ -482,7 +466,7 @@
                     <span>命令参数</span>
                     <el-button size="small" type="primary" plain circle :icon="Plus" title="添加参数" @click="addCommandParameter(command)" />
                   </div>
-                  <el-table :data="visibleCommandParameters(command)" border size="small" class="nested-table">
+                  <el-table v-if="visibleCommandParameters(command).length > 0" :data="visibleCommandParameters(command)" border size="small" class="nested-table">
                     <el-table-column label="参数名" min-width="180">
                       <template #default="{ row }"><el-input v-model="row.paramName" size="small" placeholder="例如：target_temp" /></template>
                     </el-table-column>
@@ -578,7 +562,7 @@
               <el-table v-else :data="draft.functionMappings" border size="small" class="function-mapping-table">
                 <el-table-column label="模型操作" min-width="180">
                   <template #default="{ row }">
-                    <el-select v-model="row.capabilityKey" size="small" filterable>
+                    <el-select v-model="row.capabilityKey" size="small" filterable placeholder="选择模型操作" @change="handleFunctionMappingCapabilityChange(row)">
                       <el-option
                         v-for="capability in capabilitySelectOptions"
                         :key="capability.key"
@@ -591,8 +575,8 @@
                 </el-table-column>
                 <el-table-column label="Adapter 命令" min-width="180">
                   <template #default="{ row }">
-                    <el-select v-model="row.adapterCommandName" size="small" filterable @change="handleFunctionMappingCommandChange(row)">
-                      <el-option v-for="cmd in commandNameOptions" :key="cmd" :label="cmd" :value="cmd" />
+                    <el-select v-model="row.adapterCommandName" size="small" filterable clearable placeholder="选择 Adapter 命令" @change="handleFunctionMappingCommandChange(row)">
+                      <el-option v-for="cmd in commandNameOptions" :key="cmd" :label="cmd" :value="cmd" :disabled="isAdapterCommandMapped(cmd, row)" />
                     </el-select>
                   </template>
                 </el-table-column>
@@ -601,12 +585,12 @@
                     <div class="param-map-editor">
                       <div v-for="(mapping, index) in row.parameterMapping" :key="mapping._key || index" class="param-map-row" :class="{ invalid: isParameterMappingInvalid(row, mapping) }">
                         <el-select v-model="mapping.commandParamName" size="small" filterable placeholder="命令参数" @change="handleParameterCommandChange(row, mapping)">
-                          <el-option v-for="param in commandParameterOptionsDetailed(row.adapterCommandName)" :key="param.paramName" :label="param.paramName + ' · ' + param.dataType" :value="param.paramName" />
+                          <el-option v-for="param in commandParameterOptionsDetailed(row.adapterCommandName)" :key="param.paramName" :label="param.paramName + ' · ' + param.dataType" :value="param.paramName" :disabled="isCommandParamMapped(row, param.paramName, mapping)" />
                         </el-select>
                         <el-switch v-model="mapping.isFixedValue" size="small" active-text="固定" @change="handleParameterFixedChange(mapping)" />
                         <el-input v-if="mapping.isFixedValue" v-model="mapping.fixedValue" size="small" :placeholder="fixedValuePlaceholder(row, mapping)" />
                         <el-select v-else v-model="mapping.capabilityParamKey" size="small" filterable placeholder="操作参数" @change="handleCapabilityParameterChange(row, mapping)">
-                          <el-option v-for="param in capabilityParameterOptionsDetailedByKey(row.capabilityKey)" :key="param._key" :label="(param.displayName || param.name) + ' · ' + param.dataType + (isParamDataTypeMatch(mapping.commandParamName, row.adapterCommandName, param.dataType) ? '' : ' (类型不匹配)')" :value="param._key" :disabled="!isParamDataTypeMatch(mapping.commandParamName, row.adapterCommandName, param.dataType)" />
+                          <el-option v-for="param in capabilityParameterOptionsDetailedByKey(row.capabilityKey)" :key="param._key" :label="(param.displayName || param.name) + ' · ' + param.dataType + (isParamDataTypeMatch(mapping.commandParamName, row.adapterCommandName, param.dataType) ? '' : ' (类型不匹配)')" :value="param._key" :disabled="isCapabilityParamMapped(row, param._key, mapping) || !isParamDataTypeMatch(mapping.commandParamName, row.adapterCommandName, param.dataType)" />
                         </el-select>
                         <el-button link type="danger" :icon="Delete" @click="removeRow(row.parameterMapping, index)" />
                         <span v-if="isParameterMappingInvalid(row, mapping)" class="map-warning">{{ parameterMappingWarning(row, mapping) }}</span>
@@ -627,6 +611,7 @@
           </el-tab-pane>
 
           <el-tab-pane label="状态机" name="state">
+            <h2 class="state-group-title first">接口定义</h2>
             <section class="drawer-section locked-section">
               <div class="section-title">
                 <div class="locked-heading">
@@ -659,84 +644,53 @@
               </el-table>
             </section>
 
-            <section class="drawer-section">
-              <div class="section-title">
-                <div class="locked-heading">
-                  <h3>功能状态</h3>
-                  <el-tag size="small" effect="plain" type="info" class="lock-tag-flex">
+            <h2 class="state-group-title">状态</h2>
+            <div class="state-card-grid">
+              <section class="drawer-section state-card locked-section">
+                <div class="section-title">
+                  <div class="locked-heading">
                     <el-icon><Lock /></el-icon>
-                    <span>进入动作锁定</span>
-                  </el-tag>
+                    <h3>指令生命周期</h3>
+                    <el-tag size="small" effect="plain" type="info">系统固定</el-tag>
+                  </div>
                 </div>
-                <el-button type="primary" plain size="small" :icon="Plus" @click="addOpState">新增状态</el-button>
-              </div>
-              <el-form label-width="86px" size="small" class="mapping-form">
-                <el-form-item label="初始状态">
-                  <el-select v-model="draft.opState.initialStateName" filterable allow-create>
-                     <el-option v-for="name in opStateNameOptions" :key="name" :label="name" :value="name" />
+                <div class="state-summary-row">
+                  <span class="state-summary-label">初始状态</span>
+                  <el-tag size="small" type="primary" effect="plain">{{ draft.cmdState.initialStateName }}</el-tag>
+                </div>
+                <div class="state-summary-row align-top">
+                  <span class="state-summary-label">状态名称</span>
+                  <div class="state-token-list">
+                    <el-tag v-for="state in draft.cmdState.states" :key="state.stateName" size="small" effect="plain" class="state-token">{{ state.stateName }}</el-tag>
+                  </div>
+                </div>
+              </section>
+
+              <section class="drawer-section state-card">
+                <div class="section-title">
+                  <div class="locked-heading">
+                    <h3>功能状态</h3>
+                  </div>
+                  <el-button type="primary" plain size="small" :icon="Plus" @click="addOpState">新增状态</el-button>
+                </div>
+                <div class="state-summary-row">
+                  <span class="state-summary-label">初始状态</span>
+                  <el-select v-model="draft.opState.initialStateName" filterable allow-create size="small" class="state-inline-select">
+                    <el-option v-for="name in opStateNameOptions" :key="name" :label="name" :value="name" />
                   </el-select>
-                </el-form-item>
-              </el-form>
-              <el-table :data="draft.opState.states" border size="small" class="state-table">
-                <el-table-column label="状态名称" min-width="180">
-                  <template #default="{ row }"><el-input v-model="row.stateName" size="small" placeholder="例如：IDLE" /></template>
-                </el-table-column>
-                <el-table-column label="进入动作" min-width="320">
-                  <template #default="{ row }">
-                    <div class="locked-action-container">
-                      <el-tag size="small" effect="plain" type="info" class="lock-tag-flex">
-                        <el-icon><Lock /></el-icon>
-                        <span>进入动作锁定</span>
-                      </el-tag>
-                      <div v-for="(act, aIdx) in stateEntryActions(row)" :key="aIdx" class="serious-action-wrapper inline-action">
-                        <el-tag size="small" type="info" effect="plain" class="serious-action-tag">
-                          {{ describeAction(act) }}
-                        </el-tag>
-                      </div>
-                    </div>
-                  </template>
-                </el-table-column>
-                <el-table-column label="" width="54" fixed="right">
-                  <template #default="{ $index }"><el-button link type="danger" :icon="Delete" @click="removeRow(draft.opState.states, $index)" /></template>
-                </el-table-column>
-              </el-table>
-            </section>
-
-            <section class="drawer-section locked-section">
-              <div class="section-title">
-                <div class="locked-heading">
-                  <el-icon><Lock /></el-icon>
-                  <h3>指令生命周期</h3>
-                  <el-tag size="small" effect="plain" type="info">系统固定</el-tag>
                 </div>
-              </div>
-              <el-form label-width="86px" size="small" class="mapping-form">
-                <el-form-item label="初始状态">
-                  <span class="locked-value">{{ draft.cmdState.initialStateName }}</span>
-                </el-form-item>
-              </el-form>
-              <el-table :data="draft.cmdState.states" border size="small" class="state-table locked-table">
-                <el-table-column label="状态名称" min-width="180">
-                  <template #default="{ row }"><span>{{ row.stateName }}</span></template>
-                </el-table-column>
-                <el-table-column label="进入动作" min-width="320">
-                  <template #default="{ row }">
-                    <div class="locked-action-container">
-                      <el-tag size="small" effect="plain" type="info" class="lock-tag-flex">
-                        <el-icon><Lock /></el-icon>
-                        <span>进入动作锁定</span>
-                      </el-tag>
-                      <div v-for="(act, aIdx) in stateEntryActions(row)" :key="aIdx" class="serious-action-wrapper inline-action">
-                        <el-tag size="small" type="info" effect="plain" class="serious-action-tag">
-                          {{ describeAction(act) }}
-                        </el-tag>
-                      </div>
-                    </div>
-                  </template>
-                </el-table-column>
-              </el-table>
-            </section>
+                <el-table :data="draft.opState.states" border size="small" class="state-table compact-state-table" :show-header="false">
+                  <el-table-column min-width="180">
+                    <template #default="{ row }"><el-input v-model="row.stateName" size="small" placeholder="例如：IDLE" /></template>
+                  </el-table-column>
+                  <el-table-column width="44" fixed="right">
+                    <template #default="{ $index }"><el-button link type="danger" :icon="Delete" @click="removeRow(draft.opState.states, $index)" /></template>
+                  </el-table-column>
+                </el-table>
+              </section>
+            </div>
 
+            <h2 class="state-group-title">转移规则</h2>
             <section class="drawer-section locked-section">
               <div class="section-title">
                 <div class="locked-heading">
@@ -745,17 +699,22 @@
                   <el-tag size="small" effect="plain" type="info">系统固定</el-tag>
                 </div>
               </div>
-              <el-table :data="commandLifecycleTransitionRows" border size="small" class="transition-table locked-table">
-                <el-table-column prop="description" label="规则" min-width="160" />
-                <el-table-column prop="fromStateName" label="来源状态" min-width="120" />
-                <el-table-column prop="toStateName" label="目标状态" min-width="120" />
-                <el-table-column label="触发接口" min-width="190">
-                  <template #default="{ row }">{{ row.trigger.interfaceName }}</template>
+              <el-table :data="commandLifecycleTransitionRows" border size="small" class="transition-table locked-table compact-transition-table">
+                <el-table-column prop="description" label="规则说明" width="145" />
+                <el-table-column label="状态流转" width="150">
+                  <template #default="{ row }">
+                    <span style="display: flex; align-items: center; gap: 4px; color: var(--el-text-color-regular); font-size: 12px;">{{ row.fromStateName }} <el-icon><Right /></el-icon> {{ row.toStateName }}</span>
+                  </template>
                 </el-table-column>
-                <el-table-column label="接收信号" min-width="190">
-                  <template #default="{ row }">{{ row.trigger.signalName }}</template>
+                <el-table-column label="触发条件" width="190">
+                  <template #default="{ row }">
+                    <div style="display: flex; flex-direction: column; gap: 4px;">
+                      <el-tag size="small" type="info" effect="plain" style="align-self: flex-start">{{ row.trigger.interfaceName }}</el-tag>
+                      <span style="font-size: 12px; color: var(--el-text-color-regular);">{{ row.trigger.signalName }}</span>
+                    </div>
+                  </template>
                 </el-table-column>
-                <el-table-column label="转移动作" min-width="240">
+                <el-table-column label="转移动作" min-width="160">
                   <template #default="{ row }">
                     <div class="serious-actions-container">
                       <div v-for="(act, aIdx) in row.actions" :key="aIdx" class="serious-action-wrapper">
@@ -775,45 +734,43 @@
                 <el-button type="primary" plain size="small" :icon="Plus" @click="addStateTransition">新增规则</el-button>
               </div>
               <div v-if="draft.stateTransitions.length === 0" class="compact-empty block-empty">暂无功能状态转移规则，请点击右上角“新增规则”进行配置</div>
-              <el-table v-else :data="draft.stateTransitions" border size="small" class="transition-table">
-                <el-table-column label="说明" min-width="150">
+              <el-table v-else :data="draft.stateTransitions" border size="small" class="transition-table compact-transition-table">
+                <el-table-column label="说明" width="130">
                   <template #default="{ row }"><el-input v-model="row.description" size="small" placeholder="可选" /></template>
                 </el-table-column>
-                <el-table-column label="来源状态" min-width="130">
-                  <template #default="{ row }"><state-select v-model="row.fromStateName" :options="opStateNameOptions" /></template>
-                </el-table-column>
-                <el-table-column label="触发接口" min-width="160">
-                  <template #default>
-                    <span class="locked-action"><el-icon><Lock /></el-icon><span>Interface_adapter_in</span></span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="触发信号" min-width="190">
-                  <template #default="{ row }"><state-select v-model="row.trigger.signalName" :options="signalOptionsForInterface('Interface_adapter_in')" /></template>
-                </el-table-column>
-                <el-table-column label="目标状态" min-width="130">
-                  <template #default="{ row }"><state-select v-model="row.toStateName" :options="opStateNameOptions" /></template>
-                </el-table-column>
-                <el-table-column label="转移动作" min-width="360">
+                <el-table-column label="状态流转" width="210">
                   <template #default="{ row }">
-                    <div v-if="row.actions?.length" class="serious-action-editor">
-                      <span class="action-editor-label">输出</span>
-                      <el-select v-model="row.actions[0].payload.interfaceName" size="small" style="width: 170px" placeholder="选择接口" @change="onActionInterfaceChange(row.actions[0])">
-                        <el-option label="状态接口" value="Interface_status_out" />
-                        <el-option label="Adapter 接口" value="Interface_adapter_out" />
-                      </el-select>
-                      <el-select v-model="row.actions[0].payload.signalName" size="small" style="width: 150px" placeholder="选择信号">
-                        <el-option v-for="sig in getSignalsForInterface(row.actions[0].payload.interfaceName)" :key="sig" :label="sig" :value="sig" />
-                      </el-select>
-                      <el-button link type="danger" :icon="Delete" @click="removeTransitionAction(row)" />
-                    </div>
-                    <div v-else class="no-action-cell">
-                      <span>无转移动作</span>
-                      <el-button size="small" plain :icon="Plus" class="compact-action-btn" @click="ensureTransitionAction(row)">添加</el-button>
+                    <div style="display: flex; align-items: center; gap: 6px;">
+                      <state-select v-model="row.fromStateName" :options="opStateNameOptions" style="flex: 1" />
+                      <el-icon><Right /></el-icon>
+                      <state-select v-model="row.toStateName" :options="opStateNameOptions" style="flex: 1" />
                     </div>
                   </template>
                 </el-table-column>
-                <el-table-column label="" width="54" fixed="right">
-                  <template #default="{ $index }"><el-button link type="danger" :icon="Delete" @click="removeRow(draft.stateTransitions, $index)" /></template>
+                <el-table-column label="触发条件" width="170">
+                  <template #default="{ row }">
+                    <div style="display: flex; flex-direction: column; gap: 6px;">
+                      <span class="locked-action"><el-icon><Lock /></el-icon><span>Interface_adapter_in</span></span>
+                      <state-select v-model="row.trigger.signalName" :options="signalOptionsForInterface('Interface_adapter_in')" style="width: 100%" />
+                    </div>
+                  </template>
+                </el-table-column>
+                <el-table-column label="动作" min-width="210">
+                  <template #default="{ row, $index }">
+                    <div class="transition-action-cell">
+                      <div class="transition-action-list">
+                        <div v-for="(act, aIdx) in row.actions" :key="aIdx" class="transition-action-row">
+                          <span class="action-editor-label">发送</span>
+                          <el-select v-model="act.payload.signalName" size="small" placeholder="选择信号">
+                            <el-option v-for="sig in getSignalsForInterface(act.payload.interfaceName)" :key="sig" :label="sig" :value="sig" />
+                          </el-select>
+                          <el-button link type="info" :icon="Close" @click="row.actions.splice(aIdx, 1)" title="取消动作" />
+                        </div>
+                        <el-button size="small" plain :icon="Plus" class="compact-action-btn" @click="ensureTransitionAction(row)">添加</el-button>
+                      </div>
+                      <el-button link type="danger" :icon="Delete" @click="removeRow(draft.stateTransitions, $index)" title="删除该规则" />
+                    </div>
+                  </template>
                 </el-table-column>
               </el-table>
             </section>
@@ -851,6 +808,9 @@
           </el-tab-pane>
 
           <el-tab-pane label="模型文件" name="file">
+            <div style="margin-bottom: 12px; display: flex; justify-content: flex-end;">
+              <el-button type="primary" plain size="small" :loading="generatingPreview" @click="generatePreview">生成 / 刷新预览</el-button>
+            </div>
             <section class="model-json-grid">
               <div class="json-panel">
                 <div class="section-title"><h3>保存后的设备能力模型</h3></div>
@@ -879,7 +839,7 @@
 import { computed, defineComponent, h, onMounted, reactive, ref, resolveComponent, watch } from 'vue'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
-import { Connection, Cpu, Delete, Download, EditPen, Lock, Notification, Plus, Refresh, Search, Unlock, Upload } from '@element-plus/icons-vue'
+import { Connection, Cpu, Delete, Download, EditPen, Lock, Notification, Plus, Refresh, Search, Unlock, Upload, Close, Right } from '@element-plus/icons-vue'
 import { useAuthStore } from '../../stores/authStore'
 
 const authStore = useAuthStore()
@@ -1008,8 +968,34 @@ const opStateNameOptions = computed(() => draft.opState.states.map(item => item.
 const cmdStateNameOptions = computed(() => draft.cmdState.states.map(item => item.stateName).filter(Boolean))
 const capabilityModelJson = computed(() => selectedModel.value ? buildCapabilityModel(selectedModel.value) : {})
 const stateMachineModelJson = computed(() => selectedModel.value ? buildStateMachineModel(selectedModel.value) : {})
-const draftCapabilityModelJson = computed(() => buildCapabilityModelFromPayload(buildSavePayload(false)))
-const draftStateMachineModelJson = computed(() => buildStateMachineModelFromPayload(buildSavePayload(false)))
+const draftCapabilityModelJson = ref({})
+const draftStateMachineModelJson = ref({})
+const generatingPreview = ref(false)
+
+const generatePreview = async () => {
+  generatingPreview.value = true
+  try {
+    const payload = buildSavePayload(false)
+    const res = await axios.post('/api/device/model/preview', payload)
+    if (res.data.success) {
+      draftCapabilityModelJson.value = res.data.data.capabilityModel || {}
+      draftStateMachineModelJson.value = res.data.data.stateMachineModel || {}
+    } else {
+      ElMessage.error(res.data.message || '生成预览失败')
+    }
+  } catch (error) {
+    ElMessage.error('生成预览异常')
+    console.error(error)
+  } finally {
+    generatingPreview.value = false
+  }
+}
+
+const handleDrawerTabChange = (name) => {
+  if (name === 'file') {
+    generatePreview()
+  }
+}
 
 function emptyDraft() {
   return {
@@ -1074,14 +1060,6 @@ function toggleInterfaceLock() {
     draft.stateMachineInterfaces.splice(0, draft.stateMachineInterfaces.length, ...deepClone(generatedInterfaces.value))
   }
   interfaceLocked.value = !interfaceLocked.value
-}
-
-function defaultEntryActions() {
-  return []
-}
-
-function stateEntryActions(row) {
-  return asArray(row?.onEntry)
 }
 
 function adapterOutAction(signalName) {
@@ -1159,6 +1137,8 @@ function openCreateDrawer() {
   drawerMode.value = 'create'
   interfaceLocked.value = true
   activeEditTab.value = 'basic'
+  draftCapabilityModelJson.value = {}
+  draftStateMachineModelJson.value = {}
   drawerVisible.value = true
 }
 
@@ -1169,6 +1149,8 @@ function openEditDrawer(model) {
   interfaceLocked.value = true
   activeEditTab.value = 'basic'
   expandedCapabilityKeys.value = []
+  draftCapabilityModelJson.value = {}
+  draftStateMachineModelJson.value = {}
   drawerVisible.value = true
 }
 
@@ -1305,7 +1287,7 @@ function removeAttribute(index) {
   draft.intrinsicConstraints.forEach(rule => { if (rule.objectAttributeKey === removed._key) rule.objectAttributeKey = '' })
 }
 
-function addPort() { draft.ports.push({ _key: makeUiKey('port'), portName: '', displayName: '', direction: 'OUT', bindingAttrKey: draft.attributes[0]?._key || '', bindingAttrName: '' }) }
+function addPort() { draft.ports.push({ _key: makeUiKey('port'), portName: '', displayName: '', direction: 'OUT', bindingAttrKey: '', bindingAttrName: '' }) }
 function addCapability() { draft.capabilities.push({ _key: makeUiKey('cap'), name: '', displayName: '', adapterCommandName: '', parameters: [], parameterMapping: [] }) }
 function removeCapability(capability) {
   removeObjectRow(draft.capabilities, capability)
@@ -1340,7 +1322,8 @@ function addAdapterEvent() { draft.adapterContract.events.push({ _key: makeUiKey
 function removeAdapterEvent(index) { removeRow(draft.adapterContract.events, index) }
 
 function addAttributeMapping() {
-  draft.adapterContract.telemetry.attributesMapping.push({ _key: makeUiKey('attr_map'), adapterAttrName: firstUnusedAdapterAttributeName(), modelAttributeKey: firstUnusedAttributeKey(), modelAttributeName: '' })
+  const modelAttributeKey = firstUnusedAttributeKey()
+  draft.adapterContract.telemetry.attributesMapping.push({ _key: makeUiKey('attr_map'), adapterAttrName: firstUnusedAdapterAttributeName(modelAttributeKey), modelAttributeKey, modelAttributeName: '' })
 }
 
 function handleAttributeMappingModelChange(row) {
@@ -1358,23 +1341,35 @@ function handleAdapterAttributeMappingChange(row) {
 function isAttributeOptionUsed(key, row) { return !!key && draft.adapterContract.telemetry.attributesMapping.some(item => item !== row && item.modelAttributeKey === key) }
 function isAdapterAttributeUsed(name, row) { return !!name && draft.adapterContract.telemetry.attributesMapping.some(item => item !== row && item.adapterAttrName === name) }
 function firstUnusedAttributeKey() { return attributeOptions.value.find(attr => !draft.adapterContract.telemetry.attributesMapping.some(item => item.modelAttributeKey === attr.key))?.key || '' }
-function firstUnusedAdapterAttributeName() { return adapterAttributeNameOptions.value.find(name => !draft.adapterContract.telemetry.attributesMapping.some(item => item.adapterAttrName === name)) || '' }
+function firstUnusedAdapterAttributeName(modelAttributeKey = '') {
+  return adapterAttributeNameOptionsDetailed.value.find(attr => !draft.adapterContract.telemetry.attributesMapping.some(item => item.adapterAttrName === attr.name) && isAttrDataTypeMatch(modelAttributeKey, attr.dataType))?.name || ''
+}
 
 function addFunctionMapping() {
-  draft.functionMappings.push({ _key: makeUiKey('function_map'), capabilityKey: firstUnmappedCapabilityKey(), adapterCommandName: commandNameOptions.value[0] || '', parameterMapping: [] })
+  draft.functionMappings.push({ _key: makeUiKey('function_map'), capabilityKey: firstUnmappedCapabilityKey(), adapterCommandName: firstUnmappedCommandName(), parameterMapping: [] })
 }
 
 function addParameterMapping(mappingOwner) {
-  const commandParamName = commandParameterOptions(mappingOwner.adapterCommandName)[0] || ''
-  const capabilityParamKey = firstCompatibleCapabilityParamKey(mappingOwner.capabilityKey, mappingOwner.adapterCommandName, commandParamName)
+  const commandParamName = firstUnusedCommandParamName(mappingOwner)
+  const capabilityParamKey = firstCompatibleCapabilityParamKey(mappingOwner.capabilityKey, mappingOwner.adapterCommandName, commandParamName, mappingOwner)
   ensureArrayField(mappingOwner, 'parameterMapping').push({ _key: makeUiKey('param_map'), commandParamName, capabilityParamKey, capabilityParamName: '', isFixedValue: false, fixedValue: '' })
 }
 
+function handleFunctionMappingCapabilityChange(row) {
+  asArray(row.parameterMapping).forEach(mapping => handleCapabilityParameterChange(row, mapping))
+}
+
 function handleFunctionMappingCommandChange(row) {
+  if (isAdapterCommandMapped(row.adapterCommandName, row)) row.adapterCommandName = ''
   asArray(row.parameterMapping).forEach(mapping => handleParameterCommandChange(row, mapping))
 }
 
 function handleParameterCommandChange(row, mapping) {
+  if (isCommandParamMapped(row, mapping.commandParamName, mapping)) {
+    mapping.commandParamName = ''
+    mapping.capabilityParamKey = ''
+    return
+  }
   if (mapping.commandParamName && !commandParameterByName(row.adapterCommandName, mapping.commandParamName)) {
     mapping.commandParamName = ''
     mapping.capabilityParamKey = ''
@@ -1393,7 +1388,7 @@ function handleParameterFixedChange(mapping) {
 }
 
 function handleCapabilityParameterChange(row, mapping) {
-  if (!isCapabilityParamKeyCompatible(row, mapping)) mapping.capabilityParamKey = ''
+  if (isCapabilityParamMapped(row, mapping.capabilityParamKey, mapping) || !isCapabilityParamKeyCompatible(row, mapping)) mapping.capabilityParamKey = ''
 }
 
 function firstUnmappedCapabilityKey() {
@@ -1402,6 +1397,26 @@ function firstUnmappedCapabilityKey() {
 
 function isCapabilityMapped(key, row) {
   return !!key && draft.functionMappings.some(mapping => mapping !== row && mapping.capabilityKey === key)
+}
+
+function firstUnmappedCommandName() {
+  return commandNameOptions.value.find(name => !draft.functionMappings.some(mapping => mapping.adapterCommandName === name)) || ''
+}
+
+function isAdapterCommandMapped(name, row) {
+  return !!name && draft.functionMappings.some(mapping => mapping !== row && mapping.adapterCommandName === name)
+}
+
+function firstUnusedCommandParamName(row) {
+  return commandParameterOptionsDetailed(row.adapterCommandName).find(param => !isCommandParamMapped(row, param.paramName, null))?.paramName || ''
+}
+
+function isCommandParamMapped(row, paramName, current) {
+  return !!paramName && asArray(row.parameterMapping).some(mapping => mapping !== current && mapping.commandParamName === paramName)
+}
+
+function isCapabilityParamMapped(row, paramKey, current) {
+  return !!paramKey && asArray(row.parameterMapping).some(mapping => mapping !== current && !mapping.isFixedValue && mapping.capabilityParamKey === paramKey)
 }
 
 function findCapabilityByKey(key) {
@@ -1446,8 +1461,8 @@ function capabilityParameterByKey(capabilityKey, paramKey) {
   return capabilityParameterOptionsDetailedByKey(capabilityKey).find(param => param._key === paramKey) || null
 }
 
-function firstCompatibleCapabilityParamKey(capabilityKey, commandName, commandParamName) {
-  return capabilityParameterOptionsDetailedByKey(capabilityKey).find(param => isParamDataTypeMatch(commandParamName, commandName, param.dataType))?._key || ''
+function firstCompatibleCapabilityParamKey(capabilityKey, commandName, commandParamName, row = null) {
+  return capabilityParameterOptionsDetailedByKey(capabilityKey).find(param => (!row || !isCapabilityParamMapped(row, param._key, null)) && isParamDataTypeMatch(commandParamName, commandName, param.dataType))?._key || ''
 }
 
 function isCapabilityParamKeyCompatible(row, mapping) {
@@ -1518,11 +1533,8 @@ function addStateTransition() {
 }
 
 function ensureTransitionAction(row) {
-  row.actions = [{ actionName: 'SEND', payload: { interfaceName: 'Interface_status_out', signalName: 'OP_STATE' } }]
-}
-
-function removeTransitionAction(row) {
-  row.actions = []
+  if (!row.actions) row.actions = []
+  row.actions.push({ actionName: 'SEND', payload: { interfaceName: 'Interface_adapter_out', signalName: 'CMD_START' } })
 }
 
 function defaultAdapterInterfaceName() { return adapterInterfaceName() }
@@ -2075,6 +2087,24 @@ onMounted(loadData)
 .locked-heading { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .locked-heading h3 { margin: 0; }
 .locked-section { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; }
+.state-group-title { margin: 24px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--el-border-color-lighter); color: var(--el-text-color-primary); font-size: 16px; font-weight: 600; }
+.state-group-title.first { margin-top: 0; }
+.state-card-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.state-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; }
+.state-summary-row { display: grid; grid-template-columns: 72px minmax(0, 1fr); align-items: center; gap: 10px; min-height: 32px; margin-top: 8px; }
+.state-summary-row.align-top { align-items: flex-start; }
+.state-summary-label { color: #64748b; font-size: 12px; line-height: 24px; }
+.state-token-list { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.state-token { background: #fff; }
+.state-inline-select { width: 100%; }
+.compact-state-table { margin-top: 10px; background: #fff; }
+.compact-transition-table { width: 100%; }
+.compact-transition-table :deep(.el-table__cell) { padding: 6px 8px; }
+.transition-action-cell { display: grid; grid-template-columns: minmax(0, 1fr) 28px; gap: 6px; align-items: start; }
+.transition-action-list { display: flex; flex-direction: column; gap: 6px; min-width: 0; align-items: flex-start; }
+.transition-action-row { display: grid; grid-template-columns: 34px minmax(120px, 1fr) 26px; align-items: center; gap: 6px; width: 100%; }
+
+.boxed-section { border: 1px solid var(--el-border-color-lighter); border-radius: 8px; padding: 14px; background-color: #fff; }
 .locked-table :deep(.el-table__body-wrapper) { background: #ffffff; }
 .locked-action { max-width: 100%; color: #475569; font-size: 12px; line-height: 1.45; display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; white-space: normal; }
 .locked-value { font-weight: 600; color: #334155; }
@@ -2157,7 +2187,7 @@ onMounted(loadData)
 }
 
 @media (max-width: 1120px) { .content-shell { grid-template-columns: 240px minmax(0, 1fr); } .model-json-grid { grid-template-columns: 1fr; } }
-@media (max-width: 820px) { .device-model-page { padding: 10px; } .page-header, .detail-head { align-items: stretch; flex-direction: column; } .content-shell { grid-template-columns: 1fr; } .model-list-panel { min-height: 260px; } .drawer-tabs :deep(.el-tabs__header) { width: 92px; } .param-map-row, .action-row { grid-template-columns: 1fr; } .summary-card-body { padding-left: 0; } }
+@media (max-width: 820px) { .state-card-grid { grid-template-columns: 1fr; } .device-model-page { padding: 10px; } .page-header, .detail-head { align-items: stretch; flex-direction: column; } .content-shell { grid-template-columns: 1fr; } .model-list-panel { min-height: 260px; } .drawer-tabs :deep(.el-tabs__header) { width: 92px; } .param-map-row, .action-row { grid-template-columns: 1fr; } .summary-card-body { padding-left: 0; } }
 
 /* 严肃的函数式动作展示与编辑器排版 */
 .serious-actions-container {

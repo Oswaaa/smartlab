@@ -5,15 +5,15 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.global.util.JsonNodeSupport;
-import com.smartlab.management.dto.PageResult;
-import com.smartlab.management.dto.DeviceModelSaveDTO;
-import com.smartlab.management.dto.DeviceStateMachineSaveDTO;
-import com.smartlab.management.entity.DeviceCategory;
-import com.smartlab.management.entity.DeviceInstances;
-import com.smartlab.management.entity.DeviceModels;
-import com.smartlab.management.mapper.DeviceInstancesMapper;
-import com.smartlab.management.mapper.DeviceModelsMapper;
-import com.smartlab.management.service.adapter.AdapterManifestService;
+import com.smartlab.management.dto.common.PageResult;
+import com.smartlab.management.dto.resource.device.DeviceModelSaveDTO;
+import com.smartlab.management.dto.resource.device.DeviceStateMachineSaveDTO;
+import com.smartlab.management.entity.resource.device.DeviceCategory;
+import com.smartlab.management.entity.resource.device.DeviceInstances;
+import com.smartlab.management.entity.resource.device.DeviceModels;
+import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
+import com.smartlab.management.mapper.resource.device.DeviceModelsMapper;
+import com.smartlab.adapter.AdapterManifestService;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
 
@@ -32,6 +32,9 @@ import java.util.UUID;
  * 对应 DEVICE_MODELS 表，只负责模型基础资料和 JSON 字段的保存读取。
  */
 @Service
+/**
+ * 设备物模型与状态机持久层核心服务。处理属性定义生成、标准指令动作生成及 states 保留拷贝。
+ */
 public class DeviceModelService extends ManagementCrudService<DeviceModels> {
 
     private final DeviceModelsMapper mapper;
@@ -748,24 +751,6 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
 
     private JsonNode nullToArray(JsonNode node) {
         return node == null ? JsonNodeSupport.arrayNode() : node;
-    }
-
-    private Object first(Map<String, Object> payload, String... keys) {
-        for (String key : keys) {
-            if (payload.containsKey(key)) {
-                return payload.get(key);
-            }
-        }
-        return null;
-    }
-
-    private Object firstFromMap(Map<?, ?> payload, String... keys) {
-        for (String key : keys) {
-            if (payload.containsKey(key)) {
-                return payload.get(key);
-            }
-        }
-        return null;
     }
 
     private String stringValue(Object value) {

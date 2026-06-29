@@ -3,11 +3,11 @@ package com.smartlab.management.service.db.user;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.smartlab.global.auth.AuthenticationTokenService;
 import com.smartlab.global.util.JsonNodeSupport;
-import com.smartlab.management.dto.MenuDTO;
-import com.smartlab.management.dto.UserRequestDTO;
-import com.smartlab.management.entity.PermissionInfo;
-import com.smartlab.management.entity.UserInfo;
-import com.smartlab.management.mapper.UserInfoMapper;
+import com.smartlab.management.dto.user.MenuDTO;
+import com.smartlab.management.dto.user.UserRequestDTO;
+import com.smartlab.management.entity.user.PermissionInfo;
+import com.smartlab.management.entity.user.UserInfo;
+import com.smartlab.management.mapper.user.UserInfoMapper;
 import com.smartlab.management.service.menu.MenuService;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
@@ -24,6 +24,9 @@ import java.util.stream.Collectors;
  * 对应 USER_INFO 表，负责登录、注册、用户维护和用户可见菜单计算。
  */
 @Service
+/**
+ * User业务持久层核心操作服务。
+ */
 public class UserService {
 
     private final UserInfoMapper userInfoMapper;

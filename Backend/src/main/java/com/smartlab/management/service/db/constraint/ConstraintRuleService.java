@@ -3,9 +3,9 @@ package com.smartlab.management.service.db.constraint;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.smartlab.management.dto.PageResult;
-import com.smartlab.management.entity.ConstraintRule;
-import com.smartlab.management.mapper.ConstraintRuleMapper;
+import com.smartlab.management.dto.common.PageResult;
+import com.smartlab.management.entity.constraint.ConstraintRule;
+import com.smartlab.management.mapper.constraint.ConstraintRuleMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
 
@@ -21,6 +21,9 @@ import java.util.Set;
  * 后端可基于多行规则组装 observableObjects 与 constraints。
  */
 @Service
+/**
+ * 设备安全联锁控制与违规检测持久层核心服务。
+ */
 public class ConstraintRuleService extends ManagementCrudService<ConstraintRule> {
 
     private static final Set<String> SOURCE_TYPES = Set.of(

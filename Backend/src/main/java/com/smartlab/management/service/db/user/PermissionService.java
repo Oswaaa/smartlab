@@ -3,10 +3,10 @@ package com.smartlab.management.service.db.user;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.smartlab.global.util.JsonNodeSupport;
-import com.smartlab.management.entity.PermissionInfo;
-import com.smartlab.management.entity.UserInfo;
-import com.smartlab.management.mapper.PermissionInfoMapper;
-import com.smartlab.management.mapper.UserInfoMapper;
+import com.smartlab.management.entity.user.PermissionInfo;
+import com.smartlab.management.entity.user.UserInfo;
+import com.smartlab.management.mapper.user.PermissionInfoMapper;
+import com.smartlab.management.mapper.user.UserInfoMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
 
@@ -21,6 +21,9 @@ import java.util.stream.Collectors;
  * 对应 PERMISSION_INFO 表，并根据用户等级和用户特权 JSON 计算实际权限。
  */
 @Service
+/**
+ * Permission业务持久层核心操作服务。
+ */
 public class PermissionService extends ManagementCrudService<PermissionInfo> {
 
     private final PermissionInfoMapper permissionMapper;

@@ -1,12 +1,12 @@
 package com.smartlab.management.service.db.resource.data;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.smartlab.management.dto.DataTemplateSaveDTO;
-import com.smartlab.management.entity.DataTemplateDetail;
-import com.smartlab.management.entity.DataTemplateMain;
-import com.smartlab.management.mapper.DataIndexMapper;
-import com.smartlab.management.mapper.DataTemplateDetailMapper;
-import com.smartlab.management.mapper.DataTemplateMainMapper;
+import com.smartlab.management.dto.resource.data.DataTemplateSaveDTO;
+import com.smartlab.management.entity.resource.data.DataTemplateDetail;
+import com.smartlab.management.entity.resource.data.DataTemplateMain;
+import com.smartlab.management.mapper.resource.data.DataIndexMapper;
+import com.smartlab.management.mapper.resource.data.DataTemplateDetailMapper;
+import com.smartlab.management.mapper.resource.data.DataTemplateMainMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -20,6 +20,9 @@ import java.util.Map;
  * 对应 DATA_TEMPLATE_MAIN 和 DATA_TEMPLATE_DETAIL 两张表。
  */
 @Service
+/**
+ * DataTemplate业务持久层核心操作服务。
+ */
 public class DataTemplateService extends ManagementCrudService<DataTemplateMain> {
 
     private final DataTemplateMainMapper mainMapper;
@@ -120,8 +123,8 @@ public class DataTemplateService extends ManagementCrudService<DataTemplateMain>
     public void delete(String id) {
         Long templateId = parseId(id);
         Long dataSetCount = dataIndexMapper.selectCount(
-                Wrappers.<com.smartlab.management.entity.DataIndex>lambdaQuery()
-                        .eq(com.smartlab.management.entity.DataIndex::getDataTemplateId, templateId)
+                Wrappers.<com.smartlab.management.entity.resource.data.DataIndex>lambdaQuery()
+                        .eq(com.smartlab.management.entity.resource.data.DataIndex::getDataTemplateId, templateId)
         );
         if (dataSetCount != null && dataSetCount > 0) {
             throw new IllegalStateException("该数据模板已生成 " + dataSetCount + " 个数据集，不能删除。请保留模板与历史数据表的解释关系。");

@@ -11,6 +11,9 @@ import org.springframework.context.annotation.Configuration;
  * 当前只启用 PostgreSQL 分页插件。
  */
 @Configuration
+/**
+ * MyBatisPlusConfig 领域实体/配置模型类。
+ */
 public class MyBatisPlusConfig {
 
     @Bean

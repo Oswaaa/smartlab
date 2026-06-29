@@ -4,14 +4,14 @@ import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.smartlab.global.util.JsonNodeSupport;
-import com.smartlab.management.dto.PageResult;
-import com.smartlab.management.dto.TaskMonitorSummary;
-import com.smartlab.management.entity.StepLog;
-import com.smartlab.management.entity.Task;
-import com.smartlab.management.entity.TaskStep;
-import com.smartlab.management.mapper.StepLogMapper;
-import com.smartlab.management.mapper.TaskMapper;
-import com.smartlab.management.mapper.TaskStepMapper;
+import com.smartlab.management.dto.common.PageResult;
+import com.smartlab.management.dto.workflow.TaskMonitorSummary;
+import com.smartlab.management.entity.workflow.StepLog;
+import com.smartlab.management.entity.workflow.Task;
+import com.smartlab.management.entity.workflow.TaskStep;
+import com.smartlab.management.mapper.workflow.StepLogMapper;
+import com.smartlab.management.mapper.workflow.TaskMapper;
+import com.smartlab.management.mapper.workflow.TaskStepMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
 
@@ -26,6 +26,9 @@ import java.util.Map;
  * 对应 TASK、TASK_STEP、STEP_LOG 三张任务运行记录表。
  */
 @Service
+/**
+ * 实验任务工作流生命周期控制与守护调度业务服务。
+ */
 public class TaskService extends ManagementCrudService<Task> {
 
     private final TaskMapper taskMapper;

@@ -1,14 +1,14 @@
 package com.smartlab.management.service.db.resource.data;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.smartlab.management.entity.DataIndex;
-import com.smartlab.management.entity.DataTemplateDetail;
-import com.smartlab.management.entity.DataTemplateMain;
-import com.smartlab.management.entity.PropertyType;
-import com.smartlab.management.mapper.DataIndexMapper;
-import com.smartlab.management.mapper.DataTemplateDetailMapper;
-import com.smartlab.management.mapper.DataTemplateMainMapper;
-import com.smartlab.management.mapper.PropertyTypeMapper;
+import com.smartlab.management.entity.resource.data.DataIndex;
+import com.smartlab.management.entity.resource.data.DataTemplateDetail;
+import com.smartlab.management.entity.resource.data.DataTemplateMain;
+import com.smartlab.management.entity.resource.device.PropertyType;
+import com.smartlab.management.mapper.resource.data.DataIndexMapper;
+import com.smartlab.management.mapper.resource.data.DataTemplateDetailMapper;
+import com.smartlab.management.mapper.resource.data.DataTemplateMainMapper;
+import com.smartlab.management.mapper.resource.device.PropertyTypeMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -30,6 +30,9 @@ import java.util.regex.Pattern;
  * 对应 DATA_INDEX 表，负责数据集索引和物理数据表的创建生命周期。
  */
 @Service
+/**
+ * DataIndex业务持久层核心操作服务。
+ */
 public class DataIndexService extends ManagementCrudService<DataIndex> {
 
     private static final Pattern SAFE_IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");

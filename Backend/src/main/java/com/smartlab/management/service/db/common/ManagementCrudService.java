@@ -3,7 +3,7 @@ package com.smartlab.management.service.db.common;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.core.mapper.BaseMapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.smartlab.management.dto.PageResult;
+import com.smartlab.management.dto.common.PageResult;
 
 import java.io.Serializable;
 import java.lang.reflect.Method;

@@ -3,10 +3,10 @@ package com.smartlab.engine;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.global.util.JsonNodeSupport;
-import com.smartlab.management.entity.DeviceInstances;
-import com.smartlab.management.entity.DeviceModels;
-import com.smartlab.management.entity.DeviceTwinStates;
-import com.smartlab.management.mapper.DeviceInstancesMapper;
+import com.smartlab.management.entity.resource.device.DeviceInstances;
+import com.smartlab.management.entity.resource.device.DeviceModels;
+import com.smartlab.management.entity.resource.device.DeviceTwinStates;
+import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
 import com.smartlab.management.service.db.resource.device.DeviceModelService;
 import com.smartlab.management.service.db.resource.device.DeviceTwinStateService;
 import org.slf4j.Logger;
@@ -26,6 +26,9 @@ import java.util.concurrent.ConcurrentHashMap;
  * 软电路状态机引擎服务。
  */
 @Service
+/**
+ * 状态机引擎运行时核心执行器。独立处理功能状态偏转、指令生命周期管理及原生状态广播逻辑。
+ */
 public class StateMachineEngineService {
 
     private static final Logger log = LoggerFactory.getLogger(StateMachineEngineService.class);

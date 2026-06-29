@@ -12,6 +12,9 @@ import java.util.concurrent.ThreadPoolExecutor;
  * 这里只提供线程池 Bean，具体工作流执行逻辑不放在 management 模块。
  */
 @Configuration
+/**
+ * TaskExecutionConfig 领域实体/配置模型类。
+ */
 public class TaskExecutionConfig {
 
     @Bean(name = "workflowTaskExecutor")

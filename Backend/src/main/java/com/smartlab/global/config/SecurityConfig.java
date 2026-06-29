@@ -23,6 +23,9 @@ import java.util.List;
  */
 @Configuration
 @EnableWebSecurity
+/**
+ * SecurityConfig 领域实体/配置模型类。
+ */
 public class SecurityConfig {
 
     private final JwtAuthenticationFilter jwtAuthenticationFilter;

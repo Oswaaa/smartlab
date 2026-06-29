@@ -2,9 +2,9 @@ package com.smartlab.management.service.db.constraint;
 
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
-import com.smartlab.management.dto.PageResult;
-import com.smartlab.management.entity.ViolationLog;
-import com.smartlab.management.mapper.ViolationLogMapper;
+import com.smartlab.management.dto.common.PageResult;
+import com.smartlab.management.entity.constraint.ViolationLog;
+import com.smartlab.management.mapper.constraint.ViolationLogMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
 
@@ -15,6 +15,9 @@ import java.time.LocalDateTime;
  * 对应 VIOLATION_LOG 表，只负责日志查询和人工维护，不执行约束判断。
  */
 @Service
+/**
+ * ViolationLog业务持久层核心操作服务。
+ */
 public class ViolationLogService extends ManagementCrudService<ViolationLog> {
 
     private final ViolationLogMapper mapper;

@@ -1,10 +1,10 @@
 package com.smartlab.management.service.db.resource.scene;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.smartlab.management.entity.SceneDetail;
-import com.smartlab.management.entity.SceneMain;
-import com.smartlab.management.mapper.SceneDetailMapper;
-import com.smartlab.management.mapper.SceneMainMapper;
+import com.smartlab.management.entity.resource.scene.SceneDetail;
+import com.smartlab.management.entity.resource.scene.SceneMain;
+import com.smartlab.management.mapper.resource.scene.SceneDetailMapper;
+import com.smartlab.management.mapper.resource.scene.SceneMainMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,6 +17,9 @@ import java.util.List;
  * 对应 SCENE_MAIN 与 SCENE_DETAIL 表。
  */
 @Service
+/**
+ * Scene业务持久层核心操作服务。
+ */
 public class SceneService {
 
     private final SceneMainMapper sceneMainMapper;

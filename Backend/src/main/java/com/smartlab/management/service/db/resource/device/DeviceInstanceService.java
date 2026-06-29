@@ -6,14 +6,14 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.global.util.JsonNodeSupport;
-import com.smartlab.management.dto.PageResult;
-import com.smartlab.management.entity.DeviceInstances;
-import com.smartlab.management.entity.DeviceTwinStates;
-import com.smartlab.management.mapper.DeviceInstancesMapper;
-import com.smartlab.management.mapper.DeviceTwinStatesMapper;
+import com.smartlab.management.dto.common.PageResult;
+import com.smartlab.management.entity.resource.device.DeviceInstances;
+import com.smartlab.management.entity.resource.device.DeviceTwinStates;
+import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
+import com.smartlab.management.mapper.resource.device.DeviceTwinStatesMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import com.smartlab.management.service.db.resource.data.DataIndexService;
-import com.smartlab.management.service.protocol.DeviceProtocolMapperService;
+import com.smartlab.adapter.AdapterPayloadMapperService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,17 +28,20 @@ import java.util.Set;
  * 设备实例表服务，只负责实例持久化和实例快照基础读写。
  */
 @Service
+/**
+ * 设备物理实例生命周期与点位绑定持久层基础服务。
+ */
 public class DeviceInstanceService extends ManagementCrudService<DeviceInstances> {
 
     private final DeviceInstancesMapper mapper;
     private final DeviceTwinStatesMapper twinStatesMapper;
     private final DataIndexService dataIndexService;
-    private final DeviceProtocolMapperService protocolMapperService;
+    private final AdapterPayloadMapperService protocolMapperService;
 
     public DeviceInstanceService(DeviceInstancesMapper mapper,
                                  DeviceTwinStatesMapper twinStatesMapper,
                                  DataIndexService dataIndexService,
-                                 DeviceProtocolMapperService protocolMapperService) {
+                                 AdapterPayloadMapperService protocolMapperService) {
         super(mapper);
         this.mapper = mapper;
         this.twinStatesMapper = twinStatesMapper;

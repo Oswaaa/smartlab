@@ -1,7 +1,7 @@
 package com.smartlab.management.service.menu;
 
-import com.smartlab.management.dto.MenuDTO;
-import com.smartlab.management.entity.PermissionInfo;
+import com.smartlab.management.dto.user.MenuDTO;
+import com.smartlab.management.entity.user.PermissionInfo;
 import com.smartlab.management.service.db.user.PermissionService;
 import org.springframework.stereotype.Service;
 
@@ -16,6 +16,9 @@ import java.util.stream.Collectors;
  * 菜单定义保存在后端代码字典中，是否可见由 PERMISSION_INFO 计算出的权限对象决定。
  */
 @Service
+/**
+ * 系统侧边功能菜单加载与动态路由生成业务服务。
+ */
 public class MenuService {
 
     private final MenuCatalogService menuCatalogService;

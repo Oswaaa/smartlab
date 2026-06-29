@@ -18,6 +18,9 @@ import java.util.ArrayList;
  * 从 Authorization 请求头中提取 Bearer Token，并写入 Spring Security 上下文。
  */
 @Component
+/**
+ * JwtAuthenticationFilter 领域实体/配置模型类。
+ */
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final AuthenticationTokenService authenticationTokenService;

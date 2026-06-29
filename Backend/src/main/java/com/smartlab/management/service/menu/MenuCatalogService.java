@@ -1,6 +1,6 @@
 package com.smartlab.management.service.menu;
 
-import com.smartlab.management.dto.MenuDTO;
+import com.smartlab.management.dto.user.MenuDTO;
 import jakarta.annotation.PostConstruct;
 import org.springframework.stereotype.Service;
 
@@ -8,6 +8,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Service
+/**
+ * 系统菜单目录管理持久层服务。
+ */
 public class MenuCatalogService {
 
     private final List<MenuDTO> fullMenuTree = new ArrayList<>();

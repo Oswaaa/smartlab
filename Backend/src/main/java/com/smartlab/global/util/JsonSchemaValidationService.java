@@ -13,6 +13,9 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
+/**
+ * JsonSchemaValidation业务持久层核心操作服务。
+ */
 public class JsonSchemaValidationService {
 
     private final JsonSchemaFactory factory = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V7);

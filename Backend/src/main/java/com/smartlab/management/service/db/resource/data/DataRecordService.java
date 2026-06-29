@@ -1,11 +1,11 @@
 package com.smartlab.management.service.db.resource.data;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.smartlab.management.dto.PageResult;
-import com.smartlab.management.entity.DataIndex;
-import com.smartlab.management.entity.DataTemplateDetail;
-import com.smartlab.management.mapper.DataIndexMapper;
-import com.smartlab.management.mapper.DataTemplateDetailMapper;
+import com.smartlab.management.dto.common.PageResult;
+import com.smartlab.management.entity.resource.data.DataIndex;
+import com.smartlab.management.entity.resource.data.DataTemplateDetail;
+import com.smartlab.management.mapper.resource.data.DataIndexMapper;
+import com.smartlab.management.mapper.resource.data.DataTemplateDetailMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,6 +25,9 @@ import java.util.stream.Collectors;
  * DATA_INDEX.DATA_TABLE 指向真实物理数据表，本服务负责按数据集读写记录。
  */
 @Service
+/**
+ * DataRecord业务持久层核心操作服务。
+ */
 public class DataRecordService {
 
     private static final Pattern SAFE_TABLE = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");

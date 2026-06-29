@@ -3,8 +3,8 @@ package com.smartlab.management.service.db.workflow;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.smartlab.global.util.JsonNodeSupport;
-import com.smartlab.management.entity.FlowModels;
-import com.smartlab.management.mapper.FlowModelsMapper;
+import com.smartlab.management.entity.workflow.FlowModels;
+import com.smartlab.management.mapper.workflow.FlowModelsMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
 
@@ -17,6 +17,9 @@ import java.util.Map;
  * 对应 FLOW_MODELS 表，只负责流程模型的基础保存、查询和删除。
  */
 @Service
+/**
+ * 工作流模板编排、定义与发布核心服务。
+ */
 public class WorkflowService extends ManagementCrudService<FlowModels> {
 
     private final FlowModelsMapper mapper;

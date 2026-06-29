@@ -10,6 +10,9 @@ import java.nio.charset.StandardCharsets;
 import java.util.Date;
 
 @Service
+/**
+ * AuthenticationToken业务持久层核心操作服务。
+ */
 public class AuthenticationTokenService {
 
     private final SecretKey secretKey;

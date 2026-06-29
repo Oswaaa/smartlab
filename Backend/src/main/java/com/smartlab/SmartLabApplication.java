@@ -9,6 +9,9 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @SpringBootApplication
 @EnableScheduling
 @MapperScan(basePackages = "com.smartlab", annotationClass = Mapper.class)
+/**
+ * SmartLabApplication 领域实体/配置模型类。
+ */
 public class SmartLabApplication {
 
     public static void main(String[] args) {

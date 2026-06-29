@@ -1,8 +1,8 @@
 package com.smartlab.management.service.db.resource.scene;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
-import com.smartlab.management.entity.ResourceStructure;
-import com.smartlab.management.mapper.ResourceStructureMapper;
+import com.smartlab.management.entity.resource.device.ResourceStructure;
+import com.smartlab.management.mapper.resource.device.ResourceStructureMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
 
@@ -14,6 +14,9 @@ import java.util.List;
  * 对应 RESOURCE_STRUCTURE 表，用于记录场景内设备实例之间的连接关系。
  */
 @Service
+/**
+ * ResourceStructure业务持久层核心操作服务。
+ */
 public class ResourceStructureService extends ManagementCrudService<ResourceStructure> {
 
     private final ResourceStructureMapper mapper;

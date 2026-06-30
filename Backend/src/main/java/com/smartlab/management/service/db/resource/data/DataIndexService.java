@@ -166,8 +166,21 @@ public class DataIndexService extends ManagementCrudService<DataIndex> {
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void delete(java.io.Serializable id) {
-        throw new IllegalStateException("数据集不支持硬删除。请保留 DATA_INDEX 与物理数据表的一致性，后续如需停用请使用归档状态字段。");
+        if (id == null || String.valueOf(id).isBlank()) {
+            throw new IllegalArgumentException("数据集ID不能为空");
+        }
+        Long dataIndexId = Long.valueOf(String.valueOf(id));
+        DataIndex index = mapper.selectById(dataIndexId);
+        if (index == null) {
+            throw new IllegalArgumentException("数据集不存在");
+        }
+        if (index.getDataTable() == null || index.getDataTable().isBlank()) {
+            throw new IllegalStateException("数据集缺少物理表名，无法删除");
+        }
+        jdbcTemplate.execute("drop table if exists " + quoteIdentifier(index.getDataTable()));
+        mapper.deleteById(dataIndexId);
     }
 
     private boolean hasDataSet(Long deviceInstanceId, Long templateId) {

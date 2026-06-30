@@ -51,6 +51,19 @@ public class DataTemplateService extends ManagementCrudService<DataTemplateMain>
         );
     }
 
+    public DataTemplateMain findDefaultTemplateByModelId(Long deviceModelId) {
+        if (deviceModelId == null) {
+            return null;
+        }
+        return mainMapper.selectOne(
+                Wrappers.<DataTemplateMain>lambdaQuery()
+                        .eq(DataTemplateMain::getDeviceModelId, deviceModelId)
+                        .eq(DataTemplateMain::getIsDefault, true)
+                        .orderByDesc(DataTemplateMain::getId)
+                        .last("limit 1")
+        );
+    }
+
     /**
      * 按 DTO 保存数据模板主表和字段明细。
      */

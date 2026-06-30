@@ -15,6 +15,9 @@ import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
 import com.smartlab.management.mapper.resource.device.DeviceModelsMapper;
 import com.smartlab.management.mapper.resource.device.DeviceTwinStatesMapper;
 import com.smartlab.management.service.db.resource.adapter.AdapterIndexService;
+import com.smartlab.management.service.db.resource.data.DataIndexService;
+import com.smartlab.management.service.db.resource.data.DataRecordService;
+import com.smartlab.management.entity.resource.data.DataIndex;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
@@ -40,6 +43,8 @@ public class AdapterPayloadMapperService {
     private final AdapterIndexService adapterIndexService;
     private final AdapterManifestService adapterManifestService;
     private final StateMachineEngine stateMachineEngine;
+    private final DataIndexService dataIndexService;
+    private final DataRecordService dataRecordService;
     private final ConcurrentHashMap<String, AdapterRouteDTO> adapterRouteTable = new ConcurrentHashMap<>();
 
     public AdapterPayloadMapperService(DeviceInstancesMapper deviceInstancesMapper,
@@ -47,12 +52,16 @@ public class AdapterPayloadMapperService {
             DeviceTwinStatesMapper twinStatesMapper,
             AdapterIndexService adapterIndexService,
             AdapterManifestService adapterManifestService,
+            DataIndexService dataIndexService,
+            DataRecordService dataRecordService,
             @Lazy StateMachineEngine stateMachineEngine) {
         this.deviceInstancesMapper = deviceInstancesMapper;
         this.deviceModelsMapper = deviceModelsMapper;
         this.twinStatesMapper = twinStatesMapper;
         this.adapterIndexService = adapterIndexService;
         this.adapterManifestService = adapterManifestService;
+        this.dataIndexService = dataIndexService;
+        this.dataRecordService = dataRecordService;
         this.stateMachineEngine = stateMachineEngine;
     }
 
@@ -207,6 +216,32 @@ public class AdapterPayloadMapperService {
         state.setLastOnlineTime(OffsetDateTime.now());
         state.setUpdateTime(OffsetDateTime.now());
         twinStatesMapper.updateById(state);
+
+        try {
+            Map<String, Object> recordMap = new HashMap<>();
+            current.fields().forEachRemaining(e -> {
+                JsonNode val = e.getValue();
+                if (val.isNumber()) {
+                    recordMap.put(e.getKey(), val.numberValue());
+                } else if (val.isBoolean()) {
+                    recordMap.put(e.getKey(), val.booleanValue());
+                } else {
+                    recordMap.put(e.getKey(), val.asText());
+                }
+            });
+            List<DataIndex> dataIndexes = dataIndexService.listByDeviceInstance(instanceId);
+            if (dataIndexes != null) {
+                for (DataIndex index : dataIndexes) {
+                    try {
+                        dataRecordService.appendRecord(index.getId(), recordMap);
+                    } catch (Exception e) {
+                        // ignore insertion failures (e.g. strict schema constraints)
+                    }
+                }
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
     public void applyAdapterEvent(String adapterName, String devicePoint, JsonNode message) {

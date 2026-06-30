@@ -6,8 +6,11 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.common.PageResult;
+import com.smartlab.management.dto.resource.data.DataTemplateSaveDTO;
 import com.smartlab.management.dto.resource.device.DeviceModelSaveDTO;
 import com.smartlab.management.dto.resource.device.DeviceStateMachineSaveDTO;
+import com.smartlab.management.entity.resource.data.DataTemplateDetail;
+import com.smartlab.management.entity.resource.data.DataTemplateMain;
 import com.smartlab.management.entity.resource.device.DeviceCategory;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
 import com.smartlab.management.entity.resource.device.DeviceModels;
@@ -15,7 +18,9 @@ import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
 import com.smartlab.management.mapper.resource.device.DeviceModelsMapper;
 import com.smartlab.adapter.AdapterManifestService;
 import com.smartlab.management.service.db.common.ManagementCrudService;
+import com.smartlab.management.service.db.resource.data.DataTemplateService;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -41,16 +46,19 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
     private final DeviceInstancesMapper deviceInstancesMapper;
     private final DeviceCategoryService deviceCategoryService;
     private final AdapterManifestService adapterManifestService;
+    private final DataTemplateService dataTemplateService;
 
     public DeviceModelService(DeviceModelsMapper mapper,
             DeviceInstancesMapper deviceInstancesMapper,
             DeviceCategoryService deviceCategoryService,
-            AdapterManifestService adapterManifestService) {
+            AdapterManifestService adapterManifestService,
+            DataTemplateService dataTemplateService) {
         super(mapper);
         this.mapper = mapper;
         this.deviceInstancesMapper = deviceInstancesMapper;
         this.deviceCategoryService = deviceCategoryService;
         this.adapterManifestService = adapterManifestService;
+        this.dataTemplateService = dataTemplateService;
     }
 
     @Override
@@ -214,6 +222,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         mapper.updateById(model);
     }
 
+    @Transactional(rollbackFor = Exception.class)
     public DeviceModels savePayload(DeviceModelSaveDTO payload) {
         if (payload == null) {
             throw new IllegalArgumentException("设备模型保存请求不能为空");
@@ -258,7 +267,82 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         } else {
             mapper.updateById(model);
         }
+        saveDefaultDataTemplate(model.getId(), model.getModelName(), payload.getDefaultDataTemplate());
         return model;
+    }
+
+    private void saveDefaultDataTemplate(Long modelId, String modelName, JsonNode templateNode) {
+        if (modelId == null || templateNode == null || templateNode.isNull() || templateNode.isMissingNode()) {
+            return;
+        }
+        if (templateNode.has("enabled") && !templateNode.path("enabled").asBoolean(true)) {
+            return;
+        }
+        JsonNode mainNode = templateNode.has("main") ? templateNode.path("main") : templateNode;
+        JsonNode detailsNode = templateNode.has("details") ? templateNode.path("details") : templateNode.path("columns");
+        if (detailsNode == null || !detailsNode.isArray() || detailsNode.size() == 0) {
+            return;
+        }
+
+        DataTemplateMain existing = dataTemplateService.findDefaultTemplateByModelId(modelId);
+        DataTemplateMain main = new DataTemplateMain();
+        if (existing != null) {
+            main.setId(existing.getId());
+            main.setCreateTime(existing.getCreateTime());
+        }
+        main.setTemplateName(textValue(mainNode, "templateName", modelName + " 默认数据模板"));
+        main.setTemplateDesc(textValue(mainNode, "templateDesc", "系统根据设备模型自动生成的默认数据模板"));
+        main.setDeviceModelId(modelId);
+        main.setIsDefault(true);
+
+        DataTemplateSaveDTO dto = new DataTemplateSaveDTO();
+        dto.setMain(main);
+        List<DataTemplateDetail> details = new ArrayList<>();
+        for (JsonNode row : detailsNode) {
+            String columnName = textValue(row, "columnName", "");
+            if (columnName.isBlank()) {
+                continue;
+            }
+            DataTemplateDetail detail = new DataTemplateDetail();
+            detail.setColumnName(columnName);
+            detail.setColumnDesc(textValue(row, "columnDesc", columnName));
+            detail.setDeviceAttrKey(textValue(row, "deviceAttrKey", columnName));
+            detail.setDefaultValue(nullableTextValue(row, "defaultValue"));
+            detail.setPropertyTypeId(longValue(row, "propertyTypeId"));
+            detail.setColumnLength(integerValue(row, "columnLength"));
+            details.add(detail);
+        }
+        if (details.isEmpty()) {
+            return;
+        }
+        dto.setDetails(details);
+        dataTemplateService.saveTemplate(dto);
+    }
+
+    private String textValue(JsonNode node, String field, String fallback) {
+        String value = nullableTextValue(node, field);
+        return value == null || value.isBlank() ? fallback : value;
+    }
+
+    private String nullableTextValue(JsonNode node, String field) {
+        if (node == null || node.isNull() || !node.has(field) || node.get(field).isNull()) {
+            return null;
+        }
+        return node.get(field).asText();
+    }
+
+    private Long longValue(JsonNode node, String field) {
+        if (node == null || node.isNull() || !node.has(field) || node.get(field).isNull() || node.get(field).asText().isBlank()) {
+            return null;
+        }
+        return node.get(field).asLong();
+    }
+
+    private Integer integerValue(JsonNode node, String field) {
+        if (node == null || node.isNull() || !node.has(field) || node.get(field).isNull() || node.get(field).asText().isBlank()) {
+            return null;
+        }
+        return node.get(field).asInt();
     }
 
     public ObjectNode previewModel(DeviceModelSaveDTO payload) {

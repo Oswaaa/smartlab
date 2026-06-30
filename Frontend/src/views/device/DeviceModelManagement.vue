@@ -43,12 +43,12 @@
           <div class="detail-head">
             <div class="detail-title">
               <h2>{{ selectedModel.modelName }}</h2>
-              <p>{{ selectedModel.categoryName || '未分类' }} · 模型 ID {{ selectedModel.modelId }} · {{ formatTime(selectedModel.updateTime) }}</p>
+              <p>{{ selectedModel.categoryName || '未分类' }} · {{ formatTime(selectedModel.updateTime) }}</p>
             </div>
             <div class="detail-actions">
               <el-button :icon="Download" @click="downloadModelBundle">导出模型文件</el-button>
               <el-button v-if="canEditModel" type="primary" plain :icon="EditPen" @click="openEditDrawer(selectedModel)">编辑模型</el-button>
-              <el-popconfirm v-if="canDeleteModel" title="确认删除该设备模型？已有设备实例时后端会阻止删除。" @confirm="deleteModel(selectedModel.modelId)">
+              <el-popconfirm v-if="canDeleteModel" title="确认删除该模型？有设备实例时不可删除。" @confirm="deleteModel(selectedModel.modelId)">
                 <template #reference>
                   <el-button type="danger" plain :icon="Delete">删除</el-button>
                 </template>
@@ -64,6 +64,7 @@
               <el-anchor-link href="#view-mapping" title="映射关系" />
               <el-anchor-link href="#view-state" title="状态机" />
               <el-anchor-link href="#view-constraint" title="内置约束" />
+              <el-anchor-link href="#view-template" title="默认数据模板" />
               <el-anchor-link href="#view-file" title="模型文件" />
             </el-anchor>
             <el-scrollbar class="detail-scroll-content" style="flex-grow: 1; padding-left: 20px;">
@@ -73,7 +74,7 @@
                 <el-descriptions :column="2" border size="small">
                   <el-descriptions-item label="模型名称">{{ selectedModel.modelName || '-' }}</el-descriptions-item>
                   <el-descriptions-item label="设备类别">{{ selectedModel.categoryName || '-' }}</el-descriptions-item>
-                  <el-descriptions-item label="通信协议">{{ selectedModel.adapterContract.config?.protocol || '-' }}</el-descriptions-item>
+                  <el-descriptions-item label="通信协议">{{ selectedModel.adapterContract?.config?.protocol || '-' }}</el-descriptions-item>
                   <el-descriptions-item label="更新时间">{{ formatTime(selectedModel.updateTime) }}</el-descriptions-item>
                 </el-descriptions>
               </section>
@@ -84,11 +85,11 @@
                 <section class="info-section section-cluster">
                   <div class="section-title">
                     <h3>设备属性</h3>
-                    <span class="section-count">{{ selectedModel.attributes.length }} 项</span>
+                    <span class="section-count">{{ selectedAttributes.length }} 项</span>
                   </div>
-                  <div v-if="selectedModel.attributes.length === 0" class="compact-empty inline-empty">暂无设备属性</div>
+                  <div v-if="selectedAttributes.length === 0" class="compact-empty inline-empty">暂无设备属性</div>
                   <div v-else class="attribute-grid">
-                    <article v-for="attr in selectedModel.attributes" :key="attr.name || attr.displayName" class="attribute-tile">
+                    <article v-for="attr in selectedAttributes" :key="attr.name || attr.displayName" class="attribute-tile">
                       <div class="tile-title">{{ attr.displayName || '-' }}</div>
                       <div class="tile-meta">
                         <span>{{ valueKindLabel(attr.valueKind) }}</span>
@@ -102,11 +103,11 @@
                 <section class="info-section section-cluster">
                   <div class="section-title">
                     <h3>设备操作</h3>
-                    <span class="section-count">{{ selectedModel.capabilities.length }} 项</span>
+                    <span class="section-count">{{ selectedCapabilities.length }} 项</span>
                   </div>
-                  <div v-if="selectedModel.capabilities.length === 0" class="compact-empty inline-empty">暂无设备操作</div>
+                  <div v-if="selectedCapabilities.length === 0" class="compact-empty inline-empty">暂无设备操作</div>
                   <div v-else class="operation-grid">
-                    <article v-for="(capability, index) in selectedModel.capabilities" :key="capability.name || index" class="operation-card">
+                    <article v-for="(capability, index) in selectedCapabilities" :key="capability.name || index" class="operation-card">
                       <div class="operation-head">
                         <span class="item-index">{{ index + 1 }}</span>
                         <div>
@@ -127,15 +128,15 @@
                 <section class="info-section section-cluster">
                   <div class="section-title">
                     <h3>端口配置</h3>
-                    <span class="section-count">{{ selectedModel.ports.length }} 项</span>
+                    <span class="section-count">{{ selectedPorts.length }} 项</span>
                   </div>
-                  <div v-if="selectedModel.ports.length === 0" class="compact-empty inline-empty">暂无端口配置</div>
+                  <div v-if="selectedPorts.length === 0" class="compact-empty inline-empty">暂无端口配置</div>
                   <div v-else class="port-grid">
-                    <article v-for="(port, index) in selectedModel.ports" :key="port.portName || index" class="port-tile">
+                    <article v-for="(port, index) in selectedPorts" :key="port.portName || index" class="port-tile">
                       <div class="port-name">{{ port.displayName || port.portName || '未命名端口' }}</div>
                       <div class="port-meta">
                         <span>{{ directionLabel(port.direction) }}</span>
-                        <span>{{ displayAttributeName(port.bindingAttrName, selectedModel.attributes) }}</span>
+                        <span>{{ displayAttributeName(port.bindingAttrName, selectedAttributes) }}</span>
                       </div>
                     </article>
                   </div>
@@ -147,11 +148,11 @@
                 <section class="info-section section-cluster">
                   <div class="section-title">
                     <h3>Adapter 命令</h3>
-                    <span class="section-count">{{ selectedModel.adapterContract.commands.length }} 项</span>
+                    <span class="section-count">{{ selectedAdapterCommands.length }} 项</span>
                   </div>
-                  <div v-if="selectedModel.adapterContract.commands.length === 0" class="compact-empty inline-empty">暂无 Adapter 命令</div>
+                  <div v-if="selectedAdapterCommands.length === 0" class="compact-empty inline-empty">暂无 Adapter 命令</div>
                   <div v-else class="operation-grid">
-                    <article v-for="(command, index) in selectedModel.adapterContract.commands" :key="command.commandName || index" class="operation-card adapter-command-card">
+                    <article v-for="(command, index) in selectedAdapterCommands" :key="command.commandName || index" class="operation-card adapter-command-card">
                       <div class="operation-head">
                         <span class="item-index">{{ index + 1 }}</span>
                         <div>
@@ -172,11 +173,11 @@
                 <section class="info-section section-cluster compact-section">
                   <div class="section-title">
                     <h3>Adapter 属性</h3>
-                    <span class="section-count">{{ selectedModel.adapterContract.telemetry.adapterAttributes.length }} 项</span>
+                    <span class="section-count">{{ selectedAdapterAttributes.length }} 项</span>
                   </div>
-                  <div v-if="selectedModel.adapterContract.telemetry.adapterAttributes.length === 0" class="compact-empty inline-empty">暂无 Adapter 属性</div>
+                  <div v-if="selectedAdapterAttributes.length === 0" class="compact-empty inline-empty">暂无 Adapter 属性</div>
                   <div v-else class="attribute-grid adapter-attribute-grid">
-                    <article v-for="attr in selectedModel.adapterContract.telemetry.adapterAttributes" :key="attr.name" class="attribute-tile">
+                    <article v-for="attr in selectedAdapterAttributes" :key="attr.name" class="attribute-tile">
                       <div class="tile-title">{{ attr.description || attr.name || '-' }}</div>
                       <div class="tile-meta">
                         <span>{{ attr.name || '-' }}</span>
@@ -189,11 +190,11 @@
                 <section class="info-section section-cluster compact-section">
                   <div class="section-title">
                     <h3>Adapter 事件</h3>
-                    <span class="section-count">{{ selectedModel.adapterContract.events.length }} 项</span>
+                    <span class="section-count">{{ selectedAdapterEvents.length }} 项</span>
                   </div>
-                  <div v-if="selectedModel.adapterContract.events.length === 0" class="compact-empty inline-empty">暂无 Adapter 事件</div>
+                  <div v-if="selectedAdapterEvents.length === 0" class="compact-empty inline-empty">暂无 Adapter 事件</div>
                   <div v-else class="event-chip-grid">
-                    <span v-for="event in selectedModel.adapterContract.events" :key="event.eventName" class="event-chip" :class="event.eventType === 'CMD' ? 'event-chip-cmd' : 'event-chip-op'">
+                    <span v-for="event in selectedAdapterEvents" :key="event.eventName" class="event-chip" :class="event.eventType === 'CMD' ? 'event-chip-cmd' : 'event-chip-op'">
                       <b>{{ event.eventName }}</b>
                       <em>{{ event.description || eventTypeLabel(event.eventType) }}</em>
                     </span>
@@ -206,12 +207,12 @@
                 <section class="info-section section-cluster compact-section">
                   <div class="section-title">
                     <h3>属性映射</h3>
-                    <span class="section-count">{{ selectedModel.adapterContract.telemetry.attributesMapping.length }} 项</span>
+                    <span class="section-count">{{ selectedAttributeMappings.length }} 项</span>
                   </div>
-                  <div v-if="selectedModel.adapterContract.telemetry.attributesMapping.length === 0" class="compact-empty inline-empty">暂无属性映射</div>
+                  <div v-if="selectedAttributeMappings.length === 0" class="compact-empty inline-empty">暂无属性映射</div>
                   <div v-else class="mapping-grid">
-                    <article v-for="mapping in selectedModel.adapterContract.telemetry.attributesMapping" :key="mapping.adapterAttrName" class="mapping-tile">
-                      <span class="mapping-source">{{ displayAttributeName(mapping.modelAttributeName, selectedModel.attributes) }}</span>
+                    <article v-for="mapping in selectedAttributeMappings" :key="mapping.adapterAttrName" class="mapping-tile">
+                      <span class="mapping-source">{{ displayAttributeName(mapping.modelAttributeName, selectedAttributes) }}</span>
                       <span class="mapping-arrow">→</span>
                       <span class="mapping-target">{{ mapping.adapterAttrName || '-' }}</span>
                     </article>
@@ -221,11 +222,11 @@
                 <section class="info-section section-cluster">
                   <div class="section-title">
                     <h3>功能映射</h3>
-                    <span class="section-count">{{ functionMappingGroups(selectedModel.capabilities).length }} 项</span>
+                    <span class="section-count">{{ functionMappingGroups(selectedCapabilities).length }} 项</span>
                   </div>
-                  <div v-if="functionMappingGroups(selectedModel.capabilities).length === 0" class="compact-empty inline-empty">暂无功能映射</div>
+                  <div v-if="functionMappingGroups(selectedCapabilities).length === 0" class="compact-empty inline-empty">暂无功能映射</div>
                   <div v-else class="function-map-list">
-                    <article v-for="group in functionMappingGroups(selectedModel.capabilities)" :key="group.key" class="function-map-card">
+                    <article v-for="group in functionMappingGroups(selectedCapabilities)" :key="group.key" class="function-map-card">
                       <div class="function-map-head">
                         <strong>{{ group.capabilityDisplayName }}</strong>
                         <span>Adapter 命令：{{ group.adapterCommandName }}</span>
@@ -249,33 +250,33 @@
                 <section class="info-section section-cluster compact-section">
                   <div class="section-title">
                     <h3>指令生命周期</h3>
-                    <span class="section-count">{{ selectedModel.cmdState.states.length }} 个状态</span>
+                    <span class="section-count">{{ selectedCmdStates.length }} 个状态</span>
                   </div>
-                  <div v-if="selectedModel.cmdState.states.length === 0" class="compact-empty inline-empty">暂无指令生命周期状态</div>
+                  <div v-if="selectedCmdStates.length === 0" class="compact-empty inline-empty">暂无指令生命周期状态</div>
                   <div v-else class="state-token-panel">
-                    <span v-for="state in selectedModel.cmdState.states" :key="state.stateName" class="filled-state-token cmd-state-token">{{ state.stateName }}</span>
+                    <span v-for="state in selectedCmdStates" :key="state.stateName" class="filled-state-token cmd-state-token">{{ state.stateName }}</span>
                   </div>
                 </section>
 
                 <section class="info-section section-cluster compact-section">
                   <div class="section-title">
                     <h3>功能状态</h3>
-                    <span class="section-count">{{ selectedModel.opState.states.length }} 个状态</span>
+                    <span class="section-count">{{ selectedOpStates.length }} 个状态</span>
                   </div>
-                  <div v-if="selectedModel.opState.states.length === 0" class="compact-empty inline-empty">暂无功能状态</div>
+                  <div v-if="selectedOpStates.length === 0" class="compact-empty inline-empty">暂无功能状态</div>
                   <div v-else class="state-token-panel">
-                    <span v-for="state in selectedModel.opState.states" :key="state.stateName" class="filled-state-token op-state-token">{{ state.stateName }}</span>
+                    <span v-for="state in selectedOpStates" :key="state.stateName" class="filled-state-token op-state-token">{{ state.stateName }}</span>
                   </div>
                 </section>
 
                 <section class="info-section section-cluster">
                   <div class="section-title">
                     <h3>转移规则</h3>
-                    <span class="section-count">{{ stateMachineModelJson.transitions?.length || 0 }} 条</span>
+                    <span class="section-count">{{ selectedStateTransitions.length }} 条</span>
                   </div>
-                  <div v-if="!stateMachineModelJson.transitions || stateMachineModelJson.transitions.length === 0" class="compact-empty inline-empty">暂无转移规则</div>
+                  <div v-if="selectedStateTransitions.length === 0" class="compact-empty inline-empty">暂无转移规则</div>
                   <div v-else class="transition-card-list">
-                    <article v-for="(row, index) in stateMachineModelJson.transitions" :key="index" class="transition-view-card">
+                    <article v-for="(row, index) in selectedStateTransitions" :key="index" class="transition-view-card">
                       <div class="transition-card-head">
                         <strong>{{ row.description || '未命名规则' }}</strong>
                         <span>{{ row.trigger?.interfaceName || '-' }} / {{ row.trigger?.signalName || '-' }}</span>
@@ -298,14 +299,34 @@
                 <section class="info-section section-cluster compact-section">
                   <div class="section-title">
                     <h3>内置约束</h3>
-                    <span class="section-count">{{ selectedModel.intrinsicConstraints.length }} 条</span>
+                    <span class="section-count">{{ selectedConstraints.length }} 条</span>
                   </div>
-                  <div v-if="selectedModel.intrinsicConstraints.length === 0" class="compact-empty inline-empty">暂无内置约束</div>
+                  <div v-if="selectedConstraints.length === 0" class="compact-empty inline-empty">暂无内置约束</div>
                   <div v-else class="constraint-list">
-                    <article v-for="(row, index) in selectedModel.intrinsicConstraints" :key="index" class="constraint-card">
-                      <strong>{{ displayAttributeName(row.objectAttributeName, selectedModel.attributes) }}</strong>
+                    <article v-for="(row, index) in selectedConstraints" :key="index" class="constraint-card">
+                      <strong>{{ displayAttributeName(row.objectAttributeName, selectedAttributes) }}</strong>
                       <span>{{ operatorLabel(row.operator) }} {{ row.boundaryValue }}</span>
                       <em>违规状态：{{ row.violationStateName || '-' }}</em>
+                    </article>
+                  </div>
+                </section>
+              </div>
+
+                          <div id="view-template" class="anchor-section industrial-section">
+                <h2 class="section-heading">默认数据模板</h2>
+                <section class="info-section section-cluster compact-section">
+                  <div class="section-title">
+                    <h3>已选模板字段</h3>
+                    <span class="section-count">{{ defaultTemplateAttributes.length }} 项</span>
+                  </div>
+                  <div v-if="defaultTemplateAttributes.length === 0" class="compact-empty inline-empty">暂无默认数据模板配置</div>
+                  <div v-else class="attribute-grid">
+                    <article v-for="attr in defaultTemplateAttributes" :key="attr.name || attr.displayName" class="attribute-tile">
+                      <div class="tile-title">{{ attr.displayName || '-' }}</div>
+                      <div class="tile-meta">
+                        <span>{{ attr.dataType || '-' }}</span>
+                        <span v-if="attr.unit">{{ attr.unit }}</span>
+                      </div>
                     </article>
                   </div>
                 </section>
@@ -324,7 +345,7 @@
                 </div>
               </section>
             </div>
-          
+
             </el-scrollbar>
           </div>
         </template>
@@ -343,6 +364,7 @@
             <el-anchor-link href="#edit-mapping" title="映射关系" />
             <el-anchor-link href="#edit-state" title="状态机" />
             <el-anchor-link href="#edit-constraint" title="内置约束" />
+            <el-anchor-link href="#edit-template" title="默认数据模板" />
             <el-anchor-link href="#edit-file" title="模型文件" />
           </el-anchor>
           <el-scrollbar class="edit-scroll-content" style="flex-grow: 1; padding-left: 20px;">
@@ -878,6 +900,24 @@
             </section>
           </div>
 
+                    <div id="edit-template" class="anchor-section industrial-section">
+            <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px;">默认数据模板</h2>
+            <section class="drawer-section">
+              <div class="section-title">
+                <h3>默认数据模板字段</h3>
+              </div>
+              <div v-if="draft.attributes.length === 0" class="compact-empty block-empty">请先添加设备属性</div>
+              <el-checkbox-group v-else v-model="draft.defaultDataTemplateAttrs">
+                <el-checkbox v-for="attr in draft.attributes" :key="attr._key" :label="attr._key" :value="attr._key">
+                  {{ attr.displayName || attr.name || '未命名属性' }}
+                </el-checkbox>
+              </el-checkbox-group>
+              <div style="margin-top: 10px; font-size: 12px; color: #909399;">
+                选中的属性将作为该设备模型的默认数据表字段。在创建设备实例时，系统将自动创建对应的数据表。
+              </div>
+            </section>
+          </div>
+
                     <div id="edit-file" class="anchor-section industrial-section">
             <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px;">模型文件</h2>
             <div style="margin-bottom: 12px; display: flex; justify-content: flex-end;">
@@ -894,7 +934,7 @@
               </div>
             </section>
           </div>
-        
+
           </el-scrollbar>
         </div>
       </div>
@@ -1071,6 +1111,16 @@ const canCreateModel = computed(() => authStore.hasPermission('device_model:crea
 const canEditModel = computed(() => authStore.hasPermission('device_model:edit'))
 const canDeleteModel = computed(() => authStore.hasPermission('device_model:delete'))
 const selectedModel = computed(() => models.value.find(item => item.modelId === selectedModelId.value) || null)
+const selectedAttributes = computed(() => asArray(selectedModel.value?.attributes))
+const selectedCapabilities = computed(() => asArray(selectedModel.value?.capabilities))
+const selectedPorts = computed(() => asArray(selectedModel.value?.ports))
+const selectedAdapterCommands = computed(() => asArray(selectedModel.value?.adapterContract?.commands))
+const selectedAdapterAttributes = computed(() => asArray(selectedModel.value?.adapterContract?.telemetry?.adapterAttributes))
+const selectedAdapterEvents = computed(() => asArray(selectedModel.value?.adapterContract?.events))
+const selectedAttributeMappings = computed(() => asArray(selectedModel.value?.adapterContract?.telemetry?.attributesMapping))
+const selectedCmdStates = computed(() => asArray(selectedModel.value?.cmdState?.states))
+const selectedOpStates = computed(() => asArray(selectedModel.value?.opState?.states))
+const selectedConstraints = computed(() => asArray(selectedModel.value?.intrinsicConstraints))
 const drawerTitle = computed(() => drawerMode.value === 'create' ? '新建设备模型' : '编辑设备模型')
 const attributeOptions = computed(() => draft.attributes.map((item, index) => ({ key: item._key, label: item.displayName || item.name || '属性' + (index + 1) })).filter(item => item.key))
 const adapterAttributeNameOptions = computed(() => draft.adapterContract.telemetry.adapterAttributes.map(item => item.name).filter(Boolean))
@@ -1122,8 +1172,10 @@ const stateMachineWarningMessages = computed(() => {
 })
 const emptyModelBundle = () => ({ capabilityModel: {}, stateMachineModel: {} })
 const selectedModelBundle = ref(emptyModelBundle())
+const defaultTemplateAttributes = ref([])
 const capabilityModelJson = computed(() => selectedModelBundle.value.capabilityModel || {})
 const stateMachineModelJson = computed(() => selectedModelBundle.value.stateMachineModel || {})
+const selectedStateTransitions = computed(() => asArray(stateMachineModelJson.value?.transitions))
 const draftCapabilityModelJson = ref({})
 const draftStateMachineModelJson = ref({})
 const generatingPreview = ref(false)
@@ -1161,7 +1213,8 @@ function emptyDraft() {
     opState: defaultStateSpace('IDLE'),
     cmdState: defaultCommandLifecycle(),
     stateTransitions: [],
-    componentsBom: []
+    componentsBom: [],
+    defaultDataTemplateAttrs: []
   }
 }
 
@@ -1267,12 +1320,35 @@ async function fetchModelBundle(modelId) {
 async function loadSelectedModelBundle(modelId = selectedModelId.value) {
   if (!modelId) {
     selectedModelBundle.value = emptyModelBundle()
+    defaultTemplateAttributes.value = []
     return
   }
   try {
     selectedModelBundle.value = await fetchModelBundle(modelId)
+    try {
+      const tplRes = await axios.get('/api/data/template/list')
+      const templates = tplRes.data?.data || []
+      const defaultTpl = templates.find(t => String(t.deviceModelId) === String(modelId) && t.isDefault)
+      if (defaultTpl) {
+        const detailRes = await axios.get(`/api/data/template/${defaultTpl.id}/details`)
+        const details = detailRes.data?.data || []
+        const currentModel = models.value.find(item => item.modelId === modelId)
+        if (currentModel && currentModel.attributes) {
+          const keys = details.map(d => d.deviceAttrKey)
+          defaultTemplateAttributes.value = currentModel.attributes.filter(a => keys.includes(a.name))
+        } else {
+          defaultTemplateAttributes.value = []
+        }
+      } else {
+        defaultTemplateAttributes.value = []
+      }
+    } catch (e) {
+      console.error('Failed to load templates', e)
+      defaultTemplateAttributes.value = []
+    }
   } catch (err) {
     selectedModelBundle.value = emptyModelBundle()
+    defaultTemplateAttributes.value = []
     ElMessage.error(err.message || '加载模型文件失败')
   }
 }
@@ -1331,18 +1407,20 @@ async function saveDraft() {
   }
   saving.value = true
   try {
-    const payload = buildSavePayload(true)
+    const propertyTypes = draft.defaultDataTemplateAttrs?.length ? await loadPropertyTypesForTemplate() : []
+    const payload = buildSavePayload(true, propertyTypes)
     const res = await axios.post('/api/device/model/save', payload)
     if (!res.data?.success) {
       ElMessage.error(res.data?.message || '保存失败')
       return
     }
-    selectedModelId.value = String(res.data?.data?.modelId || payload.modelId || '')
+    const savedModelId = String(res.data?.data?.modelId || payload.modelId || '')
+    selectedModelId.value = savedModelId
     drawerVisible.value = false
     ElMessage.success('保存成功')
     await loadData()
   } catch (err) {
-    ElMessage.error(err.response?.data?.message || '保存失败')
+    ElMessage.error(err.response?.data?.message || err.message || '保存失败')
   } finally {
     saving.value = false
   }
@@ -1454,7 +1532,7 @@ function cleanAdapterContract(contract, attrNameByKey) {
   }
 }
 
-function buildSavePayload(includeBlankBasic = true) {
+function buildSavePayload(includeBlankBasic = true, propertyTypes = []) {
   const attributeResult = materializeAttributes(draft.attributes)
   const attributes = attributeResult.rows
   const attrNameByKey = attributeResult.nameByKey
@@ -1472,11 +1550,76 @@ function buildSavePayload(includeBlankBasic = true) {
     opState: cleanStateSpace(draft.opState, 'IDLE', 'OP'),
     cmdState: cleanStateSpace(draft.cmdState, 'IDLE', 'CMD'),
     stateTransitions: cleanTransitions(draft.stateTransitions),
-    componentsBom: asArray(draft.componentsBom)
+    componentsBom: asArray(draft.componentsBom),
+    defaultDataTemplate: buildDefaultDataTemplate(attributeResult.rowByKey, propertyTypes)
   }
   if (isNumeric(draft.basic.categoryValue)) payload.categoryId = Number(draft.basic.categoryValue)
   else if (draft.basic.categoryValue) payload.categoryName = String(draft.basic.categoryValue).trim()
   return payload
+}
+
+async function loadPropertyTypesForTemplate() {
+  const res = await axios.get('/api/data/property-type/list')
+  return asArray(res.data?.data)
+}
+
+function buildDefaultDataTemplate(rowByKey, propertyTypes = []) {
+  const selectedKeys = asArray(draft.defaultDataTemplateAttrs).filter(Boolean)
+  if (selectedKeys.length === 0) return null
+  const usedColumns = new Set()
+  const details = []
+  selectedKeys.map(key => rowByKey?.get(key)).filter(Boolean).forEach((attr, index) => {
+    const columnName = reserveIdentifier(toSafeColumnName(attr.name, index), 'column_' + (index + 1), usedColumns)
+    details.push({
+      columnName,
+      columnDesc: attr.displayName || attr.name || columnName,
+      propertyTypeId: propertyTypeIdForDataType(attr.dataType, propertyTypes),
+      columnLength: attr.dataType === 'STRING' ? 255 : null,
+      deviceAttrKey: attr.name,
+      defaultValue: ''
+    })
+    const unitValue = stringValue(attr.unit)
+    if (unitValue) {
+      const unitColumnName = reserveIdentifier(columnName + '_unit', 'column_' + (index + 1) + '_unit', usedColumns)
+      details.push({
+        columnName: unitColumnName,
+        columnDesc: (attr.displayName || attr.name || columnName) + '单位',
+        propertyTypeId: propertyTypeIdForDataType('STRING', propertyTypes),
+        columnLength: 50,
+        deviceAttrKey: attr.name + '_unit',
+        defaultValue: unitValue
+      })
+    }
+  })
+  const validDetails = details.filter(detail => detail.columnName && detail.deviceAttrKey)
+  if (validDetails.length === 0) return null
+  return {
+    enabled: true,
+    templateName: (draft.basic.modelName?.trim() || '未命名模型') + ' 默认数据模板',
+    templateDesc: '系统根据设备模型自动生成的默认数据模板',
+    isDefault: true,
+    details: validDetails
+  }
+}
+
+function toSafeColumnName(name, index) {
+  const text = stringValue(name)
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(text) ? text : 'column_' + (index + 1)
+}
+
+function propertyTypeIdForDataType(dataType, propertyTypes = []) {
+  const type = normalizeDataType(dataType, 'STRING', attributeDataTypes)
+  const candidates = {
+    DOUBLE: ['double precision', 'double', 'float8', 'numeric', 'decimal'],
+    INTEGER: ['integer', 'int4', 'int', 'bigint'],
+    BOOLEAN: ['boolean', 'bool'],
+    STRING: ['varchar', 'character varying', 'text', 'string']
+  }[type] || ['text']
+  const rows = asArray(propertyTypes)
+  const exact = rows.find(row => candidates.includes(String(row.dbType || '').trim().toLowerCase()))
+  if (exact) return exact.id
+  const fuzzy = rows.find(row => candidates.some(candidate => String(row.dbType || '').trim().toLowerCase().includes(candidate)))
+  return fuzzy?.id || null
 }
 
 function fromModelToDraft(model) {
@@ -1492,14 +1635,23 @@ function fromModelToDraft(model) {
     opState: deepClone(model.opState),
     cmdState: deepClone(model.cmdState),
     stateTransitions: deepClone(model.stateTransitions),
-    componentsBom: deepClone(model.componentsBom)
+    componentsBom: deepClone(model.componentsBom),
+    defaultDataTemplateAttrs: defaultTemplateAttributes.value.map(a => a.name).filter(Boolean)
   }
 }
 
 function replaceDraft(next) {
   Object.assign(draft.basic, next.basic)
   const normalizedCapabilities = normalizeCapabilities(next.capabilities)
-  draft.attributes.splice(0, draft.attributes.length, ...normalizeAttributes(next.attributes))
+  const normalizedAttributes = normalizeAttributes(next.attributes)
+  draft.attributes.splice(0, draft.attributes.length, ...normalizedAttributes)
+
+  const attrKeys = (next.defaultDataTemplateAttrs || []).map(nameOrKey => {
+     const attr = normalizedAttributes.find(a => a.name === nameOrKey || a._key === nameOrKey)
+     return attr ? attr._key : null
+  }).filter(Boolean)
+  draft.defaultDataTemplateAttrs = attrKeys
+
   draft.capabilities.splice(0, draft.capabilities.length, ...normalizedCapabilities)
   draft.functionMappings.splice(0, draft.functionMappings.length, ...normalizeFunctionMappings(next.functionMappings))
   draft.ports.splice(0, draft.ports.length, ...normalizePorts(next.ports, draft.attributes))
@@ -2047,13 +2199,16 @@ function materializedName(item, fallback, used) {
 
 function materializeAttributes(rows) {
   const nameByKey = new Map()
+  const rowByKey = new Map()
   const usedNames = new Set()
   const materializedRows = asArray(rows).filter(item => stringValue(item.name || item.displayName)).map((item, index) => {
     const name = materializedName(item, 'attribute_' + (index + 1), usedNames)
+    const row = { name, displayName: stringValue(item.displayName || name), valueKind: item.valueKind || 'CONTINUOUS', dataType: normalizeDataType(item.dataType, 'DOUBLE', attributeDataTypes), unit: stringValue(item.unit) }
     nameByKey.set(item._key, name)
-    return { name, displayName: stringValue(item.displayName || name), valueKind: item.valueKind || 'CONTINUOUS', dataType: normalizeDataType(item.dataType, 'DOUBLE', attributeDataTypes), unit: stringValue(item.unit) }
+    rowByKey.set(item._key, row)
+    return row
   })
-  return { rows: materializedRows, nameByKey }
+  return { rows: materializedRows, nameByKey, rowByKey }
 }
 
 function materializePorts(rows, attrNameByKey) {

@@ -23,4 +23,5 @@ public class DeviceModelSaveDTO {
     private JsonNode cmdState;
     private JsonNode stateTransitions;
     private JsonNode componentsBom;
+    private JsonNode defaultDataTemplate;
 }

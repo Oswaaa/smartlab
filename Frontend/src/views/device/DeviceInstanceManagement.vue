@@ -149,13 +149,6 @@
           </el-tab-pane>
 
           <el-tab-pane label="手动控制" name="control">
-            <el-alert
-              title="手动控制会走同一条状态机与 Adapter/MQTT 链路，适合设备接入验证。"
-              type="info"
-              show-icon
-              :closable="false"
-              class="mb-12"
-            />
             <el-form label-position="left" label-width="110px" size="small">
               <el-form-item label="设备能力">
                 <el-select v-model="controlCommandId" style="width: 100%" placeholder="选择命令">
@@ -197,7 +190,7 @@
               <template #header>属性快照</template>
               <div v-if="Object.keys(snapshotAttributes).length > 0" class="attr-list">
                 <div v-for="(val, key) in snapshotAttributes" :key="key" class="attr-row">
-                  <span>{{ getAttributeName(key) }}（{{ key }}）</span>
+                  <span>{{ getAttributeName(key) }}</span>
                   <span class="mono">{{ val }}</span>
                 </div>
               </div>
@@ -206,13 +199,6 @@
           </el-tab-pane>
 
           <el-tab-pane label="局部约束" name="constraints">
-            <el-alert
-              title="为当前设备实例设置局部安全约束。超出阈值时，系统会执行告警或熔断。"
-              type="warning"
-              show-icon
-              :closable="false"
-              class="mb-12"
-            />
             <div class="constraint-actions">
               <el-button type="primary" plain size="small" @click="addConstraint">
                 <el-icon><Plus /></el-icon> 新增约束
@@ -259,13 +245,13 @@
           </el-tab-pane>
 
           <el-tab-pane label="数据集" name="datasets">
-            <el-alert
-              title="该设备实例绑定的数据集列表"
-              type="info"
-              show-icon
-              :closable="false"
-              class="mb-12"
-            />
+            <div class="dataset-create-panel">
+              <el-select v-model="datasetCreateForm.templateId" size="small" filterable clearable placeholder="选择数据模板">
+                <el-option v-for="tpl in availableDataTemplates" :key="templateIdOf(tpl)" :label="tpl.templateName || '未命名模板'" :value="templateIdOf(tpl)" />
+              </el-select>
+              <el-input v-model="datasetCreateForm.dataDesc" size="small" placeholder="数据集名称，例如：高压报警专项数据" />
+              <el-button type="primary" size="small" :loading="creatingDataSet" @click="createDataSetForInstance">绑定模板建表</el-button>
+            </div>
             <el-table :data="instanceDataSets" border size="small" v-loading="loadingDataSets">
               <el-table-column prop="id" label="数据集ID" width="80" />
               <el-table-column prop="dataDesc" label="数据集描述" min-width="150" />
@@ -273,6 +259,15 @@
               <el-table-column prop="createTime" label="创建时间" min-width="150">
                 <template #default="{ row }">
                   {{ new Date(row.createTime).toLocaleString() }}
+                </template>
+              </el-table-column>
+              <el-table-column label="操作" width="82" align="center">
+                <template #default="{ row }">
+                  <el-popconfirm title="确认删除该数据表？物理表会同时删除。" @confirm="deleteInstanceDataSet(row)">
+                    <template #reference>
+                      <el-button link type="danger" size="small">删除</el-button>
+                    </template>
+                  </el-popconfirm>
                 </template>
               </el-table-column>
             </el-table>
@@ -418,6 +413,9 @@ const controlParamsText = ref('{}')
 
 const instanceDataSets = ref<any[]>([])
 const loadingDataSets = ref(false)
+const dataTemplates = ref<any[]>([])
+const creatingDataSet = ref(false)
+const datasetCreateForm = ref({ templateId: '', dataDesc: '' })
 
 const createDialogVisible = ref(false)
 const createFormRef = ref<FormInstance>()
@@ -463,6 +461,10 @@ const activeInstanceCommands = computed(() => {
   const commands = activeInstanceModel.value?.capabilitySpec?.adapterContract?.commands
   return Array.isArray(commands) ? commands.map((cmd: any) => ({ ...cmd, commandId: cmd.commandId || cmd.commandName || cmd.name })) : []
 })
+const availableDataTemplates = computed(() => {
+  const modelId = activeInstance.value?.modelId
+  return dataTemplates.value.filter(tpl => !tpl.deviceModelId || !modelId || String(tpl.deviceModelId) === String(modelId))
+})
 
 const mqttTemplate = computed(() => {
   const model = selectedCreateModel.value
@@ -501,7 +503,7 @@ const loadData = async () => {
       })
       categoriesMap.value = map
     }
-    await Promise.all([loadSidebarModels(), loadModelOptions(), loadAdapters()])
+    await Promise.all([loadSidebarModels(), loadModelOptions(), loadAdapters(), loadDataTemplates()])
     await loadInstances()
   } catch (err: any) {
     ElMessage.error(err.response?.data?.message || '加载设备数据失败')
@@ -551,6 +553,17 @@ const loadAdapters = async () => {
     }
   } finally {
     adapterLoading.value = false
+  }
+}
+
+const loadDataTemplates = async () => {
+  try {
+    const res = await axios.get('/api/data/template/list')
+    if (res.data?.success) {
+      dataTemplates.value = res.data.data || []
+    }
+  } catch (err: any) {
+    ElMessage.error(err.response?.data?.message || '加载数据模板失败')
   }
 }
 
@@ -662,6 +675,7 @@ const viewDetails = (instance: DeviceInstance) => {
   activeInstance.value.commConfig.mqttTopic = commandTopicPreview(activeInstance.value.boundAdapterName, activeInstance.value.boundDevicePoint)
   localConstraints.value = JSON.parse(JSON.stringify(activeInstance.value.commConfig.constraints || []))
   loadDevicePoints(activeInstance.value.boundAdapterName, 'drawer')
+  datasetCreateForm.value = { templateId: '', dataDesc: '' }
   controlCommandId.value = activeInstanceCommands.value[0]?.commandId || ''
   controlParamsText.value = '{}'
   activeTab.value = 'info'
@@ -800,6 +814,50 @@ const loadDataSets = async () => {
     ElMessage.error(err.response?.data?.message || '加载数据集失败')
   } finally {
     loadingDataSets.value = false
+  }
+}
+
+const createDataSetForInstance = async () => {
+  if (!activeInstance.value) return
+  if (!datasetCreateForm.value.templateId) {
+    ElMessage.warning('请选择数据模板')
+    return
+  }
+  creatingDataSet.value = true
+  try {
+    const template = dataTemplates.value.find(tpl => String(templateIdOf(tpl)) === String(datasetCreateForm.value.templateId))
+    const res = await axios.post('/api/data/index/create-dataset', {
+      templateId: datasetCreateForm.value.templateId,
+      deviceInstanceId: activeInstance.value.instanceId,
+      dataDesc: datasetCreateForm.value.dataDesc || (activeInstance.value.instanceName + ' - ' + (template?.templateName || '自定义数据表'))
+    })
+    if (res.data?.success) {
+      ElMessage.success('数据表创建成功')
+      datasetCreateForm.value = { templateId: '', dataDesc: '' }
+      await loadDataSets()
+    } else {
+      ElMessage.error(res.data?.message || '创建失败')
+    }
+  } catch (err: any) {
+    ElMessage.error(err.response?.data?.message || '创建失败')
+  } finally {
+    creatingDataSet.value = false
+  }
+}
+
+const deleteInstanceDataSet = async (row: any) => {
+  const id = row?.id || row?.dataIndexId
+  if (!id) return
+  try {
+    const res = await axios.delete('/api/data/index/delete/' + id)
+    if (res.data?.success) {
+      ElMessage.success('数据表已删除')
+      await loadDataSets()
+    } else {
+      ElMessage.error(res.data?.message || '删除失败')
+    }
+  } catch (err: any) {
+    ElMessage.error(err.response?.data?.message || '删除失败')
   }
 }
 
@@ -993,6 +1051,8 @@ function normalizeInstance(raw: any): DeviceInstance {
     isOnline: raw.isOnline === true || raw.onlineStatus === 'ONLINE'
   }
 }
+
+const templateIdOf = (template: any) => String(template?.templateId || template?.id || '')
 
 function findModelById(modelId: string) {
   if (!modelId) return null
@@ -1196,6 +1256,28 @@ onUnmounted(() => {
   display: flex;
   justify-content: flex-end;
   margin-bottom: 8px;
+}
+
+.dataset-create-panel {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.9fr) minmax(220px, 1.1fr) auto;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 10px;
+  padding: 10px;
+  border: 1px solid #ccd6e3;
+  border-left: 3px solid #2563eb;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.drawer-body :deep(.el-tabs__content) {
+  padding-top: 8px;
+}
+
+.drawer-body :deep(.el-table th) {
+  background: #f3f6fa;
+  color: #243244;
 }
 
 .mb-12 { margin-bottom: 12px; }

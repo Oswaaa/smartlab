@@ -11,13 +11,10 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.regex.Pattern;
-import java.util.stream.Collectors;
 
 /**
  * 动态数据记录读写服务。
@@ -31,6 +28,7 @@ import java.util.stream.Collectors;
 public class DataRecordService {
 
     private static final Pattern SAFE_TABLE = Pattern.compile("[A-Za-z_][A-Za-z0-9_]*");
+    private static final Object MISSING_VALUE = new Object();
 
     private final DataIndexMapper dataIndexMapper;
     private final DataTemplateDetailMapper detailMapper;
@@ -102,10 +100,10 @@ public class DataRecordService {
         }
         DataIndex index = requireDataIndex(dataIndexId);
         String table = quoteIdentifier(index.getDataTable());
-        Map<String, DataTemplateDetail> allowedColumns = loadAllowedColumns(index.getDataTemplateId());
+        List<DataTemplateDetail> templateFields = loadTemplateFields(index.getDataTemplateId());
         int inserted = 0;
         for (Map<String, Object> record : records) {
-            Map<String, Object> row = normalizeRecord(record, allowedColumns);
+            Map<String, Object> row = normalizeRecord(record, templateFields);
             if (row.isEmpty()) {
                 continue;
             }
@@ -147,47 +145,60 @@ public class DataRecordService {
     }
 
     /**
-     * 加载模板允许写入的字段集合。
+     * 加载模板字段定义。字段定义里的 column_name 是物理表列，device_attr_key 是设备模型属性标识。
      */
-    private Map<String, DataTemplateDetail> loadAllowedColumns(Long templateId) {
-        List<DataTemplateDetail> details = detailMapper.selectList(
+    private List<DataTemplateDetail> loadTemplateFields(Long templateId) {
+        return detailMapper.selectList(
                 Wrappers.<DataTemplateDetail>lambdaQuery()
                         .eq(DataTemplateDetail::getDataTemplateId, templateId)
                         .orderByAsc(DataTemplateDetail::getId)
         );
-        return details.stream().collect(Collectors.toMap(
-                detail -> normalizeIdentifier(detail.getColumnName(), "数据字段名"),
-                detail -> detail,
-                (left, right) -> left,
-                LinkedHashMap::new
-        ));
     }
 
     /**
-     * 过滤并规范化待写入记录，只保留模板允许的字段。
+     * 按 device_attr_key 从记录里取值，再写入对应的物理列 column_name。
      */
-    private Map<String, Object> normalizeRecord(Map<String, Object> record, Map<String, DataTemplateDetail> allowedColumns) {
-        if (record == null || record.isEmpty()) {
+    private Map<String, Object> normalizeRecord(Map<String, Object> record, List<DataTemplateDetail> templateFields) {
+        if (record == null || record.isEmpty() || templateFields == null || templateFields.isEmpty()) {
             return Map.of();
         }
         Map<String, Object> row = new LinkedHashMap<>();
-        Set<String> rejectedColumns = new HashSet<>();
-        for (Map.Entry<String, Object> entry : record.entrySet()) {
-            String column = normalizeIdentifier(entry.getKey(), "数据字段名");
-            if (Set.of("id", "data_index_id", "create_time").contains(column)) {
-                rejectedColumns.add(entry.getKey());
-                continue;
+        for (DataTemplateDetail detail : templateFields) {
+            String column = normalizeIdentifier(detail.getColumnName(), "数据字段名");
+            String sourceKey = firstNonBlank(detail.getDeviceAttrKey(), detail.getColumnName());
+            Object value = valueBySourceKey(record, sourceKey);
+            if (value != MISSING_VALUE) {
+                row.put(column, value);
             }
-            if (!allowedColumns.containsKey(column)) {
-                rejectedColumns.add(entry.getKey());
-                continue;
-            }
-            row.put(column, entry.getValue());
-        }
-        if (!rejectedColumns.isEmpty()) {
-            throw new IllegalArgumentException("记录包含模板未定义字段: " + rejectedColumns);
         }
         return row;
+    }
+
+    private String firstNonBlank(String first, String second) {
+        if (first != null && !first.isBlank()) {
+            return first.trim();
+        }
+        return second == null ? "" : second.trim();
+    }
+
+    private Object valueBySourceKey(Map<String, Object> record, String sourceKey) {
+        if (sourceKey == null || sourceKey.isBlank()) {
+            return MISSING_VALUE;
+        }
+        if (record.containsKey(sourceKey)) {
+            return record.get(sourceKey);
+        }
+        String trimmed = sourceKey.trim();
+        if (!trimmed.equals(sourceKey) && record.containsKey(trimmed)) {
+            return record.get(trimmed);
+        }
+        for (Map.Entry<String, Object> entry : record.entrySet()) {
+            String key = entry.getKey();
+            if (key != null && key.trim().equals(trimmed)) {
+                return entry.getValue();
+            }
+        }
+        return MISSING_VALUE;
     }
 
     /**
@@ -235,10 +246,12 @@ public class DataRecordService {
         
         try (java.io.PrintWriter writer = new java.io.PrintWriter(new java.io.OutputStreamWriter(response.getOutputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
             writer.write('\ufeff'); // BOM for Excel
-            Map<String, DataTemplateDetail> allowedColumns = loadAllowedColumns(index.getDataTemplateId());
+            List<DataTemplateDetail> templateFields = loadTemplateFields(index.getDataTemplateId());
             List<String> columns = new ArrayList<>();
             columns.add("create_time");
-            columns.addAll(allowedColumns.keySet());
+            columns.addAll(templateFields.stream()
+                    .map(detail -> normalizeIdentifier(detail.getColumnName(), "数据字段名"))
+                    .toList());
             
             writer.println(String.join(",", columns));
             

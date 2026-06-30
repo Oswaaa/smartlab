@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import lombok.Data;
 
 @Data
@@ -36,7 +36,7 @@ public class StepLog {
     private String logInfo;
 
     @TableField("log_time")
-    private LocalDateTime logTime;
+    private OffsetDateTime logTime;
 
 }
 

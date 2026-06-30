@@ -6,7 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.smartlab.management.mapper.common.PostgresJsonbTypeHandler;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import lombok.Data;
 
 @Data
@@ -53,7 +53,7 @@ public class FlowNode {
     private JsonNode actions;
 
     @TableField("create_time")
-    private LocalDateTime createTime;
+    private OffsetDateTime createTime;
 
 }
 

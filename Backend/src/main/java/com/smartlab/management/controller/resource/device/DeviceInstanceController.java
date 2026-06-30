@@ -10,7 +10,7 @@ import com.smartlab.management.entity.resource.device.DeviceTwinStates;
 import com.smartlab.adapter.MqttAdapterMessagingService;
 import com.smartlab.management.service.db.resource.device.DeviceInstanceService;
 import com.smartlab.adapter.AdapterPayloadMapperService;
-import com.smartlab.engine.StateMachineEngineService;
+import com.smartlab.engine.statemachine.StateMachineEngine;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -26,16 +26,16 @@ public class DeviceInstanceController {
 
     private final DeviceInstanceService deviceInstanceService;
     private final MqttAdapterMessagingService mqttAdapterMessagingService;
-    private final StateMachineEngineService stateMachineEngineService;
+    private final StateMachineEngine stateMachineEngine;
     private final AdapterPayloadMapperService protocolMapperService;
 
     public DeviceInstanceController(DeviceInstanceService deviceInstanceService,
                                     MqttAdapterMessagingService mqttAdapterMessagingService,
-                                    StateMachineEngineService stateMachineEngineService,
+                                    StateMachineEngine stateMachineEngine,
                                     AdapterPayloadMapperService protocolMapperService) {
         this.deviceInstanceService = deviceInstanceService;
         this.mqttAdapterMessagingService = mqttAdapterMessagingService;
-        this.stateMachineEngineService = stateMachineEngineService;
+        this.stateMachineEngine = stateMachineEngine;
         this.protocolMapperService = protocolMapperService;
     }
 
@@ -115,7 +115,7 @@ public class DeviceInstanceController {
             if (body != null && body.get("parameters") instanceof Map<?, ?> raw) {
                 raw.forEach((key, value) -> parameters.put(String.valueOf(key), value));
             }
-            ObjectNode result = stateMachineEngineService.handleManualControl(Long.valueOf(id), signalName, commandId, parameters);
+            ObjectNode result = stateMachineEngine.handleManualControl(Long.valueOf(id), signalName, commandId, parameters);
             return ApiResponse.ok(result);
         } catch (Exception e) {
             return ApiResponse.fail(e.getMessage());

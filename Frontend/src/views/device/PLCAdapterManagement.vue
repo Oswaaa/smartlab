@@ -3,41 +3,42 @@
     <header class="page-head">
       <div>
         <h1>设备执行代理</h1>
-        <p>聚合展示设备模型的 Adapter 北向契约与设备实例的代理运行配置</p>
+        <p>聚合展示设备实例的代理运行配置及 Adapter 北向契约</p>
       </div>
       <div class="head-actions">
-        <el-button :icon="Refresh">刷新</el-button>
-        <el-button type="primary" :icon="EditPen">保存配置</el-button>
+        <el-button :icon="Refresh" @click="fetchData">刷新</el-button>
+        <!-- Removed "Save Config" because this page is read-only for monitoring adapter contracts -->
       </div>
     </header>
 
     <main class="workspace">
       <aside class="left-list">
         <div class="panel-title">
-          <span>设备模型</span>
-          <el-input v-model="keyword" placeholder="搜索模型/实例" size="small" clearable />
+          <span>设备实例</span>
+          <el-input v-model="keyword" placeholder="搜索实例名称" size="small" clearable />
         </div>
 
-        <div class="model-list">
+        <div class="model-list" v-loading="loading">
+          <el-empty v-if="filteredInstances.length === 0" description="无匹配设备实例" />
           <button
-            v-for="item in adapterRows"
-            :key="`${item.modelId}-${item.instanceId}`"
+            v-for="item in filteredInstances"
+            :key="item.instanceId"
             class="model-item"
-            :class="{ active: activeKey === `${item.modelId}-${item.instanceId}` }"
-            @click="activeKey = `${item.modelId}-${item.instanceId}`"
+            :class="{ active: activeKey === item.instanceId }"
+            @click="activeKey = item.instanceId"
           >
             <span class="name">{{ item.instanceName }}</span>
-            <span class="meta">{{ item.modelName }}</span>
+            <span class="meta">{{ getModelName(item.modelId) }}</span>
             <span class="status" :class="item.status">{{ item.status }}</span>
           </button>
         </div>
       </aside>
 
-      <section class="detail-area">
+      <section class="detail-area" v-if="activeRow">
         <div class="summary-row">
           <div class="summary-cell">
             <span class="label">设备模型</span>
-            <strong>{{ activeRow.modelName }}</strong>
+            <strong>{{ getModelName(activeRow.modelId) }}</strong>
           </div>
           <div class="summary-cell">
             <span class="label">设备实例</span>
@@ -50,102 +51,60 @@
             </el-tag>
           </div>
           <div class="summary-cell">
-            <span class="label">配置来源</span>
-            <strong>DEVICE_MODELS / DEVICE_INSTANCES</strong>
+            <span class="label">绑定通道 (Adapter)</span>
+            <strong>{{ activeRow.boundAdapterName || '未绑定' }} / {{ activeRow.boundDevicePoint || '-' }}</strong>
           </div>
         </div>
 
         <el-tabs v-model="activeTab" class="adapter-tabs">
-          <el-tab-pane label="北向契约" name="contract">
+          <el-tab-pane label="北向契约 (Adapter Binding)" name="contract">
             <div class="two-column">
               <section class="panel">
                 <div class="panel-header">
                   <h2>系统与 Adapter 的通信契约</h2>
-                  <el-tag>模型级</el-tag>
+                  <el-tag>实例级</el-tag>
                 </div>
                 <el-form label-position="top" class="form-grid">
                   <el-form-item label="通信方式">
-                    <el-select model-value="MQTT" disabled>
-                      <el-option label="MQTT" value="MQTT" />
+                    <el-select :model-value="adapterBinding?.protocol || 'N/A'" disabled>
+                      <el-option :label="adapterBinding?.protocol || 'N/A'" :value="adapterBinding?.protocol || 'N/A'" />
                     </el-select>
                   </el-form-item>
                   <el-form-item label="契约版本">
-                    <el-input model-value="v1" />
+                    <el-input :model-value="adapterBinding?.version || 'N/A'" readonly />
                   </el-form-item>
-                  <el-form-item label="命令主题模板">
-                    <el-input model-value="smartlab/v1/{lab}/{model}/{instance}/cmd" />
+                  <el-form-item label="命令主题 (Command)">
+                    <el-input :model-value="adapterBinding?.topics?.command || 'N/A'" readonly />
                   </el-form-item>
-                  <el-form-item label="状态主题模板">
-                    <el-input model-value="smartlab/v1/{lab}/{model}/{instance}/status" />
+                  <el-form-item label="状态主题 (Status)">
+                    <el-input :model-value="adapterBinding?.topics?.status || 'N/A'" readonly />
+                  </el-form-item>
+                  <el-form-item label="遥测主题 (Telemetry)">
+                    <el-input :model-value="adapterBinding?.topics?.telemetry || 'N/A'" readonly />
+                  </el-form-item>
+                  <el-form-item label="配置快照">
+                    <el-input :model-value="adapterBinding?.topics?.config || 'N/A'" readonly />
                   </el-form-item>
                 </el-form>
               </section>
 
               <section class="panel">
                 <div class="panel-header">
-                  <h2>命令与遥测映射</h2>
-                  <el-button text type="primary" :icon="Plus">新增命令</el-button>
+                  <h2>命令与遥测映射摘要</h2>
                 </div>
-                <el-table :data="contractCommands" size="small" border>
-                  <el-table-column prop="capability" label="能力引用" min-width="130" />
-                  <el-table-column prop="command" label="命令 ID" min-width="120" />
+                <el-table :data="contractCommands" size="small" border style="width: 100%; height: calc(100% - 44px); overflow-y: auto;">
+                  <el-table-column prop="capability" label="能力引用" min-width="130" show-overflow-tooltip />
+                  <el-table-column prop="command" label="命令 ID" min-width="120" show-overflow-tooltip />
                   <el-table-column prop="direction" label="方向" width="90" />
-                  <el-table-column prop="payload" label="载荷模板" min-width="160" />
+                  <el-table-column prop="payload" label="描述/载荷" min-width="160" show-overflow-tooltip />
                 </el-table>
               </section>
             </div>
           </el-tab-pane>
 
-          <el-tab-pane label="实例配置" name="instance">
-            <div class="two-column">
-              <section class="panel">
-                <div class="panel-header">
-                  <h2>实例级连接参数</h2>
-                  <el-tag type="warning">实例级</el-tag>
-                </div>
-                <el-form label-position="top" class="form-grid">
-                  <el-form-item label="Adapter 标识">
-                    <el-input model-value="reactor-01-adapter" />
-                  </el-form-item>
-                  <el-form-item label="部署位置">
-                    <el-input model-value="实验室 A / 工控机 01" />
-                  </el-form-item>
-                  <el-form-item label="南向协议">
-                    <el-select model-value="MODBUS_TCP">
-                      <el-option label="Modbus TCP" value="MODBUS_TCP" />
-                      <el-option label="HTTP 服务程序" value="HTTP" />
-                      <el-option label="TCP 服务程序" value="TCP" />
-                      <el-option label="串口 / RS-485" value="SERIAL_485" />
-                    </el-select>
-                  </el-form-item>
-                  <el-form-item label="服务地址">
-                    <el-input model-value="192.168.1.20:502" />
-                  </el-form-item>
-                </el-form>
-              </section>
-
-              <section class="panel">
-                <div class="panel-header">
-                  <h2>点位/动作配置摘要</h2>
-                  <el-button text type="primary" :icon="Plus">新增点位</el-button>
-                </div>
-                <el-table :data="pointRows" size="small" border>
-                  <el-table-column prop="attr" label="设备属性" min-width="120" />
-                  <el-table-column prop="address" label="点位/地址" min-width="120" />
-                  <el-table-column prop="rw" label="读写" width="80" />
-                  <el-table-column prop="transform" label="换算" min-width="120" />
-                </el-table>
-              </section>
-            </div>
-          </el-tab-pane>
-
-          <el-tab-pane label="JSON 视图" name="json">
+          <el-tab-pane label="JSON 视图 (Instance Config)" name="json">
             <div class="json-grid">
-              <section class="panel">
-                <div class="panel-header"><h2>ADAPTER_CONTRACT</h2></div>
-                <pre>{{ adapterContractPreview }}</pre>
-              </section>
-              <section class="panel">
+              <section class="panel" style="grid-column: span 2;">
                 <div class="panel-header"><h2>INSTANCE_CONFIG</h2></div>
                 <pre>{{ instanceConfigPreview }}</pre>
               </section>
@@ -153,58 +112,127 @@
           </el-tab-pane>
         </el-tabs>
       </section>
+      
+      <section class="detail-area" v-else style="align-items: center; justify-content: center;">
+        <el-empty description="请选择左侧设备实例" />
+      </section>
     </main>
   </div>
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
-import { EditPen, Plus, Refresh } from '@element-plus/icons-vue'
+import { computed, ref, onMounted } from 'vue'
+import { Refresh } from '@element-plus/icons-vue'
+import axios from 'axios'
 
 const keyword = ref('')
 const activeTab = ref('contract')
-const activeKey = ref('1-1')
+const activeKey = ref('')
 
-const adapterRows = [
-  { modelId: 1, instanceId: 1, modelName: '反应釜模型', instanceName: '1号反应釜', status: 'ONLINE' },
-  { modelId: 2, instanceId: 2, modelName: '三轴运动平台模型', instanceName: '三轴平台 A', status: 'OFFLINE' },
-  { modelId: 3, instanceId: 3, modelName: '温控模块模型', instanceName: '温控模块 01', status: 'UNKNOWN' }
-]
+const loading = ref(false)
+const instances = ref([])
+const models = ref({})
+const twinStates = ref({})
 
-const activeRow = computed(() => {
-  return adapterRows.find(item => `${item.modelId}-${item.instanceId}` === activeKey.value) || adapterRows[0]
+const fetchData = async () => {
+  loading.value = true
+  try {
+    const [instRes, modelRes, twinRes] = await Promise.all([
+      axios.get('/api/device/instance/list'),
+      axios.get('/api/device/model/list'),
+      axios.get('/api/device/instance/snapshots')
+    ])
+    
+    if (modelRes.data?.success) {
+      const modelMap = {}
+      modelRes.data.data.forEach(m => {
+        modelMap[m.modelId] = m.modelName
+      })
+      models.value = modelMap
+    }
+
+    if (twinRes.data?.success) {
+      const twinMap = {}
+      twinRes.data.data.forEach(t => {
+        twinMap[t.instanceId] = t.onlineStatus || 'UNKNOWN'
+      })
+      twinStates.value = twinMap
+    }
+
+    if (instRes.data?.success) {
+      instances.value = instRes.data.data.map(inst => ({
+        ...inst,
+        status: twinStates.value[inst.instanceId] || 'UNKNOWN'
+      }))
+      if (instances.value.length > 0 && !activeKey.value) {
+        activeKey.value = instances.value[0].instanceId
+      }
+    }
+  } catch (err) {
+    console.error('Failed to fetch adapter page data', err)
+  } finally {
+    loading.value = false
+  }
+}
+
+const filteredInstances = computed(() => {
+  if (!keyword.value) return instances.value
+  const kw = keyword.value.toLowerCase()
+  return instances.value.filter(inst => 
+    inst.instanceName?.toLowerCase().includes(kw) || 
+    getModelName(inst.modelId).toLowerCase().includes(kw)
+  )
 })
 
-const contractCommands = [
-  { capability: 'reactor.setTemperature', command: 'set_temperature', direction: '系统发布', payload: '{ target: number }' },
-  { capability: 'reactor.startStir', command: 'start_stir', direction: '系统发布', payload: '{ rpm: number }' },
-  { capability: 'reactor.telemetry', command: 'telemetry', direction: '系统订阅', payload: '{ temp, pressure }' }
-]
+const activeRow = computed(() => {
+  return instances.value.find(item => item.instanceId === activeKey.value) || null
+})
 
-const pointRows = [
-  { attr: 'temperature', address: 'holding_register:40001', rw: 'R', transform: 'raw * 0.1' },
-  { attr: 'targetTemperature', address: 'holding_register:40011', rw: 'RW', transform: 'value / 0.1' },
-  { attr: 'pressure', address: 'holding_register:40002', rw: 'R', transform: 'raw * 0.01' }
-]
+const getModelName = (modelId) => {
+  return models.value[modelId] || modelId
+}
 
-const adapterContractPreview = computed(() => JSON.stringify({
-  protocol: 'MQTT',
-  topics: {
-    command: 'smartlab/v1/{lab}/{model}/{instance}/cmd',
-    status: 'smartlab/v1/{lab}/{model}/{instance}/status',
-    telemetry: 'smartlab/v1/{lab}/{model}/{instance}/telemetry'
-  },
-  commands: contractCommands
-}, null, 2))
+const adapterBinding = computed(() => {
+  if (!activeRow.value || !activeRow.value.instanceConfig) return null
+  return activeRow.value.instanceConfig.adapterBinding || null
+})
 
-const instanceConfigPreview = computed(() => JSON.stringify({
-  adapterId: `${activeRow.value.instanceName}-adapter`,
-  southbound: {
-    protocol: 'MODBUS_TCP',
-    endpoint: '192.168.1.20:502'
-  },
-  points: pointRows
-}, null, 2))
+const contractCommands = computed(() => {
+  const binding = adapterBinding.value
+  if (!binding) return []
+  const commands = []
+  
+  if (binding.services) {
+    Object.keys(binding.services).forEach(key => {
+      commands.push({
+        capability: `Service: ${key}`,
+        command: binding.services[key]?.topic || key,
+        direction: '系统发布 (SYS -> ADAPTER)',
+        payload: '根据物模型 capabilities 定义'
+      })
+    })
+  }
+  
+  if (binding.properties) {
+    commands.push({
+      capability: 'Properties Telemetry',
+      command: binding.topics?.telemetry || 'telemetry',
+      direction: '系统订阅 (ADAPTER -> SYS)',
+      payload: `包含属性: ${Object.keys(binding.properties).join(', ')}`
+    })
+  }
+
+  return commands
+})
+
+const instanceConfigPreview = computed(() => {
+  if (!activeRow.value) return '{}'
+  return JSON.stringify(activeRow.value.instanceConfig || {}, null, 2)
+})
+
+onMounted(() => {
+  fetchData()
+})
 </script>
 
 <style scoped>
@@ -280,6 +308,7 @@ const instanceConfigPreview = computed(() => JSON.stringify({
 .model-list {
   padding: 8px;
   overflow: auto;
+  flex: 1;
 }
 
 .model-item {
@@ -323,6 +352,10 @@ const instanceConfigPreview = computed(() => JSON.stringify({
 .status.ONLINE {
   background: #dcfce7;
   color: #15803d;
+}
+.status.OFFLINE {
+  background: #fef2f2;
+  color: #dc2626;
 }
 
 .detail-area {
@@ -372,10 +405,13 @@ const instanceConfigPreview = computed(() => JSON.stringify({
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
+  height: 100%;
 }
 
 .panel {
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .panel-header {
@@ -398,6 +434,7 @@ const instanceConfigPreview = computed(() => JSON.stringify({
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px 12px;
+  overflow: auto;
 }
 
 .form-grid :deep(.el-form-item) {
@@ -413,6 +450,7 @@ pre {
   font-size: 12px;
   line-height: 1.55;
   overflow: auto;
+  flex: 1;
 }
 
 @media (max-width: 1100px) {

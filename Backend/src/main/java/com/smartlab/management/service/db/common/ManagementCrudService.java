@@ -7,7 +7,7 @@ import com.smartlab.management.dto.common.PageResult;
 
 import java.io.Serializable;
 import java.lang.reflect.Method;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 /**
@@ -55,7 +55,7 @@ public abstract class ManagementCrudService<T> {
 
     public T save(T entity) {
         Serializable id = readId(entity);
-        LocalDateTime now = LocalDateTime.now();
+        OffsetDateTime now = OffsetDateTime.now();
         if (id == null) {
             invokeSetter(entity, "setCreateTime", now);
             invokeSetter(entity, "setUpdateTime", now);
@@ -88,9 +88,9 @@ public abstract class ManagementCrudService<T> {
         }
     }
 
-    private void invokeSetter(T entity, String methodName, LocalDateTime value) {
+    private void invokeSetter(T entity, String methodName, OffsetDateTime value) {
         try {
-            Method method = entity.getClass().getMethod(methodName, LocalDateTime.class);
+            Method method = entity.getClass().getMethod(methodName, OffsetDateTime.class);
             method.invoke(entity, value);
         } catch (Exception ignored) {
             // 不是所有表都有 create_time/update_time 字段。

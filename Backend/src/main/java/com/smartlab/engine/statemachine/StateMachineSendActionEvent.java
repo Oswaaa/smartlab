@@ -1,4 +1,4 @@
-package com.smartlab.engine;
+package com.smartlab.engine.statemachine;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 

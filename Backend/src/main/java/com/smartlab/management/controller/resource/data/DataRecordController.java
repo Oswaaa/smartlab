@@ -6,6 +6,7 @@ import com.smartlab.management.entity.resource.data.DataIndex;
 import com.smartlab.management.service.db.resource.data.DataRecordService;
 import org.springframework.web.bind.annotation.*;
 
+import jakarta.servlet.http.HttpServletResponse;
 import java.util.List;
 import java.util.Map;
 
@@ -60,6 +61,18 @@ public class DataRecordController {
             return ApiResponse.ok(dataRecordService.pageByDataIndexId(dataIndexId, pageNo, pageSize));
         } catch (Exception e) {
             return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    /**
+     * 导出数据集记录为 CSV 文件。
+     */
+    @GetMapping("/export/{dataIndexId}")
+    public void exportCsv(@PathVariable Long dataIndexId, HttpServletResponse response) {
+        try {
+            dataRecordService.exportCsv(dataIndexId, response);
+        } catch (Exception e) {
+            response.setStatus(500);
         }
     }
 }

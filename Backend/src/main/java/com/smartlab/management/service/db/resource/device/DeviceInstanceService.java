@@ -17,7 +17,7 @@ import com.smartlab.adapter.AdapterPayloadMapperService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -134,7 +134,7 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
         instance.setInstanceConfig(configNode);
 
         if (instance.getId() == null) {
-            instance.setCreateTime(LocalDateTime.now());
+            instance.setCreateTime(OffsetDateTime.now());
             mapper.insert(instance);
             createDefaultTwinState(instance.getId());
             dataIndexService.createDefaultDataSetsForDeviceInstance(
@@ -182,7 +182,7 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
         state.setCurrentCmdState("IDLE");
         state.setOnlineStatus("UNKNOWN");
         state.setCurrentAttr(JsonNodeSupport.objectNode());
-        state.setUpdateTime(LocalDateTime.now());
+        state.setUpdateTime(OffsetDateTime.now());
         twinStatesMapper.insert(state);
     }
 

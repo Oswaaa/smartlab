@@ -8,7 +8,7 @@ import com.smartlab.management.mapper.resource.scene.SceneMainMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 /**
@@ -39,7 +39,7 @@ public class SceneService {
     }
 
     public SceneMain saveScene(SceneMain scene) {
-        LocalDateTime now = LocalDateTime.now();
+        OffsetDateTime now = OffsetDateTime.now();
         if (scene.getId() == null) {
             scene.setCreateTime(now);
             scene.setUpdateTime(now);
@@ -74,7 +74,7 @@ public class SceneService {
 
     public SceneDetail saveSceneDetail(SceneDetail detail) {
         if (detail.getId() == null) {
-            detail.setCreateTime(LocalDateTime.now());
+            detail.setCreateTime(OffsetDateTime.now());
             sceneDetailMapper.insert(detail);
         } else {
             sceneDetailMapper.updateById(detail);

@@ -8,7 +8,7 @@ import com.smartlab.management.mapper.constraint.ViolationLogMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 /**
  * 约束违规日志表服务。
@@ -60,7 +60,7 @@ public class ViolationLogService extends ManagementCrudService<ViolationLog> {
     @Override
     public ViolationLog save(ViolationLog entity) {
         if (entity.getViolationTime() == null) {
-            entity.setViolationTime(LocalDateTime.now());
+            entity.setViolationTime(OffsetDateTime.now());
         }
         return super.save(entity);
     }

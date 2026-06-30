@@ -8,7 +8,7 @@ import com.smartlab.management.mapper.workflow.FlowModelsMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -62,7 +62,7 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
             model.setCreatorId(Long.valueOf(String.valueOf(creatorId)));
         }
         if (model.getId() == null) {
-            model.setCreateTime(LocalDateTime.now());
+            model.setCreateTime(OffsetDateTime.now());
             mapper.insert(model);
         } else {
             mapper.updateById(model);

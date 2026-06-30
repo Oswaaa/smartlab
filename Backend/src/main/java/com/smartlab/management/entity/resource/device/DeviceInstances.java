@@ -7,7 +7,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.smartlab.management.mapper.common.PostgresJsonbTypeHandler;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import lombok.Data;
 
 @Data
@@ -61,7 +61,7 @@ public class DeviceInstances {
     private String picture;
 
     @TableField("create_time")
-    private LocalDateTime createTime;
+    private OffsetDateTime createTime;
 
     public JsonNode getCommConfig() {
         return instanceConfig;

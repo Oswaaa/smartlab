@@ -5,18 +5,16 @@
       <el-aside width="280px" class="sidebar">
         <div class="sidebar-header">
           <div class="header-title">
-            <el-icon><Cpu /></el-icon>
-            <span>设备模型</span>
+            <span>设备模型分类</span>
           </div>
         </div>
         <el-scrollbar class="sidebar-scroll" v-loading="modelsLoading">
-          <div class="model-list">
-            <div :class="['model-item', { active: selectedModelId === '' }]" @click="selectModel('')">
-              <div class="model-name">全部模型</div>
-              <div class="model-meta">显示全部设备实例</div>
+          <div class="model-list" v-for="group in groupedModels" :key="group.category">
+            <div class="category-title" style="padding: 10px 16px; font-weight: bold; color: #909399; font-size: 12px; background: #f8f9fa;">
+              {{ group.category }}
             </div>
             <div
-              v-for="model in models"
+              v-for="model in group.items"
               :key="model.modelId"
               :class="['model-item', { active: selectedModelId === model.modelId }]"
               @click="selectModel(model.modelId)"
@@ -50,24 +48,7 @@
           </div>
         </div>
 
-        <div class="stats-bar">
-          <div class="stat-item">
-            <span>总数</span>
-            <strong>{{ stats.total }}</strong>
-          </div>
-          <div class="stat-item">
-            <span>在线</span>
-            <strong>{{ stats.online }}</strong>
-          </div>
-          <div class="stat-item">
-            <span>离线</span>
-            <strong>{{ stats.offline }}</strong>
-          </div>
-          <div class="stat-item">
-            <span>当前列表</span>
-            <strong>{{ instances.length }}</strong>
-          </div>
-        </div>
+
 
         <el-scrollbar class="card-scroll" v-loading="loading">
           <div v-if="instances.length > 0" class="card-grid">
@@ -78,8 +59,13 @@
               </div>
               <div class="line"><span>实例编号</span><span class="mono">{{ instance.instanceId }}</span></div>
               <div class="line"><span>模型</span><span>{{ getModelName(instance.modelId) }}</span></div>
-              <div class="line"><span>Adapter</span><span class="mono">{{ instance.boundAdapterName || instance.commConfig?.boundAdapterName || '-' }}</span></div>
-              <div class="line"><span>设备点</span><span class="mono">{{ instance.boundDevicePoint || instance.commConfig?.boundDevicePoint || '-' }}</span></div>
+              <div class="line">
+                <span>绑定状态</span>
+                <el-tag v-if="instance.boundAdapterName && instance.boundDevicePoint" type="success" size="small" effect="plain" round>已绑定设备点</el-tag>
+                <el-tag v-else type="danger" size="small" effect="plain" round>未绑定</el-tag>
+              </div>
+              <div class="line"><span>Adapter</span><span class="mono">{{ instance.boundAdapterName || instance.commConfig?.boundAdapterName || '未分配' }}</span></div>
+              <div class="line"><span>设备点</span><span class="mono">{{ instance.boundDevicePoint || instance.commConfig?.boundDevicePoint || '未分配' }}</span></div>
               <div class="line"><span>命令主题</span><span class="mono">{{ instance.commConfig?.mqttTopic || commandTopicPreview(instance.boundAdapterName, instance.boundDevicePoint) || '-' }}</span></div>
             </div>
           </div>
@@ -271,58 +257,75 @@
               <el-button type="primary" size="small" :loading="saving" @click="saveConstraints">保存约束</el-button>
             </div>
           </el-tab-pane>
+
+          <el-tab-pane label="数据集" name="datasets">
+            <el-alert
+              title="该设备实例绑定的数据集列表"
+              type="info"
+              show-icon
+              :closable="false"
+              class="mb-12"
+            />
+            <el-table :data="instanceDataSets" border size="small" v-loading="loadingDataSets">
+              <el-table-column prop="id" label="数据集ID" width="80" />
+              <el-table-column prop="dataDesc" label="数据集描述" min-width="150" />
+              <el-table-column prop="dataTable" label="底层物理表" min-width="150" />
+              <el-table-column prop="createTime" label="创建时间" min-width="150">
+                <template #default="{ row }">
+                  {{ new Date(row.createTime).toLocaleString() }}
+                </template>
+              </el-table-column>
+            </el-table>
+            <div class="footer-actions mt-12">
+              <el-button type="primary" size="small" @click="loadDataSets">刷新列表</el-button>
+            </div>
+          </el-tab-pane>
         </el-tabs>
       </div>
     </el-drawer>
 
-    <el-dialog v-model="createDialogVisible" title="添加设备" width="520px" :destroy-on-close="true">
-      <el-form :model="createForm" :rules="createRules" ref="createFormRef" label-width="110px" label-position="left" size="small">
-        <el-form-item label="设备名称" prop="instanceName">
-          <el-input v-model="createForm.instanceName" />
-        </el-form-item>
-        <el-form-item label="设备模型" prop="modelId">
-          <el-select
-            v-model="createForm.modelId"
-            style="width: 100%"
-            placeholder="搜索并选择设备模型"
-            filterable
-            remote
-            reserve-keyword
-            :remote-method="searchModels"
-            :loading="modelSearchLoading"
-            @change="onModelChangeInCreate"
-          >
-            <el-option v-for="m in modelOptions" :key="m.modelId" :label="`${m.modelName}（${m.modelId}）`" :value="m.modelId" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="租户">
-          <el-input v-model="createForm.tenantId" placeholder="default" />
-        </el-form-item>
-        <el-form-item label="实验室">
-          <el-input v-model="createForm.labId" placeholder="lab1" />
-        </el-form-item>
-        <el-form-item label="设备类型">
-          <el-input v-model="createForm.deviceType" />
-        </el-form-item>
-        <el-form-item label="Adapter" prop="boundAdapterName">
-          <el-select v-model="createForm.boundAdapterName" style="width: 100%" filterable :loading="adapterLoading" @change="onAdapterChangeInCreate">
-            <el-option v-for="adapter in adapterOptions" :key="adapter.adapterName" :label="adapter.adapterName" :value="adapter.adapterName" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="设备点" prop="boundDevicePoint">
-          <el-select v-model="createForm.boundDevicePoint" style="width: 100%" filterable :loading="pointsLoading" :disabled="!createForm.boundAdapterName" @change="updateCreateTopicPreview">
-            <el-option v-for="point in createDevicePointOptions" :key="point.devicePoint" :label="devicePointLabel(point)" :value="point.devicePoint" />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="命令主题预览">
-          <el-input v-model="createForm.mqttTopicPreview" disabled />
-        </el-form-item>
-      </el-form>
+    <el-drawer v-model="createDialogVisible" title="添加设备" size="520px" :destroy-on-close="true">
+      <div style="padding: 0 20px;">
+        <el-form :model="createForm" :rules="createRules" ref="createFormRef" label-width="110px" label-position="left" size="small">
+          <el-form-item label="设备名称" prop="instanceName">
+            <el-input v-model="createForm.instanceName" />
+          </el-form-item>
+          <el-form-item label="设备模型" prop="modelId">
+            <el-select
+              v-model="createForm.modelId"
+              style="width: 100%"
+              placeholder="搜索并选择设备模型"
+              filterable
+              remote
+              reserve-keyword
+              :remote-method="searchModels"
+              :loading="modelSearchLoading"
+              @change="onModelChangeInCreate"
+            >
+              <el-option v-for="m in modelOptions" :key="m.modelId" :label="`${m.modelName}（${m.modelId}）`" :value="m.modelId" />
+            </el-select>
+          </el-form-item>
+
+          <el-form-item label="Adapter" prop="boundAdapterName">
+            <el-select v-model="createForm.boundAdapterName" style="width: 100%" filterable :loading="adapterLoading" @change="onAdapterChangeInCreate">
+              <el-option v-for="adapter in adapterOptions" :key="adapter.adapterName" :label="adapter.adapterName" :value="adapter.adapterName" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="设备点" prop="boundDevicePoint">
+            <el-select v-model="createForm.boundDevicePoint" style="width: 100%" filterable :loading="pointsLoading" :disabled="!createForm.boundAdapterName" @change="updateCreateTopicPreview">
+              <el-option v-for="point in createDevicePointOptions" :key="point.devicePoint" :label="devicePointLabel(point)" :value="point.devicePoint" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="命令主题预览">
+            <el-input v-model="createForm.mqttTopicPreview" disabled />
+          </el-form-item>
+        </el-form>
+      </div>
       <template #footer>
         <el-button size="small" @click="createDialogVisible = false">取消</el-button>
         <el-button size="small" type="primary" :loading="creating" @click="submitCreate">保存</el-button>
       </template>
-    </el-dialog>
+    </el-drawer>
   </div>
 </template>
 
@@ -383,6 +386,7 @@ const instances = ref<DeviceInstance[]>([])
 const adapterOptions = ref<AdapterOption[]>([])
 const createDevicePointOptions = ref<AdapterDevicePoint[]>([])
 const drawerDevicePointOptions = ref<AdapterDevicePoint[]>([])
+const categoriesMap = ref<Record<string, string>>({})
 const selectedModelId = ref('')
 const instanceKeyword = ref('')
 const loading = ref(false)
@@ -404,7 +408,6 @@ let pollingTimer: any = null
 const instancePageNo = ref(1)
 const instancePageSize = ref(24)
 const instanceTotal = ref(0)
-const instanceStats = ref({ total: 0, online: 0, offline: 0 })
 let modelSearchTimer: any = null
 let instanceLoadSeq = 0
 let instanceSearchTimer: any = null
@@ -413,14 +416,14 @@ const localConstraints = ref<Array<{ targetAttr: string; operator: string; thres
 const controlCommandId = ref('')
 const controlParamsText = ref('{}')
 
+const instanceDataSets = ref<any[]>([])
+const loadingDataSets = ref(false)
+
 const createDialogVisible = ref(false)
 const createFormRef = ref<FormInstance>()
 const createForm = ref({
   instanceName: '',
   modelId: '',
-  tenantId: 'default',
-  labId: 'lab1',
-  deviceType: '',
   deviceSn: '',
   boundAdapterName: '',
   boundDevicePoint: '',
@@ -440,12 +443,16 @@ const selectedModelName = computed(() => {
   return model ? `${model.modelName}（编号: ${model.modelId}）` : '未知模型'
 })
 
-const stats = computed(() => {
-  return {
-    total: instanceStats.value.total,
-    online: instanceStats.value.online,
-    offline: instanceStats.value.offline
-  }
+const groupedModels = computed(() => {
+  const groups: Record<string, DeviceModel[]> = {}
+  models.value.forEach(model => {
+    // model.categoryId comes from backend instead of deviceCategory
+    const catId = (model as any).categoryId
+    const catName = (catId && categoriesMap.value[catId]) || '未分类'
+    if (!groups[catName]) groups[catName] = []
+    groups[catName].push(model)
+  })
+  return Object.entries(groups).map(([category, items]) => ({ category, items }))
 })
 
 const snapshotAttributes = computed(() => snapshot.value?.latestAttributes || {})
@@ -486,6 +493,14 @@ const deviceSnPlaceholder = computed(() => {
 const loadData = async () => {
   modelsLoading.value = true
   try {
+    const catRes = await axios.get('/api/device/category/list')
+    if (catRes.data?.success) {
+      const map: Record<string, string> = {}
+      ;(catRes.data.data || []).forEach((c: any) => {
+        map[c.id] = c.categoryName
+      })
+      categoriesMap.value = map
+    }
     await Promise.all([loadSidebarModels(), loadModelOptions(), loadAdapters()])
     await loadInstances()
   } catch (err: any) {
@@ -504,6 +519,9 @@ const loadSidebarModels = async () => {
   })
   if (res.data?.success) {
     models.value = (res.data.data?.records || []).map(normalizeModel)
+    if (models.value.length > 0 && !selectedModelId.value) {
+      selectedModelId.value = models.value[0].modelId
+    }
   }
 }
 
@@ -573,33 +591,20 @@ const loadInstances = async () => {
   const seq = ++instanceLoadSeq
   loading.value = true
   try {
-    const [instancesRes, summaryRes] = await Promise.all([
-      axios.get('/api/device/instance/page', {
-        params: {
-          pageNo: instancePageNo.value,
-          pageSize: instancePageSize.value,
-          modelId: selectedModelId.value || undefined,
-          keyword: instanceKeyword.value.trim() || undefined
-        }
-      }),
-      axios.get('/api/device/instance/summary', {
-        params: {
-          modelId: selectedModelId.value || undefined
-        }
-      })
-    ])
+    const instancesRes = await axios.get('/api/device/instance/page', {
+      params: {
+        pageNo: instancePageNo.value,
+        pageSize: instancePageSize.value,
+        modelId: selectedModelId.value || undefined,
+        keyword: instanceKeyword.value.trim() || undefined
+      }
+    })
+    
     if (seq !== instanceLoadSeq) return
     if (instancesRes.data?.success) {
       const pageData = instancesRes.data.data || {}
       instances.value = (pageData.records || []).map(normalizeInstance)
       instanceTotal.value = pageData.total || 0
-    }
-    if (summaryRes.data?.success) {
-      instanceStats.value = {
-        total: summaryRes.data.data?.total || 0,
-        online: summaryRes.data.data?.online || 0,
-        offline: summaryRes.data.data?.offline || 0
-      }
     }
   } catch (err: any) {
     ElMessage.error(err.response?.data?.message || '加载设备实例失败')
@@ -661,6 +666,7 @@ const viewDetails = (instance: DeviceInstance) => {
   controlParamsText.value = '{}'
   activeTab.value = 'info'
   drawerVisible.value = true
+  loadDataSets()
 }
 
 const onModelChangeInDrawer = (modelId: string) => {
@@ -777,6 +783,24 @@ const closeDrawer = () => {
   activeInstance.value = null
   controlCommandId.value = ''
   controlParamsText.value = '{}'
+  instanceDataSets.value = []
+}
+
+const loadDataSets = async () => {
+  if (!activeInstance.value) return
+  loadingDataSets.value = true
+  try {
+    const res = await axios.get('/api/data/index/list', {
+      params: { deviceInstanceId: activeInstance.value.instanceId }
+    })
+    if (res.data?.success) {
+      instanceDataSets.value = res.data.data || []
+    }
+  } catch (err: any) {
+    ElMessage.error(err.response?.data?.message || '加载数据集失败')
+  } finally {
+    loadingDataSets.value = false
+  }
 }
 
 watch(activeTab, (tab) => {
@@ -812,7 +836,6 @@ const devicePointLabel = (point: AdapterDevicePoint) => {
 }
 
 const onModelChangeInCreate = async () => {
-  createForm.value.deviceType = selectedCreateModel.value?.deviceCategory || ''
   const adapterName = selectedCreateModel.value?.capabilitySpec?.adapterContract?.config?.adapterName || createForm.value.boundAdapterName
   createForm.value.boundAdapterName = adapterName || ''
   createForm.value.boundDevicePoint = ''

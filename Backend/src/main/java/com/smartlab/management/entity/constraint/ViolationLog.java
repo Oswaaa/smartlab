@@ -6,7 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.smartlab.management.mapper.common.PostgresJsonbTypeHandler;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import lombok.Data;
 
 @Data
@@ -50,7 +50,7 @@ public class ViolationLog {
     private String actionTaken;
 
     @TableField("violation_time")
-    private LocalDateTime violationTime;
+    private OffsetDateTime violationTime;
 
 }
 

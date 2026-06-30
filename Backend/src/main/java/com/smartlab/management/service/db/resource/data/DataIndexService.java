@@ -14,7 +14,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -125,7 +125,7 @@ public class DataIndexService extends ManagementCrudService<DataIndex> {
         index.setDeviceInstanceId(deviceInstanceId);
         index.setDataTable(generateDataTableName());
         index.setDataDesc(resolveDataDesc(dataDesc, template));
-        index.setCreateTime(LocalDateTime.now());
+        index.setCreateTime(OffsetDateTime.now());
         mapper.insert(index);
 
         createPhysicalRecordTable(index, details);

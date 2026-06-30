@@ -222,6 +222,37 @@ public class DataRecordService {
     private String quoteIdentifier(String identifier) {
         return "\"" + normalizeIdentifier(identifier, "数据库标识符") + "\"";
     }
+
+    /**
+     * 导出数据集记录为 CSV。
+     */
+    public void exportCsv(Long dataIndexId, jakarta.servlet.http.HttpServletResponse response) throws Exception {
+        DataIndex index = requireDataIndex(dataIndexId);
+        String table = quoteIdentifier(index.getDataTable());
+        
+        response.setContentType("text/csv; charset=UTF-8");
+        response.setHeader("Content-Disposition", "attachment; filename=\"" + index.getDataTable() + ".csv\"");
+        
+        try (java.io.PrintWriter writer = new java.io.PrintWriter(new java.io.OutputStreamWriter(response.getOutputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
+            writer.write('\ufeff'); // BOM for Excel
+            Map<String, DataTemplateDetail> allowedColumns = loadAllowedColumns(index.getDataTemplateId());
+            List<String> columns = new ArrayList<>();
+            columns.add("create_time");
+            columns.addAll(allowedColumns.keySet());
+            
+            writer.println(String.join(",", columns));
+            
+            jdbcTemplate.query("select * from " + table + " order by create_time desc", rs -> {
+                List<String> row = new ArrayList<>();
+                for (String col : columns) {
+                    Object val = rs.getObject(col);
+                    String valStr = val == null ? "" : val.toString().replace("\"", "\"\"");
+                    row.add("\"" + valStr + "\"");
+                }
+                writer.println(String.join(",", row));
+            });
+        }
+    }
 }
 
 

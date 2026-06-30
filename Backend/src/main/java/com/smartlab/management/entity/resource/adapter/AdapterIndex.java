@@ -8,7 +8,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.smartlab.management.mapper.common.PostgresJsonbTypeHandler;
 import lombok.Data;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 @Data
 @TableName(value = "\"ADAPTER_INDEX\"", autoResultMap = true)
@@ -33,11 +33,11 @@ public class AdapterIndex {
     private String status;
 
     @TableField("last_heartbeat")
-    private LocalDateTime lastHeartbeat;
+    private OffsetDateTime lastHeartbeat;
 
     @TableField("create_time")
-    private LocalDateTime createTime;
+    private OffsetDateTime createTime;
 
     @TableField("update_time")
-    private LocalDateTime updateTime;
+    private OffsetDateTime updateTime;
 }

@@ -6,7 +6,7 @@ import com.smartlab.management.mapper.resource.device.DeviceCategoryMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 /**
  * 设备类别表服务。
@@ -38,7 +38,7 @@ public class DeviceCategoryService extends ManagementCrudService<DeviceCategory>
         }
         DeviceCategory category = new DeviceCategory();
         category.setCategoryName(categoryName.trim());
-        category.setCreateTime(LocalDateTime.now());
+        category.setCreateTime(OffsetDateTime.now());
         mapper.insert(category);
         return category;
     }

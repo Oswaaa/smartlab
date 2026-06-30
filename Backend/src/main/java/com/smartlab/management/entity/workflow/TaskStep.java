@@ -6,7 +6,7 @@ import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.smartlab.management.mapper.common.PostgresJsonbTypeHandler;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import lombok.Data;
 
 @Data
@@ -53,10 +53,10 @@ public class TaskStep {
     private JsonNode variableSpace;
 
     @TableField("start_time")
-    private LocalDateTime startTime;
+    private OffsetDateTime startTime;
 
     @TableField("end_time")
-    private LocalDateTime endTime;
+    private OffsetDateTime endTime;
 
     @TableField("duration_ms")
     private Long durationMs;

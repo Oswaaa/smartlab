@@ -27,8 +27,7 @@ public class MenuCatalogService {
         fullMenuTree.add(deviceCenter);
 
         MenuDTO dataCenter = createFolder("数据中心");
-        dataCenter.addChild(create("数据模板管理", "/data-template-management", "data_template"));
-        dataCenter.addChild(create("数据点管理", "/data-point-management", "data_dataset"));
+        dataCenter.addChild(create("数据管理", "/data-management", "data_template", "data_dataset"));
         fullMenuTree.add(dataCenter);
 
         MenuDTO taskCenter = createFolder("任务中心");

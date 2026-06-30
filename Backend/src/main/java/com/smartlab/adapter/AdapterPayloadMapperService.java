@@ -4,7 +4,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.smartlab.engine.StateMachineEngineService;
+import com.smartlab.engine.statemachine.StateMachineEngine;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.resource.adapter.AdapterRouteDTO;
 import com.smartlab.management.entity.resource.adapter.AdapterIndex;
@@ -19,7 +19,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
@@ -39,7 +39,7 @@ public class AdapterPayloadMapperService {
     private final DeviceTwinStatesMapper twinStatesMapper;
     private final AdapterIndexService adapterIndexService;
     private final AdapterManifestService adapterManifestService;
-    private final StateMachineEngineService stateMachineEngineService;
+    private final StateMachineEngine stateMachineEngine;
     private final ConcurrentHashMap<String, AdapterRouteDTO> adapterRouteTable = new ConcurrentHashMap<>();
 
     public AdapterPayloadMapperService(DeviceInstancesMapper deviceInstancesMapper,
@@ -47,13 +47,13 @@ public class AdapterPayloadMapperService {
             DeviceTwinStatesMapper twinStatesMapper,
             AdapterIndexService adapterIndexService,
             AdapterManifestService adapterManifestService,
-            @Lazy StateMachineEngineService stateMachineEngineService) {
+            @Lazy StateMachineEngine stateMachineEngine) {
         this.deviceInstancesMapper = deviceInstancesMapper;
         this.deviceModelsMapper = deviceModelsMapper;
         this.twinStatesMapper = twinStatesMapper;
         this.adapterIndexService = adapterIndexService;
         this.adapterManifestService = adapterManifestService;
-        this.stateMachineEngineService = stateMachineEngineService;
+        this.stateMachineEngine = stateMachineEngine;
     }
 
     public Map<String, AdapterRouteDTO> refreshAdapterRouteTable() {
@@ -204,8 +204,8 @@ public class AdapterPayloadMapperService {
         });
         state.setCurrentAttr(current);
         state.setOnlineStatus("ONLINE");
-        state.setLastOnlineTime(LocalDateTime.now());
-        state.setUpdateTime(LocalDateTime.now());
+        state.setLastOnlineTime(OffsetDateTime.now());
+        state.setUpdateTime(OffsetDateTime.now());
         twinStatesMapper.updateById(state);
     }
 
@@ -218,7 +218,7 @@ public class AdapterPayloadMapperService {
         if (eventName.isBlank()) {
             return;
         }
-        stateMachineEngineService.dispatchAdapterEvent(route.getDeviceInstanceId(), eventName, message);
+        stateMachineEngine.dispatchAdapterEvent(route.getDeviceInstanceId(), eventName, message);
     }
 
     private ObjectNode buildOutgoingParameters(DeviceModels model, String commandName, String commandId,
@@ -343,7 +343,7 @@ public class AdapterPayloadMapperService {
         created.setCurrentCmdState("IDLE");
         created.setOnlineStatus("UNKNOWN");
         created.setCurrentAttr(JsonNodeSupport.objectNode());
-        created.setUpdateTime(LocalDateTime.now());
+        created.setUpdateTime(OffsetDateTime.now());
         twinStatesMapper.insert(created);
         return twinStatesMapper
                 .selectOne(Wrappers.<DeviceTwinStates>lambdaQuery().eq(DeviceTwinStates::getInstanceId, instanceId));

@@ -64,6 +64,15 @@ public class DeviceModelController {
         }
     }
 
+    @GetMapping("/model/{id}/bundle")
+    public ApiResponse<ObjectNode> modelBundle(@PathVariable String id) {
+        try {
+            return ApiResponse.ok(deviceModelService.modelBundle(id));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
     @PutMapping("/model/{modelId}/adapter-contract")
     public ApiResponse<DeviceModels> updateAdapterContract(@PathVariable Long modelId,
                                                            @RequestBody JsonNode adapterContract) {

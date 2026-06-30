@@ -8,7 +8,7 @@ import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.smartlab.management.mapper.common.PostgresJsonbTypeHandler;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import lombok.Data;
 
 @Data
@@ -70,10 +70,10 @@ public class DeviceModels {
     private JsonNode componentsBom;
 
     @TableField("create_time")
-    private LocalDateTime createTime;
+    private OffsetDateTime createTime;
 
     @TableField("update_time")
-    private LocalDateTime updateTime;
+    private OffsetDateTime updateTime;
 
     public JsonNode getIntrinsicConstraints() {
         return intrinsicConstraint;

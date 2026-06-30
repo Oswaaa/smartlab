@@ -11,7 +11,7 @@ import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 
@@ -61,7 +61,7 @@ public class DataTemplateService extends ManagementCrudService<DataTemplateMain>
         }
         DataTemplateMain main = dto.getMain();
         if (main.getId() == null) {
-            main.setCreateTime(LocalDateTime.now());
+            main.setCreateTime(OffsetDateTime.now());
             mainMapper.insert(main);
         } else {
             mainMapper.updateById(main);
@@ -72,7 +72,7 @@ public class DataTemplateService extends ManagementCrudService<DataTemplateMain>
             detail.setId(null);
             detail.setDataTemplateId(main.getId());
             if (detail.getCreateTime() == null) {
-                detail.setCreateTime(LocalDateTime.now());
+                detail.setCreateTime(OffsetDateTime.now());
             }
             detailMapper.insert(detail);
         }
@@ -97,7 +97,7 @@ public class DataTemplateService extends ManagementCrudService<DataTemplateMain>
             main.setIsDefault(Boolean.valueOf(String.valueOf(payload.get("isDefault"))));
         }
         if (main.getId() == null) {
-            main.setCreateTime(LocalDateTime.now());
+            main.setCreateTime(OffsetDateTime.now());
             mainMapper.insert(main);
         } else {
             mainMapper.updateById(main);
@@ -173,7 +173,7 @@ public class DataTemplateService extends ManagementCrudService<DataTemplateMain>
         if (length != null && !String.valueOf(length).isBlank()) {
             detail.setColumnLength(Integer.valueOf(String.valueOf(length)));
         }
-        detail.setCreateTime(LocalDateTime.now());
+        detail.setCreateTime(OffsetDateTime.now());
         return detail;
     }
 

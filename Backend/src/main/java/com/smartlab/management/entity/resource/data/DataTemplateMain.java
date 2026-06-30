@@ -5,7 +5,7 @@ import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonSetter;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import lombok.Data;
 
 @Data
@@ -42,7 +42,7 @@ public class DataTemplateMain {
     private Boolean isDefault;
 
     @TableField("create_time")
-    private LocalDateTime createTime;
+    private OffsetDateTime createTime;
 
 }
 

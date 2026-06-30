@@ -15,8 +15,7 @@ import com.smartlab.management.mapper.workflow.TaskStepMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDate;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -104,7 +103,7 @@ public class TaskService extends ManagementCrudService<Task> {
         }
         task.setTaskStatus("RUNNING");
         if (task.getStartTime() == null) {
-            task.setStartTime(LocalDateTime.now());
+            task.setStartTime(OffsetDateTime.now());
         }
         taskMapper.updateById(task);
         appendLog(taskId, "TASK", null, "INFO", "任务已启动");
@@ -117,7 +116,7 @@ public class TaskService extends ManagementCrudService<Task> {
             throw new IllegalArgumentException("任务不存在");
         }
         task.setTaskStatus("ABORTED");
-        task.setEndTime(LocalDateTime.now());
+        task.setEndTime(OffsetDateTime.now());
         taskMapper.updateById(task);
         appendLog(taskId, "TASK", null, "WARN", "任务已终止");
         return task;
@@ -138,8 +137,7 @@ public class TaskService extends ManagementCrudService<Task> {
 
     public List<TaskStep> snapshots(Long taskId) {
         return taskStepMapper.selectList(
-                Wrappers.<TaskStep>lambdaQuery().eq(TaskStep::getTaskId, taskId).orderByAsc(TaskStep::getId)
-        );
+                Wrappers.<TaskStep>lambdaQuery().eq(TaskStep::getTaskId, taskId).orderByAsc(TaskStep::getId));
     }
 
     public List<Task> listByCreator(Long creatorId) {
@@ -149,17 +147,20 @@ public class TaskService extends ManagementCrudService<Task> {
         return taskMapper.selectList(
                 Wrappers.<Task>lambdaQuery()
                         .eq(Task::getCreatorId, creatorId)
-                        .orderByDesc(Task::getId)
-        );
+                        .orderByDesc(Task::getId));
     }
 
     public TaskMonitorSummary monitorSummary() {
         TaskMonitorSummary summary = new TaskMonitorSummary();
-        summary.setRunningTasks(taskMapper.selectList(Wrappers.<Task>lambdaQuery().eq(Task::getTaskStatus, "RUNNING").orderByDesc(Task::getId)));
-        summary.setPendingTasks(taskMapper.selectList(Wrappers.<Task>lambdaQuery().eq(Task::getTaskStatus, "PENDING").orderByDesc(Task::getId)));
-        LocalDateTime today = LocalDate.now().atStartOfDay();
-        summary.setTodayCompletedCount(taskMapper.selectCount(Wrappers.<Task>lambdaQuery().eq(Task::getTaskStatus, "COMPLETED").ge(Task::getEndTime, today)));
-        summary.setTodayFailedCount(taskMapper.selectCount(Wrappers.<Task>lambdaQuery().eq(Task::getTaskStatus, "FAILED").ge(Task::getEndTime, today)));
+        summary.setRunningTasks(taskMapper
+                .selectList(Wrappers.<Task>lambdaQuery().eq(Task::getTaskStatus, "RUNNING").orderByDesc(Task::getId)));
+        summary.setPendingTasks(taskMapper
+                .selectList(Wrappers.<Task>lambdaQuery().eq(Task::getTaskStatus, "PENDING").orderByDesc(Task::getId)));
+        OffsetDateTime today = OffsetDateTime.now().truncatedTo(java.time.temporal.ChronoUnit.DAYS);
+        summary.setTodayCompletedCount(taskMapper.selectCount(
+                Wrappers.<Task>lambdaQuery().eq(Task::getTaskStatus, "COMPLETED").ge(Task::getEndTime, today)));
+        summary.setTodayFailedCount(taskMapper.selectCount(
+                Wrappers.<Task>lambdaQuery().eq(Task::getTaskStatus, "FAILED").ge(Task::getEndTime, today)));
         return summary;
     }
 
@@ -170,8 +171,7 @@ public class TaskService extends ManagementCrudService<Task> {
         return taskMapper.selectList(
                 Wrappers.<Task>lambdaQuery()
                         .eq(Task::getTaskStatus, status.trim())
-                        .orderByDesc(Task::getId)
-        );
+                        .orderByDesc(Task::getId));
     }
 
     public Long countByStatus(String status) {
@@ -185,7 +185,7 @@ public class TaskService extends ManagementCrudService<Task> {
         log.setDeviceInstanceId(deviceInstanceId);
         log.setLogLevel(level);
         log.setLogInfo(message);
-        log.setLogTime(LocalDateTime.now());
+        log.setLogTime(OffsetDateTime.now());
         stepLogMapper.insert(log);
     }
 
@@ -202,5 +202,3 @@ public class TaskService extends ManagementCrudService<Task> {
         return value == null ? null : String.valueOf(value);
     }
 }
-
-

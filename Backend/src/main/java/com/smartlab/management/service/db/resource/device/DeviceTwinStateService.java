@@ -6,7 +6,7 @@ import com.smartlab.management.mapper.resource.device.DeviceTwinStatesMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 
 /**
  * 设备实时状态表服务。
@@ -38,7 +38,7 @@ public class DeviceTwinStateService extends ManagementCrudService<DeviceTwinStat
     @Override
     public DeviceTwinStates save(DeviceTwinStates entity) {
         if (entity.getUpdateTime() == null) {
-            entity.setUpdateTime(LocalDateTime.now());
+            entity.setUpdateTime(OffsetDateTime.now());
         }
         return super.save(entity);
     }

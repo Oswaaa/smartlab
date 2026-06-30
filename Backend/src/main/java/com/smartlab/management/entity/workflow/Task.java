@@ -7,7 +7,7 @@ import com.baomidou.mybatisplus.annotation.TableName;
 import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.smartlab.management.mapper.common.PostgresJsonbTypeHandler;
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import lombok.Data;
 
 @Data
@@ -92,10 +92,10 @@ public class Task {
     private Long creatorId;
 
     @TableField("start_time")
-    private LocalDateTime startTime;
+    private OffsetDateTime startTime;
 
     @TableField("end_time")
-    private LocalDateTime endTime;
+    private OffsetDateTime endTime;
 
 }
 

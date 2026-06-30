@@ -17,7 +17,7 @@ import com.smartlab.adapter.AdapterManifestService;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -76,7 +76,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         }
         model.setAdapterContract(adapterContract);
         validateModelAdapterContract(model);
-        model.setUpdateTime(LocalDateTime.now());
+        model.setUpdateTime(OffsetDateTime.now());
         mapper.updateById(model);
         return model;
     }
@@ -114,7 +114,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
 
         enrichStateMachine(model, payload.getOperationStateDef(), payload.getTransitions());
 
-        model.setUpdateTime(LocalDateTime.now());
+        model.setUpdateTime(OffsetDateTime.now());
         mapper.updateById(model);
         return String.valueOf(model.getId());
     }
@@ -131,7 +131,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         model.setCmdState(null);
         model.setOpState(null);
         model.setStateTransitions(null);
-        model.setUpdateTime(LocalDateTime.now());
+        model.setUpdateTime(OffsetDateTime.now());
         mapper.updateById(model);
     }
 
@@ -188,7 +188,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         }
         next.add(JsonNodeSupport.toNode(storedRule));
         model.setIntrinsicConstraint(next);
-        model.setUpdateTime(LocalDateTime.now());
+        model.setUpdateTime(OffsetDateTime.now());
         mapper.updateById(model);
     }
 
@@ -210,7 +210,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             });
         }
         model.setIntrinsicConstraint(next);
-        model.setUpdateTime(LocalDateTime.now());
+        model.setUpdateTime(OffsetDateTime.now());
         mapper.updateById(model);
     }
 
@@ -244,7 +244,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         model.setStateTransitions(payload.getStateTransitions());
         model.setComponentsBom(payload.getComponentsBom());
 
-        LocalDateTime now = LocalDateTime.now();
+        OffsetDateTime now = OffsetDateTime.now();
         if (model.getId() == null) {
             model.setCreateTime(now);
         }
@@ -266,7 +266,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             throw new IllegalArgumentException("设备模型预览请求不能为空");
         }
         DeviceModels model = new DeviceModels();
-        model.setId(payload.getModelId() != null ? payload.getModelId() : 0L);
+        model.setId(payload.getModelId());
         model.setModelName(payload.getModelName());
         model.setCategoryId(payload.getCategoryId());
         model.setAttributes(payload.getAttributes());
@@ -282,20 +282,59 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
 
         enrichStateMachine(model, payload.getOpState(), payload.getStateTransitions());
 
+        return toModelBundle(model);
+    }
+
+    public ObjectNode modelBundle(String id) {
+        DeviceModels model = getById(id);
+        if (model == null) {
+            throw new IllegalArgumentException("设备模型不存在");
+        }
+        return toModelBundle(model);
+    }
+
+    private ObjectNode toModelBundle(DeviceModels model) {
+        ObjectNode result = JsonNodeSupport.objectNode();
+        result.set("capabilityModel", toCapabilityModel(model));
+        result.set("stateMachineModel", toStateMachineModel(model));
+        return result;
+    }
+
+    private ObjectNode toCapabilityModel(DeviceModels model) {
         ObjectNode capabilityModel = JsonNodeSupport.objectNode();
-        capabilityModel.put("modelId", String.valueOf(model.getId()));
-        capabilityModel.put("modelName", model.getModelName());
+        ObjectNode metadata = JsonNodeSupport.objectNode();
+        if (model.getId() != null) {
+            metadata.put("modelId", model.getId());
+        } else {
+            metadata.putNull("modelId");
+        }
+        metadata.put("modelName", Objects.toString(model.getModelName(), ""));
+        if (model.getCategoryId() != null) {
+            metadata.put("deviceCategoryId", model.getCategoryId());
+        } else {
+            metadata.putNull("deviceCategoryId");
+        }
+        capabilityModel.set("metadata", metadata);
         capabilityModel.set("attributes", nullToArray(model.getAttributes()));
         capabilityModel.set("capabilities", nullToArray(model.getCapabilities()));
+        capabilityModel.set("adapterContract", nullToObject(model.getAdapterContract()));
         capabilityModel.set("ports", nullToArray(model.getPorts()));
         capabilityModel.set("intrinsicConstraints", nullToArray(model.getIntrinsicConstraint()));
-        capabilityModel.set("adapterContract", nullToObject(model.getAdapterContract()));
+        return capabilityModel;
+    }
 
-        ObjectNode result = JsonNodeSupport.objectNode();
-        result.set("capabilityModel", capabilityModel);
-        result.set("stateMachineModel", toStateMachineView(model));
-
-        return result;
+    private ObjectNode toStateMachineModel(DeviceModels model) {
+        ObjectNode stateMachineModel = JsonNodeSupport.objectNode();
+        if (model.getId() != null) {
+            stateMachineModel.put("deviceModelId", model.getId());
+        } else {
+            stateMachineModel.putNull("deviceModelId");
+        }
+        stateMachineModel.set("interfaces", nullToArray(model.getStateMachineInterfaces()));
+        stateMachineModel.set("opStateSpace", nullToObject(model.getOpState()));
+        stateMachineModel.set("cmdLifecycleSpace", nullToObject(model.getCmdState()));
+        stateMachineModel.set("transitions", nullToArray(model.getStateTransitions()));
+        return stateMachineModel;
     }
 
     private void enrichStateMachine(DeviceModels model, JsonNode opStateNode, JsonNode transitionNode) {
@@ -439,11 +478,24 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
                 "CANCELLED" }) {
             ObjectNode state = JsonNodeSupport.objectNode();
             state.put("stateName", stateName);
-            state.set("onEntry", JsonNodeSupport.arrayNode());
+            state.set("onEntry", createStatusOnEntryActions("CMD_STATE", stateName));
             states.add(state);
         }
         cmdSpace.set("states", states);
         return cmdSpace;
+    }
+
+    private ArrayNode createStatusOnEntryActions(String signalName, String stateName) {
+        ArrayNode actions = JsonNodeSupport.arrayNode();
+        ObjectNode action = JsonNodeSupport.objectNode();
+        action.put("actionName", "SEND");
+        ObjectNode payload = JsonNodeSupport.objectNode();
+        payload.put("interfaceName", "Interface_status_out");
+        payload.put("signalName", signalName);
+        payload.put("stateName", stateName);
+        action.set("payload", payload);
+        actions.add(action);
+        return actions;
     }
 
     private void addStandardTransitions(ArrayNode transitions) {
@@ -621,6 +673,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
     }
 
     private void validateModelAdapterContract(DeviceModels model) {
+        validateCapabilityModelIdentifiers(model);
         JsonNode contract = model.getAdapterContract();
         if (contract == null || contract.isNull() || contract.isMissingNode()) {
             return;
@@ -691,6 +744,28 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
                 throw new IllegalArgumentException("操作 " + capabilityName + " 引用了不存在的 Adapter 命令: " + commandName);
             }
             validateCapabilityParameterMapping(capability, commandName, commandParams);
+        }
+    }
+
+    private void validateCapabilityModelIdentifiers(DeviceModels model) {
+        ensureUniqueNames(model.getAttributes(), "属性");
+        ensureUniqueNames(model.getCapabilities(), "操作");
+        for (JsonNode capability : iterable(model.getCapabilities())) {
+            String capabilityName = capability.path("name").asText("");
+            ensureUniqueNames(capability.path("parameters"), "操作 " + capabilityName + " 的参数");
+        }
+    }
+
+    private void ensureUniqueNames(JsonNode rows, String label) {
+        Set<String> names = new HashSet<>();
+        for (JsonNode row : iterable(rows)) {
+            String name = row.path("name").asText("");
+            if (name.isBlank()) {
+                throw new IllegalArgumentException(label + "标识符不能为空");
+            }
+            if (!names.add(name)) {
+                throw new IllegalArgumentException(label + "标识符重复: " + name);
+            }
         }
     }
 
@@ -786,8 +861,13 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
 
     private ObjectNode toStateMachineView(DeviceModels model) {
         ObjectNode node = JsonNodeSupport.objectNode();
-        node.put("stateMachineId", model.getId() + "StateMachine");
-        node.put("deviceModelRef", String.valueOf(model.getId()));
+        if (model.getId() != null) {
+            node.put("stateMachineId", model.getId() + "StateMachine");
+            node.put("deviceModelRef", String.valueOf(model.getId()));
+        } else {
+            node.putNull("stateMachineId");
+            node.putNull("deviceModelRef");
+        }
         node.set("interfacesDef", nullToObject(model.getStateMachineInterfaces()));
         node.set("commandLifecycleDef", nullToObject(model.getCmdState()));
         node.set("operationStateDef", nullToObject(model.getOpState()));

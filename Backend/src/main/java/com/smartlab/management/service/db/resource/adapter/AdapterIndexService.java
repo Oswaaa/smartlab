@@ -11,7 +11,7 @@ import com.smartlab.adapter.AdapterManifestService;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
 
-import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -70,7 +70,7 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
         if (entity.getParsedConfig() != null) {
             manifestService.validate(entity.getParsedConfig());
         }
-        LocalDateTime now = LocalDateTime.now();
+        OffsetDateTime now = OffsetDateTime.now();
         if (entity.getId() == null) {
             entity.setCreateTime(now);
             if (entity.getStatus() == null || entity.getStatus().isBlank()) {
@@ -101,12 +101,12 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
         if (adapter == null) {
             adapter = new AdapterIndex();
             adapter.setAdapterName(adapterName);
-            adapter.setCreateTime(LocalDateTime.now());
+            adapter.setCreateTime(OffsetDateTime.now());
         }
         adapter.setOriginalConfig(stringValue(payload.get("rawConfigContent")));
         adapter.setParsedConfig(manifest);
         adapter.setStatus(stringValue(payload.getOrDefault("status", "REGISTERED")));
-        adapter.setUpdateTime(LocalDateTime.now());
+        adapter.setUpdateTime(OffsetDateTime.now());
         return save(adapter);
     }
 
@@ -161,7 +161,7 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
             adapter.setAdapterName(adapterName);
         }
         adapter.setStatus(status == null || status.isBlank() ? "ONLINE" : status);
-        adapter.setLastHeartbeat(LocalDateTime.now());
+        adapter.setLastHeartbeat(OffsetDateTime.now());
         return save(adapter);
     }
 

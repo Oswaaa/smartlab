@@ -1,74 +1,46 @@
 <template>
-  <div class="task-list">
-    <!-- Header Summary Toolbar -->
-    <div class="header-actions">
-      <div>
-        <h2 class="title">任务中心</h2>
-        <p class="subtitle">管理任务实例、约束配置和执行进度</p>
-      </div>
-      <el-button type="primary" class="premium-btn" @click="openCreateDrawer">
-        <el-icon class="mr-1"><Plus /></el-icon> 新建任务
-      </el-button>
-    </div>
-
-    <!-- Quick Stats Cards -->
-    <el-row :gutter="20" class="mb-6">
-      <el-col :span="6">
-        <div class="stat-card stat-total">
-          <span class="stat-label">任务总数</span>
-          <span class="stat-val">{{ stats.total }}</span>
-        </div>
-      </el-col>
-      <el-col :span="6">
-        <div class="stat-card stat-running">
-          <span class="stat-label">正在执行</span>
-          <span class="stat-val text-blue">{{ stats.running }}</span>
-        </div>
-      </el-col>
-      <el-col :span="6">
-        <div class="stat-card stat-completed">
-          <span class="stat-label">已成功完成</span>
-          <span class="stat-val text-green">{{ stats.completed }}</span>
-        </div>
-      </el-col>
-      <el-col :span="6">
-        <div class="stat-card stat-failed">
-          <span class="stat-label">异常与终止</span>
-          <span class="stat-val text-red">{{ stats.failed }}</span>
-        </div>
-      </el-col>
-    </el-row>
-
+  <div class="task-list-fullscreen">
     <!-- Main Table Card -->
-    <el-card class="table-card" shadow="never">
+    <el-card class="table-card-fullscreen" shadow="never">
       <template #header>
-        <div class="card-header">
-          <span>任务列表</span>
-          <el-button @click="refreshTaskList" :loading="loading" size="small">
-            <el-icon><Refresh /></el-icon> 刷新列表
-          </el-button>
+        <div class="card-header-fullscreen">
+          <span class="header-title">任务列表</span>
+          <div class="header-actions-right">
+            <el-button @click="refreshTaskList" :loading="loading">
+              <el-icon><Refresh /></el-icon> 刷新
+            </el-button>
+            <el-button type="primary" class="premium-btn" @click="openCreateDrawer">
+              <el-icon class="mr-1"><Plus /></el-icon> 新建任务
+            </el-button>
+          </div>
         </div>
       </template>
 
       <el-table
         :data="tasks"
         v-loading="loading"
-        style="width: 100%"
+        style="width: 100%; height: 100%;"
+        height="100%"
         border
         stripe
         highlight-current-row
         @row-click="handleRowClick"
         class="custom-table"
       >
-        <el-table-column prop="taskId" label="任务编号" width="120" align="center" />
-        <el-table-column prop="taskName" label="任务名称" min-width="160" />
-        <el-table-column prop="templateId" label="关联流程" min-width="180">
+        <el-table-column prop="taskId" label="ID" width="72" align="center" />
+        <el-table-column prop="taskName" label="任务名称" min-width="160">
           <template #default="{ row }">
-            <span class="font-semibold text-slate-700">{{ getWorkflowName(row.templateId) }}</span>
-            <span class="block text-xs text-slate-400 font-mono">{{ row.templateId }}</span>
+            <div style="font-weight: 600; color: #0f172a;">{{ row.taskName }}</div>
+            <div v-if="row.taskDesc" style="font-size: 12px; color: #64748b; margin-top: 2px;">{{ row.taskDesc }}</div>
           </template>
         </el-table-column>
-        <el-table-column prop="currentStatus" label="生命周期状态" width="130" align="center">
+        <el-table-column label="关联流程" min-width="160">
+          <template #default="{ row }">
+            <div v-if="getWorkflowName(row.templateId) !== row.templateId" style="font-weight: 500; color: #334155;">{{ getWorkflowName(row.templateId) }}</div>
+            <div style="font-size: 11px; color: #94a3b8; font-family: monospace;">ID: {{ row.templateId || '-' }}</div>
+          </template>
+        </el-table-column>
+        <el-table-column prop="currentStatus" label="状态" width="110" align="center">
           <template #default="{ row }">
             <div class="status-badge-container">
               <span :class="['pulse-dot', (row.currentStatus || '').toLowerCase()]" v-if="row.currentStatus === 'RUNNING'"></span>
@@ -78,15 +50,31 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="任务执行区间" min-width="260">
+        <el-table-column label="当前节点" width="110" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.currentNodeIdRef != null" type="info" size="small" effect="plain">节点 #{{ row.currentNodeIdRef }}</el-tag>
+            <span v-else style="color: #94a3b8; font-size: 12px;">-</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="执行周期" min-width="200">
           <template #default="{ row }">
             <div class="time-range-cell">
               <div><span class="time-label">始：</span>{{ formatTime(row.startTime) }}</div>
               <div v-if="row.endTime"><span class="time-label">终：</span>{{ formatTime(row.endTime) }}</div>
+              <div v-else-if="row.currentStatus === 'RUNNING'" style="color: #2563eb; font-size: 12px;">运行中...</div>
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="220" fixed="right" align="center">
+        <el-table-column label="资源绑定" width="100" align="center">
+          <template #default="{ row }">
+            <el-tag v-if="row.resourceMap && Object.keys(row.resourceMap || {}).length > 0"
+              type="success" size="small" effect="plain">
+              {{ Object.keys(row.resourceMap).length }} 个设备
+            </el-tag>
+            <span v-else style="color: #94a3b8; font-size: 12px;">无</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="200" fixed="right" align="center">
           <template #default="{ row }">
             <div class="action-buttons" @click.stop>
               <el-button
@@ -113,7 +101,7 @@
                 plain
                 @click="confirmDeleteTask(row.taskId)"
               >
-                注销
+                删除
               </el-button>
             </div>
           </template>
@@ -135,54 +123,195 @@
     </el-card>
 
     <!-- Create Task Drawer -->
-    <el-drawer v-model="createDrawerVisible" title="新建任务" size="480px">
-      <el-form
-        :model="createForm"
-        :rules="createRules"
-        ref="createFormRef"
-        label-width="120px"
-        label-position="top"
-        class="create-form"
-      >
-        <el-form-item label="任务名称" prop="taskName">
-          <el-input v-model="createForm.taskName" placeholder="例如：批次PCR扩增与物料搅拌" />
-        </el-form-item>
-        <el-form-item label="关联流程" prop="templateId">
-          <el-select
-            v-model="createForm.templateId"
-            placeholder="请选择流程"
-            style="width: 100%"
-            v-loading="loadingWorkflows"
-          >
-            <el-option
-              v-for="tpl in processTemplates"
-              :key="tpl.templateId"
-              :label="tpl.templateName"
-              :value="tpl.templateId"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="任务补充约束（JSON）" prop="constraintsText">
-          <div class="schema-info-bar">
-            <span>留空表示不配置补充约束。</span>
+    <el-drawer v-model="createDrawerVisible" title="新建任务" size="640px" class="model-drawer" destroy-on-close>
+      <div class="drawer-body" style="padding: 0 16px;">
+        <el-form
+          ref="createFormRef"
+          :model="createForm"
+          :rules="createRules"
+          label-width="120px"
+          label-position="top"
+          class="basic-form"
+          style="max-width: 100%;"
+        >
+          <div class="anchor-section industrial-section">
+            <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px;">基础配置</h2>
+            <section class="drawer-section">
+              <el-form-item label="任务名称" prop="taskName">
+                <el-input v-model="createForm.taskName" placeholder="例如：批次PCR扩增与物料搅拌" />
+              </el-form-item>
+              <el-form-item label="关联流程" prop="templateId">
+                <el-select
+                  v-model="createForm.templateId"
+                  placeholder="请选择流程"
+                  style="width: 100%"
+                  v-loading="loadingWorkflows"
+                  @change="handleTemplateChange"
+                >
+                  <el-option
+                    v-for="tpl in processTemplates"
+                    :key="tpl.templateId"
+                    :label="tpl.templateName"
+                    :value="tpl.templateId"
+                  />
+                </el-select>
+              </el-form-item>
+            </section>
           </div>
-          <el-input
-            v-model="createForm.constraintsText"
-            type="textarea"
-            :rows="12"
-            class="monospace-textarea"
-            placeholder='{
-  "observableObjects_O": [],
-  "handlingActions_H": [],
-  "globalConstraints_B0": [],
-  "taskRequirements_U": {
-    "goals_G": [],
-    "taskConstraints_Btau": []
-  }
-}'
-          />
-        </el-form-item>
-      </el-form>
+
+          <div class="anchor-section industrial-section" v-if="requiredModels.length > 0">
+            <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px; margin-top: 24px;">设备资源绑定</h2>
+            <section class="drawer-section">
+              <div class="schema-info-bar" style="margin-bottom: 12px; padding: 8px; background: #f8fafc; border-radius: 4px; font-size: 12px; color: #64748b;">
+                <span>请为以下所需设备分配真实的物理实例：</span>
+              </div>
+              <div v-for="model in requiredModels" :key="model.nodeId" style="width: 100%; margin-bottom: 16px;">
+                <div style="font-size: 13px; margin-bottom: 6px; font-weight: 600; color: #334155;">{{ model.nodeType }} (节点: {{ model.nodeIdRef }}):</div>
+                <el-select v-model="createForm.resourceMap[model.nodeIdRef]" placeholder="请选择设备实例" style="width: 100%">
+                  <el-option
+                    v-for="inst in availableInstances[model.deviceModelId] || []"
+                    :key="inst.id"
+                    :label="inst.deviceName || inst.id"
+                    :value="inst.id"
+                  />
+                </el-select>
+              </div>
+            </section>
+          </div>
+
+          <div class="anchor-section industrial-section">
+            <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px; margin-top: 24px;">任务补充约束</h2>
+            
+            <section class="drawer-section">
+              <div class="section-title">
+                <h3 style="font-size: 14px;">可观测对象 (Observable Objects)</h3>
+              </div>
+              <el-table :data="createForm.constraintsForm.observableObjects" size="small" border>
+                <el-table-column prop="name" label="对象名称(标识)" width="150">
+                  <template #default="{ row }">
+                    <el-input v-model="row.name" placeholder="唯一名称" size="small" />
+                  </template>
+                </el-table-column>
+                <el-table-column prop="sourceType" label="来源类型" width="180">
+                  <template #default="{ row }">
+                    <el-select v-model="row.sourceType" size="small">
+                      <el-option label="设备属性" value="DEVICE_ATTRIBUTE" />
+                      <el-option label="设备操作状态" value="DEVICE_OPERATION_STATE" />
+                      <el-option label="设备指令生命周期" value="DEVICE_COMMAND_LIFECYCLE" />
+                      <el-option label="节点生命周期状态" value="NODE_LIFECYCLE_STATE" />
+                    </el-select>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="dataType" label="数据类型" width="120">
+                  <template #default="{ row }">
+                    <el-select v-model="row.dataType" size="small">
+                      <el-option label="FLOAT" value="FLOAT" />
+                      <el-option label="INT" value="INT" />
+                      <el-option label="BOOL" value="BOOL" />
+                      <el-option label="STRING" value="STRING" />
+                    </el-select>
+                  </template>
+                </el-table-column>
+                <el-table-column label="详情配置" min-width="300">
+                  <template #default="{ row }">
+                    <div v-if="row.sourceType === 'DEVICE_ATTRIBUTE'" style="display: flex; gap: 8px;">
+                      <el-select v-model="row.deviceModelId" placeholder="选择模型" size="small" @change="fetchModelAttributes(row)" style="width: 120px;">
+                        <el-option v-for="m in allModels" :key="m.id" :label="m.modelName" :value="m.id" />
+                      </el-select>
+                      <el-select v-model="row.deviceInstanceId" placeholder="选择实例(可选)" size="small" clearable style="width: 120px;">
+                        <el-option v-for="inst in availableInstances[row.deviceModelId] || []" :key="inst.id" :label="inst.deviceName || inst.id" :value="inst.id" />
+                      </el-select>
+                      <el-select v-model="row.targetName" placeholder="属性名" size="small" style="width: 120px;">
+                        <el-option v-for="attr in modelAttributes[row.deviceModelId] || []" :key="attr" :label="attr" :value="attr" />
+                      </el-select>
+                    </div>
+                    <div v-else-if="row.sourceType === 'DEVICE_OPERATION_STATE' || row.sourceType === 'DEVICE_COMMAND_LIFECYCLE'" style="display: flex; gap: 8px;">
+                      <el-select v-model="row.deviceModelId" placeholder="选择模型" size="small" @change="fetchModelAttributes(row)" style="width: 120px;">
+                        <el-option v-for="m in allModels" :key="m.id" :label="m.modelName" :value="m.id" />
+                      </el-select>
+                      <el-select v-model="row.deviceInstanceId" placeholder="选择实例(可选)" size="small" clearable style="width: 120px;">
+                        <el-option v-for="inst in availableInstances[row.deviceModelId] || []" :key="inst.id" :label="inst.deviceName || inst.id" :value="inst.id" />
+                      </el-select>
+                    </div>
+                    <div v-else-if="row.sourceType === 'NODE_LIFECYCLE_STATE'" style="display: flex; gap: 8px;">
+                      <el-select v-model="row.workflowTemplateId" placeholder="流程模板(可选)" size="small" clearable style="width: 150px;">
+                        <el-option v-for="tpl in processTemplates" :key="tpl.templateId" :label="tpl.templateName" :value="tpl.templateId" />
+                      </el-select>
+                      <el-input v-model="row.nodeName" placeholder="节点名(nodeIdRef)" size="small" style="width: 120px;" />
+                    </div>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="60" align="center">
+                  <template #default="{ $index }">
+                    <el-button type="danger" :icon="Delete" circle plain size="small" @click="createForm.constraintsForm.observableObjects.splice($index, 1)" />
+                  </template>
+                </el-table-column>
+              </el-table>
+              <el-button type="primary" plain size="small" style="margin-top: 8px;" @click="addObservableObject">+ 添加可观测对象</el-button>
+            </section>
+
+            <section class="drawer-section">
+              <div class="section-title">
+                <h3 style="font-size: 14px;">约束规则 (Constraints)</h3>
+              </div>
+              <el-table :data="createForm.constraintsForm.constraints" size="small" border>
+                <el-table-column prop="name" label="规则名称" width="120">
+                  <template #default="{ row }">
+                    <el-input v-model="row.name" placeholder="规则名" size="small" />
+                  </template>
+                </el-table-column>
+                <el-table-column prop="observedObjectName" label="观测对象" width="150">
+                  <template #default="{ row }">
+                    <el-select v-model="row.observedObjectName" size="small" placeholder="请选择">
+                      <el-option v-for="obj in createForm.constraintsForm.observableObjects" :key="obj.name" :label="obj.name" :value="obj.name" />
+                    </el-select>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="operator" label="运算符" width="120">
+                  <template #default="{ row }">
+                    <el-select v-model="row.operator" size="small">
+                      <el-option v-for="op in ['GT','LT','EQ','NEQ','GTE','LTE','IN','NOT_IN']" :key="op" :label="op" :value="op" />
+                    </el-select>
+                  </template>
+                </el-table-column>
+                <el-table-column prop="threshold" label="阈值" width="120">
+                  <template #default="{ row }">
+                    <el-input v-model="row.threshold" placeholder="阈值" size="small" />
+                  </template>
+                </el-table-column>
+                <el-table-column label="违规动作" min-width="250">
+                  <template #default="{ row }">
+                    <div v-for="(act, aIndex) in row.violationActions" :key="aIndex" style="display: flex; gap: 4px; margin-bottom: 4px;">
+                      <el-select v-model="act.actionType" size="small" style="width: 100px;">
+                        <el-option label="系统动作" value="SYSTEM" />
+                        <el-option label="设备动作" value="DEVICE_CAPABILITY" />
+                      </el-select>
+                      <template v-if="act.actionType === 'SYSTEM'">
+                        <el-select v-model="act.action" size="small" style="flex: 1;">
+                          <el-option label="终止任务" value="ABORT_TASK" />
+                          <el-option label="告警" value="ALERT" />
+                        </el-select>
+                      </template>
+                      <template v-else-if="act.actionType === 'DEVICE_CAPABILITY'">
+                         <el-input v-model="act.deviceInstanceId" placeholder="实例ID" size="small" style="width: 80px;" />
+                         <el-input v-model="act.capabilityName" placeholder="指令名" size="small" style="flex: 1;" />
+                      </template>
+                      <el-button type="danger" icon="Delete" circle plain size="small" @click="row.violationActions.splice(aIndex, 1)" />
+                    </div>
+                    <el-button type="primary" plain size="small" @click="row.violationActions.push({ actionType: 'SYSTEM', action: 'ALERT' })">+ 添加动作</el-button>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="60" align="center">
+                  <template #default="{ $index }">
+                    <el-button type="danger" :icon="Delete" circle plain size="small" @click="createForm.constraintsForm.constraints.splice($index, 1)" />
+                  </template>
+                </el-table-column>
+              </el-table>
+              <el-button type="primary" plain size="small" style="margin-top: 8px;" @click="addConstraintRule">+ 添加约束规则</el-button>
+            </section>
+          </div>
+          </el-form>
+      </div>
       <template #footer>
         <div class="drawer-footer">
           <el-button @click="createDrawerVisible = false">取消</el-button>
@@ -194,61 +323,77 @@
     </el-drawer>
 
     <!-- Monitor Tab Drawer -->
-    <el-drawer v-model="monitorDrawerVisible" :title="`任务详情: ${activeTask?.taskName || ''}`" size="640px">
+    <el-drawer v-model="monitorDrawerVisible" :title="`任务详情: ${activeTask?.taskName || ''}`" size="680px">
       <div v-if="activeTask" class="monitor-container">
         <!-- Meta Cards -->
-        <el-descriptions border :column="2" size="small" class="mb-4">
-          <el-descriptions-item label="任务编号">{{ activeTask.taskId }}</el-descriptions-item>
-          <el-descriptions-item label="当前状态">
-            <el-tag :type="getStatusType(activeTask.currentStatus)" size="small" effect="dark">
+        <div class="monitor-header-card">
+          <div class="monitor-header-left">
+            <div class="monitor-task-name">{{ activeTask.taskName }}</div>
+            <div class="monitor-task-meta">
+              <span>ID: {{ activeTask.taskId }}</span>
+              <span>·</span>
+              <span>流程: {{ getWorkflowName(activeTask.templateId) }}</span>
+            </div>
+          </div>
+          <div class="monitor-header-right">
+            <el-tag :type="getStatusType(activeTask.currentStatus)" size="large" effect="dark">
               {{ getStatusLabel(activeTask.currentStatus) }}
             </el-tag>
+          </div>
+        </div>
+        <el-descriptions border :column="2" size="small" class="mb-4" style="margin-top: 12px;">
+          <el-descriptions-item label="资源绑定数">
+            <el-tag type="success" size="small" v-if="activeTask.resourceMap && Object.keys(activeTask.resourceMap || {}).length > 0">
+              {{ Object.keys(activeTask.resourceMap || {}).length }} 个设备
+            </el-tag>
+            <span v-else style="color: #94a3b8;">未绑定</span>
           </el-descriptions-item>
-          <el-descriptions-item label="起始时间" :span="2">
-            {{ formatTime(activeTask.startTime) }}
+          <el-descriptions-item label="当前节点">
+            <el-tag type="info" size="small" v-if="activeTask.currentNodeIdRef != null">#{{ activeTask.currentNodeIdRef }}</el-tag>
+            <span v-else style="color: #94a3b8;">-</span>
           </el-descriptions-item>
-          <el-descriptions-item label="结束时间" :span="2" v-if="activeTask.endTime">
-            {{ formatTime(activeTask.endTime) }}
-          </el-descriptions-item>
+          <el-descriptions-item label="开始时间">{{ formatTime(activeTask.startTime) }}</el-descriptions-item>
+          <el-descriptions-item label="结束时间">{{ activeTask.endTime ? formatTime(activeTask.endTime) : '-' }}</el-descriptions-item>
         </el-descriptions>
 
         <!-- Drawer Content Tabs -->
         <el-tabs v-model="monitorActiveTab" class="monitor-tabs">
           <!-- Tab 1: Nodes Progress Map -->
-          <el-tab-pane label="节点状态快照" name="snapshots">
+          <el-tab-pane label="步骤执行" name="snapshots">
             <div class="snapshots-timeline" v-loading="loadingDetails">
-              <div v-for="node in nodeSnapshots" :key="node.snapshotId" class="node-snapshot-card">
+              <div v-for="step in nodeSnapshots" :key="step.id" class="node-snapshot-card">
                 <div class="node-snap-header">
-                  <span class="node-name">节点: {{ node.nodeId }}</span>
-                  <el-tag :type="getNodeStateType(node.lifecycleState)" size="small" effect="plain">
-                    {{ node.lifecycleState }}
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <span class="item-index">{{ step.nodeIdRef }}</span>
+                    <span class="node-name">深度 {{ step.stepDepth || 0 }}</span>
+                  </div>
+                  <el-tag :type="getNodeStateType(step.nodeStatus)" size="small" effect="plain">
+                    {{ step.nodeStatus }}
                   </el-tag>
                 </div>
                 <div class="node-snap-body">
-                  <div class="snap-row">
-                    <span class="snap-label">绑定设备:</span>
-                    <span class="snap-val font-mono">{{ node.boundInstanceId || '未绑定' }}</span>
+                  <div class="snap-row" v-if="step.startTime">
+                    <span class="snap-label">开始：</span>
+                    <span class="snap-val">{{ formatTime(step.startTime) }}</span>
                   </div>
-                  <div class="snap-row" v-if="node.internalVariables && Object.keys(node.internalVariables).length > 0">
-                    <span class="snap-label">内部变量:</span>
+                  <div class="snap-row" v-if="step.durationMs != null">
+                    <span class="snap-label">耗时：</span>
+                    <span class="snap-val">{{ step.durationMs }}ms</span>
+                  </div>
+                  <div class="snap-row" v-if="step.variableSpace && Object.keys(step.variableSpace).length > 0">
+                    <span class="snap-label">变量空间：</span>
                     <div class="snap-tags mt-1">
                       <el-tag
-                        v-for="(val, key) in node.internalVariables"
-                        :key="key"
-                        type="info"
-                        size="small"
-                        class="mr-2 mb-1"
+                        v-for="(val, key) in step.variableSpace"
+                        :key="key" type="info" size="small" class="mr-2 mb-1"
                       >
                         {{ key }}: {{ val }}
                       </el-tag>
                     </div>
                   </div>
-                  <div class="snap-row text-xs text-slate-400 mt-2">
-                    更新时间: {{ formatTime(node.updateTime) }}
-                  </div>
                 </div>
               </div>
-              <el-empty v-if="nodeSnapshots.length === 0" description="未检测到活跃节点快照" />
+              <el-empty v-if="nodeSnapshots.length === 0" description="暂无执行步骤记录" />
             </div>
           </el-tab-pane>
 
@@ -261,11 +406,11 @@
               </el-button>
             </div>
             <div class="log-container" ref="logContainerRef" v-loading="loadingDetails">
-              <div v-for="log in executionLogs" :key="log.logId" class="log-item">
-                <span class="log-time">[{{ formatLogTime(log.occurTime) }}]</span>
-                <span class="log-module">[{{ log.sourceModule || 'TASK' }}]</span>
-                <span :class="['log-level', log.logLevel.toLowerCase()]">{{ log.logLevel }}</span>
-                <span class="log-msg">{{ log.message }}</span>
+              <div v-for="log in executionLogs" :key="log.id" class="log-item">
+                <span class="log-time">[{{ formatLogTime(log.logTime) }}]</span>
+                <span class="log-module">[{{ log.sourceType || 'TASK' }}]</span>
+                <span :class="['log-level', (log.logLevel || '').toLowerCase()]">{{ log.logLevel }}</span>
+                <span class="log-msg">{{ log.logInfo }}</span>
               </div>
               <div v-if="executionLogs.length === 0" class="empty-terminal">
                 &gt; 暂无任务日志。
@@ -273,12 +418,49 @@
             </div>
           </el-tab-pane>
 
-          <!-- Tab 3: Supplemental constraints mapping -->
-          <el-tab-pane label="需求约束" name="constraints">
+          <!-- Tab 3: Resource Map -->
+          <el-tab-pane label="资源映射" name="resources">
             <div class="constraints-section">
-              <h4 class="section-title">任务补充约束</h4>
-              <pre class="constraints-code"><code>{{ activeTask.globalConstraints && Object.keys(activeTask.globalConstraints).length > 0 ? JSON.stringify(activeTask.globalConstraints, null, 2) : '// 未配置补充约束' }}</code></pre>
+              <div v-if="activeTask.resourceMap && Object.keys(activeTask.resourceMap || {}).length > 0">
+                <div v-for="(instanceId, nodeRef) in activeTask.resourceMap" :key="nodeRef" class="resource-map-row">
+                  <div class="resource-node-label">节点 #{{ nodeRef }}</div>
+                  <el-icon style="color: #2563eb;"><ArrowRight /></el-icon>
+                  <div class="resource-instance-label">
+                    {{ getInstanceName(instanceId) }}
+                    <span style="font-size: 11px; color: #94a3b8; margin-left: 6px;">(ID: {{ instanceId }})</span>
+                  </div>
+                </div>
+              </div>
+              <el-empty v-else description="未配置设备资源" />
             </div>
+          </el-tab-pane>
+
+          <!-- Tab 4: Supplemental constraints mapping -->
+          <el-tab-pane label="任务约束" name="constraints">
+            <div class="constraints-section" v-if="activeTask.globalConstraints">
+              <div v-if="activeTask.globalConstraints.observableObjects_O?.length > 0" class="constraint-group">
+                <div class="constraint-group-title">可观测对象</div>
+                <el-tag v-for="obj in activeTask.globalConstraints.observableObjects_O" :key="obj" type="info" size="small" style="margin: 2px;">{{ obj }}</el-tag>
+              </div>
+              <div v-if="activeTask.globalConstraints.handlingActions_H?.length > 0" class="constraint-group">
+                <div class="constraint-group-title">操作动作</div>
+                <el-tag v-for="act in activeTask.globalConstraints.handlingActions_H" :key="act" type="warning" size="small" style="margin: 2px;">{{ act }}</el-tag>
+              </div>
+              <div v-if="activeTask.globalConstraints.globalConstraints_B0?.length > 0" class="constraint-group">
+                <div class="constraint-group-title">全局约束</div>
+                <el-tag v-for="c in activeTask.globalConstraints.globalConstraints_B0" :key="c" type="danger" size="small" style="margin: 2px;">{{ c }}</el-tag>
+              </div>
+              <div v-if="activeTask.globalConstraints.taskRequirements_U?.goals_G?.length > 0" class="constraint-group">
+                <div class="constraint-group-title">任务目标</div>
+                <el-tag v-for="g in activeTask.globalConstraints.taskRequirements_U.goals_G" :key="g" type="success" size="small" style="margin: 2px;">{{ g }}</el-tag>
+              </div>
+              <div v-if="activeTask.globalConstraints.taskRequirements_U?.taskConstraints_Btau?.length > 0" class="constraint-group">
+                <div class="constraint-group-title">任务限制</div>
+                <el-tag v-for="c in activeTask.globalConstraints.taskRequirements_U.taskConstraints_Btau" :key="c" size="small" style="margin: 2px;">{{ c }}</el-tag>
+              </div>
+              <el-empty v-if="!hasAnyConstraint(activeTask.globalConstraints)" description="未配置任务约束" />
+            </div>
+            <el-empty v-else description="未配置任务约束" />
           </el-tab-pane>
         </el-tabs>
       </div>
@@ -290,35 +472,51 @@
 import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { Plus, Refresh } from '@element-plus/icons-vue'
+import { Plus, Refresh, Delete, ArrowRight } from '@element-plus/icons-vue'
 
 interface TaskInstance {
   taskId: number
   taskName: string
+  taskDesc?: string
   templateId: string
+  flowModelId?: number
   globalConstraints: Record<string, any>
+  resourceMap?: Record<string, any>
+  taskVariables?: Record<string, any>
   currentStatus: string
+  currentNodeIdRef?: number
+  currentFlowNodeId?: number
   startTime: string
   endTime?: string
 }
 
-interface TaskNodeSnapshot {
-  snapshotId: number
+interface TaskStep {
+  id: number
   taskId: number
-  nodeId: string
-  lifecycleState: string
-  boundInstanceId?: string
-  internalVariables: Record<string, any>
-  updateTime: string
+  flowNodeId?: number
+  nodeIdRef?: number
+  parentStepId?: number
+  stepDepth?: number
+  nodeStatus: string
+  interfaceInSnapshot?: any
+  interfaceOutSnapshot?: any
+  portInSnapshot?: any
+  portOutSnapshot?: any
+  variableSpace?: Record<string, any>
+  startTime?: string
+  endTime?: string
+  durationMs?: number
 }
 
-interface TaskExecutionLog {
-  logId: number
+interface StepLog {
+  id: number
+  sourceType?: string
   taskId: number
+  deviceInstanceId?: number
+  taskStepId?: number
   logLevel: string
-  sourceModule?: string
-  occurTime: string
-  message: string
+  logInfo: string
+  logTime: string
 }
 
 interface WorkflowTemplate {
@@ -349,48 +547,142 @@ const createFormRef = ref<FormInstance>()
 const createForm = ref({
   taskName: '',
   templateId: '',
-  constraintsText: ''
+  resourceMap: {} as Record<string, string>,
+  constraintsForm: {
+    observableObjects: [] as any[],
+    constraints: [] as any[]
+  }
 })
 const creating = ref(false)
+const allModels = ref<any[]>([])
+const modelAttributes = ref<Record<string, string[]>>({})
+
+const addObservableObject = () => {
+  createForm.value.constraintsForm.observableObjects.push({
+    name: '',
+    sourceType: 'DEVICE_ATTRIBUTE',
+    dataType: 'FLOAT',
+    deviceModelId: undefined,
+    deviceInstanceId: undefined,
+    targetName: ''
+  })
+}
+
+const addConstraintRule = () => {
+  createForm.value.constraintsForm.constraints.push({
+    name: '',
+    observedObjectName: '',
+    operator: 'EQ',
+    threshold: '',
+    violationActions: []
+  })
+}
+
+const fetchModelAttributes = async (row: any) => {
+  if (!row.deviceModelId) return
+  if (!modelAttributes.value[row.deviceModelId]) {
+    try {
+      const res = await axios.get(`/api/device/model/${row.deviceModelId}`)
+      if (res.data?.success && res.data.data?.modelDef?.attributes) {
+        modelAttributes.value[row.deviceModelId] = res.data.data.modelDef.attributes.map((a: any) => a.attributeName)
+      } else {
+        modelAttributes.value[row.deviceModelId] = []
+      }
+      
+      if (!availableInstances.value[row.deviceModelId]) {
+        const listRes = await axios.get(`/api/device/instance/page?modelId=${row.deviceModelId}&pageSize=100`)
+        if (listRes.data?.success) {
+          availableInstances.value[row.deviceModelId] = listRes.data.data.records || []
+        } else {
+          availableInstances.value[row.deviceModelId] = []
+        }
+      }
+    } catch (e) {
+      modelAttributes.value[row.deviceModelId] = []
+    }
+  }
+}
+
+const fetchAllModels = async () => {
+  try {
+    const res = await axios.get('/api/device/model/list')
+    if (res.data?.success) {
+      allModels.value = res.data.data || []
+    }
+  } catch (e) {}
+}
+
+interface RequiredModel {
+  nodeId: number
+  nodeIdRef: number
+  nodeType: string
+  deviceModelId: string
+}
+const requiredModels = ref<RequiredModel[]>([])
+const availableInstances = ref<Record<string, any[]>>({})
+
+const handleTemplateChange = async (val: string) => {
+  requiredModels.value = []
+  createForm.value.resourceMap = {}
+  
+  if (!val) return
+  try {
+    const res = await axios.get(`/api/workflow/node/list?flowModelId=${val}`)
+    if (res.data?.success && res.data.data) {
+      const nodes = res.data.data || []
+      const reqModels: RequiredModel[] = []
+      
+      for (const n of nodes) {
+        if (n.deviceModelId) {
+          reqModels.push({
+            nodeId: n.id,
+            nodeIdRef: n.nodeIdRef,
+            nodeType: n.nodeType,
+            deviceModelId: n.deviceModelId
+          })
+          
+          if (!availableInstances.value[n.deviceModelId]) {
+            try {
+              const listRes = await axios.get(`/api/device/instance/page?modelId=${n.deviceModelId}&pageSize=100`)
+              if (listRes.data?.success) {
+                availableInstances.value[n.deviceModelId] = listRes.data.data.records || []
+              } else {
+                availableInstances.value[n.deviceModelId] = []
+              }
+            } catch (e) {
+              availableInstances.value[n.deviceModelId] = []
+            }
+          }
+        }
+      }
+      requiredModels.value = reqModels
+    }
+  } catch (error) {
+    ElMessage.error('加载流程节点失败')
+  }
+}
+
 
 // Monitor Drawer
 const monitorDrawerVisible = ref(false)
 const activeTask = ref<TaskInstance | null>(null)
 const monitorActiveTab = ref('snapshots')
-const nodeSnapshots = ref<TaskNodeSnapshot[]>([])
-const executionLogs = ref<TaskExecutionLog[]>([])
+const nodeSnapshots = ref<TaskStep[]>([])
+const executionLogs = ref<StepLog[]>([])
 const loadingDetails = ref(false)
 const logContainerRef = ref<HTMLElement | null>()
+// All device instances cache for name lookup
+const allInstances = ref<Record<string, string>>({})
 
 // Auto refresh interval id
 let pollIntervalId: any = null
+let mainListPollIntervalId: any = null
 let latestDetailLogId = 0
 
 // Form rules
 const createRules = ref<FormRules>({
   taskName: [{ required: true, message: '请输入任务名称', trigger: 'blur' }],
-  templateId: [{ required: true, message: '请选择流程', trigger: 'change' }],
-  constraintsText: [
-    {
-      validator: (rule, value, callback) => {
-        if (!value || value.trim() === '') {
-          callback()
-          return
-        }
-        try {
-          const parsed = JSON.parse(value)
-          if (typeof parsed !== 'object' || parsed === null) {
-            callback(new Error('补充约束必须是合法的 JSON 对象'))
-          } else {
-            callback()
-          }
-        } catch (e) {
-          callback(new Error('JSON 语法错误，请检查'))
-        }
-      },
-      trigger: 'blur'
-    }
-  ]
+  templateId: [{ required: true, message: '请选择流程', trigger: 'change' }]
 })
 
 // Stats computed
@@ -425,6 +717,25 @@ const fetchTasks = async () => {
   } finally {
     loading.value = false
   }
+}
+
+// Fetch all device instances for name lookup
+const fetchAllInstances = async () => {
+  try {
+    const res = await axios.get('/api/device/instance/page?pageSize=500')
+    if (res.data?.success) {
+      const records = res.data.data?.records || []
+      const map: Record<string, string> = {}
+      records.forEach((inst: any) => {
+        map[String(inst.id)] = inst.instanceName || inst.deviceName || String(inst.id)
+      })
+      allInstances.value = map
+    }
+  } catch (e) {}
+}
+
+const getInstanceName = (instanceId: any) => {
+  return allInstances.value[String(instanceId)] || String(instanceId)
 }
 
 const fetchTaskSummary = async () => {
@@ -580,7 +891,7 @@ const fetchLogsAndSnapshots = async (silent = false) => {
       } else {
         executionLogs.value = logs
       }
-      latestDetailLogId = executionLogs.value.reduce((max, log) => Math.max(max, Number(log.logId || 0)), latestDetailLogId)
+      latestDetailLogId = executionLogs.value.reduce((max, log) => Math.max(max, Number(log.id || 0)), latestDetailLogId)
       
       // Auto scroll terminal to bottom
       nextTick(() => {
@@ -682,13 +993,17 @@ const confirmDeleteTask = async (taskId: number) => {
   }
 }
 
-// Open creation drawer
 const openCreateDrawer = () => {
   createForm.value = {
     taskName: '',
     templateId: '',
-    constraintsText: ''
-  }
+    resourceMap: {},
+    constraintsForm: {
+      observableObjects: [],
+      constraints: []
+    }
+  } as any
+  requiredModels.value = []
   createDrawerVisible.value = true
   nextTick(() => {
     createFormRef.value?.clearValidate()
@@ -702,15 +1017,11 @@ const submitCreateTask = async () => {
     if (valid) {
       creating.value = true
       try {
-        let globalConstraintsVal: Record<string, any> = {}
-        if (createForm.value.constraintsText && createForm.value.constraintsText.trim() !== '') {
-          globalConstraintsVal = JSON.parse(createForm.value.constraintsText)
-        }
-        
         const payload = {
           taskName: createForm.value.taskName,
-          templateId: createForm.value.templateId,
-          globalConstraints: globalConstraintsVal
+          flowModelId: createForm.value.templateId,
+          globalConstraints: createForm.value.constraintsForm,
+          resourceMap: createForm.value.resourceMap
         }
         
         const res = await axios.post('/api/task/save', payload)
@@ -732,6 +1043,7 @@ const submitCreateTask = async () => {
 }
 
 // Format time utility
+
 const formatTime = (timeStr: string) => {
   if (!timeStr) return '-'
   const date = new Date(timeStr)
@@ -748,133 +1060,219 @@ const formatLogTime = (timeStr: string) => {
   ].join(':')
 }
 
+const startMainListPolling = () => {
+  if (mainListPollIntervalId) return
+  mainListPollIntervalId = setInterval(() => {
+    // Only fetch tasks in background quietly
+    axios.get(`/api/task/page?pageNo=${taskPageNo.value}&pageSize=${taskPageSize.value}`)
+      .then((res) => {
+        if (res.data?.success) {
+          tasks.value = res.data.data.records || []
+          taskTotal.value = res.data.data.total || 0
+        }
+      })
+      .catch(() => {})
+      
+    axios.get('/api/task/summary').then((res) => {
+      if (res.data?.success) taskSummary.value = res.data.data
+    }).catch(() => {})
+  }, 3000)
+}
+
+const stopMainListPolling = () => {
+  if (mainListPollIntervalId) {
+    clearInterval(mainListPollIntervalId)
+    mainListPollIntervalId = null
+  }
+}
+
+const hasAnyConstraint = (c: Record<string, any>) => {
+  if (!c) return false
+  return (
+    (c.observableObjects_O?.length > 0) ||
+    (c.handlingActions_H?.length > 0) ||
+    (c.globalConstraints_B0?.length > 0) ||
+    (c.taskRequirements_U?.goals_G?.length > 0) ||
+    (c.taskRequirements_U?.taskConstraints_Btau?.length > 0)
+  )
+}
+
 onMounted(() => {
   refreshTaskList()
   fetchWorkflows()
+  fetchAllInstances()
+  fetchAllModels()
+  startMainListPolling()
 })
 
 onUnmounted(() => {
   stopDetailsPolling()
+  stopMainListPolling()
 })
 </script>
 
 <style scoped>
 .task-list {
-  padding: 24px;
-  background-color: #f8fafc;
+  padding: 32px;
+  background-color: #f1f5f9;
   min-height: 100vh;
   box-sizing: border-box;
-  font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+  font-family: "Inter", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
 .header-actions {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 24px;
-  padding-bottom: 16px;
-  border-bottom: 1px solid #e2e8f0;
+  margin-bottom: 32px;
 }
 
 .title {
   margin: 0;
   color: #0f172a;
-  font-weight: 700;
-  font-size: 22px;
-  letter-spacing: -0.025em;
+  font-weight: 800;
+  font-size: 28px;
+  letter-spacing: -0.03em;
 }
 
 .subtitle {
-  margin: 4px 0 0 0;
+  margin: 6px 0 0 0;
   color: #64748b;
-  font-size: 13px;
+  font-size: 14px;
 }
 
 .mb-6 {
-  margin-bottom: 24px;
+  margin-bottom: 32px;
 }
 
 .mb-4 {
   margin-bottom: 16px;
 }
 
-.mt-1 {
-  margin-top: 4px;
-}
+.mt-1 { margin-top: 4px; }
+.mt-2 { margin-top: 8px; }
+.mr-1 { margin-right: 4px; }
+.mr-2 { margin-right: 8px; }
+.mb-1 { margin-bottom: 4px; }
 
-.mt-2 {
-  margin-top: 8px;
-}
-
-.mr-1 {
-  margin-right: 4px;
-}
-
-.mr-2 {
-  margin-right: 8px;
-}
-
-.mb-1 {
-  margin-bottom: 4px;
-}
-
+/* Premium Glassmorphism Stat Cards */
 .stat-card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
-  padding: 16px 20px;
+  background: rgba(255, 255, 255, 0.7);
+  backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  border-radius: 16px;
+  padding: 24px;
   display: flex;
   flex-direction: column;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.03);
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.3s ease;
+}
+
+.stat-card:hover {
+  transform: translateY(-4px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.08);
 }
 
 .stat-label {
-  font-size: 12px;
+  font-size: 13px;
   color: #64748b;
-  font-weight: 500;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
 }
 
 .stat-val {
-  font-size: 26px;
-  font-weight: 700;
+  font-size: 36px;
+  font-weight: 800;
   color: #0f172a;
-  margin-top: 4px;
+  margin-top: 8px;
 }
 
-.text-blue { color: #3b82f6; }
-.text-green { color: #10b981; }
-.text-red { color: #ef4444; }
+/* Gradient Texts for Val */
+.text-blue {
+  background: linear-gradient(135deg, #3b82f6 0%, #06b6d4 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.text-green {
+  background: linear-gradient(135deg, #10b981 0%, #34d399 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.text-red {
+  background: linear-gradient(135deg, #f43f5e 0%, #fb923c 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
 
+/* Table Card */
 .table-card {
   background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  border: none;
+  border-radius: 16px;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.04);
+  overflow: hidden;
 }
 
 .card-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-weight: 600;
+  font-weight: 700;
+  font-size: 16px;
   color: #1e293b;
+  padding: 16px 20px;
 }
 
-.custom-table :deep(.el-table__header-wrapper) th {
+/* Custom Table Styles */
+.custom-table {
+  border-radius: 0 0 16px 16px;
+  overflow: hidden;
+}
+
+.custom-table :deep(th.el-table__cell) {
   background-color: #f8fafc;
-  color: #334155;
+  color: #475569;
   font-weight: 600;
+  text-transform: uppercase;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.custom-table :deep(td.el-table__cell) {
+  border-bottom: 1px solid #f1f5f9;
+  padding: 12px 0;
+}
+
+.custom-table :deep(.el-table__row) {
+  transition: background-color 0.2s ease;
+}
+
+.custom-table :deep(.el-table__row:hover > td.el-table__cell) {
+  background-color: #f8fafc;
 }
 
 .pagination-bar {
   display: flex;
   justify-content: flex-end;
-  padding-top: 16px;
+  padding: 20px;
 }
 
+/* Status Badge with Neon Pulse */
 .status-badge-container {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: 8px;
+}
+
+.status-tag {
+  border-radius: 20px;
+  font-weight: 600;
+  border: none;
+  padding: 0 12px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.05);
 }
 
 .pulse-dot {
@@ -883,28 +1281,19 @@ onUnmounted(() => {
   border-radius: 50%;
   background-color: #3b82f6;
   box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
-  animation: pulse 1.6s infinite;
+  animation: pulse 1.6s infinite cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 @keyframes pulse {
-  0% {
-    transform: scale(0.95);
-    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7);
-  }
-  70% {
-    transform: scale(1);
-    box-shadow: 0 0 0 6px rgba(59, 130, 246, 0);
-  }
-  100% {
-    transform: scale(0.95);
-    box-shadow: 0 0 0 0 rgba(59, 130, 246, 0);
-  }
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 6px rgba(59, 130, 246, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
 }
 
 .time-range-cell {
   font-size: 12px;
   color: #64748b;
-  line-height: 1.5;
+  line-height: 1.6;
 }
 
 .time-label {
@@ -919,41 +1308,55 @@ onUnmounted(() => {
 }
 
 .premium-btn {
-  border-radius: 6px;
-  font-weight: 500;
+  background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  padding: 10px 20px;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+}
+.premium-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(37, 99, 235, 0.3);
 }
 
+/* Forms */
 .create-form {
-  padding: 0 10px;
+  padding: 10px 20px;
 }
 
 .monospace-textarea :deep(textarea) {
   font-family: "Fira Code", Consolas, Monaco, monospace;
-  font-size: 12px;
+  font-size: 13px;
   background-color: #f8fafc;
   color: #0f172a;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
 }
 
 .schema-info-bar {
-  background-color: #eff6ff;
+  background: linear-gradient(90deg, #eff6ff 0%, #f8fafc 100%);
   border-left: 4px solid #3b82f6;
-  padding: 8px 12px;
-  font-size: 11px;
+  padding: 10px 14px;
+  font-size: 12px;
   color: #1e3a8a;
-  margin-bottom: 8px;
-  border-radius: 0 4px 4px 0;
+  border-radius: 0 6px 6px 0;
 }
 
 .drawer-footer {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
+  padding: 16px 20px;
 }
 
+/* Monitor Drawer */
 .monitor-container {
   display: flex;
   flex-direction: column;
   height: calc(100vh - 120px);
+  padding: 0 20px;
 }
 
 .monitor-tabs {
@@ -965,56 +1368,123 @@ onUnmounted(() => {
 :deep(.el-tabs__content) {
   flex: 1;
   overflow-y: auto;
-  padding-top: 12px;
+  padding-top: 16px;
 }
 
+/* Timeline Snapshots */
 .snapshots-timeline {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding-right: 4px;
+  gap: 16px;
+  padding-right: 8px;
 }
 
 .node-snapshot-card {
   background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  padding: 12px 16px;
+  border: 1px solid #f1f5f9;
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.02);
+  transition: transform 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+.node-snapshot-card::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: #3b82f6;
+  border-radius: 4px 0 0 4px;
 }
 
 .node-snap-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding-bottom: 8px;
-  border-bottom: 1px solid #f1f5f9;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed #e2e8f0;
+  margin-bottom: 12px;
+}
+
+.dynamic-list-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-bottom: 8px;
+  width: 100%;
+}
+
+.drawer-body {
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.drawer-section {
+  border: 1px solid #e5e7eb;
+  border-radius: 4px;
+  padding: 10px 16px;
+  background: #fff;
+  margin-top: 8px;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  min-height: 26px;
+}
+
+.section-title h3 {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.3;
+  color: #0f172a;
+}
+
+.compact-empty {
+  display: flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 7px 10px;
+  border: 1px dashed #cbd5e1;
+  border-radius: 4px;
+  background: #f8fafc;
+  color: #64748b;
+  font-size: 13px;
 }
 
 .node-name {
-  font-size: 13px;
-  font-weight: 600;
-  color: #1e293b;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f172a;
 }
 
 .node-snap-body {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .snap-row {
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   display: flex;
   flex-direction: column;
 }
 
 .snap-label {
   color: #64748b;
-  font-weight: 500;
-  margin-bottom: 2px;
+  font-weight: 600;
+  margin-bottom: 4px;
+  text-transform: uppercase;
+  font-size: 11px;
 }
 
 .snap-val {
   color: #0f172a;
+  font-weight: 500;
 }
 
 .snap-tags {
@@ -1022,50 +1492,54 @@ onUnmounted(() => {
   flex-wrap: wrap;
 }
 
+/* Terminal Log UI */
 .terminal-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 11px;
+  font-size: 12px;
   color: #64748b;
-  margin-bottom: 8px;
-  font-weight: 500;
+  margin-bottom: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
 }
 
 .log-container {
-  background-color: #0f172a;
-  color: #e2e8f0;
-  padding: 16px;
-  border-radius: 6px;
+  background-color: #f8fafc;
+  color: #334155;
+  padding: 20px;
+  border-radius: 12px;
   font-family: "Fira Code", Consolas, Monaco, monospace;
-  font-size: 12px;
-  height: 380px;
+  font-size: 13px;
+  height: 420px;
   overflow-y: auto;
   line-height: 1.6;
+  border: 1px solid #e2e8f0;
+  box-shadow: inset 0 2px 10px rgba(0,0,0,0.02);
 }
 
 .log-item {
-  margin-bottom: 6px;
+  margin-bottom: 8px;
   word-wrap: break-word;
 }
 
 .log-time {
   color: #64748b;
-  margin-right: 8px;
+  margin-right: 12px;
 }
 
 .log-module {
-  color: #38bdf8;
-  margin-right: 8px;
-  font-weight: bold;
+  color: #0284c7;
+  margin-right: 12px;
+  font-weight: 600;
 }
 
 .log-level {
   display: inline-block;
-  width: 55px;
-  font-weight: bold;
+  width: 60px;
+  font-weight: 700;
   text-transform: uppercase;
-  margin-right: 8px;
+  margin-right: 12px;
 }
 .log-level.info { color: #3b82f6; }
 .log-level.warn { color: #f59e0b; }
@@ -1073,11 +1547,11 @@ onUnmounted(() => {
 .log-level.success { color: #10b981; }
 
 .log-msg {
-  color: #f1f5f9;
+  color: #0f172a;
 }
 
 .empty-terminal {
-  color: #64748b;
+  color: #475569;
   font-style: italic;
   display: flex;
   align-items: center;
@@ -1086,29 +1560,100 @@ onUnmounted(() => {
 }
 
 .constraints-section {
-  background-color: #fafafa;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 0;
 }
 
-.section-title {
-  margin: 0 0 12px 0;
+.constraint-group {
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px 16px;
+}
+
+.constraint-group-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 8px;
+}
+
+/* Monitor header card */
+.monitor-header-card {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 16px 20px;
+  margin-bottom: 4px;
+}
+
+.monitor-task-name {
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+  margin-bottom: 4px;
+}
+
+.monitor-task-meta {
+  display: flex;
+  gap: 8px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+/* Resource Map */
+.resource-map-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #fff;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+}
+
+.resource-node-label {
   font-size: 13px;
   font-weight: 600;
   color: #334155;
-}
-
-.constraints-code {
-  margin: 0;
-  background-color: #0f172a;
-  color: #38bdf8;
-  padding: 16px;
+  background: #f1f5f9;
+  padding: 4px 10px;
   border-radius: 6px;
   font-family: monospace;
-  font-size: 12px;
-  overflow-x: auto;
+  min-width: 80px;
+  text-align: center;
 }
+
+.resource-instance-label {
+  font-size: 14px;
+  font-weight: 600;
+  color: #0f172a;
+  flex: 1;
+}
+
+/* item-index badge */
+.item-index {
+  width: 22px;
+  height: 22px;
+  flex: 0 0 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: #eef2f7;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 700;
+}
+
 </style>
 
 

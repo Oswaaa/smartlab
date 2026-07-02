@@ -2,7 +2,7 @@
 <template>
   <div class="instance-page">
     <el-container class="layout">
-      <el-aside width="280px" class="sidebar">
+      <el-aside width="320px" class="sidebar">
         <div class="sidebar-header">
           <div class="header-title">
             <span>设备模型分类</span>
@@ -42,7 +42,7 @@
               @input="onInstanceSearchInput"
             />
             <el-button :icon="Refresh" circle size="small" @click="loadData" title="刷新" />
-            <el-button type="primary" size="small" @click="openCreateDialog">
+            <el-button v-if="canCreateInstance" type="primary" class="add-device-trigger" @click="openCreateDialog">
               <el-icon><Plus /></el-icon> 添加设备
             </el-button>
           </div>
@@ -50,29 +50,55 @@
 
 
 
-        <el-scrollbar class="card-scroll" v-loading="loading">
-          <div v-if="instances.length > 0" class="card-grid">
-            <div v-for="instance in instances" :key="instance.instanceId" class="instance-card" @click="viewDetails(instance)">
-              <div class="card-head">
-                <span class="name">{{ instance.instanceName }}</span>
-                <el-tag :type="instance.isOnline ? 'success' : 'info'" size="small">{{ instance.isOnline ? '在线' : '离线' }}</el-tag>
-              </div>
-              <div class="line"><span>实例编号</span><span class="mono">{{ instance.instanceId }}</span></div>
-              <div class="line"><span>模型</span><span>{{ getModelName(instance.modelId) }}</span></div>
-              <div class="line">
-                <span>绑定状态</span>
-                <el-tag v-if="instance.boundAdapterName && instance.boundDevicePoint" type="success" size="small" effect="plain" round>已绑定设备点</el-tag>
-                <el-tag v-else type="danger" size="small" effect="plain" round>未绑定</el-tag>
-              </div>
-              <div class="line"><span>Adapter</span><span class="mono">{{ instance.boundAdapterName || instance.commConfig?.boundAdapterName || '未分配' }}</span></div>
-              <div class="line"><span>设备点</span><span class="mono">{{ instance.boundDevicePoint || instance.commConfig?.boundDevicePoint || '未分配' }}</span></div>
-              <div class="line"><span>命令主题</span><span class="mono">{{ instance.commConfig?.mqttTopic || commandTopicPreview(instance.boundAdapterName, instance.boundDevicePoint) || '-' }}</span></div>
-            </div>
-          </div>
+        <div class="instance-list-wrap" v-loading="loading">
+          <el-table
+            v-if="instances.length > 0"
+            :data="instances"
+            border
+            stripe
+            size="small"
+            class="instance-table"
+            row-key="instanceId"
+            @row-click="viewDetails"
+          >
+            <el-table-column label="设备实例" min-width="180">
+              <template #default="{ row }">
+                <div class="instance-name-cell">
+                  <strong>{{ row.instanceName }}</strong>
+                  <span>实例ID {{ row.instanceId }}</span>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column label="设备模型" min-width="160">
+              <template #default="{ row }">{{ getModelName(row.modelId) }}</template>
+            </el-table-column>
+            <el-table-column label="Adapter / 设备点" min-width="220">
+              <template #default="{ row }">
+                <div class="binding-cell">
+                  <span><b>Adapter</b>{{ row.boundAdapterName || row.commConfig?.boundAdapterName || '未分配' }}</span>
+                  <span><b>设备点</b>{{ row.boundDevicePoint || row.commConfig?.boundDevicePoint || '未分配' }}</span>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column label="MQTT 主题" min-width="360">
+              <template #default="{ row }">
+                <div class="topic-cell">
+                  <span v-for="topic in mqttTopicRows(row.boundAdapterName, row.boundDevicePoint)" :key="topic.type">
+                    <b>{{ topic.label }}</b><code>{{ topic.topic || '-' }}</code>
+                  </span>
+                </div>
+              </template>
+            </el-table-column>
+            <el-table-column label="在线状态" width="105" align="center">
+              <template #default="{ row }">
+                <el-tag :type="row.isOnline ? 'success' : 'info'" size="small" effect="plain">{{ row.isOnline ? '在线' : '离线' }}</el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
           <div v-else class="empty-wrap">
             <el-empty description="暂无设备实例" :image-size="100" />
           </div>
-        </el-scrollbar>
+        </div>
         <div class="instance-pagination">
           <el-pagination
             v-model:current-page="instancePageNo"
@@ -89,17 +115,17 @@
       </el-main>
     </el-container>
 
-    <el-drawer
+    <el-dialog
       v-model="drawerVisible"
       :title="`设备实例: ${activeInstance?.instanceName || ''}`"
-      size="560px"
+      width="980px"
       :destroy-on-close="true"
       @close="closeDrawer"
     >
       <div v-if="activeInstance" class="drawer-body">
         <el-tabs v-model="activeTab">
           <el-tab-pane label="基础配置" name="info">
-            <el-form label-position="left" label-width="120px" size="small" class="density-form">
+            <el-form label-position="top" size="small" class="instance-info-grid">
               <el-form-item label="实例编号">
                 <el-input v-model="activeInstance.instanceId" disabled />
               </el-form-item>
@@ -111,14 +137,11 @@
                   <el-option v-for="m in models" :key="m.modelId" :label="m.modelName" :value="m.modelId" />
                 </el-select>
               </el-form-item>
-              <el-form-item label="租户">
-                <el-input v-model="activeInstance.commConfig.tenantId" placeholder="default" />
-              </el-form-item>
-              <el-form-item label="实验室">
-                <el-input v-model="activeInstance.commConfig.labId" placeholder="lab1" />
-              </el-form-item>
-              <el-form-item label="设备类型">
-                <el-input v-model="activeInstance.commConfig.deviceType" />
+              <el-form-item label="在线状态">
+                <div class="readonly-status">
+                  <el-tag :type="activeInstance.isOnline ? 'success' : 'info'" effect="plain">{{ activeInstance.isOnline ? '在线' : '离线' }}</el-tag>
+                  <span>由 Adapter 心跳 / 运行状态返回</span>
+                </div>
               </el-form-item>
               <el-form-item label="Adapter">
                 <el-select v-model="activeInstance.boundAdapterName" style="width: 100%" filterable @change="onAdapterChangeInDrawer">
@@ -130,45 +153,56 @@
                   <el-option v-for="point in drawerDevicePointOptions" :key="point.devicePoint" :label="devicePointLabel(point)" :value="point.devicePoint" />
                 </el-select>
               </el-form-item>
-              <el-form-item label="命令主题">
-                <el-input :model-value="commandTopicPreview(activeInstance.boundAdapterName, activeInstance.boundDevicePoint)" disabled />
-              </el-form-item>
-              <el-form-item label="在线状态">
-                <el-switch v-model="activeInstance.isOnline" active-text="在线" inactive-text="离线" />
-              </el-form-item>
             </el-form>
 
+            <section class="topic-section">
+              <div class="section-caption">MQTT 主题</div>
+              <el-table :data="activeMqttTopicRows" border size="small" class="topic-table">
+                <el-table-column label="用途" width="110" prop="label" />
+                <el-table-column label="方向" width="135" prop="direction" />
+                <el-table-column label="主题">
+                  <template #default="{ row }"><code>{{ row.topic || '-' }}</code></template>
+                </el-table-column>
+              </el-table>
+            </section>
+
             <div class="footer-actions">
-              <el-popconfirm title="确认删除该设备实例？" @confirm="deleteInstance(activeInstance.instanceId)">
+              <el-popconfirm v-if="canDeleteInstance" title="确认删除该设备实例？" @confirm="deleteInstance(activeInstance.instanceId)">
                 <template #reference>
                   <el-button type="danger" plain size="small">删除设备</el-button>
                 </template>
               </el-popconfirm>
-              <el-button type="primary" size="small" :loading="saving" @click="saveInstance">保存</el-button>
+              <el-button v-if="canEditInstance" type="primary" size="small" :loading="saving" @click="saveInstance">保存</el-button>
             </div>
           </el-tab-pane>
 
-          <el-tab-pane label="手动控制" name="control">
-            <el-form label-position="left" label-width="110px" size="small">
-              <el-form-item label="设备能力">
-                <el-select v-model="controlCommandId" style="width: 100%" placeholder="选择命令">
+          <el-tab-pane v-if="canControlInstance" label="手动控制" name="control">
+            <el-form label-position="top" size="small" class="manual-control-form">
+              <el-form-item label="设备功能">
+                <el-select v-model="controlCommandId" style="width: 100%" placeholder="选择模型定义的功能" @change="resetControlParams">
                   <el-option
                     v-for="cmd in activeInstanceCommands"
                     :key="cmd.commandId"
-                    :label="`${cmd.commandName || cmd.commandId}（${cmd.commandId}）`"
+                    :label="`${cmd.commandName || cmd.commandId} / Adapter: ${cmd.adapterCommandName || '-'}`"
                     :value="cmd.commandId"
                   />
                 </el-select>
               </el-form-item>
-              <el-form-item label="参数 JSON">
-                <el-input
-                  v-model="controlParamsText"
-                  type="textarea"
-                  :rows="8"
-                  class="mono-textarea"
-                  placeholder='{"target": 80}'
-                />
-              </el-form-item>
+              <div class="control-param-grid" v-if="activeControlParams.length">
+                <el-form-item v-for="param in activeControlParams" :key="paramKey(param)" :label="param.displayName || param.name || param.paramName">
+                  <el-switch v-if="isBooleanType(param.dataType)" v-model="controlParamValues[paramKey(param)]" />
+                  <el-input-number
+                    v-else-if="isNumberType(param.dataType)"
+                    v-model="controlParamValues[paramKey(param)]"
+                    :precision="isIntegerType(param.dataType) ? 0 : undefined"
+                    controls-position="right"
+                    style="width: 100%"
+                  />
+                  <el-input v-else v-model="controlParamValues[paramKey(param)]" :placeholder="param.dataType || 'STRING'" />
+                  <div class="field-hint">数据类型：{{ param.dataType || '-' }}</div>
+                </el-form-item>
+              </div>
+              <div v-else class="empty-inline">该功能无外部参数</div>
             </el-form>
             <div class="footer-actions">
               <el-button type="primary" size="small" :loading="sendingControl" @click="sendManualCommand">
@@ -186,21 +220,23 @@
               <el-descriptions-item label="指令状态">{{ snapshot?.currentCommandState || '-' }}</el-descriptions-item>
               <el-descriptions-item label="功能状态">{{ snapshot?.currentOperationState || '-' }}</el-descriptions-item>
             </el-descriptions>
-            <el-card shadow="never">
-              <template #header>属性快照</template>
-              <div v-if="Object.keys(snapshotAttributes).length > 0" class="attr-list">
-                <div v-for="(val, key) in snapshotAttributes" :key="key" class="attr-row">
-                  <span>{{ getAttributeName(key) }}</span>
-                  <span class="mono">{{ val }}</span>
-                </div>
-              </div>
-              <div v-else class="empty-inline">暂无数据</div>
-            </el-card>
+            <section class="snapshot-section">
+              <div class="section-caption">属性快照</div>
+              <el-table :data="snapshotAttributeRows" border size="small" class="snapshot-table">
+                <el-table-column label="模型属性" min-width="160" prop="label" />
+                <el-table-column label="属性标识" min-width="150" prop="key" />
+                <el-table-column label="数据类型" width="110" prop="dataType" />
+                <el-table-column label="单位" width="90" prop="unit" />
+                <el-table-column label="当前值" min-width="160">
+                  <template #default="{ row }"><span class="mono">{{ row.value ?? '-' }}</span></template>
+                </el-table-column>
+              </el-table>
+            </section>
           </el-tab-pane>
 
           <el-tab-pane label="局部约束" name="constraints">
             <div class="constraint-actions">
-              <el-button type="primary" plain size="small" @click="addConstraint">
+              <el-button v-if="canEditInstance" type="primary" plain size="small" @click="addConstraint">
                 <el-icon><Plus /></el-icon> 新增约束
               </el-button>
             </div>
@@ -233,19 +269,55 @@
                   <el-input v-model="row.threshold" size="small" />
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="70" align="center">
+              <el-table-column v-if="canEditInstance" label="操作" width="70" align="center">
                 <template #default="{ $index }">
                   <el-button type="danger" link size="small" @click="removeConstraint($index)">删除</el-button>
                 </template>
               </el-table-column>
             </el-table>
             <div class="footer-actions mt-12">
-              <el-button type="primary" size="small" :loading="saving" @click="saveConstraints">保存约束</el-button>
+              <el-button v-if="canEditInstance" type="primary" size="small" :loading="saving" @click="saveConstraints">保存约束</el-button>
             </div>
           </el-tab-pane>
 
+
+          <el-tab-pane label="结构拓扑" name="components">
+            <section class="component-create-panel" v-if="canEditInstance">
+              <el-input v-model="componentForm.componentName" size="small" placeholder="组件名称" />
+              <el-select v-model="componentForm.categoryId" size="small" clearable filterable placeholder="组件类别">
+                <el-option v-for="cat in categories" :key="String(cat.id)" :label="cat.categoryName" :value="String(cat.id)" />
+              </el-select>
+              <el-select v-model="componentForm.selfInstanceId" size="small" clearable filterable placeholder="关联设备实例">
+                <el-option v-for="item in instances" :key="item.instanceId" :label="item.instanceName" :value="item.instanceId" />
+              </el-select>
+              <el-select v-model="componentForm.status" size="small" placeholder="状态">
+                <el-option label="使用中" value="使用中" />
+                <el-option label="已更换" value="已更换" />
+                <el-option label="已废弃" value="已废弃" />
+              </el-select>
+              <el-button type="primary" size="small" :loading="savingComponent" @click="saveComponent">添加组件</el-button>
+            </section>
+            <el-table :data="instanceComponents" border size="small" v-loading="loadingComponents">
+              <el-table-column label="组件名" min-width="150" prop="componentName" />
+              <el-table-column label="类别" min-width="130">
+                <template #default="{ row }">{{ categoryNameById(row.categoryId) || '-' }}</template>
+              </el-table-column>
+              <el-table-column label="关联实例" min-width="130">
+                <template #default="{ row }">{{ instanceNameById(row.selfInstanceId) }}</template>
+              </el-table-column>
+              <el-table-column label="状态" width="100" prop="status" />
+              <el-table-column v-if="canEditInstance" label="操作" width="82" align="center">
+                <template #default="{ row }">
+                  <el-popconfirm title="确认删除该组件？" @confirm="deleteComponent(row)">
+                    <template #reference><el-button link type="danger" size="small">删除</el-button></template>
+                  </el-popconfirm>
+                </template>
+              </el-table-column>
+            </el-table>
+          </el-tab-pane>
+
           <el-tab-pane label="数据集" name="datasets">
-            <div class="dataset-create-panel">
+            <div v-if="canCreateDataset" class="dataset-create-panel">
               <el-select v-model="datasetCreateForm.templateId" size="small" filterable clearable placeholder="选择数据模板">
                 <el-option v-for="tpl in availableDataTemplates" :key="templateIdOf(tpl)" :label="tpl.templateName || '未命名模板'" :value="templateIdOf(tpl)" />
               </el-select>
@@ -261,7 +333,7 @@
                   {{ new Date(row.createTime).toLocaleString() }}
                 </template>
               </el-table-column>
-              <el-table-column label="操作" width="82" align="center">
+              <el-table-column v-if="canDeleteDataset" label="操作" width="82" align="center">
                 <template #default="{ row }">
                   <el-popconfirm title="确认删除该数据表？物理表会同时删除。" @confirm="deleteInstanceDataSet(row)">
                     <template #reference>
@@ -277,11 +349,11 @@
           </el-tab-pane>
         </el-tabs>
       </div>
-    </el-drawer>
+    </el-dialog>
 
-    <el-drawer v-model="createDialogVisible" title="添加设备" size="520px" :destroy-on-close="true">
-      <div style="padding: 0 20px;">
-        <el-form :model="createForm" :rules="createRules" ref="createFormRef" label-width="110px" label-position="left" size="small">
+    <el-dialog v-model="createDialogVisible" title="添加设备实例" width="760px" class="instance-create-dialog" append-to-body :destroy-on-close="true">
+      <div class="instance-create-body">
+        <el-form :model="createForm" :rules="createRules" ref="createFormRef" label-width="92px" label-position="top" size="small" class="instance-create-form">
           <el-form-item label="设备名称" prop="instanceName">
             <el-input v-model="createForm.instanceName" />
           </el-form-item>
@@ -311,8 +383,13 @@
               <el-option v-for="point in createDevicePointOptions" :key="point.devicePoint" :label="devicePointLabel(point)" :value="point.devicePoint" />
             </el-select>
           </el-form-item>
-          <el-form-item label="命令主题预览">
-            <el-input v-model="createForm.mqttTopicPreview" disabled />
+          <el-form-item label="MQTT 主题预览" class="form-wide">
+            <div class="topic-preview-grid">
+              <div v-for="topic in createMqttTopicRows" :key="topic.type">
+                <span>{{ topic.label }}</span>
+                <code>{{ topic.topic || '-' }}</code>
+              </div>
+            </div>
           </el-form-item>
         </el-form>
       </div>
@@ -320,7 +397,7 @@
         <el-button size="small" @click="createDialogVisible = false">取消</el-button>
         <el-button size="small" type="primary" :loading="creating" @click="submitCreate">保存</el-button>
       </template>
-    </el-drawer>
+    </el-dialog>
   </div>
 </template>
 
@@ -329,6 +406,7 @@ import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { Cpu, Plus, Refresh } from '@element-plus/icons-vue'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import axios from 'axios'
+import { useAuthStore } from '../../stores/authStore'
 
 interface DeviceModel {
   modelId: string
@@ -356,13 +434,10 @@ interface DeviceInstance {
   boundAdapterName?: string
   boundDevicePoint?: string
   commConfig: {
-    deviceSn?: string
-    tenantId?: string
-    labId?: string
-    deviceType?: string
     boundAdapterName?: string
     boundDevicePoint?: string
     mqttTopic?: string
+    mqttTopics?: Array<{ type: string; label: string; direction: string; topic: string }>
     constraints?: Array<{ targetAttr: string; operator: string; threshold: string }>
   }
   isOnline: boolean
@@ -375,12 +450,15 @@ interface DeviceSnapshot {
   latestAttributes?: Record<string, any>
 }
 
+const authStore = useAuthStore()
+
 const models = ref<DeviceModel[]>([])
 const modelOptions = ref<DeviceModel[]>([])
 const instances = ref<DeviceInstance[]>([])
 const adapterOptions = ref<AdapterOption[]>([])
 const createDevicePointOptions = ref<AdapterDevicePoint[]>([])
 const drawerDevicePointOptions = ref<AdapterDevicePoint[]>([])
+const categories = ref<any[]>([])
 const categoriesMap = ref<Record<string, string>>({})
 const selectedModelId = ref('')
 const instanceKeyword = ref('')
@@ -409,20 +487,23 @@ let instanceSearchTimer: any = null
 
 const localConstraints = ref<Array<{ targetAttr: string; operator: string; threshold: string }>>([])
 const controlCommandId = ref('')
-const controlParamsText = ref('{}')
+const controlParamValues = ref<Record<string, any>>({})
 
 const instanceDataSets = ref<any[]>([])
 const loadingDataSets = ref(false)
 const dataTemplates = ref<any[]>([])
 const creatingDataSet = ref(false)
 const datasetCreateForm = ref({ templateId: '', dataDesc: '' })
+const instanceComponents = ref<any[]>([])
+const loadingComponents = ref(false)
+const savingComponent = ref(false)
+const componentForm = ref({ componentName: '', categoryId: '', selfInstanceId: '', status: '使用中' })
 
 const createDialogVisible = ref(false)
 const createFormRef = ref<FormInstance>()
 const createForm = ref({
   instanceName: '',
   modelId: '',
-  deviceSn: '',
   boundAdapterName: '',
   boundDevicePoint: '',
   mqttTopicPreview: ''
@@ -434,6 +515,13 @@ const createRules = ref<FormRules>({
   boundAdapterName: [{ required: true, message: '请选择 Adapter', trigger: 'change' }],
   boundDevicePoint: [{ required: true, message: '请选择设备点', trigger: 'change' }]
 })
+
+const canCreateInstance = computed(() => authStore.hasPermission('device_instance:create'))
+const canEditInstance = computed(() => authStore.hasPermission('device_instance:edit'))
+const canDeleteInstance = computed(() => authStore.hasPermission('device_instance:delete'))
+const canControlInstance = computed(() => authStore.hasPermission('device_instance:control'))
+const canCreateDataset = computed(() => authStore.hasPermission('data_dataset:create'))
+const canDeleteDataset = computed(() => authStore.hasPermission('data_dataset:delete'))
 
 const selectedModelName = computed(() => {
   if (!selectedModelId.value) return '全部设备实例'
@@ -458,39 +546,56 @@ const snapshotAttributes = computed(() => snapshot.value?.latestAttributes || {}
 const selectedCreateModel = computed(() => findModelById(createForm.value.modelId))
 const activeInstanceModel = computed(() => activeInstance.value ? findModelById(activeInstance.value.modelId) : null)
 const activeInstanceCommands = computed(() => {
-  const commands = activeInstanceModel.value?.capabilitySpec?.adapterContract?.commands
-  return Array.isArray(commands) ? commands.map((cmd: any) => ({ ...cmd, commandId: cmd.commandId || cmd.commandName || cmd.name })) : []
+  const capabilities = asArray(activeInstanceModel.value?.capabilitySpec?.capabilities)
+  return capabilities.map((cap: any) => ({
+    ...cap,
+    commandId: cap.name || cap.commandId || cap.adapterCommandName,
+    commandName: cap.displayName || cap.name || cap.commandId,
+    adapterCommandName: cap.adapterCommandName || cap.commandName || cap.name,
+    parameters: asArray(cap.parameters)
+  })).filter((cap: any) => cap.commandId)
+})
+const activeControlCommand = computed(() => activeInstanceCommands.value.find((cmd: any) => cmd.commandId === controlCommandId.value) || null)
+const activeControlParams = computed(() => asArray(activeControlCommand.value?.parameters).filter((param: any) => !param.hidden))
+const createMqttTopicRows = computed(() => mqttTopicRows(createForm.value.boundAdapterName, createForm.value.boundDevicePoint))
+const activeMqttTopicRows = computed(() => mqttTopicRows(activeInstance.value?.boundAdapterName, activeInstance.value?.boundDevicePoint))
+const snapshotAttributeRows = computed(() => {
+  if (!activeInstance.value) return []
+  const attrs = asArray(getModelAttributes(activeInstance.value.modelId))
+  const snapshotMap = snapshotAttributes.value
+  const used = new Set<string>()
+  const rows = attrs.map((attr: any) => {
+    const candidates = [attr.name, attr.identifier, attr.displayName].filter(Boolean).map(String)
+    const matchedKey = candidates.find(key => Object.prototype.hasOwnProperty.call(snapshotMap, key)) || candidates[0] || ''
+    if (matchedKey) used.add(matchedKey)
+    return {
+      key: attr.name || attr.identifier || attr.displayName || '-',
+      label: attr.displayName || attr.name || attr.identifier || '-',
+      dataType: attr.dataType || '-',
+      unit: attr.unit || '-',
+      value: matchedKey ? snapshotMap[matchedKey] : undefined
+    }
+  })
+  Object.keys(snapshotMap).forEach(key => {
+    if (!used.has(key)) rows.push({ key, label: getAttributeName(key), dataType: '-', unit: '-', value: snapshotMap[key] })
+  })
+  return rows
 })
 const availableDataTemplates = computed(() => {
   const modelId = activeInstance.value?.modelId
   return dataTemplates.value.filter(tpl => !tpl.deviceModelId || !modelId || String(tpl.deviceModelId) === String(modelId))
 })
 
-const mqttTemplate = computed(() => {
-  const model = selectedCreateModel.value
-  const topics = model?.capabilitySpec?.adapterContract?.mqttTopics
-  const defaultCommand = model?.capabilitySpec?.protocol?.defaultTopics?.command
-  if (defaultCommand) return defaultCommand
-  if (!Array.isArray(topics)) return defaultTopicTemplate.value
-  const commandTopic = topics.find((t: any) => t.direction === 'pub' && String(t.topic || '').includes('/cmd'))
-  return commandTopic?.topic || topics[0]?.topic || defaultTopicTemplate.value
-})
-
-const defaultTopicTemplate = computed(() => 'smartlab/v1/${tenantId}/${labId}/${deviceType}/${modelId}/${deviceSn}/cmd/${commandId}')
-
-const hasDevicePlaceholder = computed(() => {
-  const tpl = mqttTemplate.value
-  return tpl.includes('${deviceSn}') || tpl.includes('{deviceSn}')
-})
-
-const showDeviceSnInput = computed(() => !!createForm.value.modelId)
-
-const deviceSnPlaceholder = computed(() => {
-  if (hasDevicePlaceholder.value) {
-    return '该模型主题包含设备SN占位符，请填写真实设备SN'
-  }
-  return '请输入真实设备SN'
-})
+const mqttTopicRows = (adapterName?: string, devicePoint?: string) => {
+  const ready = !!adapterName && !!devicePoint
+  const base = ready ? `smartlab/adapter/${adapterName}/${devicePoint}` : ''
+  return [
+    { type: 'command', label: '命令', direction: '系统 → Adapter', topic: ready ? `${base}/command` : '' },
+    { type: 'telemetry', label: '遥测', direction: 'Adapter → 系统', topic: ready ? `${base}/telemetry` : '' },
+    { type: 'event', label: '事件', direction: 'Adapter → 系统', topic: ready ? `${base}/event` : '' },
+    { type: 'heartbeat', label: '心跳', direction: 'Adapter → 系统', topic: adapterName ? `smartlab/adapter/${adapterName}/heartbeat` : '' }
+  ]
+}
 
 const loadData = async () => {
   modelsLoading.value = true
@@ -498,6 +603,7 @@ const loadData = async () => {
     const catRes = await axios.get('/api/device/category/list')
     if (catRes.data?.success) {
       const map: Record<string, string> = {}
+      categories.value = catRes.data.data || []
       ;(catRes.data.data || []).forEach((c: any) => {
         map[c.id] = c.categoryName
       })
@@ -658,8 +764,44 @@ const getModelAttributes = (modelId: string) => {
 
 const getAttributeName = (key: string) => {
   if (!activeInstance.value) return key
-  const attr = getModelAttributes(activeInstance.value.modelId).find((v: any) => (v.identifier || v.name) === key)
+  const attr = getModelAttributes(activeInstance.value.modelId).find((v: any) => [v.identifier, v.name, v.displayName].filter(Boolean).map(String).includes(String(key)))
   return attr?.displayName || attr?.name || key
+}
+
+function asArray<T = any>(value: any): T[] {
+  return Array.isArray(value) ? value : []
+}
+
+const paramKey = (param: any) => String(param.name || param.paramName || param.displayName || '')
+const normalizeType = (type: any) => String(type || '').toUpperCase()
+const isBooleanType = (type: any) => normalizeType(type) === 'BOOLEAN' || normalizeType(type) === 'BOOL'
+const isIntegerType = (type: any) => ['INTEGER', 'INT', 'LONG'].includes(normalizeType(type))
+const isNumberType = (type: any) => isIntegerType(type) || ['DOUBLE', 'FLOAT', 'NUMBER', 'DECIMAL'].includes(normalizeType(type))
+
+const defaultValueForType = (type: any) => {
+  if (isBooleanType(type)) return false
+  if (isNumberType(type)) return 0
+  return ''
+}
+
+const resetControlParams = () => {
+  const next: Record<string, any> = {}
+  activeControlParams.value.forEach((param: any) => {
+    next[paramKey(param)] = controlParamValues.value[paramKey(param)] ?? defaultValueForType(param.dataType)
+  })
+  controlParamValues.value = next
+}
+
+const buildControlParameters = () => {
+  const parameters: Record<string, any> = {}
+  activeControlParams.value.forEach((param: any) => {
+    const key = paramKey(param)
+    let value = controlParamValues.value[key]
+    if (isIntegerType(param.dataType)) value = value === '' || value == null ? 0 : Number.parseInt(String(value), 10)
+    else if (isNumberType(param.dataType)) value = value === '' || value == null ? 0 : Number(value)
+    parameters[key] = value
+  })
+  return parameters
 }
 
 const viewDetails = (instance: DeviceInstance) => {
@@ -667,26 +809,24 @@ const viewDetails = (instance: DeviceInstance) => {
   if (!activeInstance.value.commConfig) {
     activeInstance.value.commConfig = {}
   }
-  activeInstance.value.commConfig.tenantId ||= 'default'
-  activeInstance.value.commConfig.labId ||= 'lab1'
-  activeInstance.value.commConfig.deviceType ||= getModelCategory(activeInstance.value.modelId)
   activeInstance.value.boundAdapterName ||= activeInstance.value.commConfig.boundAdapterName || ''
   activeInstance.value.boundDevicePoint ||= activeInstance.value.commConfig.boundDevicePoint || ''
   activeInstance.value.commConfig.mqttTopic = commandTopicPreview(activeInstance.value.boundAdapterName, activeInstance.value.boundDevicePoint)
+  activeInstance.value.commConfig.mqttTopics = mqttTopicRows(activeInstance.value.boundAdapterName, activeInstance.value.boundDevicePoint)
   localConstraints.value = JSON.parse(JSON.stringify(activeInstance.value.commConfig.constraints || []))
   loadDevicePoints(activeInstance.value.boundAdapterName, 'drawer')
   datasetCreateForm.value = { templateId: '', dataDesc: '' }
   controlCommandId.value = activeInstanceCommands.value[0]?.commandId || ''
-  controlParamsText.value = '{}'
+  resetControlParams()
   activeTab.value = 'info'
   drawerVisible.value = true
   loadDataSets()
+  loadComponents()
 }
 
 const onModelChangeInDrawer = (modelId: string) => {
   if (!activeInstance.value) return
   activeInstance.value.stateMachineId = `${modelId}StateMachine`
-  activeInstance.value.commConfig.deviceType = getModelCategory(modelId)
   activeInstance.value.boundDevicePoint = ''
   loadDevicePoints(activeInstance.value.boundAdapterName || '', 'drawer')
 }
@@ -701,6 +841,7 @@ const saveInstance = async () => {
     payload.commConfig.boundAdapterName = activeInstance.value.boundAdapterName
     payload.commConfig.boundDevicePoint = activeInstance.value.boundDevicePoint
     payload.commConfig.mqttTopic = commandTopicPreview(activeInstance.value.boundAdapterName, activeInstance.value.boundDevicePoint)
+    payload.commConfig.mqttTopics = mqttTopicRows(activeInstance.value.boundAdapterName, activeInstance.value.boundDevicePoint)
     payload.commConfig.constraints = localConstraints.value
     const res = await axios.post('/api/device/instance/save', payload)
     if (res.data?.success) {
@@ -750,6 +891,7 @@ const saveConstraints = async () => {
     payload.commConfig.boundAdapterName = activeInstance.value.boundAdapterName
     payload.commConfig.boundDevicePoint = activeInstance.value.boundDevicePoint
     payload.commConfig.mqttTopic = commandTopicPreview(activeInstance.value.boundAdapterName, activeInstance.value.boundDevicePoint)
+    payload.commConfig.mqttTopics = mqttTopicRows(activeInstance.value.boundAdapterName, activeInstance.value.boundDevicePoint)
     payload.commConfig.constraints = localConstraints.value.filter(v => v.targetAttr && v.threshold)
     const res = await axios.post('/api/device/instance/save', payload)
     if (res.data?.success) {
@@ -796,8 +938,60 @@ const closeDrawer = () => {
   snapshot.value = null
   activeInstance.value = null
   controlCommandId.value = ''
-  controlParamsText.value = '{}'
+  controlParamValues.value = {}
   instanceDataSets.value = []
+}
+
+const loadComponents = async () => {
+  if (!activeInstance.value) return
+  loadingComponents.value = true
+  try {
+    const res = await axios.get('/api/device/component/list', { params: { parentInstanceId: activeInstance.value.instanceId } })
+    if (res.data?.success) instanceComponents.value = res.data.data || []
+  } catch (err: any) {
+    ElMessage.error(err.response?.data?.message || '加载结构拓扑失败')
+  } finally {
+    loadingComponents.value = false
+  }
+}
+
+const saveComponent = async () => {
+  if (!activeInstance.value || !componentForm.value.componentName.trim()) {
+    ElMessage.warning('请输入组件名称')
+    return
+  }
+  savingComponent.value = true
+  try {
+    const res = await axios.post('/api/device/component/save', {
+      componentName: componentForm.value.componentName.trim(),
+      categoryId: componentForm.value.categoryId ? Number(componentForm.value.categoryId) : null,
+      parentInstanceId: Number(activeInstance.value.instanceId),
+      selfInstanceId: componentForm.value.selfInstanceId ? Number(componentForm.value.selfInstanceId) : null,
+      status: componentForm.value.status,
+      specification: {}
+    })
+    if (res.data?.success) {
+      componentForm.value = { componentName: '', categoryId: '', selfInstanceId: '', status: '使用中' }
+      await loadComponents()
+      ElMessage.success('组件已添加')
+    } else {
+      ElMessage.error(res.data?.message || '保存组件失败')
+    }
+  } finally {
+    savingComponent.value = false
+  }
+}
+
+const deleteComponent = async (row: any) => {
+  const id = row?.id
+  if (!id) return
+  const res = await axios.delete('/api/device/component/delete/' + id)
+  if (res.data?.success) {
+    ElMessage.success('组件已删除')
+    await loadComponents()
+  } else {
+    ElMessage.error(res.data?.message || '删除组件失败')
+  }
 }
 
 const loadDataSets = async () => {
@@ -869,16 +1063,6 @@ watch(activeTab, (tab) => {
   }
 })
 
-const renderMqttTopic = (template: string, deviceSn: string) => {
-  return template
-    .replaceAll('{deviceSn}', deviceSn)
-    .replaceAll('${deviceSn}', deviceSn)
-    .replaceAll('${tenantId}', createForm.value.tenantId || 'default')
-    .replaceAll('${labId}', createForm.value.labId || 'lab1')
-    .replaceAll('${deviceType}', createForm.value.deviceType || selectedCreateModel.value?.deviceCategory || 'DEVICE')
-    .replaceAll('${modelId}', createForm.value.modelId || '{modelId}')
-    .replaceAll('${commandId}', '{commandId}')
-}
 
 const commandTopicPreview = (adapterName?: string, devicePoint?: string) => {
   if (!adapterName || !devicePoint) return ''
@@ -913,11 +1097,7 @@ const onAdapterChangeInDrawer = async () => {
   await loadDevicePoints(activeInstance.value.boundAdapterName || '', 'drawer')
 }
 
-watch(() => createForm.value.deviceSn, () => {
-  updateCreateTopicPreview()
-})
-
-watch(() => [createForm.value.tenantId, createForm.value.labId, createForm.value.deviceType, createForm.value.modelId], () => {
+watch(() => [createForm.value.boundAdapterName, createForm.value.boundDevicePoint], () => {
   updateCreateTopicPreview()
 })
 
@@ -925,10 +1105,6 @@ const openCreateDialog = () => {
   createForm.value = {
     instanceName: '',
     modelId: '',
-    tenantId: 'default',
-    labId: 'lab1',
-    deviceType: '',
-    deviceSn: '',
     boundAdapterName: '',
     boundDevicePoint: '',
     mqttTopicPreview: ''
@@ -958,16 +1134,13 @@ const submitCreate = async () => {
         boundAdapterName: createForm.value.boundAdapterName,
         boundDevicePoint: createForm.value.boundDevicePoint,
         commConfig: {
-          tenantId: createForm.value.tenantId || 'default',
-          labId: createForm.value.labId || 'lab1',
-          deviceType: createForm.value.deviceType || selectedCreateModel.value?.deviceCategory || 'DEVICE',
-          deviceSn: createForm.value.deviceSn,
           boundAdapterName: createForm.value.boundAdapterName,
           boundDevicePoint: createForm.value.boundDevicePoint,
           mqttTopic,
+          mqttTopics: mqttTopicRows(createForm.value.boundAdapterName, createForm.value.boundDevicePoint),
           constraints: []
         },
-        isOnline: true
+        isOnline: false
       }
 
       const res = await axios.post('/api/device/instance/save', payload)
@@ -992,13 +1165,7 @@ const sendManualCommand = async () => {
     ElMessage.warning('请选择命令')
     return
   }
-  let parameters: Record<string, any> = {}
-  try {
-    parameters = controlParamsText.value.trim() ? JSON.parse(controlParamsText.value) : {}
-  } catch {
-    ElMessage.warning('参数 JSON 格式错误')
-    return
-  }
+  const parameters = buildControlParameters()
   sendingControl.value = true
   try {
     const res = await axios.post(`/api/device/instance/control/${activeInstance.value.instanceId}`, {
@@ -1017,9 +1184,9 @@ const sendManualCommand = async () => {
   }
 }
 
-const getModelCategory = (modelId: string) => {
-  return findModelById(modelId)?.deviceCategory || 'DEVICE'
-}
+const categoryNameById = (id: any) => categoriesMap.value[String(id)] || ''
+const instanceNameById = (id: any) => instances.value.find(item => String(item.instanceId) === String(id))?.instanceName || (id ? String(id) : '-')
+
 
 function normalizeModel(raw: any): DeviceModel {
   return {
@@ -1047,7 +1214,7 @@ function normalizeInstance(raw: any): DeviceInstance {
     instanceName: raw.instanceName || raw.name || '',
     boundAdapterName,
     boundDevicePoint,
-    commConfig: { ...commConfig, boundAdapterName, boundDevicePoint, mqttTopic: commConfig.mqttTopic || commandTopicPreview(boundAdapterName, boundDevicePoint) },
+    commConfig: { ...commConfig, boundAdapterName, boundDevicePoint, mqttTopic: commConfig.mqttTopic || commandTopicPreview(boundAdapterName, boundDevicePoint), mqttTopics: commConfig.mqttTopics || mqttTopicRows(boundAdapterName, boundDevicePoint) },
     isOnline: raw.isOnline === true || raw.onlineStatus === 'ONLINE'
   }
 }
@@ -1070,14 +1237,14 @@ onUnmounted(() => {
 <style scoped>
 .instance-page {
   height: calc(100vh - 52px);
-  background: #f3f4f6;
+  background: #eef2f6;
 }
 
 .layout { height: 100%; }
 
 .sidebar {
   background: #fff;
-  border-right: 1px solid #e5e7eb;
+  border-right: 1px solid #ccd6e3;
   display: flex;
   flex-direction: column;
 }
@@ -1117,7 +1284,7 @@ onUnmounted(() => {
 .model-name { font-size: 13px; font-weight: 600; color: #111827; }
 .model-meta { font-size: 11px; color: #6b7280; margin-top: 4px; }
 
-.content { padding: 0; background: #f7f8fa; display: flex; flex-direction: column; }
+.content { padding: 0; background: #eef2f6; display: flex; flex-direction: column; }
 
 .main-header {
   padding: 16px 20px;
@@ -1128,9 +1295,16 @@ onUnmounted(() => {
   align-items: center;
 }
 
-.main-header h2 { margin: 0; font-size: 18px; color: #111827; }
+.main-header h2 { margin: 0; font-size: 19px; color: #111827; }
 .subtitle { font-size: 12px; color: #6b7280; }
 .actions { display: flex; gap: 8px; align-items: center; }
+.add-device-trigger { height: 34px; border-radius: 18px; padding: 0 16px; box-shadow: 0 8px 18px rgba(37, 99, 235, 0.18); }
+.instance-create-body { padding: 2px 4px 0; }
+.instance-create-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }
+.instance-create-form :deep(.el-form-item) { margin-bottom: 8px; }
+.instance-create-form :deep(.el-select) { width: 100%; }
+.instance-create-form :deep(.el-form-item:nth-last-child(1)) { grid-column: 1 / -1; }
+.component-create-panel { margin-bottom: 10px; padding: 10px; border: 1px solid #dbe4ef; border-radius: 6px; background: #f8fafc; display: grid; grid-template-columns: 1.1fr 1fr 1fr 110px auto; gap: 8px; align-items: center; }
 
 .instance-search {
   width: 220px;
@@ -1283,6 +1457,35 @@ onUnmounted(() => {
 .mb-12 { margin-bottom: 12px; }
 .mt-12 { margin-top: 12px; }
 
+.instance-list-wrap { flex: 1; min-height: 0; padding: 12px; overflow: auto; }
+.instance-table { cursor: pointer; }
+.instance-table :deep(.el-table__row:hover) { background: #eef6ff; }
+.instance-name-cell { display: grid; gap: 3px; }
+.instance-name-cell strong { color: #0f172a; font-size: 14px; }
+.instance-name-cell span { color: #64748b; font-size: 12px; }
+.binding-cell { display: grid; grid-template-columns: 1fr; gap: 4px; }
+.binding-cell span { display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 8px; align-items: center; }
+.binding-cell b { color: #64748b; font-weight: 700; }
+.topic-cell { display: grid; gap: 3px; }
+.topic-cell span { display: grid; grid-template-columns: 42px minmax(0, 1fr); gap: 8px; align-items: center; }
+.topic-cell b { color: #64748b; font-weight: 700; }
+.topic-cell code, .topic-table code, .topic-preview-grid code { display: block; overflow: hidden; color: #0f172a; font-family: Consolas, Menlo, monospace; text-overflow: ellipsis; white-space: nowrap; }
+.instance-detail-dialog :deep(.el-dialog__body) { padding: 8px 14px 14px; }
+.drawer-body { padding: 0; }
+.instance-info-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }
+.instance-info-grid :deep(.el-form-item) { margin-bottom: 2px; }
+.readonly-status { height: 32px; display: flex; align-items: center; gap: 8px; color: #64748b; font-size: 12px; }
+.topic-section, .snapshot-section { margin-top: 10px; border: 1px solid #cbd5e1; }
+.section-caption { height: 34px; padding: 0 10px; border-bottom: 1px solid #dbe4ef; background: #f8fafc; display: flex; align-items: center; color: #0f172a; font-weight: 800; }
+.manual-control-form { display: grid; gap: 10px; }
+.control-param-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px 12px; }
+.control-param-grid :deep(.el-form-item) { margin-bottom: 0; }
+.field-hint { margin-top: 3px; color: #64748b; font-size: 12px; }
+.topic-preview-grid { width: 100%; border: 1px solid #cbd5e1; }
+.topic-preview-grid div { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 10px; min-height: 32px; padding: 6px 8px; border-bottom: 1px solid #e2e8f0; align-items: center; }
+.topic-preview-grid div:last-child { border-bottom: 0; }
+.topic-preview-grid span { color: #64748b; font-weight: 700; }
+.form-wide { grid-column: 1 / -1; }
 @media (max-width: 960px) {
   .main-header {
     align-items: flex-start;

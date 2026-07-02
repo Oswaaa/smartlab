@@ -84,6 +84,9 @@ public class DataTemplateService extends ManagementCrudService<DataTemplateMain>
         for (DataTemplateDetail detail : dto.getDetails()) {
             detail.setId(null);
             detail.setDataTemplateId(main.getId());
+            if (detail.getColumnLength() == null || detail.getColumnLength() <= 0) {
+                detail.setColumnLength(255);
+            }
             if (detail.getCreateTime() == null) {
                 detail.setCreateTime(OffsetDateTime.now());
             }
@@ -185,6 +188,8 @@ public class DataTemplateService extends ManagementCrudService<DataTemplateMain>
         Object length = first(row, "columnLength", "length");
         if (length != null && !String.valueOf(length).isBlank()) {
             detail.setColumnLength(Integer.valueOf(String.valueOf(length)));
+        } else {
+            detail.setColumnLength(255);
         }
         detail.setCreateTime(OffsetDateTime.now());
         return detail;

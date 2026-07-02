@@ -306,10 +306,11 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             DataTemplateDetail detail = new DataTemplateDetail();
             detail.setColumnName(columnName);
             detail.setColumnDesc(textValue(row, "columnDesc", columnName));
-            detail.setDeviceAttrKey(textValue(row, "deviceAttrKey", columnName));
+            detail.setDeviceAttrKey(nullableTextValue(row, "deviceAttrKey"));
             detail.setDefaultValue(nullableTextValue(row, "defaultValue"));
             detail.setPropertyTypeId(longValue(row, "propertyTypeId"));
-            detail.setColumnLength(integerValue(row, "columnLength"));
+            Integer columnLength = integerValue(row, "columnLength");
+            detail.setColumnLength(columnLength == null || columnLength <= 0 ? 255 : columnLength);
             details.add(detail);
         }
         if (details.isEmpty()) {

@@ -187,12 +187,9 @@ public class AdapterManifestService {
         }
         telemetry.putArray("attributesMapping");
 
-        ObjectNode eventGroups = contract.putObject("eventGroups");
-        eventGroups.set("cmdEvents", copyArray(template.path("events").get("cmdEvents")));
-        eventGroups.set("opEvents", copyArray(template.path("events").get("opEvents")));
-        ArrayNode events = contract.putArray("events");
-        appendEvents(events, eventGroups.path("cmdEvents"), "CMD");
-        appendEvents(events, eventGroups.path("opEvents"), "OP");
+        ObjectNode events = contract.putObject("events");
+        events.set("cmdEvents", copyArray(template.path("events").get("cmdEvents")));
+        events.set("opEvents", copyArray(template.path("events").get("opEvents")));
 
         return contract;
     }
@@ -535,3 +532,4 @@ public class AdapterManifestService {
         return fallback;
     }
 }
+

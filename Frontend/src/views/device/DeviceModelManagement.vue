@@ -2,22 +2,28 @@
   <div class="device-model-page">
     <section class="content-shell">
       <aside class="model-list-panel">
-        <div class="list-tools">
+        <div class="list-tools model-tree-tools">
           <el-input v-model="keyword" placeholder="搜索模型名称" clearable :prefix-icon="Search" @input="onKeywordInput" />
+          <el-button type="primary" plain @click="showAddCategoryDialog = true">设备类别</el-button>
         </div>
 
         <el-scrollbar class="model-list" v-loading="loading">
-          <button
-            v-for="model in models"
-            :key="model.modelId"
-            class="model-row"
-            :class="{ active: selectedModelId === model.modelId }"
-            @click="selectedModelId = model.modelId"
+          <el-tree
+            v-if="modelTreeData.length"
+            :data="modelTreeData"
+            node-key="id"
+            default-expand-all
+            :expand-on-click-node="false"
+            class="category-model-tree"
+            @node-click="handleModelTreeNodeClick"
           >
-            <span class="model-name">{{ model.modelName || '未命名模型' }}</span>
-            <span class="model-meta">{{ model.categoryName || '未分类' }}</span>
-            <span class="model-summary">{{ summaryText(model) }}</span>
-          </button>
+            <template #default="{ data }">
+              <div class="category-model-node" :class="[data.type, { active: data.type === 'model' && selectedModelId === data.modelId }]">
+                <span class="node-title">{{ data.label }}</span>
+                <span class="node-meta">{{ data.meta }}</span>
+              </div>
+            </template>
+          </el-tree>
           <el-empty v-if="!loading && models.length === 0" description="暂无设备模型" :image-size="90" />
         </el-scrollbar>
 
@@ -35,9 +41,12 @@
       </aside>
 
       <main class="detail-panel">
-        <div class="global-top-bar" style="display: flex; justify-content: flex-end; align-items: center; padding-bottom: 12px; border-bottom: 1px solid #e4e7ed; margin-bottom: 16px;">
-          <el-button :icon="Refresh" @click="loadData">刷新</el-button>
-          <el-button v-if="canCreateModel" type="primary" :icon="Plus" @click="openCreateDrawer">新建设备模型</el-button>
+        <div class="global-top-bar">
+          <span class="global-toolbar-title">设备模型管理</span>
+          <div class="global-toolbar-actions">
+            <el-button :icon="Refresh" @click="loadData">刷新</el-button>
+            <el-button v-if="canCreateModel" type="primary" :icon="Plus" @click="openCreateDrawer">新建设备模型</el-button>
+          </div>
         </div>
         <template v-if="selectedModel">
           <div class="detail-head">
@@ -60,6 +69,7 @@
             <el-anchor class="detail-anchor-menu" @click="(e) => e.preventDefault()" container=".detail-scroll-content .el-scrollbar__wrap" :offset="20" style="width: 150px; flex-shrink: 0; border-right: 1px solid var(--el-border-color-light);">
               <el-anchor-link href="#view-basic" title="基础信息" />
               <el-anchor-link href="#view-ability" title="属性功能" />
+              <el-anchor-link href="#view-topology" title="结构拓扑" />
               <el-anchor-link href="#view-adapter" title="Adapter 契约" />
               <el-anchor-link href="#view-mapping" title="映射关系" />
               <el-anchor-link href="#view-state" title="状态机" />
@@ -112,12 +122,12 @@
                         <span class="item-index">{{ index + 1 }}</span>
                         <div>
                           <strong>{{ capability.displayName || '未命名操作' }}</strong>
-                          <span>Adapter 命令：{{ capability.adapterCommandName || '-' }}</span>
+                          <span class="adapter-command-line"><em>Adapter 命令</em><b>{{ capability.adapterCommandName || '-' }}</b></span>
                         </div>
                       </div>
                       <div class="param-chip-row">
                         <span v-for="param in capability.parameters" :key="param.name || param.displayName" class="info-chip">
-                          {{ param.displayName || '未命名参数' }} · {{ param.dataType || '-' }}
+                          <em>参数</em><b>{{ param.displayName || '未命名参数' }}</b><i>{{ param.dataType || '-' }}</i>
                         </span>
                         <span v-if="!capability.parameters?.length" class="muted-text">无参数</span>
                       </div>
@@ -143,6 +153,31 @@
                 </section>
               </div>
 
+              <div id="view-topology" class="anchor-section industrial-section">
+                <h2 class="section-heading">结构拓扑模板</h2>
+                <section class="info-section section-cluster">
+                  <div class="section-title">
+                    <h3>模型组件模板</h3>
+                    <span class="section-count">{{ selectedComponentsBom.length }} 项</span>
+                  </div>
+                  <div v-if="selectedComponentsBom.length === 0" class="compact-empty inline-empty">暂无结构拓扑模板</div>
+                  <el-table v-else :data="selectedComponentsBom" border size="small" class="industrial-table">
+                    <el-table-column label="组件名称" min-width="160">
+                      <template #default="{ row }"><strong>{{ row.componentName || row.name || '-' }}</strong></template>
+                    </el-table-column>
+                    <el-table-column label="组件类别" min-width="140">
+                      <template #default="{ row }">{{ row.categoryName || categoryNameById(row.categoryId) || '-' }}</template>
+                    </el-table-column>
+                    <el-table-column label="父级组件" min-width="140">
+                      <template #default="{ row }">{{ row.parentComponentName || row.parentName || row.parentComponentId || '-' }}</template>
+                    </el-table-column>
+                    <el-table-column label="规格信息" min-width="220">
+                      <template #default="{ row }"><code>{{ stringifyBrief(row.specification || row.spec || {}) }}</code></template>
+                    </el-table-column>
+                  </el-table>
+                </section>
+              </div>
+
                           <div id="view-adapter" class="anchor-section industrial-section">
                 <h2 class="section-heading">Adapter 契约</h2>
                 <section class="info-section section-cluster">
@@ -162,7 +197,7 @@
                       </div>
                       <div class="param-chip-row">
                         <span v-for="param in command.commandParameters" :key="param.paramName" class="info-chip">
-                          {{ param.paramName }} · {{ param.dataType || '-' }}
+                          <em>参数</em><b>{{ param.paramName }}</b><i>{{ param.dataType || '-' }}</i>
                         </span>
                         <span v-if="!command.commandParameters?.length" class="muted-text">无参数</span>
                       </div>
@@ -211,10 +246,10 @@
                   </div>
                   <div v-if="selectedAttributeMappings.length === 0" class="compact-empty inline-empty">暂无属性映射</div>
                   <div v-else class="mapping-grid">
-                    <article v-for="mapping in selectedAttributeMappings" :key="mapping.adapterAttrName" class="mapping-tile">
-                      <span class="mapping-source">{{ displayAttributeName(mapping.modelAttributeName, selectedAttributes) }}</span>
+                    <article v-for="mapping in selectedAttributeMappings" :key="mapping.adapterAttrName" class="mapping-tile mapping-tile-labeled">
+                      <span class="mapping-side"><em>模型属性</em><b>{{ displayAttributeName(mapping.modelAttributeName, selectedAttributes) }}</b></span>
                       <span class="mapping-arrow">→</span>
-                      <span class="mapping-target">{{ mapping.adapterAttrName || '-' }}</span>
+                      <span class="mapping-side adapter-side"><em>Adapter 属性</em><b>{{ mapping.adapterAttrName || '-' }}</b></span>
                     </article>
                   </div>
                 </section>
@@ -229,15 +264,15 @@
                     <article v-for="group in functionMappingGroups(selectedCapabilities)" :key="group.key" class="function-map-card">
                       <div class="function-map-head">
                         <strong>{{ group.capabilityDisplayName }}</strong>
-                        <span>Adapter 命令：{{ group.adapterCommandName }}</span>
+                        <span class="adapter-command-line"><em>Adapter 命令</em><b>{{ group.adapterCommandName }}</b></span>
                       </div>
                       <div v-if="group.parameters.length === 0" class="muted-text">未配置参数映射</div>
                       <div v-else class="function-param-list">
                         <div v-for="param in group.parameters" :key="param.key" class="function-param-row">
-                          <span class="mapping-target">{{ param.commandParamName }}</span>
+                          <span class="mapping-side adapter-side"><em>Adapter 参数</em><b>{{ param.commandParamName }}</b></span>
                           <span class="mapping-arrow">←</span>
-                          <span v-if="param.isFixedValue" class="fixed-value-chip">固定值：{{ param.fixedValue }}</span>
-                          <span v-else class="mapping-source">{{ param.capabilityParamDisplayName }}</span>
+                          <span v-if="param.isFixedValue" class="mapping-side fixed-side"><em>固定值</em><b>{{ param.fixedValue }}</b></span>
+                          <span v-else class="mapping-side"><em>功能参数</em><b>{{ param.capabilityParamDisplayName }}</b></span>
                         </div>
                       </div>
                     </article>
@@ -381,7 +416,7 @@
                     <el-select v-model="draft.basic.categoryValue" placeholder="选择分类" filterable style="flex-grow: 1;">
                       <el-option v-for="cat in categories" :key="String(cat.id)" :label="cat.categoryName" :value="String(cat.id)" />
                     </el-select>
-                    <el-button type="primary" link @click="showAddCategoryDialog = true">新增分类</el-button>
+                    <el-button type="primary" link @click="showAddCategoryDialog = true">管理类别</el-button>
                   </div>
                 </el-form-item>
               </el-form>
@@ -498,6 +533,28 @@
                     <el-option label="HTTP" value="HTTP" />
                   </el-select>
                 </el-form-item>
+                <el-form-item label="注册 Adapter">
+                  <div class="registered-adapter-picker" v-loading="registeredAdapterLoading">
+                    <el-select v-model="selectedRegisteredAdapterName" filterable clearable placeholder="选择已注册 Adapter" @change="handleRegisteredAdapterChange">
+                      <el-option
+                        v-for="adapter in registeredAdapters"
+                        :key="adapter.adapterName || adapter.id"
+                        :label="adapter.adapterName + (adapter.status ? ' · ' + adapter.status : '')"
+                        :value="adapter.adapterName"
+                      />
+                    </el-select>
+                    <el-select v-model="selectedRegisteredAdapterTemplate" filterable clearable placeholder="选择设备模板" :disabled="!registeredAdapterTemplateOptions.length">
+                      <el-option
+                        v-for="tpl in registeredAdapterTemplateOptions"
+                        :key="tpl.templateName"
+                        :label="tpl.description ? tpl.templateName + ' · ' + tpl.description : tpl.templateName"
+                        :value="tpl.templateName"
+                      />
+                    </el-select>
+                    <el-button type="primary" plain :disabled="!selectedRegisteredAdapterName || !selectedRegisteredAdapterTemplate" @click="applyRegisteredAdapterContract">载入契约</el-button>
+                    <el-button plain :icon="Refresh" @click="fetchRegisteredAdapters">刷新</el-button>
+                  </div>
+                </el-form-item>
                 <el-form-item label="配置文本">
                   <div class="config-import">
                     <el-upload :auto-upload="false" :show-file-list="false" accept=".json,.txt" :on-change="importAdapterFile">
@@ -505,7 +562,7 @@
                     </el-upload>
                     <el-button type="primary" plain @click="applyAdapterConfigText">解析到契约</el-button>
                   </div>
-                  <el-input v-model="adapterConfigText" type="textarea" :rows="6" placeholder="可粘贴 JSON 格式的 Adapter 配置文本；MQTT 在线注册解析后续接入。" />
+                  <el-input v-model="adapterConfigText" type="textarea" :rows="5" placeholder="可粘贴 JSON 格式的 Adapter 配置文本，或从上方选择已注册 Adapter。" />
                 </el-form-item>
               </el-form>
             </section>
@@ -622,54 +679,66 @@
                 <el-button type="primary" plain size="small" :icon="Plus" @click="addFunctionMapping">新增映射</el-button>
               </div>
               <div v-if="draft.functionMappings.length === 0" class="compact-empty block-empty">暂无功能映射，请点击右上角“新增映射”进行配置</div>
-              <el-table v-else :data="draft.functionMappings" border size="small" class="function-mapping-table">
-                <el-table-column label="模型操作" min-width="180">
-                  <template #default="{ row }">
-                    <el-select v-model="row.capabilityKey" size="small" filterable placeholder="选择模型操作" @change="handleFunctionMappingCapabilityChange(row)">
-                      <el-option
-                        v-for="capability in capabilitySelectOptions"
-                        :key="capability.key"
-                        :label="capability.label"
-                        :value="capability.key"
-                        :disabled="isCapabilityMapped(capability.key, row)"
-                      />
-                    </el-select>
-                  </template>
-                </el-table-column>
-                <el-table-column label="Adapter 命令" min-width="180">
-                  <template #default="{ row }">
-                    <el-select v-model="row.adapterCommandName" size="small" filterable clearable placeholder="选择 Adapter 命令" @change="handleFunctionMappingCommandChange(row)">
-                      <el-option v-for="cmd in commandNameOptions" :key="cmd" :label="cmd" :value="cmd" :disabled="isAdapterCommandMapped(cmd, row)" />
-                    </el-select>
-                  </template>
-                </el-table-column>
-                <el-table-column label="参数映射" min-width="560">
-                  <template #default="{ row }">
-                    <div class="param-map-editor">
-                      <div v-for="(mapping, index) in row.parameterMapping" :key="mapping._key || index" class="param-map-row" :class="{ invalid: isParameterMappingInvalid(row, mapping) }">
-                        <el-select v-if="!mapping.isFixedValue" v-model="mapping.capabilityParamKey" size="small" filterable placeholder="操作参数" @change="handleCapabilityParameterChange(row, mapping)" style="width: 150px; margin-right: 8px;">
+              <div v-else class="function-mapping-card-list">
+                <article v-for="(row, rowIndex) in draft.functionMappings" :key="row._key || rowIndex" class="function-mapping-editor-card">
+                  <div class="function-map-editor-head">
+                    <div class="function-map-selects">
+                      <label>
+                        <span>模型操作</span>
+                        <el-select v-model="row.capabilityKey" size="small" filterable placeholder="选择模型操作" @change="handleFunctionMappingCapabilityChange(row)">
+                          <el-option
+                            v-for="capability in capabilitySelectOptions"
+                            :key="capability.key"
+                            :label="capability.label"
+                            :value="capability.key"
+                            :disabled="isCapabilityMapped(capability.key, row)"
+                          />
+                        </el-select>
+                      </label>
+                      <span class="mapping-direction">→</span>
+                      <label>
+                        <span>Adapter 命令</span>
+                        <el-select v-model="row.adapterCommandName" size="small" filterable clearable placeholder="选择 Adapter 命令" @change="handleFunctionMappingCommandChange(row)">
+                          <el-option v-for="cmd in commandNameOptions" :key="cmd" :label="cmd" :value="cmd" :disabled="isAdapterCommandMapped(cmd, row)" />
+                        </el-select>
+                      </label>
+                    </div>
+                    <el-button link type="danger" :icon="Delete" @click="removeRow(draft.functionMappings, rowIndex)">删除</el-button>
+                  </div>
+
+                  <div class="param-map-editor compact-param-editor">
+                    <div v-for="(mapping, index) in row.parameterMapping" :key="mapping._key || index" class="param-map-row" :class="{ invalid: isParameterMappingInvalid(row, mapping), fixed: mapping.isFixedValue }">
+                      <div class="param-map-field">
+                        <span class="param-map-label">功能参数</span>
+                        <el-select v-model="mapping.capabilityParamKey" size="small" filterable placeholder="选择功能参数" @change="handleCapabilityParameterChange(row, mapping)">
                           <el-option v-for="param in capabilityParameterOptionsDetailedByKey(row.capabilityKey)" :key="param._key" :label="(param.displayName || param.name) + ' · ' + param.dataType + (isParamDataTypeMatch(mapping.commandParamName, row.adapterCommandName, param.dataType) ? '' : ' (类型不匹配)')" :value="param._key" :disabled="isCapabilityParamMapped(row, param._key, mapping) || !isParamDataTypeMatch(mapping.commandParamName, row.adapterCommandName, param.dataType)" />
                         </el-select>
-                        <el-select v-model="mapping.commandParamName" size="small" filterable placeholder="命令参数" @change="handleParameterCommandChange(row, mapping)" style="width: 150px; margin-right: 8px;">
+                      </div>
+                      <div class="param-map-field">
+                        <span class="param-map-label">Adapter 参数</span>
+                        <el-select v-model="mapping.commandParamName" size="small" filterable placeholder="选择命令参数" @change="handleParameterCommandChange(row, mapping)">
                           <el-option v-for="param in commandParameterOptionsDetailed(row.adapterCommandName)" :key="param.paramName" :label="param.paramName + ' · ' + param.dataType" :value="param.paramName" :disabled="isCommandParamMapped(row, param.paramName, mapping)" />
                         </el-select>
-                        <el-switch v-model="mapping.isFixedValue" size="small" active-text="固定" @change="handleParameterFixedChange(mapping)" style="margin-right: 8px;" />
-                        <el-input v-if="mapping.isFixedValue" v-model="mapping.fixedValue" size="small" :placeholder="fixedValuePlaceholder(row, mapping)" style="width: 150px;" />
-                        <el-button link type="danger" :icon="Delete" @click="removeRow(row.parameterMapping, index)" />
-                        <span v-if="isParameterMappingInvalid(row, mapping)" class="map-warning">{{ parameterMappingWarning(row, mapping) }}</span>
                       </div>
-                      <div class="param-map-toolbar">
-                        <span v-if="row.parameterMapping.length === 0" class="no-mapping-placeholder">未配置参数映射</span>
-                        <span v-else></span>
-                        <el-button size="small" type="primary" plain :icon="Plus" class="add-mapping-btn" @click="addParameterMapping(row)">新增参数映射</el-button>
+                      <div class="param-map-mode">
+                        <span class="param-map-label">取值方式</span>
+                        <el-switch v-model="mapping.isFixedValue" size="small" active-text="固定" inactive-text="映射" @change="handleParameterFixedChange(mapping)" />
                       </div>
+                      <div v-if="mapping.isFixedValue" class="param-map-field fixed-input-field">
+                        <span class="param-map-label">固定值</span>
+                        <el-input v-model="mapping.fixedValue" size="small" :placeholder="fixedValuePlaceholder(row, mapping)" />
+                      </div>
+                      <el-button link type="danger" :icon="Delete" class="param-delete-btn" @click="removeRow(row.parameterMapping, index)" />
+                      <span v-if="isParameterMappingInvalid(row, mapping)" class="map-warning">{{ parameterMappingWarning(row, mapping) }}</span>
                     </div>
-                  </template>
-                </el-table-column>
-                <el-table-column label="" width="54" fixed="right">
-                  <template #default="{ $index }"><el-button link type="danger" :icon="Delete" @click="removeRow(draft.functionMappings, $index)" /></template>
-                </el-table-column>
-              </el-table>
+                    <div class="param-map-toolbar">
+                      <span v-if="row.parameterMapping.length === 0" class="no-mapping-placeholder">未配置参数映射</span>
+                      <span v-else></span>
+                      <el-button size="small" type="primary" plain :icon="Plus" class="add-mapping-btn" @click="addParameterMapping(row)">新增参数映射</el-button>
+                    </div>
+                  </div>
+                </article>
+              </div>
             </section>
           </div>
 
@@ -908,8 +977,9 @@
               </div>
               <div v-if="draft.attributes.length === 0" class="compact-empty block-empty">请先添加设备属性</div>
               <el-checkbox-group v-else v-model="draft.defaultDataTemplateAttrs">
-                <el-checkbox v-for="attr in draft.attributes" :key="attr._key" :label="attr._key" :value="attr._key">
-                  {{ attr.displayName || attr.name || '未命名属性' }}
+                <el-checkbox v-for="attr in draft.attributes" :key="attr._key" :label="attr._key" :value="attr._key" class="template-attr-option">
+                  <span class="template-attr-name">{{ attr.displayName || attr.name || '未命名属性' }}</span>
+                  <span class="template-attr-meta">{{ attr.dataType || '-' }}<template v-if="attr.unit"> · {{ attr.unit }}</template></span>
                 </el-checkbox>
               </el-checkbox-group>
               <div style="margin-top: 10px; font-size: 12px; color: #909399;">
@@ -967,18 +1037,42 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="showAddCategoryDialog" title="新增设备分类" width="400px">
-      <el-form ref="newCategoryFormRef" :model="newCategoryDraft" :rules="newCategoryRules" label-width="80px">
-        <el-form-item label="名称" prop="name">
-          <el-input v-model="newCategoryDraft.name" placeholder="请输入分类名称" />
-        </el-form-item>
-        <el-form-item label="代码" prop="code">
-          <el-input v-model="newCategoryDraft.code" placeholder="请输入分类代码 (英文标识)" />
-        </el-form-item>
-      </el-form>
+    <el-dialog v-model="showAddCategoryDialog" title="设备类别管理" width="720px" class="category-manager-dialog">
+      <div class="category-manager-layout">
+        <section class="category-existing-panel">
+          <div class="dialog-section-title">已有类别</div>
+          <el-table :data="categories" border stripe size="small" max-height="320">
+            <el-table-column label="类别名" min-width="150">
+              <template #default="{ row }"><strong>{{ row.categoryName }}</strong></template>
+            </el-table-column>
+            <el-table-column label="父类别" min-width="140">
+              <template #default="{ row }">{{ categoryNameById(row.parentCategoryId) || '-' }}</template>
+            </el-table-column>
+            <el-table-column label="描述" min-width="180">
+              <template #default="{ row }">{{ row.description || '-' }}</template>
+            </el-table-column>
+          </el-table>
+        </section>
+        <section class="category-create-panel">
+          <div class="dialog-section-title">新增类别</div>
+          <el-form ref="newCategoryFormRef" :model="newCategoryDraft" :rules="newCategoryRules" label-width="86px" size="small">
+            <el-form-item label="类别名称" prop="categoryName">
+              <el-input v-model="newCategoryDraft.categoryName" placeholder="例如：反应釜、泵、传感器" />
+            </el-form-item>
+            <el-form-item label="父类别">
+              <el-select v-model="newCategoryDraft.parentCategoryId" clearable filterable placeholder="无父类别">
+                <el-option v-for="cat in categories" :key="String(cat.id)" :label="cat.categoryName" :value="String(cat.id)" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="描述">
+              <el-input v-model="newCategoryDraft.description" type="textarea" :rows="3" placeholder="说明该类别的硬件范围、用途或边界" />
+            </el-form-item>
+          </el-form>
+        </section>
+      </div>
       <template #footer>
-        <el-button @click="showAddCategoryDialog = false">取消</el-button>
-        <el-button type="primary" :loading="savingCategory" @click="saveNewCategory">确认新增</el-button>
+        <el-button @click="showAddCategoryDialog = false">关闭</el-button>
+        <el-button type="primary" :loading="savingCategory" @click="saveNewCategory">保存类别</el-button>
       </template>
     </el-dialog>
   </div>
@@ -1088,10 +1182,18 @@ const saving = ref(false)
 const drawerVisible = ref(false)
 const drawerMode = ref('create')
 const adapterConfigText = ref('')
+const registeredAdapters = ref([])
+const registeredAdapterLoading = ref(false)
+const selectedRegisteredAdapterName = ref('')
+const selectedRegisteredAdapterTemplate = ref('')
+const registeredAdapterTemplateOptions = computed(() => {
+  const adapter = registeredAdapters.value.find(item => item.adapterName === selectedRegisteredAdapterName.value)
+  return asArray(parsedAdapterConfig(adapter).deviceTemplates)
+})
 
 const showAddCategoryDialog = ref(false)
 const savingCategory = ref(false)
-const newCategoryDraft = ref({ name: '', code: '' })
+const newCategoryDraft = ref({ categoryName: '', parentCategoryId: '', description: '' })
 const newCategoryFormRef = ref(null)
 
 const adapterTemplateDialogVisible = ref(false)
@@ -1100,8 +1202,7 @@ const selectedAdapterTemplate = ref('')
 const tempAdapterConfigRaw = ref(null)
 
 const newCategoryRules = {
-  name: [{ required: true, message: '请输入分类名称', trigger: 'blur' }],
-  code: [{ required: true, message: '请输入分类代码', trigger: 'blur' }]
+  categoryName: [{ required: true, message: '请输入类别名称', trigger: 'blur' }]
 }
 
 const draft = reactive(emptyDraft())
@@ -1111,16 +1212,57 @@ const canCreateModel = computed(() => authStore.hasPermission('device_model:crea
 const canEditModel = computed(() => authStore.hasPermission('device_model:edit'))
 const canDeleteModel = computed(() => authStore.hasPermission('device_model:delete'))
 const selectedModel = computed(() => models.value.find(item => item.modelId === selectedModelId.value) || null)
+const modelTreeData = computed(() => {
+  const modelsByCategory = new Map()
+  models.value.forEach(model => {
+    const categoryId = model.categoryId == null ? '' : String(model.categoryId)
+    if (!modelsByCategory.has(categoryId)) modelsByCategory.set(categoryId, [])
+    modelsByCategory.get(categoryId).push(model)
+  })
+  const categoryChildren = new Map()
+  categories.value.forEach(category => {
+    const parentId = category.parentCategoryId == null ? '' : String(category.parentCategoryId)
+    if (!categoryChildren.has(parentId)) categoryChildren.set(parentId, [])
+    categoryChildren.get(parentId).push(category)
+  })
+  const modelNode = model => ({
+    id: `model:${model.modelId}`,
+    type: 'model',
+    label: model.modelName || '未命名模型',
+    meta: summaryText(model),
+    modelId: model.modelId
+  })
+  const categoryNode = category => {
+    const id = category.id == null ? '' : String(category.id)
+    const children = [
+      ...asArray(categoryChildren.get(id)).map(categoryNode),
+      ...asArray(modelsByCategory.get(id)).map(modelNode)
+    ]
+    return {
+      id: `category:${id}`,
+      type: 'category',
+      label: category.categoryName || '未命名类别',
+      meta: children.length ? `${children.length} 项` : '空类别',
+      children
+    }
+  }
+  const roots = asArray(categoryChildren.get('')).map(categoryNode)
+  const uncategorized = asArray(modelsByCategory.get('')).map(modelNode)
+  if (uncategorized.length) roots.push({ id: 'category:uncategorized', type: 'category', label: '未分类', meta: `${uncategorized.length} 个模型`, children: uncategorized })
+  if (roots.length) return roots
+  return models.value.map(modelNode)
+})
 const selectedAttributes = computed(() => asArray(selectedModel.value?.attributes))
 const selectedCapabilities = computed(() => asArray(selectedModel.value?.capabilities))
 const selectedPorts = computed(() => asArray(selectedModel.value?.ports))
 const selectedAdapterCommands = computed(() => asArray(selectedModel.value?.adapterContract?.commands))
 const selectedAdapterAttributes = computed(() => asArray(selectedModel.value?.adapterContract?.telemetry?.adapterAttributes))
-const selectedAdapterEvents = computed(() => asArray(selectedModel.value?.adapterContract?.events))
+const selectedAdapterEvents = computed(() => normalizeEventsToFlatList(selectedModel.value?.adapterContract?.events))
 const selectedAttributeMappings = computed(() => asArray(selectedModel.value?.adapterContract?.telemetry?.attributesMapping))
 const selectedCmdStates = computed(() => asArray(selectedModel.value?.cmdState?.states))
 const selectedOpStates = computed(() => asArray(selectedModel.value?.opState?.states))
 const selectedConstraints = computed(() => asArray(selectedModel.value?.intrinsicConstraints))
+const selectedComponentsBom = computed(() => asArray(selectedModel.value?.componentsBom))
 const drawerTitle = computed(() => drawerMode.value === 'create' ? '新建设备模型' : '编辑设备模型')
 const attributeOptions = computed(() => draft.attributes.map((item, index) => ({ key: item._key, label: item.displayName || item.name || '属性' + (index + 1) })).filter(item => item.key))
 const adapterAttributeNameOptions = computed(() => draft.adapterContract.telemetry.adapterAttributes.map(item => item.name).filter(Boolean))
@@ -1391,12 +1533,14 @@ function normalizeModel(raw) {
 function openCreateDrawer() {
   replaceDraft(emptyDraft())
   drawerMode.value = 'create'
+  prepareAdapterSourcePicker()
   drawerVisible.value = true
 }
 
 function openEditDrawer(model) {
   replaceDraft(fromModelToDraft(model))
   drawerMode.value = 'edit'
+  prepareAdapterSourcePicker(draft.adapterContract?.config?.adapterName, draft.adapterContract?.config?.templateName)
   drawerVisible.value = true
 }
 
@@ -1432,21 +1576,23 @@ async function saveNewCategory() {
     if (!valid) return
     savingCategory.value = true
     try {
-      const res = await axios.post('/api/device/category/save', newCategoryDraft.value)
+      const payload = {
+        categoryName: stringValue(newCategoryDraft.value.categoryName),
+        parentCategoryId: newCategoryDraft.value.parentCategoryId ? Number(newCategoryDraft.value.parentCategoryId) : null,
+        description: stringValue(newCategoryDraft.value.description)
+      }
+      const res = await axios.post('/api/device/category/save', payload)
       if (res.data.success) {
-        ElMessage.success('新增分类成功')
-        showAddCategoryDialog.value = false
+        ElMessage.success('类别已保存')
         await loadCategories()
-        const newCat = categories.value.find(c => c.categoryName === newCategoryDraft.value.name)
-        if (newCat) {
-          draft.basic.categoryValue = String(newCat.id || newCat.categoryId || '')
-        }
-        newCategoryDraft.value = { name: '', code: '' }
+        const savedId = res.data.data?.id || res.data.data?.categoryId
+        if (savedId) draft.basic.categoryValue = String(savedId)
+        newCategoryDraft.value = { categoryName: '', parentCategoryId: '', description: '' }
       } else {
-        ElMessage.error(res.data.message || '新增分类失败')
+        ElMessage.error(res.data.message || '保存类别失败')
       }
     } catch (error) {
-      ElMessage.error(error.response?.data?.message || '新增分类失败')
+      ElMessage.error(error.response?.data?.message || '保存类别失败')
     } finally {
       savingCategory.value = false
     }
@@ -1574,7 +1720,7 @@ function buildDefaultDataTemplate(rowByKey, propertyTypes = []) {
       columnName,
       columnDesc: attr.displayName || attr.name || columnName,
       propertyTypeId: propertyTypeIdForDataType(attr.dataType, propertyTypes),
-      columnLength: attr.dataType === 'STRING' ? 255 : null,
+      columnLength: 255,
       deviceAttrKey: attr.name,
       defaultValue: ''
     })
@@ -1586,12 +1732,12 @@ function buildDefaultDataTemplate(rowByKey, propertyTypes = []) {
         columnDesc: (attr.displayName || attr.name || columnName) + '单位',
         propertyTypeId: propertyTypeIdForDataType('STRING', propertyTypes),
         columnLength: 50,
-        deviceAttrKey: attr.name + '_unit',
+        deviceAttrKey: '',
         defaultValue: unitValue
       })
     }
   })
-  const validDetails = details.filter(detail => detail.columnName && detail.deviceAttrKey)
+  const validDetails = details.filter(detail => detail.columnName)
   if (validDetails.length === 0) return null
   return {
     enabled: true,
@@ -1740,12 +1886,9 @@ function handleFunctionMappingCommandChange(row) {
 }
 
 function handleParameterFixedChange(mapping) {
-  if (mapping.isFixedValue) {
-    mapping.capabilityParamKey = ''
-    mapping.capabilityParamName = ''
-    return
+  if (!mapping.isFixedValue) {
+    mapping.fixedValue = ''
   }
-  mapping.fixedValue = ''
 }
 
 function fixedValuePlaceholder(row, mapping) {
@@ -1893,6 +2036,94 @@ function ensureTransitionAction(row) {
   })
 }
 
+function parsedAdapterConfig(adapter) {
+  if (!adapter?.parsedConfig) return {}
+  if (typeof adapter.parsedConfig === 'string') {
+    try { return JSON.parse(adapter.parsedConfig) } catch { return {} }
+  }
+  return adapter.parsedConfig || {}
+}
+
+function prepareAdapterSourcePicker(adapterName = '', templateName = '') {
+  selectedRegisteredAdapterName.value = adapterName || ''
+  selectedRegisteredAdapterTemplate.value = templateName || ''
+  fetchRegisteredAdapters()
+}
+
+async function fetchRegisteredAdapters() {
+  registeredAdapterLoading.value = true
+  try {
+    const res = await axios.get('/api/adapter/index/list')
+    registeredAdapters.value = res.data?.success ? asArray(res.data.data) : []
+    if (selectedRegisteredAdapterName.value && !registeredAdapters.value.some(item => item.adapterName === selectedRegisteredAdapterName.value)) {
+      selectedRegisteredAdapterName.value = ''
+      selectedRegisteredAdapterTemplate.value = ''
+    }
+    if (selectedRegisteredAdapterName.value && selectedRegisteredAdapterTemplate.value) {
+      const hasTemplate = registeredAdapterTemplateOptions.value.some(tpl => tpl.templateName === selectedRegisteredAdapterTemplate.value)
+      if (!hasTemplate) selectedRegisteredAdapterTemplate.value = ''
+    }
+  } catch (error) {
+    registeredAdapters.value = []
+  } finally {
+    registeredAdapterLoading.value = false
+  }
+}
+
+function handleRegisteredAdapterChange() {
+  selectedRegisteredAdapterTemplate.value = ''
+}
+
+async function applyRegisteredAdapterContract() {
+  if (!selectedRegisteredAdapterName.value || !selectedRegisteredAdapterTemplate.value) {
+    ElMessage.warning('请选择已注册 Adapter 和设备模板')
+    return
+  }
+  registeredAdapterLoading.value = true
+  try {
+    const res = await axios.get(`/api/adapter/index/${encodeURIComponent(selectedRegisteredAdapterName.value)}/adapter-contract`, {
+      params: { templateName: selectedRegisteredAdapterTemplate.value }
+    })
+    if (!res.data?.success) {
+      ElMessage.error(res.data?.message || '载入 Adapter 契约失败')
+      return
+    }
+    assignAdapterContract(res.data.data)
+    ElMessage.success(`已载入 Adapter 契约: ${selectedRegisteredAdapterName.value} / ${selectedRegisteredAdapterTemplate.value}`)
+  } finally {
+    registeredAdapterLoading.value = false
+  }
+}
+
+function buildAdapterContractFromManifestTemplate(parsed, template) {
+  const commands = asArray(template.commands).map(command => ({
+    commandName: stringValue(command.name || command.commandName),
+    description: stringValue(command.description),
+    commandParameters: asArray(command.parameters || command.commandParameters).map(normalizeCommandParameter)
+  }))
+
+  const adapterAttributes = asArray(template.attributes).map(attr => ({
+    name: stringValue(attr.name),
+    dataType: normalizeDataType(attr.dataType, 'DOUBLE', adapterDataTypes),
+    description: stringValue(attr.description)
+  }))
+
+  return {
+    config: { protocol: 'MQTT', adapterName: stringValue(parsed.adapterName), templateName: stringValue(template.templateName) },
+    commands,
+    telemetry: { adapterAttributes, attributesMapping: [] },
+    events: normalizeEventsToFlatList(template.events)
+  }
+}
+
+function assignAdapterContract(contract) {
+  const normalized = normalizeAdapterContract(contract, draft.attributes)
+  draft.adapterContract.config = normalized.config
+  draft.adapterContract.commands.splice(0, draft.adapterContract.commands.length, ...normalized.commands)
+  draft.adapterContract.telemetry.adapterAttributes.splice(0, draft.adapterContract.telemetry.adapterAttributes.length, ...normalized.telemetry.adapterAttributes)
+  draft.adapterContract.telemetry.attributesMapping.splice(0, draft.adapterContract.telemetry.attributesMapping.length, ...normalized.telemetry.attributesMapping)
+  draft.adapterContract.events.splice(0, draft.adapterContract.events.length, ...normalized.events)
+}
 function applyAdapterConfigText() {
   try {
     const parsed = JSON.parse(adapterConfigText.value)
@@ -1923,32 +2154,7 @@ function confirmAdapterTemplateSelection() {
   const template = parsed.deviceTemplates.find(t => t.templateName === selectedAdapterTemplate.value)
   if (!template) return
 
-  const commands = asArray(template.commands).map(command => ({
-    commandName: stringValue(command.name || command.commandName),
-    description: stringValue(command.description),
-    commandParameters: asArray(command.parameters || command.commandParameters).map(normalizeCommandParameter)
-  }))
-
-  const adapterAttributes = asArray(template.attributes).map(attr => ({
-    name: stringValue(attr.name),
-    dataType: normalizeDataType(attr.dataType, 'DOUBLE', adapterDataTypes),
-    description: stringValue(attr.description)
-  }))
-
-  const newContract = {
-    config: { protocol: 'MQTT', adapterName: stringValue(parsed.adapterName), templateName: stringValue(template.templateName) },
-    commands,
-    telemetry: { adapterAttributes, attributesMapping: [] },
-    events: normalizeEventsToFlatList(template.events)
-  }
-
-  const normalized = normalizeAdapterContract(newContract, draft.attributes)
-
-  draft.adapterContract.config = normalized.config
-  draft.adapterContract.commands.splice(0, draft.adapterContract.commands.length, ...normalized.commands)
-  draft.adapterContract.telemetry.adapterAttributes.splice(0, draft.adapterContract.telemetry.adapterAttributes.length, ...normalized.telemetry.adapterAttributes)
-  draft.adapterContract.telemetry.attributesMapping.splice(0, draft.adapterContract.telemetry.attributesMapping.length, ...normalized.telemetry.attributesMapping)
-  draft.adapterContract.events.splice(0, draft.adapterContract.events.length, ...normalized.events)
+  assignAdapterContract(buildAdapterContractFromManifestTemplate(parsed, template))
 
   adapterTemplateDialogVisible.value = false
   ElMessage.success(`已成功解析并绑定模板: ${template.templateName}`)
@@ -2151,6 +2357,9 @@ function onKeywordInput() {
   searchTimer = window.setTimeout(() => { pageNo.value = 1; loadData() }, 260)
 }
 
+function handleModelTreeNodeClick(data) {
+  if (data?.type === 'model') selectedModelId.value = data.modelId
+}
 function categoryNameById(id) { return categories.value.find(item => String(item.id) === String(id))?.categoryName || '' }
 function displayAttributeName(name, attributes) { if (!name) return '-'; const attr = asArray(attributes).find(item => item.name === name); return attr?.displayName || name }
 function describeAction(action) {
@@ -2166,6 +2375,10 @@ function describeAction(action) {
 function valueKindLabel(value) { return value === 'DISCRETE' ? '离散值' : '连续值' }
 function directionLabel(value) { return value === 'IN' ? '输入' : '输出' }
 function formatTime(value) { return value ? String(value).replace('T', ' ') : '-' }
+function stringifyBrief(value) {
+  const text = JSON.stringify(value || {})
+  return text.length > 90 ? text.slice(0, 87) + '...' : text
+}
 function formatJson(value) { return JSON.stringify(value || {}, null, 2) }
 function dataTypeOptions(base, current) { return current && !base.includes(current) ? [...base, current] : base }
 function asArray(value) { return Array.isArray(value) ? value : [] }
@@ -2419,14 +2632,14 @@ onMounted(loadData)
 </script>
 
 <style scoped>
-.device-model-page { display: flex; flex-direction: column; height: calc(100vh - 52px); min-height: 0; padding: 0; gap: 0; background: #f3f4f6; color: var(--color-text-main); }
+.device-model-page { display: flex; flex-direction: column; height: calc(100vh - 52px); min-height: 0; padding: 0; gap: 0; background: #eef2f6; color: var(--color-text-main); font-size: 14px; }
 .page-header { display: flex; align-items: center; justify-content: space-between; flex-shrink: 0; gap: 16px; }
 .page-title h1 { margin: 0 0 4px; font-size: 22px; line-height: 1.25; letter-spacing: 0; }
 .page-title p { margin: 0; color: var(--color-text-sub); font-size: 13px; }
 .header-actions, .detail-actions, .section-title, .config-import, .drawer-footer, .section-actions { display: flex; align-items: center; gap: 8px; }
-.content-shell { flex: 1; min-height: 0; display: grid; grid-template-columns: 286px minmax(0, 1fr); gap: 0; border-top: 1px solid #dfe3ea; }
+.content-shell { flex: 1; min-height: 0; display: grid; grid-template-columns: 320px minmax(0, 1fr); gap: 0; border-top: 1px solid #ccd6e3; }
 .model-list-panel, .detail-panel { min-height: 0; background: #fff; border: 0; border-radius: 0; box-shadow: none; }
-.model-list-panel { display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid #dfe3ea; }
+.model-list-panel { display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid #ccd6e3; }
 .detail-anchor-layout { min-height: 0; background: #fff; border-top: 1px solid #e5e7eb; }
 .detail-anchor-menu { padding: 8px; background: #f8fafc; border-right: 1px solid #dfe3ea !important; }
 .detail-anchor-menu :deep(.el-anchor__link) { padding: 7px 10px; border-radius: 4px; font-size: 13px; }
@@ -2435,6 +2648,16 @@ onMounted(loadData)
 .industrial-section { margin-bottom: 10px; padding-top: 4px; }
 .anchor-section > h2, .industrial-section > h2 { margin: 0 0 8px !important; color: #111827; font-size: 16px; line-height: 1.35; }
 .list-tools { padding: 10px; border-bottom: 1px solid #e5e7eb; background: #fff; }
+.model-tree-tools { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.category-model-tree { background: transparent; }
+.category-model-tree :deep(.el-tree-node__content) { min-height: 36px; height: auto; border-bottom: 1px solid #e2e8f0; }
+.category-model-tree :deep(.el-tree-node__content:hover) { background: #eef6ff; }
+.category-model-node { width: 100%; min-width: 0; padding: 4px 6px 4px 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+.category-model-node.category .node-title { color: #334155; font-weight: 800; }
+.category-model-node.model .node-title { color: #0f172a; font-weight: 700; }
+.category-model-node.model.active { box-shadow: inset 3px 0 0 #2563eb; background: #dbeafe; }
+.category-model-node .node-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.category-model-node .node-meta { color: #64748b; font-size: 12px; white-space: nowrap; }
 .model-list { flex: 1; min-height: 0; padding: 8px; background: #f8fafc; }
 .model-row { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; border: 1px solid #e5e7eb; background: #fff; border-radius: 4px; padding: 9px 10px; text-align: left; cursor: pointer; color: var(--color-text-main); }
 .model-row + .model-row { margin-top: 6px; }
@@ -2444,7 +2667,9 @@ onMounted(loadData)
 .model-meta, .model-summary { max-width: 100%; color: var(--color-text-sub); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .list-footer { flex-shrink: 0; padding: 10px 12px; border-top: 1px solid #e5e7eb; }
 .detail-panel { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
-.global-top-bar { flex-shrink: 0; margin: 0 !important; padding: 10px 14px !important; background: #fff; border-bottom: 1px solid #e5e7eb !important; }
+.global-top-bar { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 !important; padding: 10px 14px !important; background: #fff; border-bottom: 1px solid #e5e7eb !important; }
+.global-toolbar-title { color: #0f172a; font-size: 16px; font-weight: 750; }
+.global-toolbar-actions { display: flex; align-items: center; gap: 8px; }
 .detail-head { flex-shrink: 0; display: flex; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid #e5e7eb; background: #fff; }
 .detail-title { min-width: 0; }
 .detail-title h2 { margin: 0 0 4px; font-size: 20px; line-height: 1.25; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: 0; }
@@ -2480,6 +2705,9 @@ onMounted(loadData)
 .compact-empty { display: flex; align-items: center; min-height: 30px; padding: 7px 10px; border: 1px dashed #cbd5e1; border-radius: 4px; background: #f8fafc; color: #64748b; font-size: 13px; line-height: 1.4; }
 .block-empty { margin-top: 4px; }
 .inline-empty { margin-top: 8px; }
+.template-attr-option { margin-right: 14px; margin-bottom: 8px; padding: 7px 10px; border: 1px solid #dbe4ef; border-radius: 6px; background: #f8fafc; }
+.template-attr-name { font-weight: 600; color: #0f172a; }
+.template-attr-meta { margin-left: 8px; color: #64748b; font-size: 12px; }
 .model-json-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; min-height: 0; }
 .json-panel { min-width: 0; border: 1px solid #dfe4ed; border-radius: 4px; padding: 10px; background: #fff; }
 .json-panel pre { margin: 0; max-height: 560px; overflow: auto; padding: 12px; border-radius: 6px; background: #111827; color: #e5e7eb; font-size: 12px; line-height: 1.55; tab-size: 2; }
@@ -2492,9 +2720,24 @@ onMounted(loadData)
 .basic-form, .mapping-form { max-width: 760px; }
 .basic-form :deep(.el-select), .mapping-form :deep(.el-select) { width: 100%; }
 .config-import { margin-bottom: 8px; }
+.registered-adapter-picker { width: 100%; display: grid; grid-template-columns: minmax(180px, 1.1fr) minmax(180px, 1fr) auto auto; gap: 8px; align-items: center; }
+.registered-adapter-picker :deep(.el-select) { width: 100%; }
 .param-map-editor { display: flex; flex-direction: column; gap: 8px; }
-.param-map-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px; border: 1px solid transparent; border-radius: 6px; background: #f8fafc; }
+.function-mapping-card-list { display: grid; gap: 10px; }
+.function-mapping-editor-card { border: 1px solid #dbe4ef; border-left: 3px solid #2563eb; border-radius: 6px; background: #fff; padding: 10px; }
+.function-map-editor-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.function-map-selects { flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(180px, 1fr) 28px minmax(180px, 1fr); align-items: end; gap: 8px; }
+.function-map-selects label { min-width: 0; display: grid; gap: 4px; }
+.function-map-selects label > span { color: #64748b; font-size: 12px; font-weight: 700; }
+.mapping-direction { align-self: center; color: #64748b; text-align: center; font-weight: 700; }
+.compact-param-editor { margin-top: 10px; }
+.param-map-row { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) 104px 28px; align-items: end; gap: 8px; padding: 8px; border: 1px solid transparent; border-radius: 6px; background: #f8fafc; }
+.param-map-row.fixed { grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) 104px minmax(150px, 1fr) 28px; }
 .param-map-row.invalid { border-color: #f4b4b4; background: #fff7f7; }
+.param-map-field, .param-map-mode { min-width: 0; display: grid; gap: 4px; }
+.param-map-label { color: #64748b; font-size: 11px; font-weight: 700; line-height: 1.2; }
+.fixed-input-field .el-input { width: 100%; }
+.param-delete-btn { align-self: center; }
 .map-warning { grid-column: 1 / -1; color: #c2410c; font-size: 12px; line-height: 1.4; }
 .locked-heading { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .locked-heading h3 { margin: 0; }
@@ -2533,6 +2776,10 @@ onMounted(loadData)
 .action-row { display: grid; grid-template-columns: 112px minmax(220px, 1fr) 34px; align-items: center; gap: 6px; }
 .action-toolbar { justify-content: flex-start; }
 .drawer-footer { justify-content: flex-end; }
+.category-manager-layout { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(260px, 0.8fr); gap: 12px; }
+.category-existing-panel, .category-create-panel { border: 1px solid #dbe4ef; border-radius: 6px; background: #fff; padding: 10px; }
+.dialog-section-title { margin-bottom: 8px; color: #0f172a; font-weight: 800; font-size: 14px; }
+.category-create-panel :deep(.el-select) { width: 100%; }
 
 /* Premium Action & Parameter Mapping Styles */
 .action-visual-cell {
@@ -2640,17 +2887,29 @@ onMounted(loadData)
 .event-chip em { color: #64748b; font-size: 12px; font-style: normal; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .event-chip-cmd { border-left-color: #2563eb; }
 .event-chip-op { border-left-color: #059669; }
-.mapping-tile { display: grid; grid-template-columns: minmax(0, 1fr) 20px minmax(0, 1fr); align-items: center; gap: 8px; }
+.mapping-tile { display: grid; grid-template-columns: minmax(150px, 1fr) 28px minmax(150px, 1fr); align-items: center; gap: 8px; }
+.mapping-tile-labeled { padding: 8px; background: #f8fafc; }
 .mapping-source, .mapping-target { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
 .mapping-source { color: #0f172a; font-weight: 600; }
 .mapping-target { color: #1d4ed8; }
-.mapping-arrow, .flow-arrow { color: #94a3b8; text-align: center; }
+.mapping-side { min-width: 0; display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 8px; padding: 7px 8px; border: 1px solid #dbe4ef; border-radius: 5px; background: #fff; }
+.mapping-side em { color: #64748b; font-size: 11px; font-style: normal; font-weight: 700; }
+.mapping-side b { color: #0f172a; font-size: 13px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.adapter-side { border-left: 3px solid #10b981; }
+.fixed-side { border-left: 3px solid #f59e0b; background: #fffbeb; }
+.mapping-arrow, .flow-arrow { color: #64748b; text-align: center; }
+.adapter-command-line { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: #475569; }
+.adapter-command-line em { padding: 2px 5px; border: 1px solid #dbe4ef; border-radius: 4px; background: #f1f5f9; color: #64748b; font-size: 11px; font-style: normal; font-weight: 700; }
+.adapter-command-line b { color: #0f172a; font-size: 13px; font-weight: 750; }
+.info-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 7px; border: 1px solid #bfdbfe; border-radius: 5px; background: #eff6ff; color: #1d4ed8; font-size: 13px; }
+.info-chip em, .info-chip i { padding: 1px 4px; border: 1px solid #dbe4ef; border-radius: 4px; background: #fff; color: #64748b; font-size: 11px; font-style: normal; font-weight: 700; }
+.info-chip b { color: #1d4ed8; font-weight: 700; }
 .function-map-card { padding: 10px; border-left: 3px solid #2563eb; }
-.function-map-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
-.function-map-head strong { color: #0f172a; font-size: 14px; }
+.function-map-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.function-map-head strong { color: #0f172a; font-size: 15px; }
 .function-map-head span { color: #64748b; font-size: 12px; }
 .function-param-list { display: grid; gap: 6px; }
-.function-param-row { display: grid; grid-template-columns: minmax(100px, 0.9fr) 20px minmax(120px, 1.1fr); align-items: center; gap: 8px; min-height: 28px; padding: 5px 7px; border: 1px solid #e5e7eb; border-radius: 4px; background: #fff; }
+.function-param-row { display: grid; grid-template-columns: minmax(150px, 1fr) 28px minmax(150px, 1fr); align-items: center; gap: 8px; min-height: 34px; padding: 6px; border: 1px solid #e5e7eb; border-radius: 4px; background: #fff; }
 .state-token-panel { display: flex; flex-wrap: wrap; gap: 7px; min-height: 32px; }
 .filled-state-token { display: inline-flex; align-items: center; min-height: 26px; max-width: 180px; padding: 3px 10px; border-radius: 4px; background: #dcfce7; color: #166534; font-size: 13px; font-weight: 650; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cmd-state-token { background: #e0f2fe; color: #075985; }
@@ -2675,7 +2934,7 @@ onMounted(loadData)
 .drawer-section .editor-card-list { gap: 8px; }
 
 @media (max-width: 1120px) { .content-shell { grid-template-columns: 240px minmax(0, 1fr); } .model-json-grid { grid-template-columns: 1fr; } }
-@media (max-width: 820px) { .state-card-grid { grid-template-columns: 1fr; } .device-model-page { padding: 10px; } .page-header, .detail-head { align-items: stretch; flex-direction: column; } .content-shell { grid-template-columns: 1fr; } .model-list-panel { min-height: 260px; } .drawer-tabs :deep(.el-tabs__header) { width: 92px; } .param-map-row, .action-row { grid-template-columns: 1fr; } .summary-card-body { padding-left: 0; } }
+@media (max-width: 820px) { .state-card-grid { grid-template-columns: 1fr; } .device-model-page { padding: 10px; } .page-header, .detail-head { align-items: stretch; flex-direction: column; } .content-shell { grid-template-columns: 1fr; } .model-list-panel { min-height: 260px; } .drawer-tabs :deep(.el-tabs__header) { width: 92px; } .registered-adapter-picker, .function-map-selects, .param-map-row, .param-map-row.fixed, .action-row { grid-template-columns: 1fr; } .mapping-direction { display: none; } .summary-card-body { padding-left: 0; } }
 
 /* 严肃的函数式动作展示与编辑器排版 */
 .serious-actions-container {
@@ -2704,3 +2963,6 @@ onMounted(loadData)
 .no-action-cell { display: inline-flex; align-items: center; gap: 8px; color: #64748b; }
 .compact-action-btn { padding: 4px 8px; }
 </style>
+
+
+

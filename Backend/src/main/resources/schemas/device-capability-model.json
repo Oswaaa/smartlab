@@ -74,15 +74,23 @@
       "properties": {
         "config": {
           "type": "object",
-          "description": "Adapter通信配置。主题和消息外壳在protocol-dict中统一规定。此处声明协议类型。",
+          "description": "Adapter通信配置。主题和消息外壳在protocol-dict中统一规定。此处声明协议类型、Adapter名称及设备类别名称。",
           "properties": {
-            "protocol": { 
-              "type": "string", 
+            "protocol": {
+              "type": "string",
               "enum": ["MQTT", "HTTP"],
-              "description": "通信协议类型" 
+              "description": "通信协议类型"
+            },
+           "adapterName": {
+              "type": "string",
+              "description": "Adapter名称"
+            },
+            "categoryName": {
+              "type": "string",
+              "description": "Adapter侧类别名称"
             }
           },
-          "required": ["protocol"]
+          "required": ["protocol", "adapterName", "categoryName"]
         },
         "commands": {
           "type": "array",

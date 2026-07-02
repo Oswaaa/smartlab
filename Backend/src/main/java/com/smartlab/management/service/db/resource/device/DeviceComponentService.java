@@ -6,6 +6,8 @@ import com.smartlab.management.mapper.resource.device.DeviceComponentsMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
 
+import java.time.OffsetDateTime;
+
 import java.util.List;
 
 /**
@@ -26,6 +28,20 @@ public class DeviceComponentService extends ManagementCrudService<DeviceComponen
         this.mapper = mapper;
     }
 
+    @Override
+    public DeviceComponents save(DeviceComponents entity) {
+        if (entity.getComponentName() == null || entity.getComponentName().isBlank()) {
+            throw new IllegalArgumentException("组件名称不能为空");
+        }
+        entity.setComponentName(entity.getComponentName().trim());
+        if (entity.getStatus() == null || entity.getStatus().isBlank()) {
+            entity.setStatus("使用中");
+        }
+        if (entity.getId() == null && entity.getCreateTime() == null) {
+            entity.setCreateTime(OffsetDateTime.now());
+        }
+        return super.save(entity);
+    }
     public List<DeviceComponents> listByParentInstance(Long parentInstanceId) {
         if (parentInstanceId == null) {
             return list();

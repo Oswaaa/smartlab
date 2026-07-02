@@ -26,6 +26,20 @@ public class DeviceCategoryService extends ManagementCrudService<DeviceCategory>
         this.mapper = mapper;
     }
 
+    @Override
+    public DeviceCategory save(DeviceCategory entity) {
+        if (entity.getCategoryName() == null || entity.getCategoryName().isBlank()) {
+            throw new IllegalArgumentException("设备类别名称不能为空");
+        }
+        entity.setCategoryName(entity.getCategoryName().trim());
+        if (entity.getDescription() != null) {
+            entity.setDescription(entity.getDescription().trim());
+        }
+        if (entity.getId() == null && entity.getCreateTime() == null) {
+            entity.setCreateTime(OffsetDateTime.now());
+        }
+        return super.save(entity);
+    }
     public DeviceCategory findOrCreateByName(String categoryName) {
         if (categoryName == null || categoryName.isBlank()) {
             return null;

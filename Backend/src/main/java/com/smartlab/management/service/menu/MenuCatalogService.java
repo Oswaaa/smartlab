@@ -23,12 +23,10 @@ public class MenuCatalogService {
         MenuDTO deviceCenter = createFolder("设备中心");
         deviceCenter.addChild(create("设备模型管理", "/device-model-management", "device_model"));
         deviceCenter.addChild(create("设备实例管理", "/device-instance-management", "device_instance"));
-        deviceCenter.addChild(create("设备执行代理", "/plc-adapter-management", "adapter"));
+        deviceCenter.addChild(create("设备执行代理", "/adapter-management", "adapter"));
         fullMenuTree.add(deviceCenter);
 
-        MenuDTO dataCenter = createFolder("数据中心");
-        dataCenter.addChild(create("数据管理", "/data-management", "data_template", "data_dataset"));
-        fullMenuTree.add(dataCenter);
+        fullMenuTree.add(create("数据中心", "/data-management", "data_template", "data_dataset"));
 
         MenuDTO taskCenter = createFolder("任务中心");
         taskCenter.addChild(create("任务列表", "/task-management", "task"));

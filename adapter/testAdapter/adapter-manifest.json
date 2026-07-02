@@ -1,0 +1,74 @@
+{
+  "specVersion": "smartlab.adapter.config.v1",
+  "adapterName": "TestHeatPressureAdapter-01",
+  "rawConfigFormat": "JSON",
+  "deviceTemplates": [
+    {
+      "templateName": "ReactorUnit",
+      "description": "测试用反应单元模板",
+      "attributes": [
+        { "name": "temperature", "dataType": "DOUBLE", "description": "当前温度" },
+        { "name": "pressure", "dataType": "DOUBLE", "description": "当前压力" }
+      ],
+      "commands": [
+        {
+          "name": "heat",
+          "description": "加热到目标温度",
+          "parameters": [
+            { "name": "targetTemperature", "dataType": "DOUBLE", "description": "目标温度" },
+            { "name": "durationSec", "dataType": "INTEGER", "description": "加热持续时间，秒" },
+            { "name": "index", "dataType": "INTEGER", "description": "设备点内部编号", "hidden": true, "sourceField": "index" }
+          ]
+        },
+        {
+          "name": "pressurize",
+          "description": "加压到目标压力",
+          "parameters": [
+            { "name": "targetPressure", "dataType": "DOUBLE", "description": "目标压力" },
+            { "name": "durationSec", "dataType": "INTEGER", "description": "加压持续时间，秒" },
+            { "name": "index", "dataType": "INTEGER", "description": "设备点内部编号", "hidden": true, "sourceField": "index" }
+          ]
+        }
+      ],
+      "events": {
+        "cmdEvents": [
+          { "name": "COMMAND_RECEIVED", "description": "指令已接收" },
+          { "name": "COMMAND_RUNNING", "description": "指令执行中" },
+          { "name": "COMMAND_COMPLETED", "description": "指令执行完成" },
+          { "name": "COMMAND_FAILED", "description": "指令执行失败" },
+          { "name": "COMMAND_TIMEOUT", "description": "指令执行超时" },
+          { "name": "COMMAND_CANCELLED", "description": "指令已取消" }
+        ],
+        "opEvents": [
+          { "name": "HEAT_STARTED", "description": "开始加热" },
+          { "name": "TARGET_TEMPERATURE_REACHED", "description": "达到目标温度" },
+          { "name": "PRESSURIZE_STARTED", "description": "开始加压" },
+          { "name": "TARGET_PRESSURE_REACHED", "description": "达到目标压力" },
+          { "name": "PRESSURE_ALARM", "description": "压力报警" }
+        ]
+      }
+    }
+  ],
+  "devicePoints": [
+    {
+      "devicePoint": "Reactor1",
+      "templateName": "ReactorUnit",
+      "description": "1号测试反应单元",
+      "index": 1,
+      "attributeMapping": {
+        "temperature": "R1_TEMP",
+        "pressure": "R1_PRESS"
+      }
+    },
+    {
+      "devicePoint": "Reactor2",
+      "templateName": "ReactorUnit",
+      "description": "2号测试反应单元",
+      "index": 2,
+      "attributeMapping": {
+        "temperature": "R2_TEMP",
+        "pressure": "R2_PRESS"
+      }
+    }
+  ]
+}

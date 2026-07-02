@@ -51,6 +51,7 @@ public class MqttAdapterMessagingService implements MqttCallback {
     private final AdapterPayloadMapperService protocolMapperService;
     private final Executor executor;
     private final Set<String> subscribedTopics = ConcurrentHashMap.newKeySet();
+    private final Map<String, Map<String, Object>> pendingAdapterRegistrations = new ConcurrentHashMap<>();
 
     @Value("${mqtt.broker:tcp://localhost:1883}")
     private String broker;
@@ -145,7 +146,38 @@ public class MqttAdapterMessagingService implements MqttCallback {
         ArrayList<String> topics = new ArrayList<>(subscribedTopics);
         Collections.sort(topics);
         status.put("subscribedTopics", topics);
+        status.put("pendingRegistrationCount", pendingAdapterRegistrations.size());
         return status;
+    }
+
+    public List<Map<String, Object>> pendingAdapterRegistrations() {
+        List<Map<String, Object>> list = new ArrayList<>(pendingAdapterRegistrations.values());
+        list.sort((left, right) -> String.valueOf(right.get("receivedAt")).compareTo(String.valueOf(left.get("receivedAt"))));
+        return list;
+    }
+
+    public AdapterIndex completePendingAdapterRegistration(String adapterName) {
+        if (adapterName == null || adapterName.isBlank()) {
+            throw new IllegalArgumentException("Adapter 标识名不能为空");
+        }
+        Map<String, Object> pending = pendingAdapterRegistrations.remove(adapterName.trim());
+        if (pending == null) {
+            throw new IllegalArgumentException("没有待确认的 Adapter 注册请求: " + adapterName);
+        }
+        Object payload = pending.get("payload");
+        Map<String, Object> registerPayload = JsonNodeSupport.MAPPER.convertValue(payload, new TypeReference<>() {
+        });
+        AdapterIndex adapter = adapterIndexService.register(registerPayload);
+        if (adapter != null) {
+            trySubscribeAdapterHeartbeat(adapter.getAdapterName());
+        }
+        return adapter;
+    }
+
+    public void discardPendingAdapterRegistration(String adapterName) {
+        if (adapterName != null) {
+            pendingAdapterRegistrations.remove(adapterName.trim());
+        }
     }
 
     public Map<String, Object> reconnectRegistrationListener() {
@@ -242,10 +274,23 @@ public class MqttAdapterMessagingService implements MqttCallback {
         if (registerTopic.equals(topic)) {
             Map<String, Object> body = JsonNodeSupport.MAPPER.convertValue(payload, new TypeReference<>() {
             });
-            AdapterIndex adapter = adapterIndexService.register(body);
-            if (adapter != null) {
-                trySubscribeAdapterHeartbeat(adapter.getAdapterName());
+            ObjectNode manifest = adapterIndexService.previewRegisterPayload(body);
+            String adapterName = manifest.path("adapterName").asText("").trim();
+            if (adapterName.isBlank()) {
+                throw new IllegalArgumentException("Adapter 注册报文缺少 adapterName");
             }
+            body.put("adapterName", adapterName);
+            Map<String, Object> pending = new LinkedHashMap<>();
+            pending.put("adapterName", adapterName);
+            pending.put("rawConfigFormat", body.getOrDefault("rawConfigFormat", "JSON"));
+            pending.put("timestamp", body.get("timestamp"));
+            pending.put("receivedAt", Instant.now().toString());
+            pending.put("parsedConfig", manifest);
+            pending.put("templateCount", manifest.path("deviceTemplates").size());
+            pending.put("devicePointCount", manifest.path("devicePoints").size());
+            pending.put("payload", body);
+            pendingAdapterRegistrations.put(adapterName, pending);
+            log.info("收到 Adapter 注册请求，已进入待确认队列: {}", adapterName);
             return;
         }
         String[] parts = topic.split("/");

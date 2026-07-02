@@ -5,14 +5,13 @@
         <div>
           <strong>数据资产</strong>
         </div>
-        <el-button type="primary" size="small" @click="openCreateDrawer">新建表</el-button>
+
       </div>
 
-      <div class="list-body" v-loading="loadingTree">
-        <div class="tree-section-title">设备数据</div>
+      <div class="list-body asset-tree-body" v-loading="loadingTree">
         <el-tree
-          v-if="treeData.length"
-          :data="treeData"
+          v-if="assetTreeData.length"
+          :data="assetTreeData"
           node-key="id"
           default-expand-all
           :expand-on-click-node="false"
@@ -22,36 +21,24 @@
             <span
               class="custom-tree-node"
               :class="{
+                'is-root': data.type === 'root',
+                'is-model': data.type === 'model',
                 'is-instance': data.type === 'instance',
                 'is-dataset': data.type === 'dataset',
-                'is-active': selectedDataset && data.type === 'dataset' && String(selectedDataset.id) === String(data.data?.dataset?.id)
+                'is-template': data.type === 'template',
+                'is-active': (selectedDataset && data.type === 'dataset' && String(selectedDataset.id) === String(data.data?.dataset?.id)) || (selectedTemplate && data.type === 'template' && String(templateIdOf(selectedTemplate)) === String(data.data?.template?.id))
               }"
             >
-              <el-icon v-if="data.type === 'category'"><Folder /></el-icon>
-              <el-icon v-else-if="data.type === 'instance'"><Cpu /></el-icon>
+              <el-icon v-if="data.type === 'category' || data.type === 'root'"><Folder /></el-icon>
+              <el-icon v-else-if="data.type === 'model' || data.type === 'instance'"><Cpu /></el-icon>
               <el-icon v-else><Box /></el-icon>
               <span class="node-label">{{ node.label }}</span>
-              <span v-if="data.type === 'instance'" class="node-count">{{ data.children?.length || 0 }}</span>
+              <span v-if="data.type === 'root' || data.type === 'category' || data.type === 'model' || data.type === 'instance'" class="node-count">{{ data.children?.length || 0 }}</span>
+              <em v-if="data.type === 'template'" class="node-badge">{{ data.data?.template?.isDefault ? '默认' : '自定义' }}</em>
             </span>
           </template>
         </el-tree>
-        <div v-else class="tree-empty">暂无设备数据集</div>
-
-        <div class="tree-section-title template-title">模板库</div>
-        <div v-if="templates.length" class="template-list">
-          <button
-            v-for="tpl in templates"
-            :key="templateIdOf(tpl)"
-            class="template-row"
-            :class="{ active: selectedTemplate && String(templateIdOf(selectedTemplate)) === String(templateIdOf(tpl)) }"
-            type="button"
-            @click="selectTemplate(tpl)"
-          >
-            <span>{{ tpl.templateName || '未命名模板' }}</span>
-            <em>{{ tpl.isDefault ? '默认' : '自定义' }}</em>
-          </button>
-        </div>
-        <div v-else class="tree-empty">暂无数据模板</div>
+        <div v-else class="tree-empty">暂无数据资产</div>
       </div>
     </aside>
 
@@ -68,10 +55,9 @@
             <div><span>数据模板</span><strong>{{ templateNameById(selectedDataset.dataTemplateId) }}</strong></div>
           </div>
           <div class="dataset-actions">
-            <el-button size="small" @click="openCreateDrawer">新建数据表</el-button>
-            <el-button size="small" @click="exportCsv">导出 CSV</el-button>
+            <el-button v-if="canExportDataset" size="small" @click="exportCsv">导出 CSV</el-button>
             <el-button size="small" :loading="loadingRecords" @click="fetchRecords">刷新</el-button>
-            <el-popconfirm title="确认删除该数据表？物理表会同时删除。" @confirm="deleteDataset(selectedDataset)">
+            <el-popconfirm v-if="canDeleteDataset" title="确认删除该数据表？物理表会同时删除。" @confirm="deleteDataset(selectedDataset)">
               <template #reference>
                 <el-button size="small" type="danger" plain>删除</el-button>
               </template>
@@ -91,7 +77,7 @@
           <div class="card-header">
             <span>原始数据</span>
             <div class="header-actions">
-              <el-button size="small" @click="exportCsv">导出 CSV</el-button>
+              <el-button v-if="canExportDataset" size="small" @click="exportCsv">导出 CSV</el-button>
             </div>
           </div>
           <el-table :data="selectedRecords" border stripe size="small" class="records-table" v-loading="loadingRecords">
@@ -123,19 +109,18 @@
       </div>
 
       <div v-else-if="selectedTemplate" class="template-workspace">
-        <section class="dataset-meta-card">
+        <section class="dataset-meta-card template-meta-card">
           <div class="dataset-title">
             <span>数据模板</span>
             <h2>{{ selectedTemplate.templateName || '未命名模板' }}</h2>
-            <p>{{ selectedTemplate.templateDesc || selectedTemplate.templateName || '-' }}</p>
-          </div>
-          <div class="dataset-meta-grid">
-            <div><span>来源模型</span><strong>{{ modelNameById(selectedTemplate.deviceModelId) }}</strong></div>
-            <div><span>类型</span><strong>{{ selectedTemplate.isDefault ? '默认模板' : '自定义模板' }}</strong></div>
+            <p>
+              <b>来源模型</b>{{ modelNameById(selectedTemplate.deviceModelId) }}
+              <b>模板类型</b>{{ selectedTemplate.isDefault ? '默认模板' : '自定义模板' }}
+            </p>
           </div>
           <div class="dataset-actions">
-            <el-button size="small" type="primary" @click="openCreateDrawerWithTemplate(selectedTemplate)">用此模板建表</el-button>
-            <el-popconfirm title="确认删除该模板？已有数据表时不可删除。" @confirm="deleteTemplate(selectedTemplate)">
+            <el-button v-if="canCreateDataset" size="small" type="primary" @click="openCreateDrawerWithTemplate(selectedTemplate)">新建数据表</el-button>
+            <el-popconfirm v-if="canDeleteTemplate" title="确认删除该模板？已有数据表时不可删除。" @confirm="deleteTemplate(selectedTemplate)">
               <template #reference>
                 <el-button size="small" type="danger" plain>删除模板</el-button>
               </template>
@@ -145,21 +130,29 @@
 
         <section class="content-card records-card">
           <div class="card-header"><span>模板字段</span><em>{{ selectedTemplateDetails.length }} 个字段</em></div>
-          <div class="template-field-list">
-            <div v-for="row in selectedTemplateDetails" :key="row.id || row.columnName" class="template-field-card">
-              <div>
-                <strong>{{ row.columnDesc || '未命名字段' }}</strong>
-                <span>{{ isUnitTemplateField(row) ? '单位字段' : '采集字段' }}</span>
-              </div>
-              <em v-if="row.defaultValue">默认 {{ row.defaultValue }}</em>
-            </div>
-          </div>
+          <el-table :data="selectedTemplateDetails" border stripe size="small" class="template-fields-table">
+            <el-table-column label="模板字段" min-width="170">
+              <template #default="{ row }">{{ row.columnName || '-' }}</template>
+            </el-table-column>
+            <el-table-column label="字段说明" min-width="170">
+              <template #default="{ row }">{{ row.columnDesc || '未命名字段' }}</template>
+            </el-table-column>
+            <el-table-column label="绑定属性" min-width="150">
+              <template #default="{ row }">{{ templateBindingAttr(row) }}</template>
+            </el-table-column>
+            <el-table-column label="默认值" width="120">
+              <template #default="{ row }">{{ row.defaultValue || '-' }}</template>
+            </el-table-column>
+            <el-table-column label="字段用途" width="120">
+              <template #default="{ row }">{{ templateFieldPurpose(row) }}</template>
+            </el-table-column>
+          </el-table>
         </section>
       </div>
 
       <div v-else-if="selectedInstance" class="top-area empty">
         <el-empty description="该设备下暂无数据表">
-          <el-button type="primary" @click="openCreateDrawer">新建自定义数据表</el-button>
+          <el-button v-if="canCreateDataset" type="primary" @click="openCreateDrawer">新建数据表</el-button>
         </el-empty>
       </div>
       <div v-else class="top-area empty">
@@ -197,14 +190,17 @@ import axios from 'axios'
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
 import { Folder, Cpu, Box } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
+import { useAuthStore } from '../../stores/authStore'
 
 interface TreeNode {
   id: string
   label: string
-  type: 'category' | 'instance' | 'dataset'
+  type: 'root' | 'category' | 'model' | 'instance' | 'dataset' | 'template'
   data?: any
   children?: TreeNode[]
 }
+
+const authStore = useAuthStore()
 
 const treeData = ref<TreeNode[]>([])
 const loadingTree = ref(false)
@@ -230,12 +226,26 @@ const createRules: FormRules = {
   dataDesc: [{ required: true, message: '请输入数据集名称', trigger: 'blur' }]
 }
 const savingDataset = ref(false)
+const canCreateDataset = computed(() => authStore.hasPermission('data_dataset:create'))
+const canDeleteDataset = computed(() => authStore.hasPermission('data_dataset:delete'))
+const canExportDataset = computed(() => authStore.hasPermission('data_dataset:export'))
+const canDeleteTemplate = computed(() => authStore.hasPermission('data_template:delete'))
 
 const categories = ref<any[]>([])
 const instances = ref<any[]>([])
 const datasets = ref<any[]>([])
 const modelMap = ref<Record<string, any>>({})
 const templateMap = ref<Record<string, any>>({})
+
+const assetTreeData = computed(() => [
+  { id: 'asset_datasets', label: '设备数据', type: 'root' as const, children: treeData.value },
+  { id: 'asset_templates', label: '模板库', type: 'root' as const, children: templates.value.map((template: any) => ({
+    id: 'tpl_' + templateIdOf(template),
+    label: template.templateName || '未命名模板',
+    type: 'template' as const,
+    data: { template }
+  })) }
+].filter(node => asArray(node.children).length > 0))
 
 const selectedSchemaRows = computed(() => {
   const unitMap = new Map<string, string>()
@@ -292,12 +302,36 @@ const fetchTreeData = async () => {
 
 function buildDeviceDatasetTree() {
   const categoryMap = new Map<string, TreeNode>()
-  categories.value.forEach((category: any) => {
-    const id = String(category.id)
-    categoryMap.set(id, { id: 'cat_' + id, label: category.categoryName || '未命名类别', type: 'category', children: [] })
-  })
   const uncategorizedKey = '__uncategorized__'
-  categoryMap.set(uncategorizedKey, { id: 'cat_none', label: '未分类设备', type: 'category', children: [] })
+
+  const ensureCategory = (categoryId: string, label?: string) => {
+    if (!categoryMap.has(categoryId)) {
+      categoryMap.set(categoryId, { id: 'cat_' + categoryId, label: label || '类别 ' + categoryId, type: 'category', children: [] })
+    }
+    return categoryMap.get(categoryId)!
+  }
+
+  categories.value.forEach((category: any) => {
+    ensureCategory(String(category.id), category.categoryName || '未命名类别')
+  })
+  ensureCategory(uncategorizedKey, '未分类设备')
+
+  const modelNodeMap = new Map<string, TreeNode>()
+  Object.values(modelMap.value).forEach((model: any) => {
+    const modelId = String(modelIdOf(model))
+    if (!modelId) return
+    const categoryId = model.categoryId == null ? uncategorizedKey : String(model.categoryId)
+    const category = ensureCategory(categoryId, categories.value.find((item: any) => String(item.id) === categoryId)?.categoryName)
+    const node: TreeNode = {
+      id: 'model_' + modelId,
+      label: model.modelName || '未命名模型',
+      type: 'model',
+      data: model,
+      children: []
+    }
+    category.children!.push(node)
+    modelNodeMap.set(modelId, node)
+  })
 
   const datasetsByInstance: Record<string, any[]> = {}
   datasets.value.forEach(dataset => {
@@ -309,10 +343,21 @@ function buildDeviceDatasetTree() {
 
   instances.value.forEach(instance => {
     const insId = String(instanceIdOf(instance))
-    const model = modelMap.value[String(instance.deviceModelId || instance.modelId)]
-    const categoryId = model?.categoryId == null ? uncategorizedKey : String(model.categoryId)
-    if (!categoryMap.has(categoryId)) {
-      categoryMap.set(categoryId, { id: 'cat_' + categoryId, label: '类别 ' + categoryId, type: 'category', children: [] })
+    const modelId = String(instance.deviceModelId || instance.modelId || '')
+    let modelNode = modelNodeMap.get(modelId)
+    if (!modelNode) {
+      const model = modelMap.value[modelId]
+      const categoryId = model?.categoryId == null ? uncategorizedKey : String(model.categoryId)
+      const category = ensureCategory(categoryId)
+      modelNode = {
+        id: 'model_' + (modelId || 'unknown_' + insId),
+        label: model?.modelName || '未归属模型',
+        type: 'model',
+        data: model || null,
+        children: []
+      }
+      category.children!.push(modelNode)
+      if (modelId) modelNodeMap.set(modelId, modelNode)
     }
     const dataChildren = asArray(datasetsByInstance[insId]).map(dataset => ({
       id: 'ds_' + datasetIdOf(dataset),
@@ -320,7 +365,7 @@ function buildDeviceDatasetTree() {
       type: 'dataset' as const,
       data: { dataset, instance }
     }))
-    categoryMap.get(categoryId)!.children!.push({
+    modelNode.children!.push({
       id: 'ins_' + insId,
       label: instance.instanceName || '未命名设备',
       type: 'instance',
@@ -329,8 +374,14 @@ function buildDeviceDatasetTree() {
     })
   })
 
+  const sortNode = (node: TreeNode) => {
+    node.children = asArray(node.children).sort((a, b) => String(a.label).localeCompare(String(b.label), 'zh-CN'))
+    node.children.forEach(sortNode)
+    return node
+  }
+
   return Array.from(categoryMap.values())
-    .map(node => ({ ...node, children: asArray(node.children).sort((a, b) => String(a.label).localeCompare(String(b.label), 'zh-CN')) }))
+    .map(sortNode)
     .filter(node => asArray(node.children).length > 0)
 }
 
@@ -365,9 +416,11 @@ async function restoreSelectionAfterReload() {
 
 function findFirstDataset() {
   for (const category of treeData.value) {
-    for (const instanceNode of asArray(category.children)) {
-      const datasetNode = asArray(instanceNode.children)[0]
-      if (datasetNode?.data?.dataset) return datasetNode.data
+    for (const modelNode of asArray(category.children)) {
+      for (const instanceNode of asArray(modelNode.children)) {
+        const datasetNode = asArray(instanceNode.children)[0]
+        if (datasetNode?.data?.dataset) return datasetNode.data
+      }
     }
   }
   return null
@@ -375,22 +428,39 @@ function findFirstDataset() {
 
 function findDatasetWithInstance(datasetId: string) {
   for (const category of treeData.value) {
-    for (const instanceNode of asArray(category.children)) {
-      for (const datasetNode of asArray(instanceNode.children)) {
-        if (String(datasetIdOf(datasetNode.data?.dataset)) === String(datasetId)) return datasetNode.data
+    for (const modelNode of asArray(category.children)) {
+      for (const instanceNode of asArray(modelNode.children)) {
+        for (const datasetNode of asArray(instanceNode.children)) {
+          if (String(datasetIdOf(datasetNode.data?.dataset)) === String(datasetId)) return datasetNode.data
+        }
       }
     }
   }
   return null
 }
 
+
 const handleNodeClick = async (node: TreeNode) => {
   if (node.type === 'dataset' && node.data?.dataset) {
     await selectDataset(node.data.dataset, node.data.instance)
     return
   }
+  if (node.type === 'template' && node.data?.template) {
+    await selectTemplate(node.data.template)
+    return
+  }
   if (node.type === 'instance' && node.data) {
     selectedInstance.value = node.data
+    selectedDataset.value = null
+    selectedTemplate.value = null
+    selectedRecords.value = []
+    selectedTemplateDetails.value = []
+    chart.value?.dispose()
+    chart.value = null
+    return
+  }
+  if (node.type === 'model' || node.type === 'category') {
+    selectedInstance.value = null
     selectedDataset.value = null
     selectedTemplate.value = null
     selectedRecords.value = []
@@ -523,6 +593,8 @@ const recordValue = (row: any, key: string) => row?.[key] ?? row?.[String(key).t
 const renderPayloadValue = (v: any) => (v === undefined || v === null || v === '' ? '-' : String(v))
 const isUnitTemplateField = (detail: any) => String(detail?.columnName || '').endsWith('_unit') || String(detail?.deviceAttrKey || '').endsWith('_unit')
 const stripUnitSuffix = (value: any) => String(value || '').endsWith('_unit') ? String(value).slice(0, -5) : String(value || '')
+const templateFieldPurpose = (row: any) => isUnitTemplateField(row) ? '单位' : '属性值'
+const templateBindingAttr = (row: any) => isUnitTemplateField(row) ? '-' : (row.deviceAttrKey || '-')
 const instanceNameById = (id: any) => instances.value.find(v => String(instanceIdOf(v)) === String(id))?.instanceName || String(id || '-')
 const templateNameById = (id: any) => templateMap.value[String(id)]?.templateName || String(id || '-')
 const modelNameById = (id: any) => modelMap.value[String(id)]?.modelName || String(id || '-')
@@ -637,13 +709,16 @@ onUnmounted(() => {
 .left-header span { color: #64748b; font-size: 12px; }
 .list-body { flex: 1; min-height: 0; overflow: auto; padding: 8px; background: #f8fafc; }
 .tree-section-title { margin: 4px 2px 6px; color: #334155; font-size: 12px; font-weight: 700; }
-.template-title { margin-top: 14px; padding-top: 10px; border-top: 1px solid #e2e8f0; }
 .custom-tree-node { min-width: 0; width: 100%; display: flex; align-items: center; gap: 6px; font-size: 13px; color: #334155; }
-.custom-tree-node.is-instance { color: #1d4ed8; }
+.custom-tree-node.is-root { color: #0f172a; font-weight: 800; }
+.custom-tree-node.is-model { color: #1d4ed8; }
+.custom-tree-node.is-instance { color: #0f766e; }
 .custom-tree-node.is-dataset { color: #047857; }
+.custom-tree-node.is-template { color: #7c3aed; }
 .custom-tree-node.is-active { font-weight: 700; color: #0f766e; }
 .node-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .node-count { margin-left: auto; min-width: 20px; height: 18px; display: inline-flex; align-items: center; justify-content: center; border-radius: 10px; background: #e2e8f0; color: #475569; font-size: 11px; }
+.node-badge { margin-left: auto; color: #64748b; font-size: 11px; font-style: normal; }
 .tree-empty { padding: 10px; border: 1px dashed #cbd5e1; border-radius: 4px; color: #64748b; font-size: 12px; background: #fff; }
 .template-list { display: grid; gap: 6px; }
 .template-row { width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 9px; border: 1px solid #dbe2ea; border-radius: 4px; background: #fff; color: #334155; cursor: pointer; text-align: left; }
@@ -654,10 +729,13 @@ onUnmounted(() => {
 .dataset-workspace, .template-workspace { display: grid; gap: 10px; }
 .dataset-meta-card, .content-card { border: 1px solid #ccd6e3; border-radius: 6px; background: #fff; box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04); }
 .dataset-meta-card { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(280px, 0.9fr) auto; align-items: center; gap: 12px; padding: 12px 14px; }
+.template-meta-card { grid-template-columns: minmax(260px, 1fr) auto; }
 .dataset-title { min-width: 0; }
 .dataset-title span { color: #1d4ed8; font-size: 12px; font-weight: 700; }
 .dataset-title h2 { margin: 2px 0 3px; color: #0f172a; font-size: 20px; line-height: 1.25; }
 .dataset-title p { margin: 0; color: #64748b; font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dataset-title p b { margin: 0 6px 0 0; color: #334155; font-weight: 700; }
+.dataset-title p b + * { margin-right: 12px; }
 .dataset-meta-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .dataset-meta-grid div { min-width: 0; padding: 8px 9px; border-left: 3px solid #3b82f6; background: #f7f9fc; }
 .dataset-meta-grid span { display: block; color: #64748b; font-size: 11px; }
@@ -671,13 +749,10 @@ onUnmounted(() => {
 .chart-box { height: 300px; border: 1px solid #e2e8f0; border-radius: 4px; }
 .records-table { width: 100%; }
 .records-pagination { margin-top: 10px; display: flex; justify-content: flex-end; }
-.template-field-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
-.template-field-card { min-height: 58px; padding: 10px 12px; border: 1px solid #dbe4ef; border-left: 3px solid #0ea5e9; border-radius: 5px; background: #f8fafc; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.template-field-card strong { display: block; color: #0f172a; font-size: 14px; }
-.template-field-card span { display: block; margin-top: 3px; color: #64748b; font-size: 12px; }
-.template-field-card em { color: #0f766e; font-style: normal; font-size: 12px; background: #e7f8f1; padding: 3px 6px; border-radius: 4px; }
+.template-fields-table { width: 100%; }
 .top-area.empty { height: 100%; min-height: 420px; display: flex; align-items: center; justify-content: center; border: 1px solid #dbe2ea; border-radius: 4px; background: #fff; }
 .create-form { padding: 0 20px; }
 @media (max-width: 1180px) { .dataset-meta-card { grid-template-columns: 1fr; align-items: stretch; } .dataset-actions { justify-content: flex-start; } }
 @media (max-width: 820px) { .data-center-page { flex-direction: column; } .left-panel { width: 100%; min-width: 0; max-height: 320px; border-right: 0; border-bottom: 1px solid #d8dee8; } .dataset-meta-grid { grid-template-columns: 1fr; } }
 </style>
+

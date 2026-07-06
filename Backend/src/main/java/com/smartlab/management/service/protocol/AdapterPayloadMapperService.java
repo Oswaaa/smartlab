@@ -1,4 +1,4 @@
-package com.smartlab.adapter;
+package com.smartlab.management.service.protocol;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.engine.statemachine.StateMachineEngine;
 import com.smartlab.global.util.JsonNodeSupport;
+import com.smartlab.adapter.AdapterManifestService;
 import com.smartlab.management.dto.resource.adapter.AdapterRouteDTO;
 import com.smartlab.management.entity.resource.adapter.AdapterIndex;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
@@ -147,12 +148,21 @@ public class AdapterPayloadMapperService {
         if (modelTemplateName != null && !modelTemplateName.isBlank() && !modelTemplateName.equals(templateName)) {
             throw new IllegalArgumentException("设备模型绑定的是模板 " + modelTemplateName + "，不能绑定设备点模板 " + templateName);
         }
+        String pointCategoryName = point.path("categoryName").asText(null);
+        String modelCategoryName = contract == null ? null : contract.path("config").path("categoryName").asText(null);
+        if (modelCategoryName != null && !modelCategoryName.isBlank()
+                && pointCategoryName != null && !pointCategoryName.isBlank()
+                && !modelCategoryName.equals(pointCategoryName)) {
+            throw new IllegalArgumentException("设备模型绑定的是 Adapter 类别 " + modelCategoryName + "，不能绑定设备点类别 " + pointCategoryName);
+        }
 
         ObjectNode binding = JsonNodeSupport.objectNode();
         binding.put("adapterName", adapterName);
         binding.put("devicePoint", devicePoint);
         binding.put("templateName", templateName);
-        binding.set("attributeMapping", point.path("attributeMapping"));
+        if (pointCategoryName != null && !pointCategoryName.isBlank()) {
+            binding.put("categoryName", pointCategoryName);
+        }        binding.set("attributeMapping", point.path("attributeMapping"));
         ObjectNode topics = binding.putObject("topics");
         topics.put("command", commandTopic(adapterName, devicePoint));
         topics.put("telemetry", telemetryTopic(adapterName, devicePoint));
@@ -395,6 +405,7 @@ public class AdapterPayloadMapperService {
         if (config != null && config.has("adapterBinding")) {
             JsonNode binding = config.path("adapterBinding");
             route.setTemplateName(binding.path("templateName").asText(null));
+            route.setCategoryName(binding.path("categoryName").asText(null));
             route.setResolvedAttributes(binding.path("resolvedAttributes"));
 
             JsonNode rawToModel = binding.path("rawToModelAttribute");

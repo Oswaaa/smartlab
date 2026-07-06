@@ -1,9 +1,12 @@
 package com.smartlab.management.controller.resource.adapter;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.smartlab.management.dto.common.ApiResponse;
 import com.smartlab.management.entity.resource.adapter.AdapterIndex;
 import com.smartlab.adapter.MqttAdapterMessagingService;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.Map;
 
@@ -31,10 +34,20 @@ public class MqttBridgeController {
         return ApiResponse.ok(mqttAdapterMessagingService.pendingAdapterRegistrations());
     }
 
+    @GetMapping(value = {"/mqtt/pending-registrations/stream", "/protocol/pending-registrations/stream"}, produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter pendingRegistrationStream() {
+        return mqttAdapterMessagingService.subscribePendingRegistrationEvents();
+    }
+
     @PostMapping({"/mqtt/pending-registrations/{adapterName}/complete", "/protocol/pending-registrations/{adapterName}/complete"})
-    public ApiResponse<AdapterIndex> completePendingRegistration(@PathVariable String adapterName) {
+    public ApiResponse<AdapterIndex> completePendingRegistration(@PathVariable String adapterName,
+                                                                 @RequestBody(required = false) JsonNode body) {
         try {
-            return ApiResponse.ok(mqttAdapterMessagingService.completePendingAdapterRegistration(adapterName));
+            JsonNode reviewedConfig = body == null || body.isNull() ? null : body.path("parsedConfig");
+            if (reviewedConfig != null && reviewedConfig.isMissingNode()) {
+                reviewedConfig = body;
+            }
+            return ApiResponse.ok(mqttAdapterMessagingService.completePendingAdapterRegistration(adapterName, reviewedConfig));
         } catch (Exception e) {
             return ApiResponse.fail(e.getMessage());
         }

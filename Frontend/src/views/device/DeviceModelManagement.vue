@@ -1,44 +1,22 @@
 <template>
   <div class="device-model-page">
     <section class="content-shell">
-      <aside class="model-list-panel">
-        <div class="list-tools model-tree-tools">
-          <el-input v-model="keyword" placeholder="搜索模型名称" clearable :prefix-icon="Search" @input="onKeywordInput" />
-          <el-button type="primary" plain @click="showAddCategoryDialog = true">设备类别</el-button>
-        </div>
-
-        <el-scrollbar class="model-list" v-loading="loading">
-          <el-tree
-            v-if="modelTreeData.length"
-            :data="modelTreeData"
-            node-key="id"
-            default-expand-all
-            :expand-on-click-node="false"
-            class="category-model-tree"
-            @node-click="handleModelTreeNodeClick"
-          >
-            <template #default="{ data }">
-              <div class="category-model-node" :class="[data.type, { active: data.type === 'model' && selectedModelId === data.modelId }]">
-                <span class="node-title">{{ data.label }}</span>
-                <span class="node-meta">{{ data.meta }}</span>
-              </div>
-            </template>
-          </el-tree>
-          <el-empty v-if="!loading && models.length === 0" description="暂无设备模型" :image-size="90" />
-        </el-scrollbar>
-
-        <div class="list-footer">
-          <el-pagination
-            v-model:current-page="pageNo"
-            :page-size="pageSize"
-            :total="total"
-            size="small"
-            background
-            layout="prev, pager, next"
-            @current-change="loadData"
-          />
-        </div>
-      </aside>
+      <DeviceModelTree
+        v-model:keyword="keyword"
+        class="model-list-panel"
+        :categories="categories"
+        :models="models"
+        :selected-model-id="selectedModelId"
+        :selected-category-id="selectedCategoryId"
+        :loading="loading"
+        :can-create-model="canCreateModel"
+        @select-model="selectModel"
+        @select-category="selectCategory"
+        @save-category="saveCategoryFromTree"
+        @migrate-category="startCategoryMigration"
+        @delete-category="deleteCategory"
+        @create-model="openCreateDrawerWithCategory"
+      />
 
       <main class="detail-panel">
         <div class="global-top-bar">
@@ -48,7 +26,165 @@
             <el-button v-if="canCreateModel" type="primary" :icon="Plus" @click="openCreateDrawer">新建设备模型</el-button>
           </div>
         </div>
-        <template v-if="selectedModel">
+        <template v-if="selectedCategory">
+          <div class="detail-head category-detail-head">
+            <div class="detail-title">
+              <h2>{{ selectedCategory.categoryName }}</h2>
+              <p>{{ selectedCategoryPathLabel }} · {{ formatTime(selectedCategory.createTime) }}</p>
+            </div>
+            <div class="detail-actions">
+              <el-button
+                v-if="canCreateModel"
+                type="primary"
+                plain
+                :icon="Plus"
+                :disabled="!selectedCategoryCanCreateModel"
+                @click="openCreateDrawerWithCategory({ categoryId: selectedCategory.id })"
+              >在此类别新建模型</el-button>
+            </div>
+          </div>
+
+          <el-scrollbar class="category-detail-scroll">
+            <section class="category-stat-grid">
+              <article class="category-stat-item">
+                <span>下级类别</span>
+                <strong>{{ selectedCategoryChildren.length }}</strong>
+              </article>
+              <article class="category-stat-item">
+                <span>关联模型</span>
+                <strong>{{ selectedCategoryModels.length }}</strong>
+              </article>
+              <article class="category-stat-item">
+                <span>设备实例</span>
+                <strong>{{ selectedCategoryInstances.length }}</strong>
+              </article>
+              <article class="category-stat-item">
+                <span>数据集</span>
+                <strong>{{ selectedCategoryDataAssets.length }}</strong>
+              </article>
+            </section>
+
+            <section class="info-section section-cluster category-section">
+              <div class="section-title">
+                <h3>类别信息</h3>
+              </div>
+              <el-descriptions :column="2" border size="small">
+                <el-descriptions-item label="类别名称">{{ selectedCategory.categoryName || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="父类别">{{ parentCategoryName(selectedCategory) }}</el-descriptions-item>
+                <el-descriptions-item label="创建时间">{{ formatTime(selectedCategory.createTime) }}</el-descriptions-item>
+                <el-descriptions-item label="说明">{{ selectedCategory.description || '-' }}</el-descriptions-item>
+              </el-descriptions>
+            </section>
+
+            <section class="info-section section-cluster category-section">
+              <div class="section-title">
+                <h3>下级类别</h3>
+                <span class="section-count">{{ selectedCategoryChildren.length }} 项</span>
+              </div>
+              <div v-if="selectedCategoryChildren.length === 0" class="compact-empty inline-empty">暂无下级类别</div>
+              <div v-else class="category-child-grid">
+                <button v-for="child in selectedCategoryChildren" :key="child.id" type="button" class="category-child-item" @click="selectCategoryById(child.id)">
+                  <span>{{ child.categoryName }}</span>
+                  <em>({{ categoryModelCount(child.id) }})</em>
+                </button>
+              </div>
+            </section>
+
+            <section class="info-section section-cluster category-section">
+              <div class="section-title">
+                <h3>类别下的设备模型</h3>
+                <span class="section-count">{{ selectedCategoryModels.length }} 项</span>
+              </div>
+              <div v-if="selectedCategoryModels.length === 0" class="compact-empty inline-empty">暂无设备模型</div>
+              <el-table v-else :data="selectedCategoryModels" border size="small" class="industrial-table compact-category-table">
+                <el-table-column label="模型名称" min-width="180">
+                  <template #default="{ row }">
+                    <el-button link type="primary" @click="selectModel(row.modelId)">{{ row.modelName || '-' }}</el-button>
+                  </template>
+                </el-table-column>
+                <el-table-column label="所属类别" min-width="150">
+                  <template #default="{ row }">{{ row.categoryName || categoryNameById(row.categoryId) || '-' }}</template>
+                </el-table-column>
+                <el-table-column label="属性 / 操作" width="140">
+                  <template #default="{ row }">{{ asArray(row.attributes).length }} / {{ asArray(row.capabilities).length }}</template>
+                </el-table-column>
+                <el-table-column label="更新时间" min-width="180">
+                  <template #default="{ row }">{{ formatTime(row.updateTime) }}</template>
+                </el-table-column>
+              </el-table>
+            </section>
+
+            <section class="info-section section-cluster category-section">
+              <div class="section-title">
+                <h3>BOM 引用</h3>
+                <span class="section-count">{{ selectedCategoryBomUsages.length }} 项</span>
+              </div>
+              <div v-if="selectedCategoryBomUsages.length === 0" class="compact-empty inline-empty">暂无模型在组件结构清单中引用该类别</div>
+              <el-table v-else :data="selectedCategoryBomUsages" border size="small" class="industrial-table compact-category-table">
+                <el-table-column label="引用模型" min-width="170">
+                  <template #default="{ row }">{{ row.modelName || '-' }}</template>
+                </el-table-column>
+                <el-table-column label="组件槽位" min-width="160">
+                  <template #default="{ row }">{{ row.slotName || row.componentName || row.name || '-' }}</template>
+                </el-table-column>
+                <el-table-column label="组件类别" min-width="150">
+                  <template #default="{ row }">{{ categoryNameById(row.categoryId) || '-' }}</template>
+                </el-table-column>
+                <el-table-column label="数量" width="90">
+                  <template #default="{ row }">{{ row.quantity || 1 }}</template>
+                </el-table-column>
+                <el-table-column label="说明" min-width="220">
+                  <template #default="{ row }">{{ row.description || '-' }}</template>
+                </el-table-column>
+              </el-table>
+            </section>
+
+            <section class="info-section section-cluster category-section">
+              <div class="section-title">
+                <h3>实例组件槽位</h3>
+                <span class="section-count">{{ selectedCategoryComponentSlots.length }} 项</span>
+              </div>
+              <div v-if="selectedCategoryComponentSlots.length === 0" class="compact-empty inline-empty">暂无设备实例组件槽位使用该类别</div>
+              <el-table v-else :data="selectedCategoryComponentSlots" border size="small" class="industrial-table compact-category-table">
+                <el-table-column label="组件名称" min-width="160">
+                  <template #default="{ row }">{{ row.componentName || '-' }}</template>
+                </el-table-column>
+                <el-table-column label="所属实例" min-width="170">
+                  <template #default="{ row }">{{ row.parentInstanceName || '-' }}</template>
+                </el-table-column>
+                <el-table-column label="绑定实例" min-width="170">
+                  <template #default="{ row }">{{ row.selfInstanceName || '-' }}</template>
+                </el-table-column>
+                <el-table-column label="状态" width="120">
+                  <template #default="{ row }">{{ row.status || '-' }}</template>
+                </el-table-column>
+              </el-table>
+            </section>
+
+            <section class="info-section section-cluster category-section">
+              <div class="section-title">
+                <h3>相关数据集</h3>
+                <span class="section-count">{{ selectedCategoryDataAssets.length }} 项</span>
+              </div>
+              <div v-if="selectedCategoryDataAssets.length === 0" class="compact-empty inline-empty">暂无与该类别实例绑定的数据集</div>
+              <el-table v-else :data="selectedCategoryDataAssets" border size="small" class="industrial-table compact-category-table">
+                <el-table-column label="数据集" min-width="180">
+                  <template #default="{ row }">{{ row.dataDesc || row.dataTable || '-' }}</template>
+                </el-table-column>
+                <el-table-column label="设备实例" min-width="170">
+                  <template #default="{ row }">{{ row.instanceName || '-' }}</template>
+                </el-table-column>
+                <el-table-column label="设备模型" min-width="170">
+                  <template #default="{ row }">{{ row.modelName || '-' }}</template>
+                </el-table-column>
+                <el-table-column label="物理表" min-width="190">
+                  <template #default="{ row }">{{ row.dataTable || '-' }}</template>
+                </el-table-column>
+              </el-table>
+            </section>
+          </el-scrollbar>
+        </template>
+        <template v-else-if="selectedModel">
           <div class="detail-head">
             <div class="detail-title">
               <h2>{{ selectedModel.modelName }}</h2>
@@ -65,21 +201,28 @@
             </div>
           </div>
 
-                    <div class="detail-anchor-layout" style="display: flex; height: calc(100vh - 200px); overflow: hidden;">
-            <el-anchor class="detail-anchor-menu" @click="(e) => e.preventDefault()" container=".detail-scroll-content .el-scrollbar__wrap" :offset="20" style="width: 150px; flex-shrink: 0; border-right: 1px solid var(--el-border-color-light);">
-              <el-anchor-link href="#view-basic" title="基础信息" />
-              <el-anchor-link href="#view-ability" title="属性功能" />
-              <el-anchor-link href="#view-topology" title="结构拓扑" />
-              <el-anchor-link href="#view-adapter" title="Adapter 契约" />
-              <el-anchor-link href="#view-mapping" title="映射关系" />
-              <el-anchor-link href="#view-state" title="状态机" />
-              <el-anchor-link href="#view-constraint" title="内置约束" />
-              <el-anchor-link href="#view-template" title="默认数据模板" />
-              <el-anchor-link href="#view-file" title="模型文件" />
+          <div class="model-summary-strip">
+            <div><span>设备类别</span><strong>{{ selectedModel.categoryName || '-' }}</strong></div>
+            <div><span>属性</span><strong>{{ selectedAttributes.length }}</strong></div>
+            <div><span>操作</span><strong>{{ selectedCapabilities.length }}</strong></div>
+            <div><span>Adapter</span><strong>{{ selectedModel.adapterContract?.config?.adapterName || '-' }}</strong></div>
+          </div>
+
+          <div class="detail-anchor-layout model-detail-workbench">
+            <el-anchor class="detail-anchor-menu" @click="(e) => e.preventDefault()" container=".detail-scroll-content .el-scrollbar__wrap" :offset="20">
+              <el-anchor-link href="#view-basic" title="01 基础信息" />
+              <el-anchor-link href="#view-ability" title="02 属性功能" />
+              <el-anchor-link href="#view-adapter" title="03 Adapter 契约" />
+              <el-anchor-link href="#view-mapping" title="04 映射关系" />
+              <el-anchor-link href="#view-state" title="05 状态机" />
+              <el-anchor-link href="#view-constraint" title="06 内置约束" />
+              <el-anchor-link href="#view-bom" title="07 组件结构" />
+              <el-anchor-link href="#view-template" title="08 默认数据模板" />
+              <el-anchor-link href="#view-file" title="09 模型文件" />
             </el-anchor>
-            <el-scrollbar class="detail-scroll-content" style="flex-grow: 1; padding-left: 20px;">
+            <el-scrollbar class="detail-scroll-content">
                           <div id="view-basic" class="anchor-section industrial-section">
-                <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px;">基础信息</h2>
+                <h2 class="section-heading"><span class="section-index">01</span>基础信息</h2>
               <section class="info-section">
                 <el-descriptions :column="2" border size="small">
                   <el-descriptions-item label="模型名称">{{ selectedModel.modelName || '-' }}</el-descriptions-item>
@@ -91,7 +234,7 @@
             </div>
 
                           <div id="view-ability" class="anchor-section industrial-section">
-                <h2 class="section-heading">属性功能</h2>
+                <h2 class="section-heading"><span class="section-index">02</span>属性功能</h2>
                 <section class="info-section section-cluster">
                   <div class="section-title">
                     <h3>设备属性</h3>
@@ -153,33 +296,8 @@
                 </section>
               </div>
 
-              <div id="view-topology" class="anchor-section industrial-section">
-                <h2 class="section-heading">结构拓扑模板</h2>
-                <section class="info-section section-cluster">
-                  <div class="section-title">
-                    <h3>模型组件模板</h3>
-                    <span class="section-count">{{ selectedComponentsBom.length }} 项</span>
-                  </div>
-                  <div v-if="selectedComponentsBom.length === 0" class="compact-empty inline-empty">暂无结构拓扑模板</div>
-                  <el-table v-else :data="selectedComponentsBom" border size="small" class="industrial-table">
-                    <el-table-column label="组件名称" min-width="160">
-                      <template #default="{ row }"><strong>{{ row.componentName || row.name || '-' }}</strong></template>
-                    </el-table-column>
-                    <el-table-column label="组件类别" min-width="140">
-                      <template #default="{ row }">{{ row.categoryName || categoryNameById(row.categoryId) || '-' }}</template>
-                    </el-table-column>
-                    <el-table-column label="父级组件" min-width="140">
-                      <template #default="{ row }">{{ row.parentComponentName || row.parentName || row.parentComponentId || '-' }}</template>
-                    </el-table-column>
-                    <el-table-column label="规格信息" min-width="220">
-                      <template #default="{ row }"><code>{{ stringifyBrief(row.specification || row.spec || {}) }}</code></template>
-                    </el-table-column>
-                  </el-table>
-                </section>
-              </div>
-
                           <div id="view-adapter" class="anchor-section industrial-section">
-                <h2 class="section-heading">Adapter 契约</h2>
+                <h2 class="section-heading"><span class="section-index">03</span>Adapter 契约</h2>
                 <section class="info-section section-cluster">
                   <div class="section-title">
                     <h3>Adapter 命令</h3>
@@ -238,7 +356,7 @@
               </div>
 
                           <div id="view-mapping" class="anchor-section industrial-section">
-                <h2 class="section-heading">映射关系</h2>
+                <h2 class="section-heading"><span class="section-index">04</span>映射关系</h2>
                 <section class="info-section section-cluster compact-section">
                   <div class="section-title">
                     <h3>属性映射</h3>
@@ -281,7 +399,7 @@
               </div>
 
                           <div id="view-state" class="anchor-section industrial-section">
-                <h2 class="section-heading">状态机</h2>
+                <h2 class="section-heading"><span class="section-index">05</span>状态机</h2>
                 <section class="info-section section-cluster compact-section">
                   <div class="section-title">
                     <h3>指令生命周期</h3>
@@ -330,7 +448,7 @@
               </div>
 
                           <div id="view-constraint" class="anchor-section industrial-section">
-                <h2 class="section-heading">内置约束</h2>
+                <h2 class="section-heading"><span class="section-index">06</span>内置约束</h2>
                 <section class="info-section section-cluster compact-section">
                   <div class="section-title">
                     <h3>内置约束</h3>
@@ -347,8 +465,33 @@
                 </section>
               </div>
 
+              <div id="view-bom" class="anchor-section industrial-section">
+                <h2 class="section-heading"><span class="section-index">07</span>组件结构</h2>
+                <section class="info-section section-cluster">
+                  <div class="section-title">
+                    <h3>组件结构清单 (BOM)</h3>
+                    <span class="section-count">{{ selectedComponentsBom.length }} 项</span>
+                  </div>
+                  <div v-if="selectedComponentsBom.length === 0" class="compact-empty inline-empty">暂无组件结构清单</div>
+                  <el-table v-else :data="selectedComponentsBom" border size="small" class="industrial-table">
+                    <el-table-column label="组件名称 (slotName)" min-width="160">
+                      <template #default="{ row }"><strong>{{ row.slotName || row.componentName || row.name || '-' }}</strong></template>
+                    </el-table-column>
+                    <el-table-column label="设备类别" min-width="140">
+                      <template #default="{ row }">{{ row.categoryName || categoryNameById(row.categoryId) || '-' }}</template>
+                    </el-table-column>
+                    <el-table-column label="数量" width="100">
+                      <template #default="{ row }">{{ row.quantity || 1 }}</template>
+                    </el-table-column>
+                    <el-table-column label="描述" min-width="220">
+                      <template #default="{ row }">{{ row.description || '-' }}</template>
+                    </el-table-column>
+                  </el-table>
+                </section>
+              </div>
+
                           <div id="view-template" class="anchor-section industrial-section">
-                <h2 class="section-heading">默认数据模板</h2>
+                <h2 class="section-heading"><span class="section-index">08</span>默认数据模板</h2>
                 <section class="info-section section-cluster compact-section">
                   <div class="section-title">
                     <h3>已选模板字段</h3>
@@ -368,7 +511,7 @@
               </div>
 
                           <div id="view-file" class="anchor-section industrial-section">
-                <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px;">模型文件</h2>
+                <h2 class="section-heading"><span class="section-index">09</span>模型文件</h2>
               <section class="model-json-grid">
                 <div class="json-panel">
                   <div class="section-title"><h3>设备能力模型</h3></div>
@@ -391,20 +534,21 @@
 
     <el-drawer v-model="drawerVisible" :title="drawerTitle" direction="rtl" size="78%" destroy-on-close class="model-drawer">
       <div class="drawer-body">
-                <div class="detail-anchor-layout" style="display: flex; height: calc(100vh - 120px); overflow: hidden;">
-          <el-anchor class="detail-anchor-menu" @click="(e) => e.preventDefault()" container=".edit-scroll-content .el-scrollbar__wrap" :offset="20" style="width: 150px; flex-shrink: 0; border-right: 1px solid var(--el-border-color-light);">
-            <el-anchor-link href="#edit-basic" title="基础信息" />
-            <el-anchor-link href="#edit-ability" title="属性功能" />
-            <el-anchor-link href="#edit-adapter" title="Adapter 契约" />
-            <el-anchor-link href="#edit-mapping" title="映射关系" />
-            <el-anchor-link href="#edit-state" title="状态机" />
-            <el-anchor-link href="#edit-constraint" title="内置约束" />
-            <el-anchor-link href="#edit-template" title="默认数据模板" />
-            <el-anchor-link href="#edit-file" title="模型文件" />
+        <div class="detail-anchor-layout model-edit-workbench">
+          <el-anchor class="detail-anchor-menu" @click="(e) => e.preventDefault()" container=".edit-scroll-content .el-scrollbar__wrap" :offset="20">
+            <el-anchor-link href="#edit-basic" title="01 基础信息" />
+            <el-anchor-link href="#edit-ability" title="02 属性功能" />
+            <el-anchor-link href="#edit-adapter" title="03 Adapter 契约" />
+            <el-anchor-link href="#edit-mapping" title="04 映射关系" />
+            <el-anchor-link href="#edit-state" title="05 状态机" />
+            <el-anchor-link href="#edit-constraint" title="06 内置约束" />
+            <el-anchor-link href="#edit-bom" title="07 组件结构" />
+            <el-anchor-link href="#edit-template" title="08 默认数据模板" />
+            <el-anchor-link href="#edit-file" title="09 模型文件" />
           </el-anchor>
-          <el-scrollbar class="edit-scroll-content" style="flex-grow: 1; padding-left: 20px;">
+          <el-scrollbar class="edit-scroll-content">
                     <div id="edit-basic" class="anchor-section industrial-section">
-            <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px;">基础信息</h2>
+            <h2 class="section-heading"><span class="section-index">01</span>基础信息</h2>
             <section class="drawer-section">
               <div class="section-title"><h3>基础信息</h3></div>
               <el-form label-width="96px" size="small" class="basic-form">
@@ -412,19 +556,22 @@
                   <el-input v-model="draft.basic.modelName" placeholder="例如：反应釜温控模块" maxlength="80" show-word-limit />
                 </el-form-item>
                 <el-form-item label="所属分类" prop="categoryValue">
-                  <div style="display: flex; gap: 10px; width: 100%;">
-                    <el-select v-model="draft.basic.categoryValue" placeholder="选择分类" filterable style="flex-grow: 1;">
-                      <el-option v-for="cat in categories" :key="String(cat.id)" :label="cat.categoryName" :value="String(cat.id)" />
-                    </el-select>
-                    <el-button type="primary" link @click="showAddCategoryDialog = true">管理类别</el-button>
-                  </div>
+                  <el-tree-select
+                    v-model="draft.basic.categoryValue"
+                    :data="categoryTreeForSelect"
+                    node-key="id"
+                    check-strictly
+                    :render-after-expand="false"
+                    placeholder="选择分类"
+                    style="width: 100%"
+                  />
                 </el-form-item>
               </el-form>
             </section>
           </div>
 
                     <div id="edit-ability" class="anchor-section industrial-section">
-            <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px;">属性功能</h2>
+            <h2 class="section-heading"><span class="section-index">02</span>属性功能</h2>
             <section class="drawer-section">
               <div class="section-title">
                 <h3>设备属性</h3>
@@ -523,7 +670,7 @@
           </div>
 
                     <div id="edit-adapter" class="anchor-section industrial-section">
-            <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px;">Adapter 契约</h2>
+            <h2 class="section-heading"><span class="section-index">03</span>Adapter 契约</h2>
             <section class="drawer-section">
               <div class="section-title"><h3>契约来源</h3></div>
               <el-form label-width="90px" size="small">
@@ -543,12 +690,12 @@
                         :value="adapter.adapterName"
                       />
                     </el-select>
-                    <el-select v-model="selectedRegisteredAdapterTemplate" filterable clearable placeholder="选择设备模板" :disabled="!registeredAdapterTemplateOptions.length">
+                    <el-select v-model="selectedRegisteredAdapterTemplate" filterable clearable placeholder="选择设备类别" :disabled="!registeredAdapterTemplateOptions.length">
                       <el-option
                         v-for="tpl in registeredAdapterTemplateOptions"
-                        :key="tpl.templateName"
-                        :label="tpl.description ? tpl.templateName + ' · ' + tpl.description : tpl.templateName"
-                        :value="tpl.templateName"
+                        :key="adapterCategoryKey(tpl)"
+                        :label="adapterCategoryLabel(tpl)"
+                        :value="adapterCategoryKey(tpl)"
                       />
                     </el-select>
                     <el-button type="primary" plain :disabled="!selectedRegisteredAdapterName || !selectedRegisteredAdapterTemplate" @click="applyRegisteredAdapterContract">载入契约</el-button>
@@ -645,7 +792,7 @@
           </div>
 
                     <div id="edit-mapping" class="anchor-section industrial-section">
-            <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px;">映射关系</h2>
+            <h2 class="section-heading"><span class="section-index">04</span>映射关系</h2>
             <section class="drawer-section">
               <div class="section-title">
                 <h3>属性映射</h3>
@@ -743,7 +890,7 @@
           </div>
 
                     <div id="edit-state" class="anchor-section industrial-section">
-            <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px;">状态机</h2>
+            <h2 class="section-heading"><span class="section-index">05</span>状态机</h2>
             <h2 class="state-group-title first">接口定义</h2>
             <section class="drawer-section locked-section">
               <div class="section-title">
@@ -938,7 +1085,7 @@
           </div>
 
                     <div id="edit-constraint" class="anchor-section industrial-section">
-            <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px;">内置约束</h2>
+            <h2 class="section-heading"><span class="section-index">06</span>内置约束</h2>
             <section class="drawer-section">
               <div class="section-title">
                 <h3>内置约束</h3>
@@ -969,8 +1116,47 @@
             </section>
           </div>
 
+          <div id="edit-bom" class="anchor-section industrial-section">
+            <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px;">组件结构清单</h2>
+            <section class="drawer-section">
+              <div class="section-title">
+                <h3>BOM 清单</h3>
+                <el-button type="primary" plain size="small" :icon="Plus" @click="addBomComponent">新增组件</el-button>
+              </div>
+              <div v-if="draft.componentsBom.length === 0" class="compact-empty block-empty">暂无组件，请点击右上角“新增组件”进行配置</div>
+              <el-table v-else :data="draft.componentsBom" border size="small">
+                <el-table-column label="组件名称 (slotName)" min-width="160">
+                  <template #default="{ row }"><el-input v-model="row.slotName" size="small" placeholder="例如：搅拌电机" /></template>
+                </el-table-column>
+                <el-table-column label="设备类别" min-width="180">
+                  <template #default="{ row }">
+                    <el-tree-select
+                      v-model="row.categoryId"
+                      :data="categoryTreeForSelect"
+                      node-key="id"
+                      check-strictly
+                      :render-after-expand="false"
+                      size="small"
+                      placeholder="选择类别"
+                      style="width: 100%"
+                    />
+                  </template>
+                </el-table-column>
+                <el-table-column label="数量 (quantity)" width="120">
+                  <template #default="{ row }"><el-input-number v-model="row.quantity" size="small" :min="1" style="width: 100%" /></template>
+                </el-table-column>
+                <el-table-column label="描述 (description)" min-width="200">
+                  <template #default="{ row }"><el-input v-model="row.description" size="small" placeholder="说明" /></template>
+                </el-table-column>
+                <el-table-column label="" width="54" fixed="right">
+                  <template #default="{ $index }"><el-button link type="danger" :icon="Delete" @click="removeRow(draft.componentsBom, $index)" /></template>
+                </el-table-column>
+              </el-table>
+            </section>
+          </div>
+
                     <div id="edit-template" class="anchor-section industrial-section">
-            <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px;">默认数据模板</h2>
+            <h2 class="section-heading"><span class="section-index">08</span>默认数据模板</h2>
             <section class="drawer-section">
               <div class="section-title">
                 <h3>默认数据模板字段</h3>
@@ -989,7 +1175,7 @@
           </div>
 
                     <div id="edit-file" class="anchor-section industrial-section">
-            <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px;">模型文件</h2>
+            <h2 class="section-heading"><span class="section-index">09</span>模型文件</h2>
             <div style="margin-bottom: 12px; display: flex; justify-content: flex-end;">
               <el-button type="primary" plain size="small" :loading="generatingPreview" @click="generatePreview">生成 / 刷新预览</el-button>
             </div>
@@ -1017,62 +1203,56 @@
       </template>
     </el-drawer>
 
-    <el-dialog v-model="adapterTemplateDialogVisible" title="选择要绑定的 Adapter 模板" width="500px">
-      <div style="margin-bottom: 15px;">检测到配置文件中包含新模板，请选择需要绑定到当前设备模型的模板：</div>
+    <el-dialog v-model="adapterTemplateDialogVisible" title="选择要绑定的 Adapter 类别" width="500px">
+      <div style="margin-bottom: 15px;">检测到配置文件中包含 Adapter 类别，请选择需要绑定到当前设备模型的类别：</div>
       <el-form label-width="80px">
-        <el-form-item label="选择模板">
-          <el-select v-model="selectedAdapterTemplate" placeholder="请选择模板" style="width: 100%">
+        <el-form-item label="选择类别">
+          <el-select v-model="selectedAdapterTemplate" placeholder="请选择类别" style="width: 100%">
             <el-option
               v-for="item in adapterTemplatesList"
-              :key="item.name"
-              :label="item.name + (item.description ? ' (' + item.description + ')' : '')"
-              :value="item.name"
+              :key="adapterCategoryKey(item)"
+              :label="adapterCategoryLabel(item)"
+              :value="adapterCategoryKey(item)"
             />
           </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="adapterTemplateDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="confirmAdapterTemplateSelection">确认解析并绑定</el-button>
+        <el-button type="primary" @click="confirmAdapterTemplateSelection">确认绑定</el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="showAddCategoryDialog" title="设备类别管理" width="720px" class="category-manager-dialog">
-      <div class="category-manager-layout">
-        <section class="category-existing-panel">
-          <div class="dialog-section-title">已有类别</div>
-          <el-table :data="categories" border stripe size="small" max-height="320">
-            <el-table-column label="类别名" min-width="150">
-              <template #default="{ row }"><strong>{{ row.categoryName }}</strong></template>
-            </el-table-column>
-            <el-table-column label="父类别" min-width="140">
-              <template #default="{ row }">{{ categoryNameById(row.parentCategoryId) || '-' }}</template>
-            </el-table-column>
-            <el-table-column label="描述" min-width="180">
-              <template #default="{ row }">{{ row.description || '-' }}</template>
-            </el-table-column>
-          </el-table>
-        </section>
-        <section class="category-create-panel">
-          <div class="dialog-section-title">新增类别</div>
-          <el-form ref="newCategoryFormRef" :model="newCategoryDraft" :rules="newCategoryRules" label-width="86px" size="small">
-            <el-form-item label="类别名称" prop="categoryName">
-              <el-input v-model="newCategoryDraft.categoryName" placeholder="例如：反应釜、泵、传感器" />
-            </el-form-item>
-            <el-form-item label="父类别">
-              <el-select v-model="newCategoryDraft.parentCategoryId" clearable filterable placeholder="无父类别">
-                <el-option v-for="cat in categories" :key="String(cat.id)" :label="cat.categoryName" :value="String(cat.id)" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="描述">
-              <el-input v-model="newCategoryDraft.description" type="textarea" :rows="3" placeholder="说明该类别的硬件范围、用途或边界" />
-            </el-form-item>
-          </el-form>
-        </section>
+    <el-dialog v-model="migrationDialogVisible" title="类别结构变更向导" width="800px" :close-on-click-modal="false" destroy-on-close>
+      <el-alert title="类别下已有设备模型" type="warning" show-icon :closable="false" style="margin-bottom: 20px;">
+        【{{ migrationState.parentCategory?.label }}】当前是叶子节点并挂载了设备模型。添加子类别后，它将变为中间节点。请在下方为其创建新子类别，并将现有模型分配到新类别下。
+      </el-alert>
+      <div style="display: flex; gap: 24px;">
+        <div style="flex: 1; min-width: 0;">
+          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+            <h4 style="margin: 0;">1. 创建新子类别</h4>
+            <el-button link type="primary" :icon="Plus" @click="migrationState.newCategories.push({ name: '' })">添加</el-button>
+          </div>
+          <div v-for="(item, index) in migrationState.newCategories" :key="index" style="display: flex; gap: 8px; margin-bottom: 12px;">
+            <el-input v-model="item.name" placeholder="请输入子类别名称" />
+            <el-button type="danger" plain :icon="Delete" @click="migrationState.newCategories.splice(index, 1)" :disabled="migrationState.newCategories.length <= 1" />
+          </div>
+        </div>
+        <div style="flex: 1; min-width: 0; border-left: 1px solid var(--el-border-color-light); padding-left: 24px;">
+          <h4 style="margin: 0 0 12px 0;">2. 现有模型分配</h4>
+          <div v-for="assignment in migrationState.modelAssignments" :key="assignment.modelId" style="margin-bottom: 16px;">
+            <div style="font-size: 13px; color: var(--el-text-color-regular); margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" :title="assignment.modelName">
+              <el-icon style="vertical-align: middle; margin-right: 4px;"><Cpu /></el-icon>{{ assignment.modelName }}
+            </div>
+            <el-select v-model="assignment.targetCategoryIndex" style="width: 100%;" placeholder="选择目标子类别">
+              <el-option v-for="(cat, cIndex) in migrationState.newCategories" :key="cIndex" :label="cat.name || `[未命名类别 ${cIndex + 1}]`" :value="cIndex" />
+            </el-select>
+          </div>
+        </div>
       </div>
       <template #footer>
-        <el-button @click="showAddCategoryDialog = false">关闭</el-button>
-        <el-button type="primary" :loading="savingCategory" @click="saveNewCategory">保存类别</el-button>
+        <el-button @click="migrationDialogVisible = false" :disabled="migrationSubmitting">取消</el-button>
+        <el-button type="primary" @click="confirmMigration" :loading="migrationSubmitting">确认迁移</el-button>
       </template>
     </el-dialog>
   </div>
@@ -1080,62 +1260,20 @@
 
 <script setup>
 import { computed, defineComponent, h, onMounted, reactive, ref, resolveComponent, watch, nextTick } from 'vue'
-import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Connection, Cpu, Delete, Download, EditPen, Lock, Notification, Plus, Refresh, Search, Unlock, Upload, Close, Right, Warning, InfoFilled } from '@element-plus/icons-vue'
+import { Connection, Cpu, Delete, Download, EditPen, Lock, Notification, Plus, Refresh, Unlock, Upload, Close, Right, Warning, InfoFilled } from '@element-plus/icons-vue'
 import { useAuthStore } from '../../stores/authStore'
+import DeviceModelTree from '../../components/device/DeviceModelTree.vue'
+import { loadModelWorkspace, listDeviceCategories, saveDeviceCategory, deleteDeviceCategory } from './device-model-management/modelManagementApi'
+import { saveDeviceModel, deleteDeviceModel, previewDeviceModel, fetchModelBundle as fetchModelBundleApi } from './device-model-management/modelManagementApi'
+import { listDataPropertyTypes, fetchDefaultTemplateAttributes, listRegisteredAdapters, fetchRegisteredAdapterContract } from './device-model-management/modelManagementApi'
+import { adapterDeviceCategoryOptions, adapterCategoryKey, adapterCategoryLabel, buildAdapterContractFromManifestCategory } from './device-model-management/adapterManifestToContract'
+import { attributeDataTypes, adapterDataTypes, operators, interfaceTypes, stateActionNames, standardCmdEvents } from './device-model-management/deviceModelUiConstants'
+import { getSignalTagType, formatSignalName, formatSignalShortName, getSignalsForInterface } from './device-model-management/deviceModelUiConstants'
+import { defaultAdapterContract, defaultStateSpace, defaultCommandLifecycle, commandLifecycleStateNames } from './device-model-management/stateMachineDefaults'
+import { defaultInterfaces, adapterInterfaceName, adapterOutAction, defaultStateEntryActions, defaultCommandLifecycleTransitions } from './device-model-management/stateMachineDefaults'
 
 const authStore = useAuthStore()
-
-function getSignalTagType(signalName) {
-  if (signalName === 'OP_STATE') return 'success'
-  if (signalName === 'CMD_STATE') return 'primary'
-  if (signalName === 'CMD_START') return 'danger'
-  if (signalName === 'CMD_CANCEL') return 'warning'
-  return 'info'
-}
-
-function formatSignalName(signalName) {
-  if (signalName === 'OP_STATE') return '输出功能状态 (OP_STATE)'
-  if (signalName === 'CMD_STATE') return '输出指令周期 (CMD_STATE)'
-  if (signalName === 'CMD_START') return '下发启动命令 (CMD_START)'
-  if (signalName === 'CMD_CANCEL') return '下发取消命令 (CMD_CANCEL)'
-  return signalName || ''
-}
-
-function formatSignalShortName(signalName) {
-  if (signalName === 'OP_STATE') return '输出状态'
-  if (signalName === 'CMD_STATE') return '输出指令'
-  if (signalName === 'CMD_START') return '启动命令'
-  if (signalName === 'CMD_CANCEL') return '取消命令'
-  if (signalName === 'CMD_PAUSE') return '暂停命令'
-  if (signalName === 'CMD_RESUME') return '恢复命令'
-  if (signalName === 'CMD_RESET') return '重置命令'
-  return signalName || ''
-}
-
-function getSignalsForInterface(interfaceName) {
-  if (interfaceName === 'Interface_status_out') return ['OP_STATE', 'CMD_STATE']
-  if (interfaceName === 'Interface_adapter_out') return ['CMD_START', 'CMD_CANCEL', 'CMD_PAUSE', 'CMD_RESUME', 'CMD_RESET']
-  return []
-}
-
-function onActionInterfaceChange(act) {
-  if (!act.payload) act.payload = {}
-  const sigs = getSignalsForInterface(act.payload.interfaceName)
-  if (sigs.length > 0) {
-    act.payload.signalName = sigs[0]
-  } else {
-    act.payload.signalName = ''
-  }
-}
-const attributeDataTypes = ['INTEGER', 'DOUBLE', 'BOOLEAN']
-const adapterDataTypes = ['INTEGER', 'DOUBLE', 'BOOLEAN', 'STRING']
-const operators = ['GT', 'LT', 'GE', 'LE', 'EQ', 'NE', 'BETWEEN', 'IN']
-const interfaceTypes = ['WORKFLOW', 'STAT', 'ADAPTER', 'CONTROL', 'CONSTRAINT']
-const stateActionNames = ['SEND', 'ASSIGN']
-const standardCmdEvents = ['COMMAND_RECEIVED', 'COMMAND_RUNNING', 'COMMAND_COMPLETED', 'COMMAND_FAILED', 'COMMAND_TIMEOUT', 'COMMAND_CANCELLED']
-const adapterOutSignals = ['CMD_START', 'CMD_CANCEL', 'CMD_PAUSE', 'CMD_RESUME', 'CMD_RESET']
 
 const DataTypeSelect = defineComponent({
   name: 'DataTypeSelect',
@@ -1172,11 +1310,12 @@ const StateSelect = defineComponent({
 
 const models = ref([])
 const categories = ref([])
+const deviceInstances = ref([])
+const deviceComponents = ref([])
+const dataIndexes = ref([])
 const selectedModelId = ref('')
+const selectedCategoryId = ref('')
 const keyword = ref('')
-const pageNo = ref(1)
-const pageSize = ref(20)
-const total = ref(0)
 const loading = ref(false)
 const saving = ref(false)
 const drawerVisible = ref(false)
@@ -1188,22 +1327,14 @@ const selectedRegisteredAdapterName = ref('')
 const selectedRegisteredAdapterTemplate = ref('')
 const registeredAdapterTemplateOptions = computed(() => {
   const adapter = registeredAdapters.value.find(item => item.adapterName === selectedRegisteredAdapterName.value)
-  return asArray(parsedAdapterConfig(adapter).deviceTemplates)
+  return adapterDeviceCategoryOptions(parsedAdapterConfig(adapter))
 })
-
-const showAddCategoryDialog = ref(false)
-const savingCategory = ref(false)
-const newCategoryDraft = ref({ categoryName: '', parentCategoryId: '', description: '' })
-const newCategoryFormRef = ref(null)
 
 const adapterTemplateDialogVisible = ref(false)
 const adapterTemplatesList = ref([])
 const selectedAdapterTemplate = ref('')
 const tempAdapterConfigRaw = ref(null)
 
-const newCategoryRules = {
-  categoryName: [{ required: true, message: '请输入类别名称', trigger: 'blur' }]
-}
 
 const draft = reactive(emptyDraft())
 const interfaceLocked = ref(true)
@@ -1212,46 +1343,46 @@ const canCreateModel = computed(() => authStore.hasPermission('device_model:crea
 const canEditModel = computed(() => authStore.hasPermission('device_model:edit'))
 const canDeleteModel = computed(() => authStore.hasPermission('device_model:delete'))
 const selectedModel = computed(() => models.value.find(item => item.modelId === selectedModelId.value) || null)
-const modelTreeData = computed(() => {
-  const modelsByCategory = new Map()
-  models.value.forEach(model => {
-    const categoryId = model.categoryId == null ? '' : String(model.categoryId)
-    if (!modelsByCategory.has(categoryId)) modelsByCategory.set(categoryId, [])
-    modelsByCategory.get(categoryId).push(model)
-  })
-  const categoryChildren = new Map()
+const categoryChildrenByParent = computed(() => {
+  const map = new Map()
   categories.value.forEach(category => {
-    const parentId = category.parentCategoryId == null ? '' : String(category.parentCategoryId)
-    if (!categoryChildren.has(parentId)) categoryChildren.set(parentId, [])
-    categoryChildren.get(parentId).push(category)
+    const parentId = stringId(category.parentCategoryId)
+    if (!map.has(parentId)) map.set(parentId, [])
+    map.get(parentId).push(category)
   })
-  const modelNode = model => ({
-    id: `model:${model.modelId}`,
-    type: 'model',
-    label: model.modelName || '未命名模型',
-    meta: summaryText(model),
-    modelId: model.modelId
-  })
-  const categoryNode = category => {
-    const id = category.id == null ? '' : String(category.id)
-    const children = [
-      ...asArray(categoryChildren.get(id)).map(categoryNode),
-      ...asArray(modelsByCategory.get(id)).map(modelNode)
-    ]
-    return {
-      id: `category:${id}`,
-      type: 'category',
-      label: category.categoryName || '未命名类别',
-      meta: children.length ? `${children.length} 项` : '空类别',
-      children
-    }
-  }
-  const roots = asArray(categoryChildren.get('')).map(categoryNode)
-  const uncategorized = asArray(modelsByCategory.get('')).map(modelNode)
-  if (uncategorized.length) roots.push({ id: 'category:uncategorized', type: 'category', label: '未分类', meta: `${uncategorized.length} 个模型`, children: uncategorized })
-  if (roots.length) return roots
-  return models.value.map(modelNode)
+  return map
 })
+const selectedCategory = computed(() => categories.value.find(item => stringId(item.id) === stringId(selectedCategoryId.value)) || null)
+const selectedCategoryChildren = computed(() => asArray(categoryChildrenByParent.value.get(stringId(selectedCategoryId.value))))
+const selectedCategoryCanCreateModel = computed(() => selectedCategory.value && selectedCategoryChildren.value.length === 0)
+const selectedCategoryPathLabel = computed(() => categoryPath(selectedCategoryId.value).join(' / ') || '根类别')
+const selectedCategoryDescendantIds = computed(() => collectCategoryDescendantIds(selectedCategoryId.value))
+const selectedCategoryDescendantIdSet = computed(() => new Set(selectedCategoryDescendantIds.value))
+const selectedCategoryDirectModels = computed(() => models.value.filter(model => stringId(model.categoryId) === stringId(selectedCategoryId.value)))
+const selectedCategoryModels = computed(() => models.value.filter(model => selectedCategoryDescendantIdSet.value.has(stringId(model.categoryId))))
+const selectedCategoryModelIdSet = computed(() => new Set(selectedCategoryModels.value.map(model => stringId(model.modelId)).filter(Boolean)))
+const selectedCategoryInstances = computed(() => deviceInstances.value.filter(instance => selectedCategoryModelIdSet.value.has(instanceModelId(instance))))
+const selectedCategoryInstanceIdSet = computed(() => new Set(selectedCategoryInstances.value.map(instanceIdOf).filter(Boolean)))
+const selectedCategoryBomUsages = computed(() => models.value.flatMap(model => asArray(model.componentsBom)
+  .filter(row => selectedCategoryDescendantIdSet.value.has(stringId(row.categoryId)))
+  .map(row => ({ ...row, modelId: model.modelId, modelName: model.modelName }))))
+const selectedCategoryComponentSlots = computed(() => deviceComponents.value
+  .filter(row => selectedCategoryDescendantIdSet.value.has(stringId(row.categoryId)))
+  .map(row => ({
+    ...row,
+    parentInstanceName: instanceNameById(row.parentInstanceId),
+    selfInstanceName: row.selfInstanceId ? instanceNameById(row.selfInstanceId) : '-'
+  })))
+const selectedCategoryDataAssets = computed(() => dataIndexes.value
+  .filter(row => selectedCategoryInstanceIdSet.value.has(stringId(row.deviceInstanceId)))
+  .map(row => {
+    const instance = deviceInstances.value.find(item => instanceIdOf(item) === stringId(row.deviceInstanceId))
+    return {
+      ...row,
+      instanceName: instanceNameOf(instance),
+      modelName: modelNameById(instanceModelId(instance))
+    }
+  }))
 const selectedAttributes = computed(() => asArray(selectedModel.value?.attributes))
 const selectedCapabilities = computed(() => asArray(selectedModel.value?.capabilities))
 const selectedPorts = computed(() => asArray(selectedModel.value?.ports))
@@ -1280,6 +1411,150 @@ const adapterEventOptions = computed(() => opEventNames(draft.adapterContract.ev
 const adapterSignalOptions = computed(() => uniqueStrings([...standardCmdEvents, ...adapterEventOptions.value]))
 const capabilitySelectOptions = computed(() => draft.capabilities.map((item, index) => ({ key: item._key, label: item.displayName || item.name || '操作' + (index + 1) })).filter(item => item.key))
 const generatedInterfaces = computed(() => defaultInterfaces(adapterSignalOptions.value))
+
+const categoryTreeForSelect = computed(() => {
+  const buildTree = (parentId) => {
+    return categories.value
+      .filter(c => String(c.parentCategoryId || '') === String(parentId || ''))
+      .map(c => {
+        const children = buildTree(c.id)
+        return {
+          id: String(c.id),
+          label: c.categoryName,
+          disabled: children.length > 0,
+          children: children.length === 0 ? undefined : children
+        }
+      })
+  }
+  return buildTree('')
+})
+
+const migrationDialogVisible = ref(false)
+const migrationSubmitting = ref(false)
+const migrationState = reactive({
+  parentCategory: null,
+  newCategories: [{ name: '' }],
+  modelAssignments: []
+})
+
+function startCategoryMigration(data) {
+  const modelsInNode = data?.directModels?.length ? data.directModels : (data?.children ? data.children.filter(c => c.type === 'model') : [])
+  if (modelsInNode.length === 0) return
+  migrationState.parentCategory = data
+  migrationState.newCategories = [{ name: '' }]
+  migrationState.modelAssignments = modelsInNode.map(c => ({
+    modelId: c.modelId,
+    modelName: c.label,
+    targetCategoryIndex: 0
+  }))
+  migrationDialogVisible.value = true
+}
+
+const confirmMigration = async () => {
+  if (migrationState.newCategories.some(c => !c.name.trim())) {
+    ElMessage.warning('子类别名称不能为空')
+    return
+  }
+  if (migrationState.modelAssignments.some(a => a.targetCategoryIndex === null || a.targetCategoryIndex === undefined)) {
+    ElMessage.warning('请为所有模型分配目标类别')
+    return
+  }
+
+  migrationSubmitting.value = true
+  try {
+    const newCatIds = []
+    for (const c of migrationState.newCategories) {
+      const res = await saveDeviceCategory({
+        categoryName: c.name.trim(),
+        parentCategoryId: Number(migrationState.parentCategory.categoryId),
+        description: ''
+      })
+      if (res.success) {
+        newCatIds.push(res.data?.id || res.data?.categoryId)
+      } else {
+        throw new Error('创建类别 ' + c.name + ' 失败: ' + (res.message || ''))
+      }
+    }
+
+    const backupDraft = JSON.parse(JSON.stringify(draft))
+    const propertyTypes = await loadPropertyTypesForTemplate()
+    try {
+      for (const assignment of migrationState.modelAssignments) {
+        const targetCatId = newCatIds[assignment.targetCategoryIndex]
+        const modelData = models.value.find(m => m.modelId === assignment.modelId)
+        if (modelData) {
+          await loadDefaultTemplateForModel(modelData.modelId, modelData.attributes || [])
+          replaceDraft(fromModelToDraft(modelData))
+          draft.basic.categoryValue = String(targetCatId)
+          const payload = buildSavePayload(true, propertyTypes)
+          await saveDeviceModel(payload)
+        }
+      }
+    } finally {
+      replaceDraft(backupDraft)
+    }
+
+    ElMessage.success('迁移成功')
+    migrationDialogVisible.value = false
+    await loadCategories()
+    await loadData()
+  } catch (error) {
+    console.error(error)
+    ElMessage.error(error.message || '迁移过程中发生错误')
+  } finally {
+    migrationSubmitting.value = false
+  }
+}
+
+const deleteCategory = async (data) => {
+  try {
+    await ElMessageBox.confirm(`确认删除类别【${data.label}】吗？`, '提示', { type: 'warning' })
+    const res = await deleteDeviceCategory(data.categoryId)
+    if (res.success) {
+      ElMessage.success('删除成功')
+      await loadCategories()
+      await loadData()
+    } else {
+      ElMessage.error(res.message || '删除失败')
+    }
+  } catch (e) { }
+}
+
+async function saveCategoryFromTree(payload) {
+  await saveCategoryApi(payload.categoryName, payload.parentCategoryId ?? null, payload.categoryId || null, payload.description || '')
+}
+
+async function saveCategoryApi(categoryName, parentCategoryId, categoryId = null, description = '') {
+  try {
+    const payload = {
+      categoryName,
+      parentCategoryId,
+      description
+    }
+    if (categoryId) payload.id = categoryId
+    const res = await saveDeviceCategory(payload)
+    if (res.success) {
+      ElMessage.success('保存成功')
+      await loadCategories()
+    } else {
+      ElMessage.error(res.message || '保存失败')
+    }
+  } catch (error) {
+    ElMessage.error(error.response?.data?.message || '保存异常')
+  }
+}
+
+function openCreateDrawerWithCategory(data) {
+  replaceDraft(emptyDraft())
+  draft.basic.categoryValue = String(data.categoryId)
+  drawerMode.value = 'create'
+  prepareAdapterSourcePicker()
+  drawerVisible.value = true
+}
+
+function addBomComponent() {
+  draft.componentsBom.push({ _key: makeUiKey('bom'), slotName: '', categoryId: '', quantity: 1, description: '' })
+}
 const stateMachineInterfaceRows = computed(() => interfaceLocked.value ? generatedInterfaces.value : draft.stateMachineInterfaces)
 const commandLifecycleTransitionRows = computed(() => defaultCommandLifecycleTransitions())
 const opStateNameOptions = computed(() => draft.opState.states.map(item => item.stateName).filter(Boolean))
@@ -1326,12 +1601,12 @@ const generatePreview = async () => {
   generatingPreview.value = true
   try {
     const payload = buildSavePayload(false)
-    const res = await axios.post('/api/device/model/preview', payload)
-    if (!res.data?.success) {
-      ElMessage.error(res.data?.message || '生成预览失败')
+    const res = await previewDeviceModel(payload)
+    if (!res?.success) {
+      ElMessage.error(res?.message || '生成预览失败')
       return
     }
-    const bundle = normalizeModelBundle(res.data?.data)
+    const bundle = normalizeModelBundle(res?.data)
     draftCapabilityModelJson.value = bundle.capabilityModel
     draftStateMachineModelJson.value = bundle.stateMachineModel
   } catch (error) {
@@ -1360,69 +1635,6 @@ function emptyDraft() {
   }
 }
 
-function defaultAdapterContract() {
-  return { config: { protocol: 'MQTT' }, commands: [], telemetry: { adapterAttributes: [], attributesMapping: [] }, events: [] }
-}
-
-function defaultStateSpace(initialStateName) {
-  return { initialStateName, states: [{ _key: makeUiKey('state'), stateName: initialStateName, onEntry: defaultStateEntryActions('OP', initialStateName) }] }
-}
-
-function defaultCommandLifecycle() {
-  return { initialStateName: 'IDLE', states: commandLifecycleStateNames().map(stateName => ({ _key: makeUiKey('cmd_state'), stateName, onEntry: defaultStateEntryActions('CMD', stateName) })) }
-}
-
-function commandLifecycleStateNames() {
-  return ['IDLE', 'SENT', 'RECEIVED', 'RUNNING', 'DONE', 'FAILED', 'TIMEOUT', 'CANCELLED']
-}
-
-function defaultInterfaces(adapterSignals = []) {
-  const signals = uniqueStrings([...standardCmdEvents, ...asArray(adapterSignals).filter(Boolean)])
-  return [
-    { _key: 'iface_workflow', name: 'Interface_workflow_in', direction: 'IN', interfaceType: 'WORKFLOW', allowedSignals: ['EXECUTE_START', 'EXECUTE_PAUSE', 'EXECUTE_RESUME', 'EXECUTE_CANCEL', 'EXECUTE_RESET'] },
-    { _key: 'iface_status', name: 'Interface_status_out', direction: 'OUT', interfaceType: 'STAT', allowedSignals: ['OP_STATE', 'CMD_STATE'] },
-    { _key: 'iface_control', name: 'Interface_control_in', direction: 'IN', interfaceType: 'CONTROL', allowedSignals: ['MANUAL_EXECUTE', 'MANUAL_CANCEL', 'MANUAL_PAUSE', 'MANUAL_RESUME', 'MANUAL_RESET'] },
-    { _key: 'iface_constraint', name: 'Interface_constraint_in', direction: 'IN', interfaceType: 'CONSTRAINT', allowedSignals: ['CONSTRAINT_CANCEL', 'CONSTRAINT_PAUSE', 'CONSTRAINT_RESUME', 'CONSTRAINT_RESET'] },
-    { _key: 'iface_adapter_in', name: 'Interface_adapter_in', direction: 'IN', interfaceType: 'ADAPTER', allowedSignals: signals },
-    { _key: 'iface_adapter_out', name: 'Interface_adapter_out', direction: 'OUT', interfaceType: 'ADAPTER', allowedSignals: adapterOutSignals }
-  ]
-}
-
-function adapterInterfaceName() {
-  return 'Interface_adapter_in'
-}
-
-function adapterOutAction(signalName) {
-  return { actionName: 'SEND', payload: { interfaceName: 'Interface_adapter_out', signalName } }
-}
-
-function defaultStateEntryActions(type, stateName) {
-  return [{
-    actionName: 'SEND',
-    payload: {
-      interfaceName: 'Interface_status_out',
-      signalName: type === 'CMD' ? 'CMD_STATE' : 'OP_STATE',
-      stateName
-    }
-  }]
-}
-
-function defaultCommandLifecycleTransitions() {
-  return [
-    { description: '工作流触发指令下发', fromStateName: 'IDLE', toStateName: 'SENT', trigger: { interfaceName: 'Interface_workflow_in', signalName: 'EXECUTE_START' }, actions: [adapterOutAction('CMD_START')] },
-    { description: '用户手动触发指令下发', fromStateName: 'IDLE', toStateName: 'SENT', trigger: { interfaceName: 'Interface_control_in', signalName: 'MANUAL_EXECUTE' }, actions: [adapterOutAction('CMD_START')] },
-    { description: 'Adapter 已接收', fromStateName: 'SENT', toStateName: 'RECEIVED', trigger: { interfaceName: adapterInterfaceName(), signalName: 'COMMAND_RECEIVED' }, actions: [] },
-    { description: 'Adapter 执行中', fromStateName: 'RECEIVED', toStateName: 'RUNNING', trigger: { interfaceName: adapterInterfaceName(), signalName: 'COMMAND_RUNNING' }, actions: [] },
-    { description: '执行完成', fromStateName: 'RUNNING', toStateName: 'DONE', trigger: { interfaceName: adapterInterfaceName(), signalName: 'COMMAND_COMPLETED' }, actions: [] },
-    { description: '执行失败', fromStateName: 'RUNNING', toStateName: 'FAILED', trigger: { interfaceName: adapterInterfaceName(), signalName: 'COMMAND_FAILED' }, actions: [] },
-    { description: '执行超时', fromStateName: 'RUNNING', toStateName: 'TIMEOUT', trigger: { interfaceName: adapterInterfaceName(), signalName: 'COMMAND_TIMEOUT' }, actions: [] },
-    { description: 'Adapter 确认取消', fromStateName: 'SENT', toStateName: 'CANCELLED', trigger: { interfaceName: adapterInterfaceName(), signalName: 'COMMAND_CANCELLED' }, actions: [] },
-    { description: '工作流取消指令', fromStateName: 'RUNNING', toStateName: 'CANCELLED', trigger: { interfaceName: 'Interface_workflow_in', signalName: 'EXECUTE_CANCEL' }, actions: [adapterOutAction('CMD_CANCEL')] },
-    { description: '用户手动取消指令', fromStateName: 'RUNNING', toStateName: 'CANCELLED', trigger: { interfaceName: 'Interface_control_in', signalName: 'MANUAL_CANCEL' }, actions: [adapterOutAction('CMD_CANCEL')] },
-    { description: '约束引擎取消指令', fromStateName: 'RUNNING', toStateName: 'CANCELLED', trigger: { interfaceName: 'Interface_constraint_in', signalName: 'CONSTRAINT_CANCEL' }, actions: [adapterOutAction('CMD_CANCEL')] }
-  ]
-}
-
 function isCommandLifecycleTransition(row) {
   return defaultCommandLifecycleTransitions().some(item => item.fromStateName === row?.fromStateName && item.toStateName === row?.toStateName && item.trigger.interfaceName === row?.trigger?.interfaceName && item.trigger.signalName === row?.trigger?.signalName)
 }
@@ -1430,33 +1642,51 @@ function isCommandLifecycleTransition(row) {
 async function loadData() {
   loading.value = true
   try {
-    const [modelRes, categoryRes] = await Promise.all([
-      axios.get('/api/device/model/page', { params: { pageNo: pageNo.value, pageSize: pageSize.value, keyword: keyword.value.trim() || undefined } }),
-      axios.get('/api/device/category/list')
-    ])
-    categories.value = asArray(categoryRes.data?.data)
-    const pageData = modelRes.data?.data || {}
-    models.value = asArray(pageData.records).map(normalizeModel)
-    total.value = Number(pageData.total || 0)
-    if (!models.value.some(item => item.modelId === selectedModelId.value)) selectedModelId.value = models.value[0]?.modelId || ''
-    await loadSelectedModelBundle(selectedModelId.value)
+    const workspace = await loadModelWorkspace()
+    categories.value = workspace.categories
+    models.value = workspace.models.map(normalizeModel)
+    deviceInstances.value = workspace.instances
+    deviceComponents.value = workspace.components
+    dataIndexes.value = workspace.dataIndexes
+
+    const previousModelId = stringId(selectedModelId.value)
+    const previousCategoryId = stringId(selectedCategoryId.value)
+    let nextModelId = models.value.some(function(item) { return stringId(item.modelId) === previousModelId }) ? previousModelId : ''
+    let nextCategoryId = categories.value.some(function(item) { return stringId(item.id) === previousCategoryId }) ? previousCategoryId : ''
+
+    if (!nextModelId && !nextCategoryId) {
+      if (models.value[0]?.modelId) nextModelId = stringId(models.value[0].modelId)
+      else if (categories.value[0]?.id) nextCategoryId = stringId(categories.value[0].id)
+    }
+
+    const modelChanged = nextModelId !== previousModelId
+    selectedModelId.value = nextModelId
+    selectedCategoryId.value = nextModelId ? '' : nextCategoryId
+
+    if (!nextModelId) {
+      selectedModelBundle.value = emptyModelBundle()
+      defaultTemplateAttributes.value = []
+    } else if (!modelChanged) {
+      await loadSelectedModelBundle(nextModelId)
+    }
   } catch (err) {
-    console.error('loadData error:', err); ElMessage.error(err.response?.data?.message || '加载设备模型失败')
+    console.error('loadData error:', err)
+    ElMessage.error(err.response?.data?.message || '加载设备模型失败')
   } finally {
     loading.value = false
   }
 }
-
 async function loadCategories() {
-  const res = await axios.get('/api/device/category/list')
-  categories.value = asArray(res.data?.data)
+  categories.value = await listDeviceCategories()
 }
 
 async function fetchModelBundle(modelId) {
-  if (!modelId) return emptyModelBundle()
-  const res = await axios.get('/api/device/model/' + modelId + '/bundle')
-  if (!res.data?.success) throw new Error(res.data?.message || '加载模型文件失败')
-  return normalizeModelBundle(res.data?.data)
+  return normalizeModelBundle(await fetchModelBundleApi(modelId))
+}
+
+async function loadDefaultTemplateForModel(modelId, attributes) {
+  defaultTemplateAttributes.value = await fetchDefaultTemplateAttributes(modelId, attributes)
+  return defaultTemplateAttributes.value
 }
 
 async function loadSelectedModelBundle(modelId = selectedModelId.value) {
@@ -1467,27 +1697,8 @@ async function loadSelectedModelBundle(modelId = selectedModelId.value) {
   }
   try {
     selectedModelBundle.value = await fetchModelBundle(modelId)
-    try {
-      const tplRes = await axios.get('/api/data/template/list')
-      const templates = tplRes.data?.data || []
-      const defaultTpl = templates.find(t => String(t.deviceModelId) === String(modelId) && t.isDefault)
-      if (defaultTpl) {
-        const detailRes = await axios.get(`/api/data/template/${defaultTpl.id}/details`)
-        const details = detailRes.data?.data || []
-        const currentModel = models.value.find(item => item.modelId === modelId)
-        if (currentModel && currentModel.attributes) {
-          const keys = details.map(d => d.deviceAttrKey)
-          defaultTemplateAttributes.value = currentModel.attributes.filter(a => keys.includes(a.name))
-        } else {
-          defaultTemplateAttributes.value = []
-        }
-      } else {
-        defaultTemplateAttributes.value = []
-      }
-    } catch (e) {
-      console.error('Failed to load templates', e)
-      defaultTemplateAttributes.value = []
-    }
+    const currentModel = models.value.find(function(item) { return stringId(item.modelId) === stringId(modelId) })
+    await loadDefaultTemplateForModel(modelId, currentModel?.attributes || [])
   } catch (err) {
     selectedModelBundle.value = emptyModelBundle()
     defaultTemplateAttributes.value = []
@@ -1537,10 +1748,11 @@ function openCreateDrawer() {
   drawerVisible.value = true
 }
 
-function openEditDrawer(model) {
+async function openEditDrawer(model) {
+  await loadDefaultTemplateForModel(model.modelId, model.attributes || [])
   replaceDraft(fromModelToDraft(model))
   drawerMode.value = 'edit'
-  prepareAdapterSourcePicker(draft.adapterContract?.config?.adapterName, draft.adapterContract?.config?.templateName)
+  prepareAdapterSourcePicker(draft.adapterContract?.config?.adapterName, draft.adapterContract?.config?.categoryName || draft.adapterContract?.config?.templateName)
   drawerVisible.value = true
 }
 
@@ -1553,12 +1765,13 @@ async function saveDraft() {
   try {
     const propertyTypes = draft.defaultDataTemplateAttrs?.length ? await loadPropertyTypesForTemplate() : []
     const payload = buildSavePayload(true, propertyTypes)
-    const res = await axios.post('/api/device/model/save', payload)
-    if (!res.data?.success) {
-      ElMessage.error(res.data?.message || '保存失败')
+    const res = await saveDeviceModel(payload)
+    if (!res.success) {
+      ElMessage.error(res.message || '保存失败')
       return
     }
-    const savedModelId = String(res.data?.data?.modelId || payload.modelId || '')
+    const savedModelId = String(res.data?.modelId || payload.modelId || '')
+    selectedCategoryId.value = ''
     selectedModelId.value = savedModelId
     drawerVisible.value = false
     ElMessage.success('保存成功')
@@ -1570,40 +1783,11 @@ async function saveDraft() {
   }
 }
 
-async function saveNewCategory() {
-  if (!newCategoryFormRef.value) return
-  await newCategoryFormRef.value.validate(async (valid) => {
-    if (!valid) return
-    savingCategory.value = true
-    try {
-      const payload = {
-        categoryName: stringValue(newCategoryDraft.value.categoryName),
-        parentCategoryId: newCategoryDraft.value.parentCategoryId ? Number(newCategoryDraft.value.parentCategoryId) : null,
-        description: stringValue(newCategoryDraft.value.description)
-      }
-      const res = await axios.post('/api/device/category/save', payload)
-      if (res.data.success) {
-        ElMessage.success('类别已保存')
-        await loadCategories()
-        const savedId = res.data.data?.id || res.data.data?.categoryId
-        if (savedId) draft.basic.categoryValue = String(savedId)
-        newCategoryDraft.value = { categoryName: '', parentCategoryId: '', description: '' }
-      } else {
-        ElMessage.error(res.data.message || '保存类别失败')
-      }
-    } catch (error) {
-      ElMessage.error(error.response?.data?.message || '保存类别失败')
-    } finally {
-      savingCategory.value = false
-    }
-  })
-}
-
 async function deleteModel(id) {
   try {
-    const res = await axios.delete('/api/device/model/delete/' + id)
-    if (!res.data?.success) {
-      ElMessage.error(res.data?.message || '删除失败')
+    const res = await deleteDeviceModel(id)
+    if (!res.success) {
+      ElMessage.error(res.message || '删除失败')
       return
     }
     ElMessage.success('删除成功')
@@ -1696,7 +1880,13 @@ function buildSavePayload(includeBlankBasic = true, propertyTypes = []) {
     opState: cleanStateSpace(draft.opState, 'IDLE', 'OP'),
     cmdState: cleanStateSpace(draft.cmdState, 'IDLE', 'CMD'),
     stateTransitions: cleanTransitions(draft.stateTransitions),
-    componentsBom: asArray(draft.componentsBom),
+    componentsBom: asArray(draft.componentsBom).map(item => ({
+      slotName: stringValue(item.slotName),
+      categoryId: item.categoryId ? Number(item.categoryId) : null,
+      categoryName: categoryNameById(item.categoryId),
+      quantity: Number(item.quantity) || 1,
+      description: stringValue(item.description)
+    })).filter(item => item.slotName),
     defaultDataTemplate: buildDefaultDataTemplate(attributeResult.rowByKey, propertyTypes)
   }
   if (isNumeric(draft.basic.categoryValue)) payload.categoryId = Number(draft.basic.categoryValue)
@@ -1705,8 +1895,7 @@ function buildSavePayload(includeBlankBasic = true, propertyTypes = []) {
 }
 
 async function loadPropertyTypesForTemplate() {
-  const res = await axios.get('/api/data/property-type/list')
-  return asArray(res.data?.data)
+  return await listDataPropertyTypes()
 }
 
 function buildDefaultDataTemplate(rowByKey, propertyTypes = []) {
@@ -2032,6 +2221,7 @@ function addStateTransition() {
 function ensureTransitionAction(row) {
   if (!row.actions) row.actions = []
   row.actions.push({
+    actionName: 'SEND',
     payload: { interfaceName: 'Interface_adapter_out', signalName: '' }
   })
 }
@@ -2053,14 +2243,13 @@ function prepareAdapterSourcePicker(adapterName = '', templateName = '') {
 async function fetchRegisteredAdapters() {
   registeredAdapterLoading.value = true
   try {
-    const res = await axios.get('/api/adapter/index/list')
-    registeredAdapters.value = res.data?.success ? asArray(res.data.data) : []
+    registeredAdapters.value = await listRegisteredAdapters()
     if (selectedRegisteredAdapterName.value && !registeredAdapters.value.some(item => item.adapterName === selectedRegisteredAdapterName.value)) {
       selectedRegisteredAdapterName.value = ''
       selectedRegisteredAdapterTemplate.value = ''
     }
     if (selectedRegisteredAdapterName.value && selectedRegisteredAdapterTemplate.value) {
-      const hasTemplate = registeredAdapterTemplateOptions.value.some(tpl => tpl.templateName === selectedRegisteredAdapterTemplate.value)
+      const hasTemplate = registeredAdapterTemplateOptions.value.some(option => adapterCategoryKey(option) === selectedRegisteredAdapterTemplate.value)
       if (!hasTemplate) selectedRegisteredAdapterTemplate.value = ''
     }
   } catch (error) {
@@ -2076,43 +2265,20 @@ function handleRegisteredAdapterChange() {
 
 async function applyRegisteredAdapterContract() {
   if (!selectedRegisteredAdapterName.value || !selectedRegisteredAdapterTemplate.value) {
-    ElMessage.warning('请选择已注册 Adapter 和设备模板')
+    ElMessage.warning('请选择已注册 Adapter 和设备类别')
     return
   }
   registeredAdapterLoading.value = true
   try {
-    const res = await axios.get(`/api/adapter/index/${encodeURIComponent(selectedRegisteredAdapterName.value)}/adapter-contract`, {
-      params: { templateName: selectedRegisteredAdapterTemplate.value }
-    })
-    if (!res.data?.success) {
-      ElMessage.error(res.data?.message || '载入 Adapter 契约失败')
+    const res = await fetchRegisteredAdapterContract(selectedRegisteredAdapterName.value, selectedRegisteredAdapterTemplate.value)
+    if (!res.success) {
+      ElMessage.error(res.message || '载入 Adapter 契约失败')
       return
     }
-    assignAdapterContract(res.data.data)
+    assignAdapterContract(res.data)
     ElMessage.success(`已载入 Adapter 契约: ${selectedRegisteredAdapterName.value} / ${selectedRegisteredAdapterTemplate.value}`)
   } finally {
     registeredAdapterLoading.value = false
-  }
-}
-
-function buildAdapterContractFromManifestTemplate(parsed, template) {
-  const commands = asArray(template.commands).map(command => ({
-    commandName: stringValue(command.name || command.commandName),
-    description: stringValue(command.description),
-    commandParameters: asArray(command.parameters || command.commandParameters).map(normalizeCommandParameter)
-  }))
-
-  const adapterAttributes = asArray(template.attributes).map(attr => ({
-    name: stringValue(attr.name),
-    dataType: normalizeDataType(attr.dataType, 'DOUBLE', adapterDataTypes),
-    description: stringValue(attr.description)
-  }))
-
-  return {
-    config: { protocol: 'MQTT', adapterName: stringValue(parsed.adapterName), templateName: stringValue(template.templateName) },
-    commands,
-    telemetry: { adapterAttributes, attributesMapping: [] },
-    events: normalizeEventsToFlatList(template.events)
   }
 }
 
@@ -2127,18 +2293,14 @@ function assignAdapterContract(contract) {
 function applyAdapterConfigText() {
   try {
     const parsed = JSON.parse(adapterConfigText.value)
-    if (!parsed || !Array.isArray(parsed.deviceTemplates) || parsed.deviceTemplates.length === 0) {
-      ElMessage.warning('配置文本中未找到合法的 deviceTemplates 数组')
+    const categories = adapterDeviceCategoryOptions(parsed)
+    if (categories.length === 0) {
+      ElMessage.warning('配置文本中未找到合法的 deviceCategories 数组')
       return
     }
     tempAdapterConfigRaw.value = parsed
-    adapterTemplatesList.value = parsed.deviceTemplates.map(t => ({
-      name: t.templateName,
-      description: t.description
-    }))
-    if (adapterTemplatesList.value.length > 0) {
-      selectedAdapterTemplate.value = adapterTemplatesList.value[0].name
-    }
+    adapterTemplatesList.value = categories
+    selectedAdapterTemplate.value = adapterCategoryKey(categories[0])
     adapterTemplateDialogVisible.value = true
   } catch (error) {
     ElMessage.error('配置文本不是有效的 JSON')
@@ -2147,68 +2309,17 @@ function applyAdapterConfigText() {
 
 function confirmAdapterTemplateSelection() {
   if (!selectedAdapterTemplate.value) {
-    ElMessage.warning('请选择一个模板')
+    ElMessage.warning('请选择一个 Adapter 类别')
     return
   }
   const parsed = tempAdapterConfigRaw.value
-  const template = parsed.deviceTemplates.find(t => t.templateName === selectedAdapterTemplate.value)
-  if (!template) return
+  const selected = adapterTemplatesList.value.find(function(item) { return adapterCategoryKey(item) === selectedAdapterTemplate.value })
+  if (!selected) return
 
-  assignAdapterContract(buildAdapterContractFromManifestTemplate(parsed, template))
+  assignAdapterContract(buildAdapterContractFromManifestCategory(parsed, selected.category))
 
   adapterTemplateDialogVisible.value = false
-  ElMessage.success(`已成功解析并绑定模板: ${template.templateName}`)
-}
-
-function buildCapabilityModel(model) {
-  const attributeResult = materializeAttributes(model.attributes)
-  const functionMappings = extractFunctionMappings(model.capabilities, normalizeCapabilities(model.capabilities))
-  return buildCapabilityModelFromPayload({
-    modelId: model.modelId,
-    modelName: model.modelName,
-    categoryId: model.categoryId,
-    attributes: attributeResult.rows,
-    capabilities: materializeCapabilities(model.capabilities, functionMappings),
-    adapterContract: cleanAdapterContract(model.adapterContract, attributeResult.nameByKey),
-    ports: materializePorts(model.ports, attributeResult.nameByKey),
-    intrinsicConstraints: materializeIntrinsicConstraints(model.intrinsicConstraints, attributeResult.nameByKey)
-  })
-}
-
-function buildStateMachineModel(model) {
-  const interfaces = asArray(model.stateMachineInterfaces).length ? cleanInterfaces(model.stateMachineInterfaces) : cleanInterfaces(defaultInterfaces(opEventNames(model.adapterContract?.events)))
-  return buildStateMachineModelFromPayload({
-    modelId: model.modelId,
-    stateMachineInterfaces: interfaces,
-    opState: cleanStateSpace(model.opState, 'IDLE', 'OP'),
-    cmdState: cleanStateSpace(model.cmdState, 'IDLE', 'CMD'),
-    stateTransitions: cleanTransitions(model.stateTransitions)
-  })
-}
-
-function buildCapabilityModelFromPayload(payload) {
-  return {
-    metadata: {
-      modelId: numericOrNull(payload.modelId),
-      modelName: stringValue(payload.modelName),
-      deviceCategoryId: numericOrNull(payload.categoryId)
-    },
-    attributes: asArray(payload.attributes),
-    capabilities: asArray(payload.capabilities),
-    adapterContract: payload.adapterContract || cleanAdapterContract(defaultAdapterContract()),
-    ports: asArray(payload.ports),
-    intrinsicConstraints: asArray(payload.intrinsicConstraints)
-  }
-}
-
-function buildStateMachineModelFromPayload(payload) {
-  return {
-    deviceModelId: numericOrNull(payload.modelId),
-    interfaces: cleanInterfaces(payload.stateMachineInterfaces),
-    opStateSpace: cleanStateSpace(payload.opState, 'IDLE', 'OP'),
-    cmdLifecycleSpace: cleanStateSpace(payload.cmdState, 'IDLE', 'CMD'),
-    transitions: allStateTransitions(payload.stateTransitions)
-  }
+  ElMessage.success('已成功解析并绑定类别: ' + selected.name)
 }
 
 function opEventNames(events) {
@@ -2352,13 +2463,79 @@ function summaryText(model) {
   return parts.length ? parts.join('、') : '尚未补充模型内容'
 }
 
-function onKeywordInput() {
-  if (searchTimer) window.clearTimeout(searchTimer)
-  searchTimer = window.setTimeout(() => { pageNo.value = 1; loadData() }, 260)
+function selectCategory(data) {
+  selectCategoryById(data?.categoryId ?? data?.id)
 }
 
-function handleModelTreeNodeClick(data) {
-  if (data?.type === 'model') selectedModelId.value = data.modelId
+function selectCategoryById(categoryId) {
+  const id = stringId(categoryId)
+  if (!id) return
+  selectedModelId.value = ''
+  selectedCategoryId.value = id
+}
+
+function parentCategoryName(category) {
+  if (!category?.parentCategoryId) return '根类别'
+  return categoryNameById(category.parentCategoryId) || '根类别'
+}
+
+function categoryPath(categoryId) {
+  const path = []
+  const visited = new Set()
+  let currentId = stringId(categoryId)
+  while (currentId && !visited.has(currentId)) {
+    visited.add(currentId)
+    const category = categories.value.find(item => stringId(item.id) === currentId)
+    if (!category) break
+    path.unshift(category.categoryName || '未命名类别')
+    currentId = stringId(category.parentCategoryId)
+  }
+  return path
+}
+
+function collectCategoryDescendantIds(categoryId) {
+  const rootId = stringId(categoryId)
+  if (!rootId) return []
+  const ids = []
+  const visit = (id) => {
+    ids.push(id)
+    asArray(categoryChildrenByParent.value.get(id)).forEach(child => visit(stringId(child.id)))
+  }
+  visit(rootId)
+  return ids
+}
+
+function categoryModelCount(categoryId) {
+  const ids = new Set(collectCategoryDescendantIds(categoryId))
+  return models.value.filter(model => ids.has(stringId(model.categoryId))).length
+}
+
+function modelNameById(modelId) {
+  return models.value.find(model => stringId(model.modelId) === stringId(modelId))?.modelName || '-'
+}
+
+function instanceIdOf(instance) {
+  return stringId(instance?.instanceId ?? instance?.id)
+}
+
+function instanceModelId(instance) {
+  return stringId(instance?.deviceModelId ?? instance?.modelId)
+}
+
+function instanceNameOf(instance) {
+  if (!instance) return '-'
+  return instance.instanceName || instance.deviceName || `设备实例 ${instanceIdOf(instance)}`
+}
+
+function instanceNameById(instanceId) {
+  const id = stringId(instanceId)
+  if (!id) return '-'
+  return instanceNameOf(deviceInstances.value.find(instance => instanceIdOf(instance) === id))
+}
+
+function selectModel(modelId) {
+  selectedCategoryId.value = ''
+  selectedModelId.value = modelId ? String(modelId) : ''
 }
 function categoryNameById(id) { return categories.value.find(item => String(item.id) === String(id))?.categoryName || '' }
 function displayAttributeName(name, attributes) { if (!name) return '-'; const attr = asArray(attributes).find(item => item.name === name); return attr?.displayName || name }
@@ -2388,6 +2565,7 @@ function ensureArrayField(target, key) { if (!Array.isArray(target[key])) target
 function isNumeric(value) { return value !== '' && value != null && !Number.isNaN(Number(value)) }
 function numericOrNull(value) { return isNumeric(value) ? Number(value) : null }
 function stringValue(value) { return value == null ? '' : String(value).trim() }
+function stringId(value) { return value == null ? '' : String(value) }
 function normalizeDataType(value, fallback, allowed) { const text = String(value || '').toUpperCase(); return allowed.includes(text) ? text : fallback }
 function makeUiKey(prefix) { return prefix + '_' + Math.random().toString(36).substr(2, 9) }
 function findKeyByName(rows, name) { return asArray(rows).find(item => item.name === name)?._key || '' }
@@ -2647,25 +2825,6 @@ onMounted(loadData)
 .anchor-section { scroll-margin-top: 8px; }
 .industrial-section { margin-bottom: 10px; padding-top: 4px; }
 .anchor-section > h2, .industrial-section > h2 { margin: 0 0 8px !important; color: #111827; font-size: 16px; line-height: 1.35; }
-.list-tools { padding: 10px; border-bottom: 1px solid #e5e7eb; background: #fff; }
-.model-tree-tools { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
-.category-model-tree { background: transparent; }
-.category-model-tree :deep(.el-tree-node__content) { min-height: 36px; height: auto; border-bottom: 1px solid #e2e8f0; }
-.category-model-tree :deep(.el-tree-node__content:hover) { background: #eef6ff; }
-.category-model-node { width: 100%; min-width: 0; padding: 4px 6px 4px 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
-.category-model-node.category .node-title { color: #334155; font-weight: 800; }
-.category-model-node.model .node-title { color: #0f172a; font-weight: 700; }
-.category-model-node.model.active { box-shadow: inset 3px 0 0 #2563eb; background: #dbeafe; }
-.category-model-node .node-title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.category-model-node .node-meta { color: #64748b; font-size: 12px; white-space: nowrap; }
-.model-list { flex: 1; min-height: 0; padding: 8px; background: #f8fafc; }
-.model-row { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 3px; border: 1px solid #e5e7eb; background: #fff; border-radius: 4px; padding: 9px 10px; text-align: left; cursor: pointer; color: var(--color-text-main); }
-.model-row + .model-row { margin-top: 6px; }
-.model-row:hover { background: #f3f6fa; border-color: #cbd5e1; }
-.model-row.active { background: #e8f1fb; border-color: #7fb3e8; box-shadow: inset 3px 0 0 #1d4ed8; }
-.model-name { max-width: 100%; font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.model-meta, .model-summary { max-width: 100%; color: var(--color-text-sub); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.list-footer { flex-shrink: 0; padding: 10px 12px; border-top: 1px solid #e5e7eb; }
 .detail-panel { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
 .global-top-bar { flex-shrink: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 !important; padding: 10px 14px !important; background: #fff; border-bottom: 1px solid #e5e7eb !important; }
 .global-toolbar-title { color: #0f172a; font-size: 16px; font-weight: 750; }
@@ -2933,6 +3092,21 @@ onMounted(loadData)
 .drawer-section .editor-card { padding: 8px; }
 .drawer-section .editor-card-list { gap: 8px; }
 
+
+.category-detail-scroll { flex: 1; min-height: 0; background: #f8fafc; }
+.category-detail-scroll :deep(.el-scrollbar__view) { padding: 12px 14px 18px; }
+.category-stat-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+.category-stat-item { min-width: 0; display: grid; gap: 5px; padding: 10px 12px; border: 1px solid #dbe4ef; border-left: 3px solid #2563eb; border-radius: 4px; background: #fff; }
+.category-stat-item span { color: #64748b; font-size: 12px; font-weight: 700; }
+.category-stat-item strong { color: #0f172a; font-size: 22px; line-height: 1; }
+.category-section { margin-top: 10px; }
+.category-child-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px; }
+.category-child-item { display: flex; min-width: 0; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border: 1px solid #dbe4ef; border-radius: 4px; background: #fff; color: #0f172a; cursor: pointer; text-align: left; }
+.category-child-item:hover { border-color: #93c5fd; background: #eff6ff; }
+.category-child-item span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 700; }
+.category-child-item em { color: #64748b; font-size: 12px; font-style: normal; }
+.compact-category-table :deep(.el-table__cell) { padding: 7px 8px; }
+
 @media (max-width: 1120px) { .content-shell { grid-template-columns: 240px minmax(0, 1fr); } .model-json-grid { grid-template-columns: 1fr; } }
 @media (max-width: 820px) { .state-card-grid { grid-template-columns: 1fr; } .device-model-page { padding: 10px; } .page-header, .detail-head { align-items: stretch; flex-direction: column; } .content-shell { grid-template-columns: 1fr; } .model-list-panel { min-height: 260px; } .drawer-tabs :deep(.el-tabs__header) { width: 92px; } .registered-adapter-picker, .function-map-selects, .param-map-row, .param-map-row.fixed, .action-row { grid-template-columns: 1fr; } .mapping-direction { display: none; } .summary-card-body { padding-left: 0; } }
 
@@ -2962,7 +3136,104 @@ onMounted(loadData)
 .action-editor-label { color: #64748b; font-size: 12px; }
 .no-action-cell { display: inline-flex; align-items: center; gap: 8px; color: #64748b; }
 .compact-action-btn { padding: 4px 8px; }
+/* Device model workbench refinements */
+.model-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 1px;
+  flex-shrink: 0;
+  border-top: 1px solid #dfe6ef;
+  border-bottom: 1px solid #dfe6ef;
+  background: #dfe6ef;
+}
+.model-summary-strip > div {
+  min-width: 0;
+  padding: 8px 12px;
+  background: #f8fafc;
+}
+.model-summary-strip span {
+  display: block;
+  margin-bottom: 3px;
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+}
+.model-summary-strip strong {
+  display: block;
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 14px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.model-detail-workbench,
+.model-edit-workbench {
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+.model-detail-workbench { height: calc(100vh - 246px); }
+.model-edit-workbench { height: calc(100vh - 120px); }
+.detail-anchor-menu {
+  width: 168px;
+  flex-shrink: 0;
+  padding: 10px 8px;
+  background: #f8fafc;
+  border-right: 1px solid #dfe3ea !important;
+}
+.detail-anchor-menu :deep(.el-anchor__link) {
+  margin-bottom: 3px;
+  padding: 8px 10px;
+  border-radius: 4px;
+  color: #475569;
+  font-size: 13px;
+  font-weight: 650;
+}
+.detail-anchor-menu :deep(.el-anchor__link.is-active) {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+.detail-scroll-content,
+.edit-scroll-content {
+  flex: 1;
+  min-width: 0;
+}
+.detail-scroll-content :deep(.el-scrollbar__view),
+.edit-scroll-content :deep(.el-scrollbar__view) {
+  padding: 12px 14px 22px;
+}
+.section-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 8px !important;
+  padding: 0 0 7px;
+  border-bottom: 1px solid #dfe6ef;
+  color: #0f172a;
+  font-size: 16px;
+  font-weight: 800;
+}
+.section-index {
+  display: inline-flex;
+  width: 30px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #bfdbfe;
+  border-radius: 4px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font-size: 12px;
+  font-weight: 800;
+}
+.anchor-section.industrial-section {
+  margin-bottom: 12px;
+  padding-top: 2px;
+}
+.anchor-section .info-section,
+.drawer-section {
+  border-radius: 4px;
+}
+
 </style>
-
-
-

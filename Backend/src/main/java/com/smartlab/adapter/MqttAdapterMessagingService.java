@@ -8,6 +8,7 @@ import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.resource.adapter.AdapterRouteDTO;
 import com.smartlab.management.entity.resource.adapter.AdapterIndex;
 import com.smartlab.management.service.db.resource.adapter.AdapterIndexService;
+import com.smartlab.management.service.protocol.AdapterPayloadMapperService;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
 import org.eclipse.paho.client.mqttv3.MqttCallback;
 import org.eclipse.paho.client.mqttv3.MqttClient;
@@ -23,8 +24,10 @@ import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import jakarta.annotation.PreDestroy;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -34,6 +37,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executor;
 
 /**
@@ -52,6 +56,7 @@ public class MqttAdapterMessagingService implements MqttCallback {
     private final Executor executor;
     private final Set<String> subscribedTopics = ConcurrentHashMap.newKeySet();
     private final Map<String, Map<String, Object>> pendingAdapterRegistrations = new ConcurrentHashMap<>();
+    private final List<SseEmitter> registrationEmitters = new CopyOnWriteArrayList<>();
 
     @Value("${mqtt.broker:tcp://localhost:1883}")
     private String broker;
@@ -156,18 +161,42 @@ public class MqttAdapterMessagingService implements MqttCallback {
         return list;
     }
 
+    public SseEmitter subscribePendingRegistrationEvents() {
+        SseEmitter emitter = new SseEmitter(0L);
+        registrationEmitters.add(emitter);
+        emitter.onCompletion(() -> registrationEmitters.remove(emitter));
+        emitter.onTimeout(() -> registrationEmitters.remove(emitter));
+        emitter.onError(error -> registrationEmitters.remove(emitter));
+        try {
+            emitter.send(SseEmitter.event().name("pending_snapshot").data(pendingAdapterRegistrations()));
+        } catch (IOException | IllegalStateException e) {
+            registrationEmitters.remove(emitter);
+        }
+        return emitter;
+    }
+
     public AdapterIndex completePendingAdapterRegistration(String adapterName) {
+        return completePendingAdapterRegistration(adapterName, null);
+    }
+
+    public AdapterIndex completePendingAdapterRegistration(String adapterName, JsonNode reviewedConfig) {
         if (adapterName == null || adapterName.isBlank()) {
             throw new IllegalArgumentException("Adapter 标识名不能为空");
         }
-        Map<String, Object> pending = pendingAdapterRegistrations.remove(adapterName.trim());
+        String key = adapterName.trim();
+        Map<String, Object> pending = pendingAdapterRegistrations.get(key);
         if (pending == null) {
             throw new IllegalArgumentException("没有待确认的 Adapter 注册请求: " + adapterName);
         }
         Object payload = pending.get("payload");
         Map<String, Object> registerPayload = JsonNodeSupport.MAPPER.convertValue(payload, new TypeReference<>() {
         });
+        if (reviewedConfig != null && !reviewedConfig.isNull()) {
+            registerPayload.put("parsedConfig", reviewedConfig);
+        }
         AdapterIndex adapter = adapterIndexService.register(registerPayload);
+        pendingAdapterRegistrations.remove(key);
+        emitRegistrationEvent("pending_snapshot", pendingAdapterRegistrations());
         if (adapter != null) {
             trySubscribeAdapterHeartbeat(adapter.getAdapterName());
         }
@@ -177,6 +206,17 @@ public class MqttAdapterMessagingService implements MqttCallback {
     public void discardPendingAdapterRegistration(String adapterName) {
         if (adapterName != null) {
             pendingAdapterRegistrations.remove(adapterName.trim());
+            emitRegistrationEvent("pending_snapshot", pendingAdapterRegistrations());
+        }
+    }
+
+    private void emitRegistrationEvent(String eventName, Object data) {
+        for (SseEmitter emitter : registrationEmitters) {
+            try {
+                emitter.send(SseEmitter.event().name(eventName).data(data));
+            } catch (IOException | IllegalStateException e) {
+                registrationEmitters.remove(emitter);
+            }
         }
     }
 
@@ -285,11 +325,19 @@ public class MqttAdapterMessagingService implements MqttCallback {
             pending.put("rawConfigFormat", body.getOrDefault("rawConfigFormat", "JSON"));
             pending.put("timestamp", body.get("timestamp"));
             pending.put("receivedAt", Instant.now().toString());
+            int categoryCount = manifest.path("deviceCategories").size();
+            int devicePointCount = 0;
+            for (JsonNode categoryNode : manifest.path("deviceCategories")) {
+                devicePointCount += categoryNode.path("devicePoints").size();
+            }
             pending.put("parsedConfig", manifest);
-            pending.put("templateCount", manifest.path("deviceTemplates").size());
-            pending.put("devicePointCount", manifest.path("devicePoints").size());
+            pending.put("categoryCount", categoryCount);
+            pending.put("templateCount", categoryCount);
+            pending.put("devicePointCount", devicePointCount);
             pending.put("payload", body);
             pendingAdapterRegistrations.put(adapterName, pending);
+            emitRegistrationEvent("adapter_register_request", pending);
+            emitRegistrationEvent("pending_snapshot", pendingAdapterRegistrations());
             log.info("收到 Adapter 注册请求，已进入待确认队列: {}", adapterName);
             return;
         }

@@ -96,11 +96,21 @@ public class AdapterIndexController {
         }
     }
 
+    @GetMapping("/{adapterName}/categories")
+    public ApiResponse<JsonNode> categories(@PathVariable String adapterName) {
+        try {
+            return ApiResponse.ok(service.listAdapterCategories(adapterName));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
     @GetMapping("/{adapterName}/device-points")
     public ApiResponse<JsonNode> devicePoints(@PathVariable String adapterName,
-                                             @RequestParam(required = false) String templateName) {
+                                             @RequestParam(required = false) String templateName,
+                                             @RequestParam(required = false) String categoryName) {
         try {
-            return ApiResponse.ok(service.listDevicePoints(adapterName, templateName));
+            return ApiResponse.ok(service.listDevicePoints(adapterName, templateName, categoryName));
         } catch (Exception e) {
             return ApiResponse.fail(e.getMessage());
         }
@@ -108,14 +118,17 @@ public class AdapterIndexController {
 
     @GetMapping("/{adapterName}/adapter-contract")
     public ApiResponse<ObjectNode> adapterContract(@PathVariable String adapterName,
-                                                   @RequestParam String templateName) {
+                                                   @RequestParam(required = false) String templateName,
+                                                   @RequestParam(required = false) String categoryName) {
         try {
-            return ApiResponse.ok(service.buildAdapterContract(adapterName, templateName));
+            if ((templateName == null || templateName.isBlank()) && (categoryName == null || categoryName.isBlank())) {
+                return ApiResponse.fail("请选择 Adapter 类别或模板");
+            }
+            return ApiResponse.ok(service.buildAdapterContract(adapterName, templateName, categoryName));
         } catch (Exception e) {
             return ApiResponse.fail(e.getMessage());
         }
     }
-
     /**
      * 更新 Adapter 心跳。
      */

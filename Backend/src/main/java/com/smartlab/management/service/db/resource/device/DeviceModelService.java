@@ -11,7 +11,6 @@ import com.smartlab.management.dto.resource.device.DeviceModelSaveDTO;
 import com.smartlab.management.dto.resource.device.DeviceStateMachineSaveDTO;
 import com.smartlab.management.entity.resource.data.DataTemplateDetail;
 import com.smartlab.management.entity.resource.data.DataTemplateMain;
-import com.smartlab.management.entity.resource.device.DeviceCategory;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
 import com.smartlab.management.entity.resource.device.DeviceModels;
 import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
@@ -233,15 +232,11 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         }
         model.setModelName(payload.getModelName());
 
-        if (payload.getCategoryId() != null) {
-            model.setCategoryId(payload.getCategoryId());
-        } else if (payload.getCategoryName() != null && !payload.getCategoryName().isBlank()) {
-            DeviceCategory category = deviceCategoryService.findOrCreateByName(payload.getCategoryName());
-            if (category != null) {
-                model.setCategoryId(category.getId());
-            }
+        if (payload.getCategoryId() == null) {
+            throw new IllegalArgumentException("请选择设备类别");
         }
-
+        model.setCategoryId(payload.getCategoryId());
+        deviceCategoryService.requireLeafCategory(model.getCategoryId());
         model.setAttributes(payload.getAttributes());
         model.setCapabilities(payload.getCapabilities());
         model.setAdapterContract(payload.getAdapterContract());

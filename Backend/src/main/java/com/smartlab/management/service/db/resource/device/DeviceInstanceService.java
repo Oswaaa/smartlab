@@ -7,13 +7,16 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.common.PageResult;
+import com.smartlab.management.entity.resource.device.DeviceComponents;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
+import com.smartlab.management.entity.resource.device.DeviceModels;
 import com.smartlab.management.entity.resource.device.DeviceTwinStates;
 import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
+import com.smartlab.management.mapper.resource.device.DeviceModelsMapper;
 import com.smartlab.management.mapper.resource.device.DeviceTwinStatesMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import com.smartlab.management.service.db.resource.data.DataIndexService;
-import com.smartlab.adapter.AdapterPayloadMapperService;
+import com.smartlab.management.service.protocol.AdapterPayloadMapperService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -37,16 +40,22 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
     private final DeviceTwinStatesMapper twinStatesMapper;
     private final DataIndexService dataIndexService;
     private final AdapterPayloadMapperService protocolMapperService;
+    private final DeviceModelsMapper deviceModelsMapper;
+    private final DeviceComponentService deviceComponentService;
 
     public DeviceInstanceService(DeviceInstancesMapper mapper,
                                  DeviceTwinStatesMapper twinStatesMapper,
                                  DataIndexService dataIndexService,
-                                 AdapterPayloadMapperService protocolMapperService) {
+                                 AdapterPayloadMapperService protocolMapperService,
+                                 DeviceModelsMapper deviceModelsMapper,
+                                 DeviceComponentService deviceComponentService) {
         super(mapper);
         this.mapper = mapper;
         this.twinStatesMapper = twinStatesMapper;
         this.dataIndexService = dataIndexService;
         this.protocolMapperService = protocolMapperService;
+        this.deviceModelsMapper = deviceModelsMapper;
+        this.deviceComponentService = deviceComponentService;
     }
 
     @Override
@@ -136,12 +145,13 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
         if (instance.getId() == null) {
             instance.setCreateTime(OffsetDateTime.now());
             mapper.insert(instance);
-            createDefaultTwinState(instance.getId());
+            createDefaultTwinState(instance.getId(), instance.getDeviceModelId());
             dataIndexService.createDefaultDataSetsForDeviceInstance(
                     instance.getDeviceModelId(),
                     instance.getId(),
                     instance.getInstanceName()
             );
+            createComponentSlotsFromBom(instance.getId(), instance.getDeviceModelId());
         } else {
             mapper.updateById(instance);
         }
@@ -175,17 +185,54 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
         return twinStatesMapper.selectOne(Wrappers.<DeviceTwinStates>lambdaQuery().eq(DeviceTwinStates::getInstanceId, id));
     }
 
-    private void createDefaultTwinState(Long instanceId) {
+    private void createDefaultTwinState(Long instanceId, Long modelId) {
+        DeviceModels model = modelId == null ? null : deviceModelsMapper.selectById(modelId);
         DeviceTwinStates state = new DeviceTwinStates();
         state.setInstanceId(instanceId);
-        state.setCurrentOpState("IDLE");
-        state.setCurrentCmdState("IDLE");
-        state.setOnlineStatus("UNKNOWN");
+        state.setCurrentOpState(initialStateName(model == null ? null : model.getOpState(), "IDLE"));
+        state.setCurrentCmdState(initialStateName(model == null ? null : model.getCmdState(), "IDLE"));
+        state.setOnlineStatus("OFFLINE");
         state.setCurrentAttr(JsonNodeSupport.objectNode());
         state.setUpdateTime(OffsetDateTime.now());
         twinStatesMapper.insert(state);
     }
 
+    private String initialStateName(JsonNode stateSpace, String fallback) {
+        if (stateSpace != null && stateSpace.hasNonNull("initialStateName") && !stateSpace.path("initialStateName").asText().isBlank()) {
+            return stateSpace.path("initialStateName").asText();
+        }
+        return fallback;
+    }
+
+    private void createComponentSlotsFromBom(Long instanceId, Long modelId) {
+        if (instanceId == null || modelId == null) {
+            return;
+        }
+        DeviceModels model = deviceModelsMapper.selectById(modelId);
+        if (model == null || model.getComponentsBom() == null || !model.getComponentsBom().isArray()) {
+            return;
+        }
+        for (JsonNode item : model.getComponentsBom()) {
+            String slotName = text(item, "slotName", text(item, "componentName", text(item, "name", "")));
+            if (slotName == null || slotName.isBlank()) {
+                continue;
+            }
+            int quantity = Math.max(1, item.path("quantity").asInt(1));
+            for (int index = 1; index <= quantity; index++) {
+                DeviceComponents component = new DeviceComponents();
+                component.setComponentName(quantity > 1 ? slotName + "-" + index : slotName);
+                if (item.hasNonNull("categoryId") && !item.path("categoryId").asText().isBlank()) {
+                    component.setCategoryId(item.path("categoryId").asLong());
+                }
+                component.setParentInstanceId(instanceId);
+                component.setStatus("未配置");
+                component.setSpecification(JsonNodeSupport.objectNode());
+                component.setInstallTime(OffsetDateTime.now());
+                component.setCreateTime(OffsetDateTime.now());
+                deviceComponentService.save(component);
+            }
+        }
+    }
     private Set<Long> loadInstanceIds(Long modelId) {
         Set<Long> result = new HashSet<>();
         mapper.selectList(Wrappers.<DeviceInstances>lambdaQuery()

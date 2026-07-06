@@ -95,7 +95,7 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
      * 保存 AdapterRegisterRequest。rawConfigContent 是 adapter 自己提供的 manifest。
      */
     public AdapterIndex register(Map<String, Object> payload) {
-        ObjectNode manifest = previewRegisterPayload(payload);
+        ObjectNode manifest = manifestFromRegisterPayload(payload);
         String adapterName = manifest.path("adapterName").asText();
         AdapterIndex adapter = getByName(adapterName);
         if (adapter == null) {
@@ -110,39 +110,80 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
         return save(adapter);
     }
 
+    private ObjectNode manifestFromRegisterPayload(Map<String, Object> payload) {
+        Object reviewed = payload.get("parsedConfig");
+        if (reviewed instanceof ObjectNode objectNode) {
+            manifestService.validate(objectNode);
+            return objectNode;
+        }
+        if (reviewed instanceof JsonNode jsonNode) {
+            if (!jsonNode.isObject()) {
+                throw new IllegalArgumentException("审阅后的 Adapter 配置必须是 JSON 对象");
+            }
+            ObjectNode objectNode = jsonNode.deepCopy();
+            manifestService.validate(objectNode);
+            return objectNode;
+        }
+        if (reviewed != null) {
+            JsonNode node = JsonNodeSupport.MAPPER.valueToTree(reviewed);
+            if (!node.isObject()) {
+                throw new IllegalArgumentException("审阅后的 Adapter 配置必须是 JSON 对象");
+            }
+            ObjectNode objectNode = (ObjectNode) node;
+            manifestService.validate(objectNode);
+            return objectNode;
+        }
+        return previewRegisterPayload(payload);
+    }
+
     /**
      * 查询 Adapter 的模板列表。
      */
     public ArrayNode listTemplates(String adapterName) {
         AdapterIndex adapter = requireAdapter(adapterName);
         ArrayNode templates = JsonNodeSupport.arrayNode();
-        for (JsonNode template : adapter.getParsedConfig().path("deviceTemplates")) {
+        for (JsonNode category : adapter.getParsedConfig().path("deviceCategories")) {
+            ObjectNode template = category.path("deviceTemplate").deepCopy();
+            template.put("categoryName", category.path("categoryName").asText(""));
+            template.put("categoryDescription", category.path("categoryDescription").asText(""));
             templates.add(template);
         }
         return templates;
     }
 
-    /**
-     * 查询 Adapter 的设备点列表，可按模板过滤。
-     */
+    public ArrayNode listAdapterCategories(String adapterName) {
+        AdapterIndex adapter = requireAdapter(adapterName);
+        ArrayNode categories = JsonNodeSupport.arrayNode();
+        for (JsonNode category : adapter.getParsedConfig().path("deviceCategories")) {
+            categories.add(category);
+        }
+        return categories;
+    }
+
     public ArrayNode listDevicePoints(String adapterName, String templateName) {
+        return listDevicePoints(adapterName, templateName, null);
+    }
+
+    public ArrayNode listDevicePoints(String adapterName, String templateName, String categoryName) {
         AdapterIndex adapter = requireAdapter(adapterName);
         ArrayNode points = JsonNodeSupport.arrayNode();
-        for (JsonNode point : adapter.getParsedConfig().path("devicePoints")) {
-            if (templateName == null || templateName.isBlank() || templateName.equals(point.path("templateName").asText())) {
+        JsonNode category = manifestService.findCategory(adapter.getParsedConfig(), firstNonBlank(categoryName, templateName));
+        if (category != null) {
+            for (JsonNode point : category.path("devicePoints")) {
                 points.add(point);
             }
+            return points;
         }
         return points;
     }
 
-    /**
-     * 从 Adapter 模板生成当前设备模型 schema 兼容的 adapterContract。
-     */
     public ObjectNode buildAdapterContract(String adapterName, String templateName) {
-        return manifestService.buildAdapterContract(requireAdapter(adapterName), templateName);
+        return buildAdapterContract(adapterName, templateName, null);
     }
 
+    public ObjectNode buildAdapterContract(String adapterName, String templateName, String categoryName) {
+        return manifestService.buildAdapterContract(requireAdapter(adapterName), firstNonBlank(categoryName, templateName));
+    }
     public AdapterIndex requireAdapter(String adapterName) {
         AdapterIndex adapter = getByName(adapterName);
         if (adapter == null || adapter.getParsedConfig() == null) {
@@ -167,5 +208,11 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
 
     private String stringValue(Object value) {
         return value == null ? null : String.valueOf(value);
+    }
+    private String firstNonBlank(String first, String second) {
+        if (first != null && !first.isBlank()) {
+            return first;
+        }
+        return second;
     }
 }

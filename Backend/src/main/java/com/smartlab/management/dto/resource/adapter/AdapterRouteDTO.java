@@ -15,6 +15,7 @@ public class AdapterRouteDTO {
     private String boundAdapterName;
     private String boundDevicePoint;
     private String templateName;
+    private String categoryName;
     private JsonNode resolvedAttributes;
     private java.util.Map<String, String> rawToModelMap;
 }

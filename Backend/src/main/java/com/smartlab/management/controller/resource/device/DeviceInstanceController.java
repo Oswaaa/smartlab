@@ -9,7 +9,7 @@ import com.smartlab.management.entity.resource.device.DeviceInstances;
 import com.smartlab.management.entity.resource.device.DeviceTwinStates;
 import com.smartlab.adapter.MqttAdapterMessagingService;
 import com.smartlab.management.service.db.resource.device.DeviceInstanceService;
-import com.smartlab.adapter.AdapterPayloadMapperService;
+import com.smartlab.management.service.protocol.AdapterPayloadMapperService;
 import com.smartlab.engine.statemachine.StateMachineEngine;
 import org.springframework.web.bind.annotation.*;
 

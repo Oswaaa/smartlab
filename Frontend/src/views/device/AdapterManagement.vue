@@ -36,7 +36,7 @@
             @click="activeKey = adapterIdOf(item)"
           >
             <span class="adapter-name">{{ item.adapterName || '未命名 Adapter' }}</span>
-            <span class="adapter-subline">{{ templateCount(item) }} 模板 / {{ pointCount(item) }} 点位</span>
+            <span class="adapter-subline">{{ categoryCount(item) }} 类别 / {{ templateCount(item) }} 模板 / {{ pointCount(item) }} 点位</span>
             <span class="adapter-status" :class="statusClass(item.status)">{{ statusLabel(item.status) }}</span>
           </button>
         </div>
@@ -77,8 +77,8 @@
                 <el-table-column label="对象" min-width="220">
                   <template #default="{ row }">
                     <div class="relation-name">
-                      <el-tag size="small" :type="row.nodeType === 'template' ? 'primary' : 'success'" effect="plain">
-                        {{ row.nodeType === 'template' ? '模板' : '点位' }}
+                      <el-tag size="small" :type="row.nodeType === 'category' ? 'warning' : (row.nodeType === 'template' ? 'primary' : 'success')" effect="plain">
+                        {{ row.nodeType === 'category' ? '类别' : (row.nodeType === 'template' ? '模板' : '点位') }}
                       </el-tag>
                       <strong>{{ row.label }}</strong>
                       <span v-if="row.nodeType === 'point'">{{ row.devicePoint }}</span>
@@ -90,7 +90,7 @@
                 </el-table-column>
                 <el-table-column label="模板能力" min-width="220">
                   <template #default="{ row }">
-                    <span v-if="row.nodeType === 'template'">{{ row.summary }}</span>
+                    <span v-if="row.nodeType === 'template' || row.nodeType === 'category'">{{ row.summary }}</span>
                     <span v-else>-</span>
                   </template>
                 </el-table-column>
@@ -207,8 +207,8 @@
           <el-table-column label="收到时间" min-width="160">
             <template #default="{ row }">{{ formatTime(row.receivedAt) }}</template>
           </el-table-column>
-          <el-table-column label="模板 / 点位" min-width="130">
-            <template #default="{ row }">{{ row.templateCount || asArray(row.parsedConfig?.deviceTemplates).length }} / {{ row.devicePointCount || asArray(row.parsedConfig?.devicePoints).length }}</template>
+          <el-table-column label="类别 / 模板 / 点位" min-width="150">
+            <template #default="{ row }">{{ pendingCategoryCount(row) }} / {{ pendingTemplateCount(row) }} / {{ pendingPointCount(row) }}</template>
           </el-table-column>
           <el-table-column label="格式" width="90">
             <template #default="{ row }">{{ row.rawConfigFormat || 'JSON' }}</template>
@@ -216,11 +216,43 @@
           <el-table-column label="操作" width="210" fixed="right">
             <template #default="{ row }">
               <el-button type="primary" size="small" :loading="registerLoading" @click="completePendingRegistration(row)">完成注册</el-button>
-              <el-button size="small" plain @click="registerPreview = row.parsedConfig">解析</el-button>
+              <el-button size="small" plain @click="reviewPendingRegistration(row)">审阅</el-button>
               <el-button size="small" type="danger" link @click="discardPendingRegistration(row)">忽略</el-button>
             </template>
           </el-table-column>
         </el-table>
+      </section>
+
+      <section v-if="registerPreview" class="register-review-panel">
+        <div class="drawer-section-head">
+          <h3>配置审阅</h3>
+          <span>{{ registerPreview.adapterName || selectedPendingAdapterName || '-' }}</span>
+        </div>
+        <el-form label-width="96px" size="small" class="review-form">
+          <el-form-item label="Adapter 说明">
+            <el-input v-model="registerPreview.adapterDescription" placeholder="用于管理页面显示，不影响 Adapter 底层协议" />
+          </el-form-item>
+        </el-form>
+        <el-table :data="adapterCategoriesOf(registerPreview)" border size="small" class="industrial-table review-table">
+          <el-table-column label="设备类别" min-width="150">
+            <template #default="{ row }"><strong>{{ row.categoryName || '-' }}</strong></template>
+          </el-table-column>
+          <el-table-column label="类别说明" min-width="190">
+            <template #default="{ row }"><el-input v-model="row.categoryDescription" size="small" placeholder="类别说明" /></template>
+          </el-table-column>
+          <el-table-column label="设备模板" min-width="150">
+            <template #default="{ row }">{{ row.deviceTemplate?.templateName || row.deviceTemplate?.name || '-' }}</template>
+          </el-table-column>
+          <el-table-column label="模板说明" min-width="210">
+            <template #default="{ row }"><el-input v-model="row.deviceTemplate.description" size="small" placeholder="模板说明" /></template>
+          </el-table-column>
+          <el-table-column label="能力摘要" min-width="220">
+            <template #default="{ row }">{{ asArray(row.deviceTemplate?.attributes).length }} 属性 / {{ asArray(row.deviceTemplate?.commands).length }} 命令 / {{ eventCount(row.deviceTemplate?.events) }} 事件 / {{ asArray(row.devicePoints).length }} 点位</template>
+          </el-table-column>
+        </el-table>
+        <div class="review-actions">
+          <el-button type="primary" :disabled="!selectedPendingAdapterName" :loading="registerLoading" @click="completeReviewedRegistration">按当前审阅完成注册</el-button>
+        </div>
       </section>
 
       <details class="manual-register-panel">
@@ -252,8 +284,8 @@
 
         <section v-if="registerPreview" class="preview-box">
           <div><span>Adapter</span><strong>{{ registerPreview.adapterName }}</strong></div>
-          <div><span>模板</span><strong>{{ asArray(registerPreview.deviceTemplates).length }}</strong></div>
-          <div><span>设备点</span><strong>{{ asArray(registerPreview.devicePoints).length }}</strong></div>
+          <div><span>类别</span><strong>{{ adapterCategoriesOf(registerPreview).length }}</strong></div>
+          <div><span>点位</span><strong>{{ adapterPointsOf(registerPreview).length }}</strong></div>
         </section>
 
         <div class="manual-actions">
@@ -272,7 +304,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Connection, Delete, Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
@@ -291,7 +323,9 @@ const registerLoading = ref(false)
 const pendingLoading = ref(false)
 const pendingRegistrations = ref([])
 const registerPreview = ref(null)
+const selectedPendingAdapterName = ref('')
 const registerForm = reactive({ adapterName: '', rawConfigFormat: 'JSON', rawConfigContent: '' })
+let registrationStream = null
 
 const fetchData = async () => {
   loading.value = true
@@ -359,29 +393,41 @@ const filteredAdapters = computed(() => {
 
 const activeAdapter = computed(() => adapters.value.find(item => adapterIdOf(item) === activeKey.value) || null)
 const activeConfig = computed(() => parsedConfigOf(activeAdapter.value))
-const activeTemplates = computed(() => asArray(activeConfig.value.deviceTemplates))
-const activePoints = computed(() => asArray(activeConfig.value.devicePoints))
+const activeCategories = computed(() => adapterCategoriesOf(activeConfig.value))
+const activeTemplates = computed(() => activeCategories.value.map(category => ({
+  ...category.deviceTemplate,
+  categoryName: category.categoryName,
+  categoryDescription: category.categoryDescription
+})))
+const activePoints = computed(() => adapterPointsOf(activeConfig.value))
 const activeCommands = computed(() => activeTemplates.value.flatMap(tpl => asArray(tpl.commands)))
 const activeEvents = computed(() => activeTemplates.value.flatMap(tpl => eventList(tpl.events)))
 const activeConfigText = computed(() => JSON.stringify(activeConfig.value || {}, null, 2))
-const templatePointTree = computed(() => activeTemplates.value.map(tpl => {
-  const templateName = tpl.templateName || tpl.name || '未命名模板'
-  const children = activePoints.value
-    .filter(point => String(point.templateName || '') === String(templateName))
-    .map(point => ({
-      ...point,
-      id: `point:${templateName}:${point.devicePoint}`,
-      nodeType: 'point',
-      label: point.description || point.devicePoint || '未命名点位',
-      templateName
-    }))
+const templatePointTree = computed(() => activeCategories.value.map(category => {
+  const template = category.deviceTemplate || {}
+  const templateName = template.templateName || template.name || category.categoryName || '\u672a\u547d\u540d\u6a21\u677f'
+  const categoryName = category.categoryName || templateName
+  const pointChildren = asArray(category.devicePoints).map(point => ({
+    ...point,
+    id: `point:${categoryName}:${point.devicePoint}`,
+    nodeType: 'point',
+    label: point.description || point.devicePoint || '\u672a\u547d\u540d\u70b9\u4f4d',
+    templateName
+  }))
   return {
-    id: `template:${templateName}`,
-    nodeType: 'template',
-    label: tpl.description || templateName,
+    id: `category:${categoryName}`,
+    nodeType: 'category',
+    label: category.categoryDescription || categoryName,
     templateName,
-    summary: `${asArray(tpl.attributes).length} 属性 / ${asArray(tpl.commands).length} 命令 / ${eventCount(tpl.events)} 事件`,
-    children
+    summary: `${asArray(template.attributes).length} 属性 / ${asArray(template.commands).length} 命令 / ${eventCount(template.events)} 事件`,
+    children: [{
+      id: `template:${categoryName}:${templateName}`,
+      nodeType: 'template',
+      label: template.description || templateName,
+      templateName,
+      summary: `${asArray(template.attributes).length} 属性 / ${asArray(template.commands).length} 命令 / ${eventCount(template.events)} 事件`,
+      children: pointChildren
+    }]
   }
 }))
 const boundInstances = computed(() => {
@@ -397,27 +443,72 @@ const bindingTreeData = computed(() => {
       groups.set(modelId, {
         id: `model:${modelId}`,
         type: 'model',
-        label: `设备模型：${modelNameOf(modelId)}`,
-        meta: modelId ? `模型ID ${modelId}` : '未绑定模型',
+        label: `\u8bbe\u5907\u6a21\u578b:${modelNameOf(modelId)}`,
+        meta: modelId ? `\u6a21\u578bID ${modelId}` : '\u672a\u7ed1\u5b9a\u6a21\u578b',
         children: []
       })
     }
-    const point = boundDevicePointOf(instance) || '未绑定点位'
+    const point = boundDevicePointOf(instance) || '\u672a\u7ed1\u5b9a\u70b9\u4f4d'
     groups.get(modelId).children.push({
       id: `instance:${instance.instanceId || instance.id || instance.instanceName}`,
       type: 'instance',
-      label: instance.instanceName || '未命名实例',
-      meta: `实例ID ${instance.instanceId || instance.id || '-'}，点位 ${point}`,
-      children: [{ id: `point:${instance.instanceId || instance.id}:${point}`, type: 'point', label: `绑定点位：${point}`, meta: activeAdapter.value?.adapterName || '-' }]
+      label: instance.instanceName || '\u672a\u547d\u540d\u5b9e\u4f8b',
+      meta: `\u5b9e\u4f8bID ${instance.instanceId || instance.id || '-'}\uff0c\u70b9\u4f4d ${point}`,
+      children: [{ id: `point:${instance.instanceId || instance.id}:${point}`, type: 'point', label: `\u7ed1\u5b9a\u70b9\u4f4d:${point}`, meta: activeAdapter.value?.adapterName || '-' }]
     })
   })
   return Array.from(groups.values())
 })
 const mqttConnected = computed(() => mqttStatus.value?.connected === true || mqttStatus.value?.available === true || String(mqttStatus.value?.status || '').toUpperCase() === 'CONNECTED')
-const mqttStatusLabel = computed(() => mqttConnected.value ? 'Broker 在线' : 'Broker 未连接')
+const mqttStatusLabel = computed(() => mqttConnected.value ? 'Broker \u5728\u7ebf' : 'Broker \u672a\u8fde\u63a5')
+
+
+const connectRegistrationStream = () => {
+  if (registrationStream) return
+  try {
+    registrationStream = new EventSource('/api/adapter/protocol/pending-registrations/stream')
+    registrationStream.addEventListener('pending_snapshot', event => {
+      pendingRegistrations.value = asArray(JSON.parse(event.data || '[]'))
+    })
+    registrationStream.addEventListener('adapter_register_request', event => {
+      const item = JSON.parse(event.data || '{}')
+      if (!item?.adapterName) return
+      const index = pendingRegistrations.value.findIndex(row => row.adapterName === item.adapterName)
+      if (index >= 0) pendingRegistrations.value.splice(index, 1, item)
+      else pendingRegistrations.value.unshift(item)
+      selectedPendingAdapterName.value = item.adapterName
+      registerPreview.value = cloneJson(item.parsedConfig)
+    })
+    registrationStream.onerror = () => {
+      closeRegistrationStream()
+    }
+  } catch (error) {
+    registrationStream = null
+  }
+}
+
+const closeRegistrationStream = () => {
+  if (registrationStream) {
+    registrationStream.close()
+    registrationStream = null
+  }
+}
+
+const reviewPendingRegistration = (item) => {
+  selectedPendingAdapterName.value = item?.adapterName || ''
+  registerPreview.value = cloneJson(item?.parsedConfig || null)
+}
+
+const completeReviewedRegistration = () => {
+  if (!selectedPendingAdapterName.value) return
+  const item = pendingRegistrations.value.find(row => row.adapterName === selectedPendingAdapterName.value)
+  if (item) completePendingRegistration(item)
+}
 
 const openRegisterDrawer = () => {
   registerPreview.value = null
+  selectedPendingAdapterName.value = ''
+  connectRegistrationStream()
   registerForm.adapterName = ''
   registerForm.rawConfigFormat = 'JSON'
   registerForm.rawConfigContent = ''
@@ -439,13 +530,16 @@ const completePendingRegistration = async (item) => {
   if (!item?.adapterName) return
   registerLoading.value = true
   try {
-    const res = await axios.post(`/api/adapter/protocol/pending-registrations/${encodeURIComponent(item.adapterName)}/complete`)
+    const reviewedConfig = selectedPendingAdapterName.value === item.adapterName ? registerPreview.value : item.parsedConfig
+    const res = await axios.post(`/api/adapter/protocol/pending-registrations/${encodeURIComponent(item.adapterName)}/complete`, { parsedConfig: reviewedConfig || item.parsedConfig })
     if (!res.data?.success) {
       ElMessage.error(res.data?.message || '注册失败')
       return
     }
-    ElMessage.success('Adapter 已注册')
+    ElMessage.success('Adapter \u5df2\u6ce8\u518c')
     registerDrawerVisible.value = false
+    selectedPendingAdapterName.value = ''
+    registerPreview.value = null
     await fetchData()
     activeKey.value = adapterIdOf(res.data.data)
   } finally {
@@ -460,7 +554,7 @@ const discardPendingRegistration = async (item) => {
 }
 const parseRegisterConfig = async () => {
   if (!registerForm.rawConfigContent.trim()) {
-    ElMessage.warning('请先填写或上传配置内容')
+    ElMessage.warning('\u8bf7\u5148\u586b\u5199\u6216\u4e0a\u4f20\u914d\u7f6e\u5185\u5bb9')
     return
   }
   registerLoading.value = true
@@ -480,7 +574,7 @@ const parseRegisterConfig = async () => {
 
 const registerAdapter = async () => {
   if (!registerForm.rawConfigContent.trim()) {
-    ElMessage.warning('请先填写或上传配置内容')
+    ElMessage.warning('\u8bf7\u5148\u586b\u5199\u6216\u4e0a\u4f20\u914d\u7f6e\u5185\u5bb9')
     return
   }
   registerLoading.value = true
@@ -491,7 +585,7 @@ const registerAdapter = async () => {
       return
     }
     registerDrawerVisible.value = false
-    ElMessage.success('Adapter 已注册')
+    ElMessage.success('Adapter \u5df2\u6ce8\u518c')
     await fetchData()
     activeKey.value = adapterIdOf(res.data.data)
   } finally {
@@ -506,7 +600,7 @@ const deleteAdapter = async (adapter) => {
     ElMessage.error(res.data?.message || '删除失败')
     return
   }
-  ElMessage.success('已删除')
+  ElMessage.success('\u5df2\u5220\u9664')
   await fetchData()
 }
 
@@ -519,17 +613,22 @@ const importRegisterFile = (file) => {
   return false
 }
 
-const buildRegisterPayload = () => ({
-  adapterName: registerForm.adapterName || manifestAdapterName(registerForm.rawConfigContent),
-  rawConfigFormat: registerForm.rawConfigFormat,
-  rawConfigContent: registerForm.rawConfigContent,
-  timestamp: Date.now()
-})
+const buildRegisterPayload = () => {
+  const payload = {
+    adapterName: registerForm.adapterName || manifestAdapterName(registerForm.rawConfigContent),
+    rawConfigFormat: registerForm.rawConfigFormat,
+    rawConfigContent: registerForm.rawConfigContent,
+    timestamp: Date.now()
+  }
+  if (registerPreview.value) payload.parsedConfig = registerPreview.value
+  return payload
+}
 
 const manifestAdapterName = (content) => {
   try { return JSON.parse(content)?.adapterName || '' } catch { return '' }
 }
 
+const cloneJson = value => value == null ? null : JSON.parse(JSON.stringify(value))
 const asArray = value => Array.isArray(value) ? value : []
 const adapterIdOf = adapter => String(adapter?.id || adapter?.adapterName || '')
 const parsedConfigOf = adapter => {
@@ -539,8 +638,16 @@ const parsedConfigOf = adapter => {
   }
   return adapter.parsedConfig || {}
 }
-const templateCount = adapter => asArray(parsedConfigOf(adapter).deviceTemplates).length
-const pointCount = adapter => asArray(parsedConfigOf(adapter).devicePoints).length
+const adapterCategoriesOf = config => asArray(config?.deviceCategories)
+const adapterPointsOf = config => adapterCategoriesOf(config).flatMap(category =>
+  asArray(category.devicePoints).map(point => ({ ...point, categoryName: category.categoryName }))
+)
+const categoryCount = adapter => adapterCategoriesOf(parsedConfigOf(adapter)).length
+const pendingCategoryCount = row => adapterCategoriesOf(row?.parsedConfig).length
+const pendingTemplateCount = row => adapterCategoriesOf(row?.parsedConfig).length
+const pendingPointCount = row => adapterPointsOf(row?.parsedConfig).length
+const templateCount = adapter => adapterCategoriesOf(parsedConfigOf(adapter)).length
+const pointCount = adapter => adapterPointsOf(parsedConfigOf(adapter)).length
 const modelNameOf = id => models.value[String(id)] || String(id || '-')
 const boundAdapterOf = instance => instance?.boundAdapterName || instance?.instanceConfig?.boundAdapterName || instance?.instanceConfig?.adapterName || ''
 const boundDevicePointOf = instance => instance?.boundDevicePoint || instance?.instanceConfig?.boundDevicePoint || instance?.instanceConfig?.devicePoint || ''
@@ -554,7 +661,11 @@ const eventList = events => [
 const eventCount = events => eventList(events).length
 const visibleCommandParams = command => asArray(command?.parameters || command?.commandParameters).filter(param => !param.hidden)
 
-onMounted(fetchData)
+onMounted(() => {
+  fetchData()
+  connectRegistrationStream()
+})
+onUnmounted(closeRegistrationStream)
 </script>
 
 <style scoped>
@@ -607,6 +718,10 @@ onMounted(fetchData)
 .drawer-section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
 .drawer-section-head h3 { margin: 0; color: #0f172a; font-size: 15px; }
 .drawer-section-head span { color: #64748b; font-size: 12px; }
+.register-review-panel { margin-top: 10px; padding: 10px; border: 1px solid #cbd5e1; background: #fff; }
+.review-form { margin-bottom: 8px; }
+.review-actions { height: 42px; display: flex; align-items: flex-end; justify-content: flex-end; }
+.review-table :deep(.el-input__wrapper) { box-shadow: none; border-radius: 0; }
 .manual-register-panel { margin-top: 10px; border: 1px solid #dbe4ef; border-radius: 6px; background: #fff; padding: 10px; }
 .manual-register-panel summary { cursor: pointer; color: #0f172a; font-weight: 700; }
 .manual-register-panel .register-form { margin-top: 10px; }
@@ -653,7 +768,7 @@ onMounted(fetchData)
 .binding-node.instance .binding-label { color: #1d4ed8; font-weight: 700; }
 .binding-node.point .binding-label { color: #059669; }
 .binding-meta { color: #64748b; font-size: 12px; }
-.register-flow-card, .pending-register-panel, .manual-register-panel, .preview-box { border-radius: 0; }
+.register-flow-card, .pending-register-panel, .register-review-panel, .manual-register-panel, .preview-box { border-radius: 0; }
 .preview-box { background: #fff; border-color: #cbd5e1; }
 @media (max-width: 1120px) { .adapter-workspace { grid-template-columns: 280px minmax(0, 1fr); } .template-grid, .command-grid, .metric-grid { grid-template-columns: 1fr; } }
 </style>

@@ -10,9 +10,6 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/device/component")
-/**
- * 复杂集成设备内部零部件/子组件生命周期管理控制器。
- */
 public class DeviceComponentController {
 
     private final DeviceComponentService service;
@@ -48,6 +45,42 @@ public class DeviceComponentController {
         }
     }
 
+    @PostMapping("/{id}/configure")
+    public ApiResponse<DeviceComponents> configure(@PathVariable Long id, @RequestBody DeviceComponents payload) {
+        try {
+            return ApiResponse.ok(service.configure(id, payload));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    @PostMapping("/{id}/discard")
+    public ApiResponse<DeviceComponents> discard(@PathVariable Long id) {
+        try {
+            return ApiResponse.ok(service.discard(id));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    @PostMapping("/{id}/replace")
+    public ApiResponse<DeviceComponents> replace(@PathVariable Long id, @RequestBody DeviceComponents payload) {
+        try {
+            return ApiResponse.ok(service.replace(id, payload));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    @GetMapping("/{id}/history")
+    public ApiResponse<List<DeviceComponents>> history(@PathVariable Long id) {
+        try {
+            return ApiResponse.ok(service.history(id));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
     @DeleteMapping("/delete/{id}")
     public ApiResponse<String> delete(@PathVariable Long id) {
         try {
@@ -58,4 +91,3 @@ public class DeviceComponentController {
         }
     }
 }
-

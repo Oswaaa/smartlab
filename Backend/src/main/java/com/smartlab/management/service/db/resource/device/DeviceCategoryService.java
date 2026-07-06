@@ -3,6 +3,7 @@ package com.smartlab.management.service.db.resource.device;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.smartlab.management.entity.resource.device.DeviceCategory;
 import com.smartlab.management.mapper.resource.device.DeviceCategoryMapper;
+import com.smartlab.management.mapper.resource.device.DeviceModelsMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
 
@@ -20,10 +21,12 @@ import java.time.OffsetDateTime;
 public class DeviceCategoryService extends ManagementCrudService<DeviceCategory> {
 
     private final DeviceCategoryMapper mapper;
+    private final DeviceModelsMapper deviceModelsMapper;
 
-    public DeviceCategoryService(DeviceCategoryMapper mapper) {
+    public DeviceCategoryService(DeviceCategoryMapper mapper, DeviceModelsMapper deviceModelsMapper) {
         super(mapper);
         this.mapper = mapper;
+        this.deviceModelsMapper = deviceModelsMapper;
     }
 
     @Override
@@ -39,6 +42,40 @@ public class DeviceCategoryService extends ManagementCrudService<DeviceCategory>
             entity.setCreateTime(OffsetDateTime.now());
         }
         return super.save(entity);
+    }
+    public boolean hasChildren(Long categoryId) {
+        if (categoryId == null) {
+            return false;
+        }
+        return mapper.selectCount(Wrappers.<DeviceCategory>lambdaQuery()
+                .eq(DeviceCategory::getParentCategoryId, categoryId)) > 0;
+    }
+
+    public boolean hasModels(Long categoryId) {
+        if (categoryId == null) {
+            return false;
+        }
+        return deviceModelsMapper.selectCount(Wrappers.<com.smartlab.management.entity.resource.device.DeviceModels>lambdaQuery()
+                .eq(com.smartlab.management.entity.resource.device.DeviceModels::getCategoryId, categoryId)) > 0;
+    }
+
+    public void requireLeafCategory(Long categoryId) {
+        if (categoryId != null && hasChildren(categoryId)) {
+            throw new IllegalArgumentException("设备模型只能挂在叶子类别下，请先选择最末级类别");
+        }
+    }
+
+    public void delete(Long id) {
+        if (id == null) {
+            return;
+        }
+        if (hasChildren(id)) {
+            throw new IllegalStateException("该类别下仍有子类别，不能删除");
+        }
+        if (hasModels(id)) {
+            throw new IllegalStateException("该类别下仍有设备模型，不能删除");
+        }
+        super.delete(id);
     }
     public DeviceCategory findOrCreateByName(String categoryName) {
         if (categoryName == null || categoryName.isBlank()) {

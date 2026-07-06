@@ -56,18 +56,24 @@ public class AdapterManifestService {
         ObjectNode manifest = JsonNodeSupport.objectNode();
         manifest.put("specVersion", text(root, "specVersion", SPEC_VERSION));
         manifest.put("adapterName", firstText(root, fallbackAdapterName, "adapterName", "name"));
+        manifest.put("adapterDescription", firstText(root, "", "adapterDescription", "description"));
         manifest.put("rawConfigFormat", rawConfigFormat == null ? text(root, "rawConfigFormat", "JSON") : rawConfigFormat);
 
-        ArrayNode templates = manifest.putArray("deviceTemplates");
-        for (JsonNode template : array(root.get("deviceTemplates"))) {
-            templates.add(normalizeTemplate(template));
+        ObjectNode registerMeta = manifest.putObject("registerMeta");
+        JsonNode sourceMeta = firstObject(root, "registerMeta", "meta");
+        registerMeta.put("rawConfigFormat", rawConfigFormat == null ? text(root, "rawConfigFormat", "JSON") : rawConfigFormat);
+        registerMeta.put("specVersion", sourceMeta == null ? text(root, "specVersion", SPEC_VERSION) : text(sourceMeta, "specVersion", text(root, "specVersion", SPEC_VERSION)));
+        if (sourceMeta != null && sourceMeta.hasNonNull("registeredAt")) {
+            registerMeta.set("registeredAt", sourceMeta.get("registeredAt"));
         }
 
-        ArrayNode points = manifest.putArray("devicePoints");
-        for (JsonNode point : array(root.get("devicePoints"))) {
-            points.add(normalizeDevicePoint(point));
+        ArrayNode categories = manifest.putArray("deviceCategories");
+        if (!root.has("deviceCategories")) {
+            throw new IllegalArgumentException("Adapter 配置必须使用 parsedConfig.deviceCategories 格式，不再兼容 deviceTemplates/devicePoints");
         }
-
+        for (JsonNode category : array(root.get("deviceCategories"))) {
+            categories.add(normalizeDeviceCategory(category));
+        }
         return manifest;
     }
 
@@ -81,35 +87,47 @@ public class AdapterManifestService {
         }
 
         Map<String, JsonNode> templates = new LinkedHashMap<>();
-        for (JsonNode template : array(manifest.get("deviceTemplates"))) {
+        Set<String> categoryNames = new HashSet<>();
+        for (JsonNode category : array(manifest.get("deviceCategories"))) {
+            String categoryName = category.path("categoryName").asText("");
+            if (categoryName.isBlank()) {
+                throw new IllegalArgumentException("deviceCategories 中存在空 categoryName");
+            }
+            if (!categoryNames.add(categoryName)) {
+                throw new IllegalArgumentException("deviceCategories 存在重复 categoryName: " + categoryName);
+            }
+            JsonNode template = category.path("deviceTemplate");
             String templateName = template.path("templateName").asText("");
             if (templateName.isBlank()) {
-                throw new IllegalArgumentException("deviceTemplates 中存在空 templateName");
+                throw new IllegalArgumentException("deviceCategory " + categoryName + " 缺少 deviceTemplate.templateName");
             }
             if (templates.put(templateName, template) != null) {
-                throw new IllegalArgumentException("deviceTemplates 存在重复 templateName: " + templateName);
+                throw new IllegalArgumentException("deviceTemplate 存在重复 templateName: " + templateName);
             }
             validateTemplate(template);
         }
         if (templates.isEmpty()) {
-            throw new IllegalArgumentException("Adapter manifest 至少需要一个 deviceTemplate");
+            throw new IllegalArgumentException("Adapter manifest 至少需要一个 deviceCategory/deviceTemplate");
         }
 
         Set<String> pointNames = new HashSet<>();
-        for (JsonNode point : array(manifest.get("devicePoints"))) {
-            String devicePoint = point.path("devicePoint").asText("");
-            String templateName = point.path("templateName").asText("");
-            if (devicePoint.isBlank()) {
-                throw new IllegalArgumentException("devicePoints 中存在空 devicePoint");
+        for (JsonNode category : array(manifest.get("deviceCategories"))) {
+            JsonNode template = category.path("deviceTemplate");
+            String templateName = template.path("templateName").asText("");
+            for (JsonNode point : array(category.get("devicePoints"))) {
+                String devicePoint = point.path("devicePoint").asText("");
+                if (devicePoint.isBlank()) {
+                    throw new IllegalArgumentException("devicePoints 中存在空 devicePoint");
+                }
+                if (!pointNames.add(devicePoint)) {
+                    throw new IllegalArgumentException("devicePoints 存在重复 devicePoint: " + devicePoint);
+                }
+                String pointTemplateName = point.path("templateName").asText(templateName);
+                if (!templateName.equals(pointTemplateName)) {
+                    throw new IllegalArgumentException("devicePoint " + devicePoint + " 引用了错误的 templateName: " + pointTemplateName);
+                }
+                validatePointAgainstTemplate(point, template);
             }
-            if (!pointNames.add(devicePoint)) {
-                throw new IllegalArgumentException("devicePoints 存在重复 devicePoint: " + devicePoint);
-            }
-            JsonNode template = templates.get(templateName);
-            if (template == null) {
-                throw new IllegalArgumentException("devicePoint " + devicePoint + " 引用了不存在的 templateName: " + templateName);
-            }
-            validatePointAgainstTemplate(point, template);
         }
     }
 
@@ -117,9 +135,21 @@ public class AdapterManifestService {
         if (manifest == null || templateName == null || templateName.isBlank()) {
             return null;
         }
-        for (JsonNode template : array(manifest.get("deviceTemplates"))) {
-            if (templateName.equals(template.path("templateName").asText())) {
-                return template;
+        JsonNode category = findCategory(manifest, templateName);
+        if (category != null) {
+            return category.path("deviceTemplate");
+        }
+        return null;
+    }
+
+    public JsonNode findCategory(JsonNode manifest, String categoryOrTemplateName) {
+        if (manifest == null || categoryOrTemplateName == null || categoryOrTemplateName.isBlank()) {
+            return null;
+        }
+        for (JsonNode category : array(manifest.get("deviceCategories"))) {
+            if (categoryOrTemplateName.equals(category.path("categoryName").asText())
+                    || categoryOrTemplateName.equals(category.path("deviceTemplate").path("templateName").asText())) {
+                return category;
             }
         }
         return null;
@@ -129,9 +159,11 @@ public class AdapterManifestService {
         if (manifest == null || devicePoint == null || devicePoint.isBlank()) {
             return null;
         }
-        for (JsonNode point : array(manifest.get("devicePoints"))) {
-            if (devicePoint.equals(point.path("devicePoint").asText())) {
-                return point;
+        for (JsonNode category : array(manifest.get("deviceCategories"))) {
+            for (JsonNode point : array(category.get("devicePoints"))) {
+                if (devicePoint.equals(point.path("devicePoint").asText())) {
+                    return point;
+                }
             }
         }
         return null;
@@ -146,16 +178,22 @@ public class AdapterManifestService {
         if (adapter == null || adapter.getParsedConfig() == null) {
             throw new IllegalArgumentException("Adapter 未注册或没有解析后的配置");
         }
-        JsonNode template = findTemplate(adapter.getParsedConfig(), templateName);
-        if (template == null) {
+        JsonNode category = findCategory(adapter.getParsedConfig(), templateName);
+        JsonNode template = category == null ? findTemplate(adapter.getParsedConfig(), templateName) : category.path("deviceTemplate");
+        if (template == null || template.isMissingNode() || template.isNull()) {
             throw new IllegalArgumentException("Adapter 模板不存在: " + templateName);
         }
+        String resolvedTemplateName = template.path("templateName").asText(templateName);
 
         ObjectNode contract = JsonNodeSupport.objectNode();
         ObjectNode config = contract.putObject("config");
         config.put("protocol", "MQTT");
         config.put("adapterName", adapter.getAdapterName());
-        config.put("templateName", templateName);
+        config.put("templateName", resolvedTemplateName);
+        if (category != null) {
+            config.put("categoryName", category.path("categoryName").asText(""));
+            config.put("categoryDescription", category.path("categoryDescription").asText(""));
+        }
 
         ArrayNode commands = contract.putArray("commands");
         for (JsonNode command : array(template.get("commands"))) {
@@ -215,6 +253,30 @@ public class AdapterManifestService {
         };
     }
 
+    private ObjectNode normalizeDeviceCategory(JsonNode category) {
+        ObjectNode node = JsonNodeSupport.objectNode();
+        String categoryName = firstText(category, "", "categoryName", "name", "deviceCategory", "templateName");
+        JsonNode sourceTemplate = firstObject(category, "deviceTemplate", "template");
+        if (sourceTemplate == null) {
+            sourceTemplate = category;
+        }
+        ObjectNode template = normalizeTemplate(sourceTemplate);
+        if (categoryName.isBlank()) {
+            categoryName = template.path("templateName").asText("");
+        }
+        node.put("categoryName", categoryName);
+        node.put("categoryDescription", firstText(category, template.path("description").asText(""), "categoryDescription", "description"));
+        node.set("deviceTemplate", template);
+        ArrayNode points = node.putArray("devicePoints");
+        String templateName = template.path("templateName").asText("");
+        for (JsonNode point : array(category.get("devicePoints"))) {
+            ObjectNode normalizedPoint = normalizeDevicePoint(point, templateName);
+            normalizedPoint.put("categoryName", categoryName);
+            points.add(normalizedPoint);
+        }
+        return node;
+    }
+
     private ObjectNode normalizeTemplate(JsonNode template) {
         ObjectNode node = JsonNodeSupport.objectNode();
         node.put("templateName", firstText(template, "", "templateName", "name", "deviceType"));
@@ -251,6 +313,10 @@ public class AdapterManifestService {
     }
 
     private ObjectNode normalizeDevicePoint(JsonNode point) {
+        return normalizeDevicePoint(point, firstText(point, "", "templateName", "deviceTemplate", "type"));
+    }
+
+    private ObjectNode normalizeDevicePoint(JsonNode point, String defaultTemplateName) {
         ObjectNode node = JsonNodeSupport.objectNode();
         if (point != null && point.isObject()) {
             Iterator<Map.Entry<String, JsonNode>> fields = point.fields();
@@ -260,7 +326,7 @@ public class AdapterManifestService {
             }
         }
         node.put("devicePoint", firstText(point, "", "devicePoint", "name", "point"));
-        node.put("templateName", firstText(point, "", "templateName", "deviceTemplate", "type"));
+        node.put("templateName", firstText(point, defaultTemplateName == null ? "" : defaultTemplateName, "templateName", "deviceTemplate", "type"));
         node.put("description", text(point, "description", ""));
         ObjectNode mapping = JsonNodeSupport.objectNode();
         JsonNode sourceMapping = firstNode(point, "attributeMapping", "attributeBindings", "attributesMapping");
@@ -407,10 +473,9 @@ public class AdapterManifestService {
         String resolvedAdapterName = Objects.toString(sections.getOrDefault("ADAPTER", Map.of()).get("NAME"), adapterName);
         ObjectNode manifest = JsonNodeSupport.objectNode();
         manifest.put("adapterName", resolvedAdapterName);
-        ArrayNode templates = manifest.putArray("deviceTemplates");
-        ArrayNode points = manifest.putArray("devicePoints");
+        ArrayNode categories = manifest.putArray("deviceCategories");
 
-        Map<String, ObjectNode> templateByName = new LinkedHashMap<>();
+        Map<String, ObjectNode> categoryByName = new LinkedHashMap<>();
         Map<String, Set<String>> templateAttrNames = new LinkedHashMap<>();
         String deviceList = sections.getOrDefault("DEVICES", Map.of()).getOrDefault("LIST", "");
         for (String device : deviceList.split(",")) {
@@ -419,8 +484,11 @@ public class AdapterManifestService {
                 continue;
             }
             String templateName = inferTemplateName(devicePoint);
-            ObjectNode template = templateByName.computeIfAbsent(templateName, name -> {
-                ObjectNode created = templates.addObject();
+            ObjectNode category = categoryByName.computeIfAbsent(templateName, name -> {
+                ObjectNode createdCategory = categories.addObject();
+                createdCategory.put("categoryName", name);
+                createdCategory.put("categoryDescription", "从 INI 配置解析的 " + name + " 类别");
+                ObjectNode created = createdCategory.putObject("deviceTemplate");
                 created.put("templateName", name);
                 created.put("description", "从 INI 配置解析的 " + name + " 模板");
                 created.putArray("attributes");
@@ -428,13 +496,16 @@ public class AdapterManifestService {
                 ObjectNode events = created.putObject("events");
                 events.putArray("cmdEvents");
                 events.putArray("opEvents");
+                createdCategory.putArray("devicePoints");
                 templateAttrNames.put(name, new HashSet<>());
-                return created;
+                return createdCategory;
             });
+            ObjectNode template = (ObjectNode) category.get("deviceTemplate");
 
-            ObjectNode point = points.addObject();
+            ObjectNode point = ((ArrayNode) category.get("devicePoints")).addObject();
             point.put("devicePoint", devicePoint);
             point.put("templateName", templateName);
+            point.put("categoryName", templateName);
             point.put("description", devicePoint);
             ObjectNode mapping = point.putObject("attributeMapping");
             Map<String, Integer> semanticCounters = new LinkedHashMap<>();

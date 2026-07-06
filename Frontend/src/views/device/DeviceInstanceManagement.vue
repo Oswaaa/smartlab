@@ -75,8 +75,8 @@
             <el-table-column label="Adapter / 设备点" min-width="220">
               <template #default="{ row }">
                 <div class="binding-cell">
-                  <span><b>Adapter</b>{{ row.boundAdapterName || row.commConfig?.boundAdapterName || '未分配' }}</span>
-                  <span><b>设备点</b>{{ row.boundDevicePoint || row.commConfig?.boundDevicePoint || '未分配' }}</span>
+                  <span><b>Adapter</b>{{ row.boundAdapterName || row.commConfig?.boundAdapterName || '\u672a\u5206\u914d' }}</span>
+                  <span><b>\u8bbe\u5907\u70b9</b>{{ row.boundDevicePoint || row.commConfig?.boundDevicePoint || '\u672a\u5206\u914d' }}</span>
                 </div>
               </template>
             </el-table-column>
@@ -283,32 +283,38 @@
 
           <el-tab-pane label="结构拓扑" name="components">
             <section class="component-create-panel" v-if="canEditInstance">
-              <el-input v-model="componentForm.componentName" size="small" placeholder="组件名称" />
+              <el-input v-model="componentForm.componentName" size="small" placeholder="新增槽位名称" />
               <el-select v-model="componentForm.categoryId" size="small" clearable filterable placeholder="组件类别">
                 <el-option v-for="cat in categories" :key="String(cat.id)" :label="cat.categoryName" :value="String(cat.id)" />
               </el-select>
-              <el-select v-model="componentForm.selfInstanceId" size="small" clearable filterable placeholder="关联设备实例">
-                <el-option v-for="item in instances" :key="item.instanceId" :label="item.instanceName" :value="item.instanceId" />
-              </el-select>
-              <el-select v-model="componentForm.status" size="small" placeholder="状态">
-                <el-option label="使用中" value="使用中" />
-                <el-option label="已更换" value="已更换" />
-                <el-option label="已废弃" value="已废弃" />
-              </el-select>
-              <el-button type="primary" size="small" :loading="savingComponent" @click="saveComponent">添加组件</el-button>
+              <el-button type="primary" size="small" :loading="savingComponent" @click="saveComponent">新增槽位</el-button>
             </section>
-            <el-table :data="instanceComponents" border size="small" v-loading="loadingComponents">
-              <el-table-column label="组件名" min-width="150" prop="componentName" />
+            <el-table :data="instanceComponents" border size="small" v-loading="loadingComponents" class="component-table">
+              <el-table-column label="组件槽位" min-width="150" prop="componentName" />
               <el-table-column label="类别" min-width="130">
                 <template #default="{ row }">{{ categoryNameById(row.categoryId) || '-' }}</template>
               </el-table-column>
-              <el-table-column label="关联实例" min-width="130">
+              <el-table-column label="绑定实例" min-width="150">
                 <template #default="{ row }">{{ instanceNameById(row.selfInstanceId) }}</template>
               </el-table-column>
-              <el-table-column label="状态" width="100" prop="status" />
-              <el-table-column v-if="canEditInstance" label="操作" width="82" align="center">
+              <el-table-column label="状态" width="110">
                 <template #default="{ row }">
-                  <el-popconfirm title="确认删除该组件？" @confirm="deleteComponent(row)">
+                  <el-tag size="small" :type="componentStatusType(row.status)" effect="plain">{{ row.status || '未配置' }}</el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column label="安装时间" min-width="150">
+                <template #default="{ row }">{{ formatTime(row.installTime) }}</template>
+              </el-table-column>
+              <el-table-column label="规格" min-width="180">
+                <template #default="{ row }"><code>{{ componentSpecBrief(row.specification) }}</code></template>
+              </el-table-column>
+              <el-table-column v-if="canEditInstance" label="操作" width="230" fixed="right">
+                <template #default="{ row }">
+                  <el-button v-if="!row.selfInstanceId && row.status !== '使用中'" link type="primary" size="small" @click="openComponentAction(row, 'configure')">配置</el-button>
+                  <el-button v-else link type="primary" size="small" @click="openComponentAction(row, 'replace')">更换</el-button>
+                  <el-button link size="small" @click="showComponentHistory(row)">历史</el-button>
+                  <el-button link type="warning" size="small" @click="discardComponent(row)">废弃</el-button>
+                  <el-popconfirm title="确认删除该组件槽位？" @confirm="deleteComponent(row)">
                     <template #reference><el-button link type="danger" size="small">删除</el-button></template>
                   </el-popconfirm>
                 </template>
@@ -325,15 +331,13 @@
               <el-button type="primary" size="small" :loading="creatingDataSet" @click="createDataSetForInstance">绑定模板建表</el-button>
             </div>
             <el-table :data="instanceDataSets" border size="small" v-loading="loadingDataSets">
-              <el-table-column prop="id" label="数据集ID" width="80" />
-              <el-table-column prop="dataDesc" label="数据集描述" min-width="150" />
-              <el-table-column prop="dataTable" label="底层物理表" min-width="150" />
-              <el-table-column prop="createTime" label="创建时间" min-width="150">
-                <template #default="{ row }">
-                  {{ new Date(row.createTime).toLocaleString() }}
-                </template>
+              <el-table-column prop="id" label="数据集ID" width="90" />
+              <el-table-column prop="dataDesc" label="数据集描述" min-width="160" />
+              <el-table-column prop="dataTable" label="底层物理表" min-width="180" />
+              <el-table-column prop="createTime" label="创建时间" min-width="160">
+                <template #default="{ row }">{{ row.createTime ? new Date(row.createTime).toLocaleString() : '-' }}</template>
               </el-table-column>
-              <el-table-column v-if="canDeleteDataset" label="操作" width="82" align="center">
+              <el-table-column v-if="canDeleteDataset" label="操作" width="90" align="center">
                 <template #default="{ row }">
                   <el-popconfirm title="确认删除该数据表？物理表会同时删除。" @confirm="deleteInstanceDataSet(row)">
                     <template #reference>
@@ -351,6 +355,40 @@
       </div>
     </el-dialog>
 
+
+    <el-dialog v-model="componentActionVisible" :title="componentActionMode === 'replace' ? '更换组件' : '配置组件'" width="560px" append-to-body>
+      <el-form label-position="top" size="small" class="component-action-form">
+        <el-form-item label="组件槽位">
+          <el-input v-model="componentActionForm.componentName" />
+        </el-form-item>
+        <el-form-item label="绑定设备实例">
+          <el-select v-model="componentActionForm.selfInstanceId" clearable filterable style="width: 100%" placeholder="不绑定数字化实例时可只填写规格">
+            <el-option v-for="item in instances" :key="item.instanceId" :label="item.instanceName" :value="item.instanceId" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="规格信息 JSON">
+          <el-input v-model="componentActionForm.specificationText" type="textarea" :rows="4" placeholder="例如：{&quot;brand&quot;:&quot;A&quot;,&quot;model&quot;:&quot;M1&quot;}" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button size="small" @click="componentActionVisible = false">取消</el-button>
+        <el-button size="small" type="primary" :loading="savingComponent" @click="submitComponentAction">保存</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="componentHistoryVisible" title="组件历史" width="720px" append-to-body>
+      <el-table :data="componentHistoryRows" border size="small" v-loading="loadingComponentHistory">
+        <el-table-column label="组件槽位" min-width="150" prop="componentName" />
+        <el-table-column label="绑定实例" min-width="150">
+          <template #default="{ row }">{{ instanceNameById(row.selfInstanceId) }}</template>
+        </el-table-column>
+        <el-table-column label="状态" width="100" prop="status" />
+        <el-table-column label="安装时间" min-width="150">
+          <template #default="{ row }">{{ formatTime(row.installTime) }}</template>
+        </el-table-column>
+        <el-table-column label="前序ID" width="90" prop="predecessorId" />
+      </el-table>
+    </el-dialog>
     <el-dialog v-model="createDialogVisible" title="添加设备实例" width="760px" class="instance-create-dialog" append-to-body :destroy-on-close="true">
       <div class="instance-create-body">
         <el-form :model="createForm" :rules="createRules" ref="createFormRef" label-width="92px" label-position="top" size="small" class="instance-create-form">
@@ -383,6 +421,21 @@
               <el-option v-for="point in createDevicePointOptions" :key="point.devicePoint" :label="devicePointLabel(point)" :value="point.devicePoint" />
             </el-select>
           </el-form-item>
+          <el-form-item label="资产编号">
+            <el-input v-model="createForm.assetInfo.serialNumber" placeholder="可选" />
+          </el-form-item>
+          <el-form-item label="安装位置">
+            <el-input v-model="createForm.assetInfo.location" placeholder="例如：A区实验台 1" />
+          </el-form-item>
+          <el-form-item label="采购日期">
+            <el-date-picker v-model="createForm.assetInfo.purchaseDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="安装日期">
+            <el-date-picker v-model="createForm.assetInfo.installDate" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+          </el-form-item>
+          <el-form-item label="备注" class="form-wide">
+            <el-input v-model="createForm.assetInfo.notes" type="textarea" :rows="2" />
+          </el-form-item>
           <el-form-item label="MQTT 主题预览" class="form-wide">
             <div class="topic-preview-grid">
               <div v-for="topic in createMqttTopicRows" :key="topic.type">
@@ -404,7 +457,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { Cpu, Plus, Refresh } from '@element-plus/icons-vue'
-import { ElMessage, type FormInstance, type FormRules } from 'element-plus'
+import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import axios from 'axios'
 import { useAuthStore } from '../../stores/authStore'
 
@@ -497,7 +550,14 @@ const datasetCreateForm = ref({ templateId: '', dataDesc: '' })
 const instanceComponents = ref<any[]>([])
 const loadingComponents = ref(false)
 const savingComponent = ref(false)
-const componentForm = ref({ componentName: '', categoryId: '', selfInstanceId: '', status: '使用中' })
+const componentForm = ref({ componentName: '', categoryId: '', selfInstanceId: '', status: '\u672a\u914d\u7f6e' })
+const componentActionVisible = ref(false)
+const componentActionMode = ref<'configure' | 'replace'>('configure')
+const activeComponent = ref<any>(null)
+const componentActionForm = ref({ componentName: '', selfInstanceId: '', specificationText: '{}' })
+const componentHistoryVisible = ref(false)
+const componentHistoryRows = ref<any[]>([])
+const loadingComponentHistory = ref(false)
 
 const createDialogVisible = ref(false)
 const createFormRef = ref<FormInstance>()
@@ -506,14 +566,14 @@ const createForm = ref({
   modelId: '',
   boundAdapterName: '',
   boundDevicePoint: '',
-  mqttTopicPreview: ''
+  mqttTopicPreview: '',
+  assetInfo: { serialNumber: '', purchaseDate: '', installDate: '', location: '', notes: '' }
 })
-
 const createRules = ref<FormRules>({
-  instanceName: [{ required: true, message: '请输入设备名称', trigger: 'blur' }],
-  modelId: [{ required: true, message: '请选择设备模型', trigger: 'change' }],
-  boundAdapterName: [{ required: true, message: '请选择 Adapter', trigger: 'change' }],
-  boundDevicePoint: [{ required: true, message: '请选择设备点', trigger: 'change' }]
+  instanceName: [{ required: true, message: '\u8bf7\u8f93\u5165\u8bbe\u5907\u540d\u79f0', trigger: 'blur' }],
+  modelId: [{ required: true, message: '\u8bf7\u9009\u62e9\u8bbe\u5907\u6a21\u578b', trigger: 'change' }],
+  boundAdapterName: [{ required: true, message: '\u8bf7\u9009\u62e9 Adapter', trigger: 'change' }],
+  boundDevicePoint: [{ required: true, message: '\u8bf7\u9009\u62e9\u8bbe\u5907\u70b9', trigger: 'change' }]
 })
 
 const canCreateInstance = computed(() => authStore.hasPermission('device_instance:create'))
@@ -524,17 +584,16 @@ const canCreateDataset = computed(() => authStore.hasPermission('data_dataset:cr
 const canDeleteDataset = computed(() => authStore.hasPermission('data_dataset:delete'))
 
 const selectedModelName = computed(() => {
-  if (!selectedModelId.value) return '全部设备实例'
-  const model = models.value.find(m => m.modelId === selectedModelId.value)
-  return model ? `${model.modelName}（编号: ${model.modelId}）` : '未知模型'
+  if (!selectedModelId.value) return '\u5168\u90e8\u8bbe\u5907\u5b9e\u4f8b'
+  const model = models.value.find(m => String(m.modelId) === String(selectedModelId.value))
+  return model ? `${model.modelName} (${model.modelId})` : '\u672a\u77e5\u6a21\u578b'
 })
 
 const groupedModels = computed(() => {
   const groups: Record<string, DeviceModel[]> = {}
   models.value.forEach(model => {
-    // model.categoryId comes from backend instead of deviceCategory
     const catId = (model as any).categoryId
-    const catName = (catId && categoriesMap.value[catId]) || '未分类'
+    const catName = (catId && categoriesMap.value[catId]) || '\u672a\u5206\u7c7b'
     if (!groups[catName]) groups[catName] = []
     groups[catName].push(model)
   })
@@ -680,18 +739,20 @@ const loadDevicePoints = async (adapterName: string, target: 'create' | 'drawer'
   pointsLoading.value = true
   try {
     const model = target === 'drawer' ? activeInstanceModel.value : selectedCreateModel.value
-    const templateName = model?.capabilitySpec?.adapterContract?.config?.templateName || undefined
-    const res = await axios.get(`/api/adapter/index/${encodeURIComponent(adapterName)}/device-points`, { params: { templateName } })
+    const adapterConfig = model?.capabilitySpec?.adapterContract?.config || {}
+    const categoryName = adapterConfig.categoryName || undefined
+    const templateName = adapterConfig.templateName || undefined
+    const params = categoryName ? { categoryName } : { templateName }
+    const res = await axios.get(`/api/adapter/index/${encodeURIComponent(adapterName)}/device-points`, { params })
     if (res.data?.success) {
       listRef.value = res.data.data || []
     }
   } catch (err: any) {
-    ElMessage.error(err.response?.data?.message || '加载 Adapter 设备点失败')
+    ElMessage.error(err.response?.data?.message || '\u52a0\u8f7d Adapter \u8bbe\u5907\u70b9\u5931\u8d25')
   } finally {
     pointsLoading.value = false
   }
 }
-
 const searchModels = (keyword: string) => {
   if (modelSearchTimer) window.clearTimeout(modelSearchTimer)
   modelSearchTimer = window.setTimeout(async () => {
@@ -957,7 +1018,7 @@ const loadComponents = async () => {
 
 const saveComponent = async () => {
   if (!activeInstance.value || !componentForm.value.componentName.trim()) {
-    ElMessage.warning('请输入组件名称')
+    ElMessage.warning('\u8bf7\u8f93\u5165\u7ec4\u4ef6\u540d\u79f0')
     return
   }
   savingComponent.value = true
@@ -966,19 +1027,106 @@ const saveComponent = async () => {
       componentName: componentForm.value.componentName.trim(),
       categoryId: componentForm.value.categoryId ? Number(componentForm.value.categoryId) : null,
       parentInstanceId: Number(activeInstance.value.instanceId),
-      selfInstanceId: componentForm.value.selfInstanceId ? Number(componentForm.value.selfInstanceId) : null,
-      status: componentForm.value.status,
+      selfInstanceId: null,
+      status: '\u672a\u914d\u7f6e',
       specification: {}
     })
     if (res.data?.success) {
-      componentForm.value = { componentName: '', categoryId: '', selfInstanceId: '', status: '使用中' }
+      componentForm.value = { componentName: '', categoryId: '', selfInstanceId: '', status: '\u672a\u914d\u7f6e' }
       await loadComponents()
-      ElMessage.success('组件已添加')
+      ElMessage.success('\u7ec4\u4ef6\u69fd\u4f4d\u5df2\u65b0\u589e')
     } else {
-      ElMessage.error(res.data?.message || '保存组件失败')
+      ElMessage.error(res.data?.message || '\u4fdd\u5b58\u7ec4\u4ef6\u5931\u8d25')
     }
   } finally {
     savingComponent.value = false
+  }
+}
+
+const componentSpecBrief = (value: any) => {
+  if (!value || (typeof value === 'object' && Object.keys(value).length === 0)) return '-'
+  const text = typeof value === 'string' ? value : JSON.stringify(value)
+  return text.length > 80 ? text.slice(0, 77) + '...' : text
+}
+const componentStatusType = (status?: string) => {
+  if (status === '\u4f7f\u7528\u4e2d') return 'success'
+  if (status === '\u5df2\u66f4\u6362') return 'warning'
+  if (status === '\u5df2\u5e9f\u5f03') return 'info'
+  return 'info'
+}
+const openComponentAction = (row: any, mode: 'configure' | 'replace') => {
+  activeComponent.value = row
+  componentActionMode.value = mode
+  componentActionForm.value = {
+    componentName: row?.componentName || '',
+    selfInstanceId: row?.selfInstanceId ? String(row.selfInstanceId) : '',
+    specificationText: row?.specification && Object.keys(row.specification || {}).length ? JSON.stringify(row.specification, null, 2) : '{}'
+  }
+  componentActionVisible.value = true
+}
+const submitComponentAction = async () => {
+  if (!activeComponent.value?.id) return
+  let specification: any = {}
+  try {
+    specification = componentActionForm.value.specificationText?.trim() ? JSON.parse(componentActionForm.value.specificationText) : {}
+  } catch {
+    ElMessage.error('\u89c4\u683c\u4fe1\u606f\u5fc5\u987b\u662f\u5408\u6cd5 JSON')
+    return
+  }
+  savingComponent.value = true
+  try {
+    const payload = {
+      componentName: componentActionForm.value.componentName,
+      selfInstanceId: componentActionForm.value.selfInstanceId ? Number(componentActionForm.value.selfInstanceId) : null,
+      specification
+    }
+    const action = componentActionMode.value === 'replace' ? 'replace' : 'configure'
+    const res = await axios.post('/api/device/component/' + activeComponent.value.id + '/' + action, payload)
+    if (!res.data?.success) {
+      ElMessage.error(res.data?.message || '\u4fdd\u5b58\u7ec4\u4ef6\u5931\u8d25')
+      return
+    }
+    componentActionVisible.value = false
+    await loadComponents()
+    ElMessage.success(componentActionMode.value === 'replace' ? '\u7ec4\u4ef6\u5df2\u66f4\u6362' : '\u7ec4\u4ef6\u5df2\u914d\u7f6e')
+  } finally {
+    savingComponent.value = false
+  }
+}
+const discardComponent = async (row: any) => {
+  if (!row?.id) return
+  try {
+    await ElMessageBox.confirm('\u786e\u8ba4\u5c06\u8be5\u7ec4\u4ef6\u6807\u8bb0\u4e3a\u5df2\u5e9f\u5f03\uff1f', '\u5e9f\u5f03\u7ec4\u4ef6', { type: 'warning' })
+    const res = await axios.post('/api/device/component/' + row.id + '/discard')
+    if (!res.data?.success) {
+      ElMessage.error(res.data?.message || '\u5e9f\u5f03\u7ec4\u4ef6\u5931\u8d25')
+      return
+    }
+    await loadComponents()
+    ElMessage.success('\u7ec4\u4ef6\u5df2\u5e9f\u5f03')
+  } catch (error: any) {
+    if (error === 'cancel' || error === 'close') return
+    ElMessage.error(error.response?.data?.message || '\u5e9f\u5f03\u7ec4\u4ef6\u5f02\u5e38')
+  }
+}
+
+const showComponentHistory = async (row: any) => {
+  if (!row?.id) return
+  componentHistoryVisible.value = true
+  loadingComponentHistory.value = true
+  try {
+    const res = await axios.get('/api/device/component/' + row.id + '/history')
+    if (res.data?.success) {
+      componentHistoryRows.value = res.data.data || []
+    } else {
+      componentHistoryRows.value = []
+      ElMessage.error(res.data?.message || '\u52a0\u8f7d\u7ec4\u4ef6\u5386\u53f2\u5931\u8d25')
+    }
+  } catch (error: any) {
+    componentHistoryRows.value = []
+    ElMessage.error(error.response?.data?.message || '\u52a0\u8f7d\u7ec4\u4ef6\u5386\u53f2\u5931\u8d25')
+  } finally {
+    loadingComponentHistory.value = false
   }
 }
 
@@ -1107,7 +1255,8 @@ const openCreateDialog = () => {
     modelId: '',
     boundAdapterName: '',
     boundDevicePoint: '',
-    mqttTopicPreview: ''
+    mqttTopicPreview: '',
+    assetInfo: { serialNumber: '', purchaseDate: '', installDate: '', location: '', notes: '' }
   }
   createDialogVisible.value = true
   if (!models.value.length) {
@@ -1117,7 +1266,6 @@ const openCreateDialog = () => {
     loadAdapters()
   }
 }
-
 const submitCreate = async () => {
   if (!createFormRef.value) return
   await createFormRef.value.validate(async (valid) => {
@@ -1125,14 +1273,15 @@ const submitCreate = async () => {
     creating.value = true
     try {
       const mqttTopic = commandTopicPreview(createForm.value.boundAdapterName, createForm.value.boundDevicePoint)
-
-      const payload: DeviceInstance = {
+      const payload: any = {
         instanceId: '',
         modelId: createForm.value.modelId,
-        stateMachineId: `${createForm.value.modelId}StateMachine`,
+        stateMachineId: createForm.value.modelId + 'StateMachine',
         instanceName: createForm.value.instanceName,
         boundAdapterName: createForm.value.boundAdapterName,
         boundDevicePoint: createForm.value.boundDevicePoint,
+        instanceConfig: { assetInfo: createForm.value.assetInfo },
+        assetInfo: createForm.value.assetInfo,
         commConfig: {
           boundAdapterName: createForm.value.boundAdapterName,
           boundDevicePoint: createForm.value.boundDevicePoint,
@@ -1142,43 +1291,41 @@ const submitCreate = async () => {
         },
         isOnline: false
       }
-
       const res = await axios.post('/api/device/instance/save', payload)
       if (res.data?.success) {
-        ElMessage.success('设备添加成功')
+        ElMessage.success('\u8bbe\u5907\u6dfb\u52a0\u6210\u529f')
         createDialogVisible.value = false
         await loadData()
       } else {
-        ElMessage.error(res.data?.message || '添加失败')
+        ElMessage.error(res.data?.message || '\u6dfb\u52a0\u5931\u8d25')
       }
     } catch (err: any) {
-      ElMessage.error(err.response?.data?.message || '添加失败')
+      ElMessage.error(err.response?.data?.message || '\u6dfb\u52a0\u5931\u8d25')
     } finally {
       creating.value = false
     }
   })
 }
-
 const sendManualCommand = async () => {
   if (!activeInstance.value) return
   if (!controlCommandId.value) {
-    ElMessage.warning('请选择命令')
+    ElMessage.warning('\u8bf7\u9009\u62e9\u547d\u4ee4')
     return
   }
   const parameters = buildControlParameters()
   sendingControl.value = true
   try {
-    const res = await axios.post(`/api/device/instance/control/${activeInstance.value.instanceId}`, {
+    const res = await axios.post('/api/device/instance/control/' + activeInstance.value.instanceId, {
       commandId: controlCommandId.value,
       parameters
     })
     if (res.data?.success) {
-      ElMessage.success('指令消息已生成')
+      ElMessage.success('\u6307\u4ee4\u6d88\u606f\u5df2\u751f\u6210')
     } else {
-      ElMessage.error(res.data?.message || '指令发送失败')
+      ElMessage.error(res.data?.message || '\u6307\u4ee4\u53d1\u9001\u5931\u8d25')
     }
   } catch (err: any) {
-    ElMessage.error(err.response?.data?.message || '指令发送失败')
+    ElMessage.error(err.response?.data?.message || '\u6307\u4ee4\u53d1\u9001\u5931\u8d25')
   } finally {
     sendingControl.value = false
   }

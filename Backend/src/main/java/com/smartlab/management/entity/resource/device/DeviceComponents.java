@@ -34,6 +34,9 @@ public class DeviceComponents {
     @TableField("status")
     private String status;
 
+    @TableField("remark")
+    private String remark;
+
     @TableField(value = "specification", typeHandler = PostgresJsonbTypeHandler.class)
     private JsonNode specification;
 

@@ -66,7 +66,21 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
     }
 
     public PageResult<DeviceModels> page(long pageNo, long pageSize, String keyword) {
-        return super.page(pageNo, pageSize, keyword, "model_name");
+        return page(pageNo, pageSize, keyword, (Long) null);
+    }
+
+    public PageResult<DeviceModels> page(long pageNo, long pageSize, String keyword, Long categoryId) {
+        if (categoryId == null) {
+            return super.page(pageNo, pageSize, keyword, "model_name");
+        }
+        com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<DeviceModels> wrapper = com.baomidou.mybatisplus.core.toolkit.Wrappers.lambdaQuery();
+        wrapper.eq(DeviceModels::getCategoryId, categoryId);
+        if (keyword != null && !keyword.isBlank()) {
+            wrapper.like(DeviceModels::getModelName, keyword.trim());
+        }
+        wrapper.orderByDesc(DeviceModels::getId);
+        com.baomidou.mybatisplus.extension.plugins.pagination.Page<DeviceModels> page = mapper.selectPage(new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(pageNo, pageSize), wrapper);
+        return new PageResult<>(page.getTotal(), page.getCurrent(), page.getSize(), page.getRecords());
     }
 
     public DeviceModels getById(String id) {
@@ -229,6 +243,12 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         DeviceModels model = new DeviceModels();
         if (payload.getModelId() != null) {
             model.setId(payload.getModelId());
+            Long count = deviceInstancesMapper.selectCount(
+                    com.baomidou.mybatisplus.core.toolkit.Wrappers.<DeviceInstances>lambdaQuery()
+                            .eq(DeviceInstances::getDeviceModelId, payload.getModelId()));
+            if (count != null && count > 0) {
+                throw new IllegalStateException("该物模型已实例化为 " + count + " 台设备，已被锁定无法编辑");
+            }
         }
         model.setModelName(payload.getModelName());
 
@@ -869,7 +889,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             if (commandParam == null) {
                 throw new IllegalArgumentException("参数映射引用了不存在的命令参数: " + commandName + "." + commandParamName);
             }
-            if (commandParam.path("hidden").asBoolean(false)) {
+            if (commandParam.path("internal").asBoolean(false)) {
                 throw new IllegalArgumentException("隐藏命令参数不能在设备模型中映射: " + commandName + "." + commandParamName);
             }
             mappedCommandParams.add(commandParamName);
@@ -897,7 +917,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         }
 
         for (Map.Entry<String, JsonNode> entry : commandParams.entrySet()) {
-            if (!entry.getValue().path("hidden").asBoolean(false) && !mappedCommandParams.contains(entry.getKey())) {
+            if (!entry.getValue().path("internal").asBoolean(false) && !mappedCommandParams.contains(entry.getKey())) {
                 throw new IllegalArgumentException("命令 " + commandName + " 的参数未映射: " + entry.getKey());
             }
         }

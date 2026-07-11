@@ -122,10 +122,10 @@ def build_internal_parameters(device_point_config, command_def, parameters):
         name = param.get("name")
         if not name:
             continue
-        if param.get("hidden"):
+        if param.get("internal"):
             source_field = param.get("sourceField")
             if source_field not in device_point_config:
-                raise ValueError(f"hidden parameter {name} sourceField={source_field} not found on devicePoint")
+                raise ValueError(f"internal parameter {name} sourceField={source_field} not found on devicePoint")
             internal[name] = device_point_config[source_field]
         else:
             if name not in parameters:

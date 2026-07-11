@@ -54,10 +54,10 @@ public class DeviceComponentController {
         }
     }
 
-    @PostMapping("/{id}/discard")
-    public ApiResponse<DeviceComponents> discard(@PathVariable Long id) {
+    @PostMapping("/{id}/mark-pending-replacement")
+    public ApiResponse<DeviceComponents> markPendingReplacement(@PathVariable Long id, @RequestBody DeviceComponents payload) {
         try {
-            return ApiResponse.ok(service.discard(id));
+            return ApiResponse.ok(service.markPendingReplacement(id, payload == null ? null : payload.getRemark()));
         } catch (Exception e) {
             return ApiResponse.fail(e.getMessage());
         }
@@ -85,7 +85,7 @@ public class DeviceComponentController {
     public ApiResponse<String> delete(@PathVariable Long id) {
         try {
             service.delete(id);
-            return ApiResponse.ok("删除成功");
+            return ApiResponse.ok("组件不支持物理删除");
         } catch (Exception e) {
             return ApiResponse.fail(e.getMessage());
         }

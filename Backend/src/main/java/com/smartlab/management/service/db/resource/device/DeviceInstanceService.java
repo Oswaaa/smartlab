@@ -225,7 +225,7 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
                     component.setCategoryId(item.path("categoryId").asLong());
                 }
                 component.setParentInstanceId(instanceId);
-                component.setStatus("未配置");
+                component.setStatus("使用中");
                 component.setSpecification(JsonNodeSupport.objectNode());
                 component.setInstallTime(OffsetDateTime.now());
                 component.setCreateTime(OffsetDateTime.now());

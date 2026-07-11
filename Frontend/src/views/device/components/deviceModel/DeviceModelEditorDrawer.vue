@@ -526,7 +526,7 @@
                   <template #default="{ row }">
                     <div style="display: flex; flex-direction: column; gap: 6px;">
                       <span class="locked-action"><el-icon><Lock /></el-icon><span>Interface_adapter_in</span></span>
-                      <state-select v-model="row.trigger.signalName" :options="signalOptionsForInterface('Interface_adapter_in')" style="width: 100%" />
+                      <state-select v-model="row.trigger.signalName" :options="adapterEventOptions" style="width: 100%" />
                     </div>
                   </template>
                 </el-table-column>
@@ -718,6 +718,8 @@ import {
   defaultCommandLifecycleTransitions,
   defaultCommandLifecycle,
   getSignalsForInterface,
+  defaultStateEntryActions,
+  adapterInterfaceName
 } from './deviceModelConstants'
 import {
   asArray, firstDefined, deepClone, ensureArrayField, isNumeric,
@@ -778,7 +780,7 @@ const capabilitySelectOptions = computed(() => draft.capabilities.map((item, ind
 // ─── Parameter Helpers ────────────────────────────────
 function commandParameterOptionsDetailed(commandName) {
   const cmd = draft.adapterContract.commands.find(c => c.commandName === commandName)
-  return cmd ? cmd.commandParameters.filter(p => !p.hidden) : []
+  return cmd ? cmd.commandParameters.filter(p => !p.internal) : []
 }
 
 function capabilityParameterOptionsDetailedByKey(capabilityKey) {
@@ -868,6 +870,7 @@ function openForCreate(categoryId) {
       draft.basic.categoryValue = String(categoryId)
     }
     loadPropertyTypesForTemplate()
+    fetchRegisteredAdapters() // 自动加载已注册的 Adapter 列表，免去手动刷新
     drawerVisible.value = true
     console.log('[Drawer] drawerVisible set to true successfully.')
   } catch (err) {
@@ -1042,7 +1045,7 @@ function cleanAdapterContract(contract, attrNameByKey) {
     commands: norm.commands.map(cmd => ({
       commandName: stringValue(cmd.commandName),
       description: stringValue(cmd.description),
-      commandParameters: cmd.commandParameters.filter(p => p.hidden !== true).map(p => ({
+      commandParameters: cmd.commandParameters.filter(p => p.internal !== true).map(p => ({
         paramName: stringValue(p.paramName),
         dataType: p.dataType,
         description: stringValue(p.description)
@@ -1094,6 +1097,12 @@ function buildSavePayload(includeBlankBasic = true, propertyTypes = []) {
   if (isNumeric(draft.basic.categoryValue)) payload.categoryId = Number(draft.basic.categoryValue)
   else if (draft.basic.categoryValue) payload.categoryName = String(draft.basic.categoryValue).trim()
   return payload
+}
+
+function categoryNameById(id) {
+  if (!id) return ''
+  const cat = props.categories?.find(c => String(c.id) === String(id))
+  return cat ? cat.categoryName : ''
 }
 
 async function loadPropertyTypesForTemplate() {
@@ -1268,12 +1277,62 @@ function addParameterMapping(mappingOwner) {
 }
 
 function handleFunctionMappingCapabilityChange(row) {
-  asArray(row.parameterMapping).forEach(mapping => mapping.capabilityParamKey = '')
+  autoPopulateParameterMappings(row)
 }
 
 function handleFunctionMappingCommandChange(row) {
   if (isAdapterCommandMapped(row.adapterCommandName, row)) row.adapterCommandName = ''
-  asArray(row.parameterMapping).forEach(mapping => mapping.commandParamName = '')
+  autoPopulateParameterMappings(row)
+}
+
+function autoPopulateParameterMappings(row) {
+  if (!row.adapterCommandName) {
+    row.parameterMapping = []
+    return
+  }
+
+  const adapterParams = commandParameterOptionsDetailed(row.adapterCommandName)
+  const capabilityParams = capabilityParameterOptionsDetailedByKey(row.capabilityKey)
+
+  const existingMap = new Map()
+  asArray(row.parameterMapping).forEach(m => {
+    if (m.commandParamName) {
+      existingMap.set(m.commandParamName, m)
+    }
+  })
+
+  row.parameterMapping = adapterParams.map(param => {
+    const existing = existingMap.get(param.paramName)
+
+    if (existing) {
+      const isBoundValid = capabilityParams.some(p => p._key === existing.capabilityParamKey)
+      if (!existing.isFixedValue && !isBoundValid) {
+        const matched = findSmartMatchParam(param, capabilityParams, row.adapterCommandName)
+        existing.capabilityParamKey = matched ? matched._key : ''
+        existing.capabilityParamName = matched ? stringValue(matched.name || matched.displayName) : ''
+      }
+      return existing
+    }
+
+    const matched = findSmartMatchParam(param, capabilityParams, row.adapterCommandName)
+    return {
+      _key: makeUiKey('param_map'),
+      commandParamName: param.paramName,
+      capabilityParamKey: matched ? matched._key : '',
+      capabilityParamName: matched ? stringValue(matched.name || matched.displayName) : '',
+      isFixedValue: false,
+      fixedValue: ''
+    }
+  })
+}
+
+function findSmartMatchParam(adapterParam, capabilityParams, commandName) {
+  if (!capabilityParams || !capabilityParams.length) return null
+  return capabilityParams.find(p => {
+    const pName = stringValue(p.name || p.displayName).toLowerCase()
+    const paramName = stringValue(adapterParam.paramName).toLowerCase()
+    return pName === paramName && isParamDataTypeMatch(adapterParam.paramName, commandName, p.dataType)
+  })
 }
 
 function handleParameterFixedChange(mapping) {
@@ -1367,7 +1426,7 @@ function isCapabilityParamMapped(row, paramKey, current) {
 }
 
 function visibleCommandParameters(command) {
-  return asArray(command?.commandParameters).filter(param => param.hidden !== true)
+  return asArray(command?.commandParameters).filter(param => param.internal !== true)
 }
 
 function addIntrinsicConstraint() {

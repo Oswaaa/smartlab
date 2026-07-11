@@ -8,7 +8,10 @@ import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.Serializable;
 import java.time.OffsetDateTime;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -20,9 +23,8 @@ import java.util.List;
 @Service
 public class DeviceComponentService extends ManagementCrudService<DeviceComponents> {
 
-    private static final String STATUS_UNCONFIGURED = "未配置";
     private static final String STATUS_IN_USE = "使用中";
-    private static final String STATUS_DISCARDED = "已废弃";
+    private static final String STATUS_PENDING_REPLACEMENT = "待更换";
     private static final String STATUS_REPLACED = "已更换";
 
     private final DeviceComponentsMapper mapper;
@@ -38,10 +40,11 @@ public class DeviceComponentService extends ManagementCrudService<DeviceComponen
             throw new IllegalArgumentException("组件名称不能为空");
         }
         entity.setComponentName(entity.getComponentName().trim());
-        if (entity.getStatus() == null || entity.getStatus().isBlank()) {
-            entity.setStatus(entity.getSelfInstanceId() == null && isEmptySpec(entity) ? STATUS_UNCONFIGURED : STATUS_IN_USE);
+        if (entity.getId() == null) {
+            entity.setStatus(STATUS_IN_USE);
+            entity.setRemark(normalizeRemark(entity.getRemark()));
         }
-        if (STATUS_IN_USE.equals(entity.getStatus()) && entity.getInstallTime() == null) {
+        if (entity.getInstallTime() == null) {
             entity.setInstallTime(OffsetDateTime.now());
         }
         if (entity.getId() == null && entity.getCreateTime() == null) {
@@ -51,42 +54,52 @@ public class DeviceComponentService extends ManagementCrudService<DeviceComponen
     }
 
     public List<DeviceComponents> listByParentInstance(Long parentInstanceId) {
-        if (parentInstanceId == null) {
-            return list();
+        return listByParentInstance(parentInstanceId, false);
+    }
+
+    public List<DeviceComponents> listByParentInstance(Long parentInstanceId, boolean includeHistory) {
+        var query = Wrappers.<DeviceComponents>lambdaQuery();
+        if (parentInstanceId != null) {
+            query.eq(DeviceComponents::getParentInstanceId, parentInstanceId);
         }
-        return mapper.selectList(
-                Wrappers.<DeviceComponents>lambdaQuery()
-                        .eq(DeviceComponents::getParentInstanceId, parentInstanceId)
-                        .orderByAsc(DeviceComponents::getComponentName)
-                        .orderByAsc(DeviceComponents::getId)
-        );
+        List<DeviceComponents> all = mapper.selectList(query.orderByAsc(DeviceComponents::getComponentName)
+                .orderByAsc(DeviceComponents::getId));
+        if (includeHistory) {
+            return all;
+        }
+        Set<Long> predecessorIds = new HashSet<>();
+        for (DeviceComponents component : all) {
+            if (component.getPredecessorId() != null) {
+                predecessorIds.add(component.getPredecessorId());
+            }
+        }
+        return all.stream().filter(component -> !predecessorIds.contains(component.getId())).toList();
     }
 
     @Transactional(rollbackFor = Exception.class)
     public DeviceComponents configure(Long id, DeviceComponents payload) {
         DeviceComponents component = requireComponent(id);
+        requireStatus(component, STATUS_IN_USE, "仅使用中的组件可配置");
         if (payload != null) {
-            if (payload.getComponentName() != null && !payload.getComponentName().isBlank()) {
-                component.setComponentName(payload.getComponentName().trim());
-            }
-            if (payload.getCategoryId() != null) {
-                component.setCategoryId(payload.getCategoryId());
-            }
             component.setSelfInstanceId(payload.getSelfInstanceId());
             if (payload.getSpecification() != null) {
                 component.setSpecification(payload.getSpecification());
             }
         }
-        component.setStatus(STATUS_IN_USE);
-        component.setInstallTime(OffsetDateTime.now());
         mapper.updateById(component);
         return requireComponent(id);
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public DeviceComponents discard(Long id) {
+    public DeviceComponents markPendingReplacement(Long id, String remark) {
         DeviceComponents component = requireComponent(id);
-        component.setStatus(STATUS_DISCARDED);
+        requireStatus(component, STATUS_IN_USE, "仅使用中的组件可标记为待更换");
+        String normalizedRemark = normalizeRemark(remark);
+        if (normalizedRemark == null) {
+            throw new IllegalArgumentException("标记待更换时必须填写备注");
+        }
+        component.setStatus(STATUS_PENDING_REPLACEMENT);
+        component.setRemark(normalizedRemark);
         mapper.updateById(component);
         return requireComponent(id);
     }
@@ -94,6 +107,9 @@ public class DeviceComponentService extends ManagementCrudService<DeviceComponen
     @Transactional(rollbackFor = Exception.class)
     public DeviceComponents replace(Long id, DeviceComponents replacement) {
         DeviceComponents old = requireComponent(id);
+        if (!STATUS_IN_USE.equals(old.getStatus()) && !STATUS_PENDING_REPLACEMENT.equals(old.getStatus())) {
+            throw new IllegalArgumentException("仅使用中或待更换的组件可执行更换");
+        }
         old.setStatus(STATUS_REPLACED);
         mapper.updateById(old);
 
@@ -102,10 +118,12 @@ public class DeviceComponentService extends ManagementCrudService<DeviceComponen
         next.setCategoryId(old.getCategoryId());
         next.setParentInstanceId(old.getParentInstanceId());
         next.setSelfInstanceId(replacement == null ? null : replacement.getSelfInstanceId());
-        next.setSpecification(replacement == null ? JsonNodeSupport.objectNode() : replacement.getSpecification());
+        next.setSpecification(replacement == null || replacement.getSpecification() == null
+                ? old.getSpecification() : replacement.getSpecification());
         if (next.getSpecification() == null) {
             next.setSpecification(JsonNodeSupport.objectNode());
         }
+        next.setRemark(replacement == null ? null : normalizeRemark(replacement.getRemark()));
         next.setStatus(STATUS_IN_USE);
         next.setPredecessorId(old.getId());
         next.setInstallTime(OffsetDateTime.now());
@@ -153,15 +171,23 @@ public class DeviceComponentService extends ManagementCrudService<DeviceComponen
         return component;
     }
 
-    private boolean isEmptySpec(DeviceComponents entity) {
-        return entity.getSpecification() == null || entity.getSpecification().isNull()
-                || (entity.getSpecification().isObject() && entity.getSpecification().isEmpty());
+    @Override
+    public void delete(Serializable id) {
+        throw new IllegalStateException("组件记录不支持物理删除，请通过更换流程保留历史链");
+    }
+
+    private void requireStatus(DeviceComponents component, String status, String message) {
+        if (!status.equals(component.getStatus())) {
+            throw new IllegalArgumentException(message);
+        }
+    }
+
+    private String normalizeRemark(String remark) {
+        return remark == null || remark.isBlank() ? null : remark.trim();
     }
 
     private String resolveReplacementName(DeviceComponents old, DeviceComponents replacement) {
-        if (replacement != null && replacement.getComponentName() != null && !replacement.getComponentName().isBlank()) {
-            return replacement.getComponentName().trim();
-        }
-        return old.getComponentName();
+        return replacement == null || replacement.getComponentName() == null || replacement.getComponentName().isBlank()
+                ? old.getComponentName() : replacement.getComponentName().trim();
     }
 }

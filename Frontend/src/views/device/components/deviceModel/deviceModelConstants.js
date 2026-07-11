@@ -135,19 +135,42 @@ export function defaultCommandLifecycleTransitions() {
 // 4. 适配器 Manifest 配置映射逻辑
 // ==========================================
 export function adapterDeviceCategoryOptions(parsed) {
-  return asArray(parsed?.deviceCategories).map(category => {
-    const template = category?.deviceTemplate || {}
-    const categoryName = stringValue(category?.categoryName)
-    const templateName = stringValue(template.templateName)
-    return {
-      key: categoryName || templateName,
-      name: categoryName || templateName || '未命名类别',
-      description: stringValue(category?.categoryDescription || template.description),
-      categoryName,
-      templateName,
-      category
-    }
-  }).filter(item => item.key)
+  if (parsed?.deviceCategories) {
+    return asArray(parsed.deviceCategories).map(category => {
+      const template = category?.deviceTemplate || {}
+      const categoryName = stringValue(category?.categoryName)
+      const templateName = stringValue(template.templateName)
+      return {
+        key: categoryName || templateName,
+        name: categoryName || templateName || '未命名类别',
+        description: stringValue(category?.categoryDescription || template.description),
+        categoryName,
+        templateName,
+        category
+      }
+    }).filter(item => item.key)
+  } else if (parsed?.deviceTemplates) {
+    return asArray(parsed.deviceTemplates).map(template => {
+      const templateName = stringValue(template?.templateName)
+      const categoryName = stringValue(template?.categoryName || templateName)
+      const description = stringValue(template?.categoryDescription || template?.description)
+      const category = {
+        categoryName,
+        categoryDescription: description,
+        deviceTemplate: template,
+        devicePoints: asArray(parsed?.devicePoints).filter(pt => stringValue(pt?.templateName) === templateName)
+      }
+      return {
+        key: categoryName || templateName,
+        name: categoryName || templateName || '未命名类别',
+        description,
+        categoryName,
+        templateName,
+        category
+      }
+    }).filter(item => item.key)
+  }
+  return []
 }
 
 export function adapterCategoryKey(option) {
@@ -165,7 +188,7 @@ function normalizeCommandParameter(param) {
     paramName: stringValue(param.paramName || param.name),
     dataType: normalizeDataType(param.dataType || param.type, 'DOUBLE', adapterDataTypes),
     description: stringValue(param.description),
-    hidden: param.hidden === true,
+    internal: param.internal === true,
     sourceField: stringValue(param.sourceField)
   }
 }

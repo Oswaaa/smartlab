@@ -281,7 +281,7 @@ public class AdapterPayloadMapperService {
             for (JsonNode mapping : iterable(capability.path("parameterMapping"))) {
                 String commandParamName = mapping.path("commandParamName").asText("");
                 JsonNode commandParam = findCommandParam(command, commandParamName);
-                if (commandParam == null || commandParam.path("hidden").asBoolean(false)) {
+                if (commandParam == null || commandParam.path("internal").asBoolean(false)) {
                     continue;
                 }
                 if (mapping.path("isFixedValue").asBoolean(false)) {
@@ -299,7 +299,7 @@ public class AdapterPayloadMapperService {
 
         for (JsonNode param : iterable(command.path("commandParameters"))) {
             String paramName = param.path("paramName").asText("");
-            if (paramName.isBlank() || param.path("hidden").asBoolean(false)) {
+            if (paramName.isBlank() || param.path("internal").asBoolean(false)) {
                 continue;
             }
             if (!parameters.containsKey(paramName)) {

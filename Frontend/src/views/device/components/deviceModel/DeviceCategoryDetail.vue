@@ -160,7 +160,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { Folder, Grid, Files, DataAnalysis } from '@element-plus/icons-vue'
+import { Folder, Grid, Files, DataAnalysis, Plus } from '@element-plus/icons-vue'
 import { asArray, formatTime } from './normalizers.js'
 import { stringId } from './normalizers.js'
 

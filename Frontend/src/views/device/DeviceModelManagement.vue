@@ -28,7 +28,7 @@
         </div>
         <DeviceCategoryDetail v-if="selectedCategory" :category="selectedCategory" :categoryPathLabel="selectedCategoryPathLabel" :categoryChildren="selectedCategoryChildren" :categoryModels="selectedCategoryModels" :categoryInstances="selectedCategoryInstances" :categoryBomUsages="selectedCategoryBomUsages" :categoryComponentSlots="selectedCategoryComponentSlots" :categoryDataAssets="selectedCategoryDataAssets" :canCreateModel="canCreateModel" :selectedCategoryCanCreateModel="selectedCategoryCanCreateModel" :categories="categories" :models="models" :categoryChildrenByParent="categoryChildrenByParent" @select-category="selectCategoryById" @select-model="selectModel" @create-model-in-category="openCreateDrawerWithCategory" />
 
-        <DeviceModelDetail v-else-if="selectedModel" :model="selectedModel" :modelBundle="selectedModelBundle" :defaultTemplateAttributes="defaultTemplateAttributes" :categories="categories" :canEditModel="canEditModel" :canDeleteModel="canDeleteModel" @edit="openEditDrawer" @delete="deleteModel" @download="downloadModelBundle" />
+        <DeviceModelDetail v-else-if="selectedModel" :model="selectedModel" :modelBundle="selectedModelBundle" :defaultTemplateAttributes="defaultTemplateAttributes" :categories="categories" :canEditModel="canEditModel" :canDeleteModel="canDeleteModel" :hasInstances="selectedModelHasInstances" @edit="openEditDrawer" @delete="deleteModel" @download="downloadModelBundle" />
 
         <el-empty v-else description="请选择或新建设备模型" :image-size="120" />
       </main>
@@ -195,6 +195,11 @@ const selectedCategoryDataAssets = computed(() => {
 const canCreateModel = computed(() => authStore.hasPermission('device_model:create'))
 const canEditModel = computed(() => authStore.hasPermission('device_model:edit'))
 const canDeleteModel = computed(() => authStore.hasPermission('device_model:delete'))
+
+const selectedModelHasInstances = computed(() => {
+  if (!selectedModelId.value) return false
+  return deviceInstances.value.some(ins => String(ins.modelId) === String(selectedModelId.value))
+})
 
 const selectedCategoryCanCreateModel = computed(() => {
   if (!selectedCategoryId.value) return false

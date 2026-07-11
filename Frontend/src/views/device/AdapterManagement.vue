@@ -659,7 +659,7 @@ const eventList = events => [
   ...asArray(events?.opEvents).map(event => ({ name: event.name || event.eventName, description: event.description || '', type: '业务事件' }))
 ]
 const eventCount = events => eventList(events).length
-const visibleCommandParams = command => asArray(command?.parameters || command?.commandParameters).filter(param => !param.hidden)
+const visibleCommandParams = command => asArray(command?.parameters || command?.commandParameters).filter(param => !param.internal)
 
 onMounted(() => {
   fetchData()

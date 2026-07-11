@@ -5,8 +5,11 @@
         <strong>类别 / 模型</strong>
         <span>{{ visibleModelCount }} 个模型</span>
       </div>
-      <button class="tree-toolbar-action" type="button" aria-label="新建根类别" @click="startCreateRoot">
+      <button v-if="!readonly" class="tree-toolbar-action" type="button" aria-label="新建根类别" @click="startCreateRoot">
         <el-icon><FolderAdd /></el-icon><span>新增类别</span>
+      </button>
+      <button v-else class="tree-toolbar-action" type="button" @click="emit('select-category', { categoryId: '' })">
+        <el-icon><List /></el-icon><span>全部实例</span>
       </button>
     </header>
 
@@ -80,7 +83,7 @@
               <span v-else-if="data.type === 'model'" class="node-meta">{{ data.meta }}</span>
             </div>
 
-            <div v-if="data.type === 'category' && !data.readonly" class="node-actions" @click.stop>
+            <div v-if="data.type === 'category' && !data.readonly && !readonly" class="node-actions" @click.stop>
               <button class="node-action" type="button" aria-label="新增子类别" @click="startCreateChild(data)"><el-icon><FolderAdd /></el-icon></button>
               <button v-if="data.canCreateModel && canCreateModel" class="node-action model-action" type="button" aria-label="新增模型" @click="emit('create-model', data)"><el-icon><DocumentAdd /></el-icon></button>
               <button class="node-action" type="button" aria-label="重命名类别" @click="startRename(data)"><el-icon><EditPen /></el-icon></button>
@@ -97,7 +100,7 @@
 <script setup>
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { CaretRight, Check, Close, Delete, Document, DocumentAdd, EditPen, Folder, FolderAdd, FolderOpened, Search } from '@element-plus/icons-vue'
+import { CaretRight, Check, Close, Delete, Document, DocumentAdd, EditPen, Folder, FolderAdd, FolderOpened, Search, List } from '@element-plus/icons-vue'
 
 const props = defineProps({
   categories: { type: Array, default: () => [] },
@@ -106,7 +109,8 @@ const props = defineProps({
   selectedCategoryId: { type: [String, Number], default: '' },
   keyword: { type: String, default: '' },
   loading: { type: Boolean, default: false },
-  canCreateModel: { type: Boolean, default: false }
+  canCreateModel: { type: Boolean, default: false },
+  readonly: { type: Boolean, default: false }
 })
 
 const emit = defineEmits([

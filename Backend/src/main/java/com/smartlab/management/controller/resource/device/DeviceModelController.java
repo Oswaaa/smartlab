@@ -34,8 +34,9 @@ public class DeviceModelController {
     @GetMapping("/model/page")
     public ApiResponse<PageResult<DeviceModels>> page(@RequestParam(defaultValue = "1") long pageNo,
                                                       @RequestParam(defaultValue = "20") long pageSize,
-                                                      @RequestParam(required = false) String keyword) {
-        return ApiResponse.ok(deviceModelService.page(pageNo, pageSize, keyword));
+                                                      @RequestParam(required = false) String keyword,
+                                                      @RequestParam(required = false) Long categoryId) {
+        return ApiResponse.ok(deviceModelService.page(pageNo, pageSize, keyword, categoryId));
     }
 
     @GetMapping("/model/{id}")

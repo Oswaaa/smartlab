@@ -88,7 +88,7 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
         String adapterName = stringValue(payload.get("adapterName"));
         String format = stringValue(payload.getOrDefault("rawConfigFormat", "JSON"));
         String content = stringValue(payload.get("rawConfigContent"));
-        return manifestService.parseRawConfig(adapterName, format, content);
+        return manifestService.parseRawConfig(adapterName, format, content, longValue(payload.get("timestamp")));
     }
 
     /**
@@ -204,6 +204,20 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
         adapter.setStatus(status == null || status.isBlank() ? "ONLINE" : status);
         adapter.setLastHeartbeat(OffsetDateTime.now());
         return save(adapter);
+    }
+
+    private Long longValue(Object value) {
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        if (value == null || String.valueOf(value).isBlank()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(String.valueOf(value));
+        } catch (NumberFormatException e) {
+            throw new IllegalArgumentException("timestamp 必须为整数");
+        }
     }
 
     private String stringValue(Object value) {

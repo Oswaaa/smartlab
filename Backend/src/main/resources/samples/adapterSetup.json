@@ -1,11 +1,14 @@
 {
   "specVersion": "smartlab.adapter.config.v1",
   "adapterName": "TestHeatPressureAdapter-01",
+  "adapterDescription": "测试用加热加压adapter，支持反应单元温压控制",
   "rawConfigFormat": "JSON",
   "deviceTemplates": [
     {
-      "templateName": "ReactorUnit",
-      "description": "测试用反应单元模板",
+      "templateName": "ReactorUnitTemplate",
+      "categoryName": "ReactorUnit",
+      "categoryDescription": "设备类别描述，该类别是反应釜单元",
+      "description": "测试用反应单元通信模板",
       "attributes": [
         {
           "name": "temperature",
@@ -26,18 +29,20 @@
             {
               "name": "targetTemperature",
               "dataType": "DOUBLE",
-              "description": "目标温度"
+              "description": "目标温度",
+              "internal": false
             },
             {
               "name": "durationSec",
               "dataType": "INTEGER",
-              "description": "加热持续时间，秒"
+              "description": "加热持续时间，秒",
+              "internal": false
             },
             {
               "name": "index",
               "dataType": "INTEGER",
               "description": "设备点内部编号",
-              "hidden": true,
+              "internal": true,
               "sourceField": "index"
             }
           ]
@@ -49,18 +54,20 @@
             {
               "name": "targetPressure",
               "dataType": "DOUBLE",
-              "description": "目标压力"
+              "description": "目标压力",
+              "internal": false
             },
             {
               "name": "durationSec",
               "dataType": "INTEGER",
-              "description": "加压持续时间，秒"
+              "description": "加压持续时间，秒",
+              "internal": false
             },
             {
               "name": "index",
               "dataType": "INTEGER",
               "description": "设备点内部编号",
-              "hidden": true,
+              "internal": true,
               "sourceField": "index"
             }
           ]
@@ -68,52 +75,19 @@
       ],
       "events": {
         "cmdEvents": [
-          {
-            "name": "COMMAND_RECEIVED",
-            "description": "指令已接收"
-          },
-          {
-            "name": "COMMAND_RUNNING",
-            "description": "指令执行中"
-          },
-          {
-            "name": "COMMAND_COMPLETED",
-            "description": "指令执行完成"
-          },
-          {
-            "name": "COMMAND_FAILED",
-            "description": "指令执行失败"
-          },
-          {
-            "name": "COMMAND_TIMEOUT",
-            "description": "指令执行超时"
-          },
-          {
-            "name": "COMMAND_CANCELLED",
-            "description": "指令已取消"
-          }
+          { "name": "COMMAND_RECEIVED",   "description": "指令已接收" },
+          { "name": "COMMAND_RUNNING",    "description": "指令执行中" },
+          { "name": "COMMAND_COMPLETED",  "description": "指令执行完成" },
+          { "name": "COMMAND_FAILED",     "description": "指令执行失败" },
+          { "name": "COMMAND_TIMEOUT",    "description": "指令执行超时" },
+          { "name": "COMMAND_CANCELLED",  "description": "指令已取消" }
         ],
         "opEvents": [
-          {
-            "name": "HEAT_STARTED",
-            "description": "开始加热"
-          },
-          {
-            "name": "TARGET_TEMPERATURE_REACHED",
-            "description": "达到目标温度"
-          },
-          {
-            "name": "PRESSURIZE_STARTED",
-            "description": "开始加压"
-          },
-          {
-            "name": "TARGET_PRESSURE_REACHED",
-            "description": "达到目标压力"
-          },
-          {
-            "name": "PRESSURE_ALARM",
-            "description": "压力报警"
-          }
+          { "name": "HEAT_STARTED",               "description": "开始加热" },
+          { "name": "TARGET_TEMPERATURE_REACHED",  "description": "达到目标温度" },
+          { "name": "PRESSURIZE_STARTED",          "description": "开始加压" },
+          { "name": "TARGET_PRESSURE_REACHED",     "description": "达到目标压力" },
+          { "name": "PRESSURE_ALARM",              "description": "压力报警" }
         ]
       }
     }
@@ -121,22 +95,22 @@
   "devicePoints": [
     {
       "devicePoint": "Reactor1",
-      "templateName": "ReactorUnit",
+      "templateName": "ReactorUnitTemplate",
       "description": "1号测试反应单元",
       "index": 1,
       "attributeMapping": {
         "temperature": "R1_TEMP",
-        "pressure": "R1_PRESS"
+        "pressure":    "R1_PRESS"
       }
     },
     {
       "devicePoint": "Reactor2",
-      "templateName": "ReactorUnit",
+      "templateName": "ReactorUnitTemplate",
       "description": "2号测试反应单元",
       "index": 2,
       "attributeMapping": {
         "temperature": "R2_TEMP",
-        "pressure": "R2_PRESS"
+        "pressure":    "R2_PRESS"
       }
     }
   ]

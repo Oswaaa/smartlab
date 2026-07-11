@@ -125,9 +125,9 @@ export function normalizeCommandParameter(param) {
     paramName: stringValue(param.paramName || param.name),
     dataType: normalizeDataType(param.dataType, 'DOUBLE', adapterDataTypes),
     description: stringValue(param.description),
-    hidden: !!param.hidden
+    internal: !!param.internal
   }
-  if (param.hidden) {
+  if (param.internal) {
     normalized.sourceField = stringValue(param.sourceField)
   }
   return normalized
@@ -253,8 +253,8 @@ export function normalizeAdapterContract(value, attributes = []) {
       description: stringValue(command.description),
       commandParameters: asArray(command.commandParameters || command.parameters).map(param => {
         const row = { _key: param._key || makeUiKey('cmd_param'), paramName: stringValue(param.paramName || param.name), dataType: normalizeDataType(param.dataType || param.type, 'DOUBLE', adapterDataTypes), description: stringValue(param.description) }
-        if (param.hidden === true) {
-          row.hidden = true
+        if (param.internal === true) {
+          row.internal = true
           row.sourceField = stringValue(param.sourceField)
         }
         return row

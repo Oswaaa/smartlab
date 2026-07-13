@@ -21,7 +21,8 @@ import java.util.regex.Pattern;
 
 /**
  * Parses and validates the adapter-side capability manifest.
- * The manifest is adapter-owned: system UI consumes it, while the adapter runtime
+ * The manifest is adapter-owned: system UI consumes it, while the adapter
+ * runtime
  * can use the same structure as its command routing description.
  */
 @Service
@@ -33,14 +34,16 @@ public class AdapterManifestService {
     public static final String SPEC_VERSION = "smartlab.adapter.config.v1";
     private static final Pattern INI_IDENTIFIER = Pattern.compile("[A-Za-z_][A-Za-z0-9_-]*");
     private static final Pattern TEMPLATE_SECTION = Pattern.compile("deviceTemplates\\.([A-Za-z][A-Za-z0-9_-]*)");
-    private static final Pattern TEMPLATE_COMMAND_SECTION = Pattern.compile("deviceTemplates\\.([A-Za-z][A-Za-z0-9_-]*)\\.commands\\.([A-Za-z][A-Za-z0-9_-]*)");
+    private static final Pattern TEMPLATE_COMMAND_SECTION = Pattern
+            .compile("deviceTemplates\\.([A-Za-z][A-Za-z0-9_-]*)\\.commands\\.([A-Za-z][A-Za-z0-9_-]*)");
     private static final Pattern POINT_SECTION = Pattern.compile("devicePoints\\.([A-Za-z][A-Za-z0-9_-]*)");
 
     public ObjectNode parseRawConfig(String adapterName, String rawConfigFormat, String rawConfigContent) {
         return parseRawConfig(adapterName, rawConfigFormat, rawConfigContent, null);
     }
 
-    public ObjectNode parseRawConfig(String adapterName, String rawConfigFormat, String rawConfigContent, Long registeredAt) {
+    public ObjectNode parseRawConfig(String adapterName, String rawConfigFormat, String rawConfigContent,
+            Long registeredAt) {
         if (rawConfigContent == null || rawConfigContent.isBlank()) {
             throw new IllegalArgumentException("Adapter 配置内容不能为空");
         }
@@ -62,8 +65,10 @@ public class AdapterManifestService {
         return normalize(source, fallbackAdapterName, rawConfigFormat, null);
     }
 
-    public ObjectNode normalize(JsonNode source, String fallbackAdapterName, String rawConfigFormat, Long registeredAt) {
-        JsonNode root = firstObject(source, "parsedConfig", "parsed_config", "adapterManifest", "manifest", "adapterContract");
+    public ObjectNode normalize(JsonNode source, String fallbackAdapterName, String rawConfigFormat,
+            Long registeredAt) {
+        JsonNode root = firstObject(source, "parsedConfig", "parsed_config", "adapterManifest", "manifest",
+                "adapterContract");
         if (root == null || root.isMissingNode() || root.isNull()) {
             root = source == null ? JsonNodeSupport.objectNode() : source;
         }
@@ -78,12 +83,15 @@ public class AdapterManifestService {
         manifest.put("specVersion", text(root, "specVersion", SPEC_VERSION));
         manifest.put("adapterName", firstText(root, fallbackAdapterName, "adapterName", "name"));
         manifest.put("adapterDescription", firstText(root, "", "adapterDescription", "description"));
-        manifest.put("rawConfigFormat", rawConfigFormat == null ? text(root, "rawConfigFormat", "JSON") : rawConfigFormat);
+        manifest.put("rawConfigFormat",
+                rawConfigFormat == null ? text(root, "rawConfigFormat", "JSON") : rawConfigFormat);
 
         ObjectNode registerMeta = manifest.putObject("registerMeta");
         JsonNode sourceMeta = firstObject(root, "registerMeta", "meta");
-        registerMeta.put("rawConfigFormat", rawConfigFormat == null ? text(root, "rawConfigFormat", "JSON") : rawConfigFormat);
-        registerMeta.put("specVersion", sourceMeta == null ? text(root, "specVersion", SPEC_VERSION) : text(sourceMeta, "specVersion", text(root, "specVersion", SPEC_VERSION)));
+        registerMeta.put("rawConfigFormat",
+                rawConfigFormat == null ? text(root, "rawConfigFormat", "JSON") : rawConfigFormat);
+        registerMeta.put("specVersion", sourceMeta == null ? text(root, "specVersion", SPEC_VERSION)
+                : text(sourceMeta, "specVersion", text(root, "specVersion", SPEC_VERSION)));
         if (registeredAt != null) {
             registerMeta.put("registeredAt", registeredAt);
         } else if (sourceMeta != null && sourceMeta.hasNonNull("registeredAt")) {
@@ -106,26 +114,28 @@ public class AdapterManifestService {
         for (JsonNode pointNode : array(root.get("devicePoints"))) {
             String pointTemplateName = firstText(pointNode, "", "templateName", "deviceTemplate", "type");
             if (pointTemplateName.isBlank()) {
-                throw new IllegalArgumentException("devicePoint " + pointNode.path("devicePoint").asText("") + " 缺少 templateName 字段");
+                throw new IllegalArgumentException(
+                        "devicePoint " + pointNode.path("devicePoint").asText("") + " 缺少 templateName 字段");
             }
             if (!knownTemplateNames.contains(pointTemplateName)) {
-                throw new IllegalArgumentException("devicePoint " + pointNode.path("devicePoint").asText("") 
-                    + " 引用的 templateName \"" + pointTemplateName + "\" 在 deviceTemplates 中不存在");
+                throw new IllegalArgumentException("devicePoint " + pointNode.path("devicePoint").asText("")
+                        + " 引用的 templateName \"" + pointTemplateName + "\" 在 deviceTemplates 中不存在");
             }
         }
 
         for (JsonNode templateNode : array(root.get("deviceTemplates"))) {
             ObjectNode catNode = JsonNodeSupport.objectNode();
             ObjectNode template = normalizeTemplate(templateNode);
-            
+
             String templateName = template.path("templateName").asText("");
             String categoryName = firstText(templateNode, templateName, "categoryName", "deviceCategory");
-            String categoryDesc = firstText(templateNode, template.path("description").asText(""), "categoryDescription", "description");
-            
+            String categoryDesc = firstText(templateNode, template.path("description").asText(""),
+                    "categoryDescription", "description");
+
             catNode.put("categoryName", categoryName);
             catNode.put("categoryDescription", categoryDesc);
             catNode.set("deviceTemplate", template);
-            
+
             ArrayNode points = catNode.putArray("devicePoints");
             for (JsonNode pointNode : array(root.get("devicePoints"))) {
                 String pointTemplateName = firstText(pointNode, "", "templateName", "deviceTemplate", "type");
@@ -162,7 +172,8 @@ public class AdapterManifestService {
             JsonNode template = category.path("deviceTemplate");
             String templateName = template.path("templateName").asText("");
             if (templateName.isBlank()) {
-                throw new IllegalArgumentException("deviceCategory " + categoryName + " 缺少 deviceTemplate.templateName");
+                throw new IllegalArgumentException(
+                        "deviceCategory " + categoryName + " 缺少 deviceTemplate.templateName");
             }
             if (templates.put(templateName, template) != null) {
                 throw new IllegalArgumentException("deviceTemplate 存在重复 templateName: " + templateName);
@@ -187,7 +198,8 @@ public class AdapterManifestService {
                 }
                 String pointTemplateName = point.path("templateName").asText(templateName);
                 if (!templateName.equals(pointTemplateName)) {
-                    throw new IllegalArgumentException("devicePoint " + devicePoint + " 引用了错误的 templateName: " + pointTemplateName);
+                    throw new IllegalArgumentException(
+                            "devicePoint " + devicePoint + " 引用了错误的 templateName: " + pointTemplateName);
                 }
                 validatePointAgainstTemplate(point, template);
             }
@@ -242,7 +254,8 @@ public class AdapterManifestService {
             throw new IllegalArgumentException("Adapter 未注册或没有解析后的配置");
         }
         JsonNode category = findCategory(adapter.getParsedConfig(), templateName);
-        JsonNode template = category == null ? findTemplate(adapter.getParsedConfig(), templateName) : category.path("deviceTemplate");
+        JsonNode template = category == null ? findTemplate(adapter.getParsedConfig(), templateName)
+                : category.path("deviceTemplate");
         if (template == null || template.isMissingNode() || template.isNull()) {
             throw new IllegalArgumentException("Adapter 模板不存在: " + templateName);
         }
@@ -353,10 +366,6 @@ public class AdapterManifestService {
         return node;
     }
 
-    private ObjectNode normalizeDevicePoint(JsonNode point) {
-        return normalizeDevicePoint(point, firstText(point, "", "templateName", "deviceTemplate", "type"));
-    }
-
     private ObjectNode normalizeDevicePoint(JsonNode point, String defaultTemplateName) {
         ObjectNode node = JsonNodeSupport.objectNode();
         if (point != null && point.isObject()) {
@@ -367,7 +376,8 @@ public class AdapterManifestService {
             }
         }
         node.put("devicePoint", firstText(point, "", "devicePoint", "name", "point"));
-        node.put("templateName", firstText(point, defaultTemplateName == null ? "" : defaultTemplateName, "templateName", "deviceTemplate", "type"));
+        node.put("templateName", firstText(point, defaultTemplateName == null ? "" : defaultTemplateName,
+                "templateName", "deviceTemplate", "type"));
         node.put("description", text(point, "description", ""));
         ObjectNode mapping = JsonNodeSupport.objectNode();
         JsonNode sourceMapping = firstNode(point, "attributeMapping", "attributeBindings", "attributesMapping");
@@ -420,7 +430,8 @@ public class AdapterManifestService {
                 throw new IllegalArgumentException("template " + template.path("templateName").asText() + " 存在空属性名");
             }
             if (!attrs.add(name)) {
-                throw new IllegalArgumentException("template " + template.path("templateName").asText() + " 存在重复属性: " + name);
+                throw new IllegalArgumentException(
+                        "template " + template.path("templateName").asText() + " 存在重复属性: " + name);
             }
         }
 
@@ -431,7 +442,8 @@ public class AdapterManifestService {
                 throw new IllegalArgumentException("template " + template.path("templateName").asText() + " 存在空命令名");
             }
             if (!commands.add(commandName)) {
-                throw new IllegalArgumentException("template " + template.path("templateName").asText() + " 存在重复命令: " + commandName);
+                throw new IllegalArgumentException(
+                        "template " + template.path("templateName").asText() + " 存在重复命令: " + commandName);
             }
             Set<String> params = new HashSet<>();
             for (JsonNode param : array(command.get("parameters"))) {
@@ -443,7 +455,8 @@ public class AdapterManifestService {
                     throw new IllegalArgumentException("命令 " + commandName + " 存在重复参数: " + paramName);
                 }
                 if (param.path("internal").asBoolean(false) && param.path("sourceField").asText("").isBlank()) {
-                    throw new IllegalArgumentException("命令 " + commandName + " 的 internal 参数 " + paramName + " 缺少 sourceField");
+                    throw new IllegalArgumentException(
+                            "命令 " + commandName + " 的 internal 参数 " + paramName + " 缺少 sourceField");
                 }
             }
         }
@@ -476,7 +489,8 @@ public class AdapterManifestService {
                 }
                 String sourceField = param.path("sourceField").asText("");
                 if (!point.hasNonNull(sourceField)) {
-                    throw new IllegalArgumentException("devicePoint " + devicePoint + " 缺少 internal 参数来源字段: " + sourceField);
+                    throw new IllegalArgumentException(
+                            "devicePoint " + devicePoint + " 缺少 internal 参数来源字段: " + sourceField);
                 }
             }
         }
@@ -496,7 +510,8 @@ public class AdapterManifestService {
         if (adapter == null) {
             throw new IllegalArgumentException("INI 配置缺少 [adapter] section");
         }
-        requireOnlyKeys(adapter, Set.of("specVersion", "adapterName", "adapterDescription", "rawConfigFormat"), "[adapter]");
+        requireOnlyKeys(adapter, Set.of("specVersion", "adapterName", "adapterDescription", "rawConfigFormat"),
+                "[adapter]");
         String configAdapterName = requiredValue(adapter, "adapterName", "[adapter]");
         if (adapterName != null && !adapterName.isBlank() && !adapterName.trim().equals(configAdapterName)) {
             throw new IllegalArgumentException("INI 的 adapterName 必须与注册报文中的 adapterName 一致");
@@ -537,7 +552,8 @@ public class AdapterManifestService {
             Map<String, String> templateSection = entry.getValue();
             requireOnlyKeys(templateSection, Set.of("categoryName", "categoryDescription", "description"),
                     "[deviceTemplates." + templateName + "]");
-            String categoryName = requiredValue(templateSection, "categoryName", "[deviceTemplates." + templateName + "]");
+            String categoryName = requiredValue(templateSection, "categoryName",
+                    "[deviceTemplates." + templateName + "]");
             if (!categoryNames.add(categoryName)) {
                 throw new IllegalArgumentException("INI 配置存在重复 categoryName: " + categoryName);
             }
@@ -618,7 +634,8 @@ public class AdapterManifestService {
             Map<String, String> pointSection = entry.getValue();
             String templateName = requiredValue(pointSection, "templateName", "[" + entry.getKey() + "]");
             if (!templateSections.containsKey(templateName)) {
-                throw new IllegalArgumentException("devicePoint " + pointName + " 引用的 templateName 不存在: " + templateName);
+                throw new IllegalArgumentException(
+                        "devicePoint " + pointName + " 引用的 templateName 不存在: " + templateName);
             }
             ObjectNode point = points.addObject();
             point.put("devicePoint", pointName);
@@ -691,7 +708,7 @@ public class AdapterManifestService {
     }
 
     private void appendIniEvents(Map<String, Map<String, String>> sections, String templateName, String eventGroup,
-                                 ArrayNode target, Set<String> consumed) {
+            ArrayNode target, Set<String> consumed) {
         String sectionName = "deviceTemplates." + templateName + ".events." + eventGroup;
         Map<String, String> eventSection = sections.get(sectionName);
         if (eventSection == null) {
@@ -878,15 +895,6 @@ public class AdapterManifestService {
         return copy;
     }
 
-    private void appendEvents(ArrayNode target, JsonNode events, String eventType) {
-        for (JsonNode event : array(events)) {
-            ObjectNode node = target.addObject();
-            node.put("eventName", event.path("name").asText());
-            node.put("description", event.path("description").asText(""));
-            node.put("eventType", eventType);
-        }
-    }
-
     private String text(JsonNode node, String key, String fallback) {
         if (node == null || !node.hasNonNull(key)) {
             return fallback;
@@ -906,4 +914,3 @@ public class AdapterManifestService {
         return fallback;
     }
 }
-

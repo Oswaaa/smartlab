@@ -1,30 +1,15 @@
 <template>
   <div class="adapter-management-page">
-    <header class="page-toolbar">
-      <div class="toolbar-title">
-        <h1>设备执行代理</h1>
-        <span>Adapter 注册、连接状态、设备点与实例绑定</span>
-      </div>
-      <div class="toolbar-actions">
-        <el-input v-model="keyword" placeholder="搜索 Adapter" clearable :prefix-icon="Search" />
-        <el-button :icon="Connection" :loading="mqttLoading" @click="reconnectMqtt">重连 MQTT</el-button>
-        <el-button :icon="Refresh" @click="fetchData">刷新</el-button>
-        <el-button type="primary" :icon="Plus" @click="openRegisterDrawer">注册 Adapter</el-button>
-      </div>
-    </header>
-
     <main class="adapter-workspace">
       <aside class="adapter-sidebar">
-        <section class="mqtt-strip">
-          <span class="strip-label">MQTT Broker</span>
-          <strong>{{ mqttStatusLabel }}</strong>
-          <el-tag :type="mqttConnected ? 'success' : 'danger'" effect="plain" size="small">{{ mqttConnected ? '已连接' : '未连接' }}</el-tag>
-        </section>
-
-        <div class="list-title">
-          <strong>Adapter 列表</strong>
-          <em>{{ filteredAdapters.length }} 个</em>
+        <div class="sidebar-toolbar">
+          <div class="list-title"><strong>Adapter 列表</strong><em>{{ filteredAdapters.length }} 个</em></div>
+          <el-tag class="broker-state" size="small" :type="mqttConnected ? 'success' : 'danger'" effect="plain">
+            {{ mqttConnected ? 'Broker 在线' : 'Broker 未连接' }}
+          </el-tag>
+          <el-button type="primary" size="small" :icon="Plus" @click="openRegisterDrawer">注册</el-button>
         </div>
+        <div class="sidebar-search"><el-input v-model="keyword" placeholder="搜索 Adapter" clearable :prefix-icon="Search" /></div>
         <div class="adapter-list" v-loading="loading">
           <el-empty v-if="filteredAdapters.length === 0" description="暂无 Adapter" :image-size="88" />
           <button
@@ -45,11 +30,14 @@
       <section v-if="activeAdapter" class="adapter-detail">
         <div class="detail-header">
           <div>
-            <span>Adapter</span>
             <h2>{{ activeAdapter.adapterName }}</h2>
+            <p>{{ activeConfig.adapterDescription || '暂无 Adapter 说明' }}</p>
           </div>
           <div class="detail-actions">
-            <el-button type="danger" plain :icon="Delete" @click="deleteAdapter(activeAdapter)">删除</el-button>
+            <el-dropdown trigger="click" @command="handleAdapterAction">
+              <el-button circle size="small" :icon="MoreFilled" aria-label="Adapter 更多操作" />
+              <template #dropdown><el-dropdown-menu><el-dropdown-item command="delete" class="danger-menu-item">删除 Adapter</el-dropdown-item></el-dropdown-menu></template>
+            </el-dropdown>
           </div>
         </div>
 
@@ -62,9 +50,27 @@
         </section>
 
         <el-tabs v-model="activeTab" class="adapter-tabs">
-          <el-tab-pane label="模板与点位" name="runtime">
+          <el-tab-pane label="配置契约" name="runtime">
             <section class="content-block">
-              <div class="block-head"><h3>设备模板 / 设备点</h3><em>{{ activeTemplates.length }} 模板 / {{ activePoints.length }} 点位</em></div>
+              <div class="block-head"><h3>模板能力</h3><em>来自已保存的 Adapter 配置</em></div>
+              <el-table :data="activeCategories" border size="small" class="industrial-table contract-table">
+                <el-table-column label="类别 / 模板" min-width="210">
+                  <template #default="{ row }"><strong>{{ row.categoryName || '-' }}</strong><span class="contract-description">{{ row.deviceTemplate?.templateName || row.deviceTemplate?.name || '-' }}</span></template>
+                </el-table-column>
+                <el-table-column label="属性" min-width="220">
+                  <template #default="{ row }"><div class="contract-tag-list"><el-tag v-for="attr in asArray(row.deviceTemplate?.attributes)" :key="attr.name" size="small" effect="plain">{{ attr.name }} · {{ attr.dataType }}</el-tag><span v-if="!asArray(row.deviceTemplate?.attributes).length">-</span></div></template>
+                </el-table-column>
+                <el-table-column label="命令 / 参数" min-width="250">
+                  <template #default="{ row }"><div class="contract-tag-list"><el-tag v-for="command in asArray(row.deviceTemplate?.commands)" :key="command.name" size="small" type="primary" effect="plain">{{ command.name }} · {{ asArray(command.parameters).length }} 参数</el-tag><span v-if="!asArray(row.deviceTemplate?.commands).length">-</span></div></template>
+                </el-table-column>
+                <el-table-column label="事件" min-width="220">
+                  <template #default="{ row }"><div class="contract-tag-list"><el-tag v-for="event in eventList(row.deviceTemplate?.events)" :key="`${event.type}-${event.name}`" size="small" type="warning" effect="plain">{{ event.name }}</el-tag><span v-if="!eventList(row.deviceTemplate?.events).length">-</span></div></template>
+                </el-table-column>
+              </el-table>
+            </section>
+
+            <section class="content-block">
+              <div class="block-head"><h3>设备点映射</h3><em>{{ activeTemplates.length }} 模板 / {{ activePoints.length }} 点位</em></div>
               <el-table
                 :data="templatePointTree"
                 row-key="id"
@@ -179,126 +185,106 @@
       </section>
     </main>
 
-    <el-drawer v-model="registerDrawerVisible" title="注册 Adapter" size="640px" append-to-body>
-      <section class="register-flow-card">
-        <div class="flow-head">
-          <div>
-            <span>注册监听主题</span>
-            <strong>smartlab/adapter/register</strong>
-          </div>
-          <el-tag :type="mqttConnected ? 'success' : 'danger'" effect="plain">{{ mqttConnected ? 'MQTT 已连接' : 'MQTT 未连接' }}</el-tag>
-        </div>
-        <div class="flow-actions">
-          <el-button :icon="Connection" :loading="mqttLoading" @click="reconnectMqtt">连接 / 重连 MQTT</el-button>
-          <el-button :icon="Refresh" :loading="pendingLoading" @click="fetchPendingRegistrations">刷新待确认</el-button>
-        </div>
-      </section>
+    <el-drawer v-model="registerDrawerVisible" title="注册 Adapter" size="78%" append-to-body class="unified-workflow-drawer">
+      <div class="adapter-register-workbench">
+        <el-anchor
+          class="adapter-register-nav"
+          @click="(event) => event.preventDefault()"
+          container=".adapter-register-scroll .el-scrollbar__wrap"
+          :offset="20"
+        >
+          <el-anchor-link href="#register-source" title="01 选择来源" />
+          <el-anchor-link href="#register-parse" title="02 解析结果" />
+          <el-anchor-link href="#register-review" title="03 审阅配置" />
+          <el-anchor-link href="#register-save" title="04 保存注册" />
+        </el-anchor>
 
-      <section class="pending-register-panel" v-loading="pendingLoading">
-        <div class="drawer-section-head">
-          <h3>待确认注册</h3>
-          <span>{{ pendingRegistrations.length }} 个</span>
-        </div>
-        <el-empty v-if="pendingRegistrations.length === 0" description="启动 Adapter 后，系统会在这里显示它发布的注册请求" :image-size="96" />
-        <el-table v-else :data="pendingRegistrations" border size="small" class="industrial-table">
-          <el-table-column label="Adapter" min-width="190">
-            <template #default="{ row }"><strong>{{ row.adapterName }}</strong></template>
-          </el-table-column>
-          <el-table-column label="收到时间" min-width="160">
-            <template #default="{ row }">{{ formatTime(row.receivedAt) }}</template>
-          </el-table-column>
-          <el-table-column label="类别 / 模板 / 点位" min-width="150">
-            <template #default="{ row }">{{ pendingCategoryCount(row) }} / {{ pendingTemplateCount(row) }} / {{ pendingPointCount(row) }}</template>
-          </el-table-column>
-          <el-table-column label="格式" width="90">
-            <template #default="{ row }">{{ row.rawConfigFormat || 'JSON' }}</template>
-          </el-table-column>
-          <el-table-column label="操作" width="210" fixed="right">
-            <template #default="{ row }">
-              <el-button type="primary" size="small" :loading="registerLoading" @click="completePendingRegistration(row)">完成注册</el-button>
-              <el-button size="small" plain @click="reviewPendingRegistration(row)">审阅</el-button>
-              <el-button size="small" type="danger" link @click="discardPendingRegistration(row)">忽略</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-      </section>
+        <el-scrollbar class="adapter-register-scroll">
+          <section id="register-source" class="register-section source-section">
+            <div class="drawer-section-head"><h3>选择配置来源</h3></div>
+            <el-radio-group v-model="registerSource" size="small" class="register-source-picker" @change="resetRegisterPreview">
+              <el-radio-button label="mqtt">MQTT 接收</el-radio-button>
+              <el-radio-button label="manual">手动导入</el-radio-button>
+            </el-radio-group>
 
-      <section v-if="registerPreview" class="register-review-panel">
-        <div class="drawer-section-head">
-          <h3>配置审阅</h3>
-          <span>{{ registerPreview.adapterName || selectedPendingAdapterName || '-' }}</span>
-        </div>
-        <el-form label-width="96px" size="small" class="review-form">
-          <el-form-item label="Adapter 说明">
-            <el-input v-model="registerPreview.adapterDescription" placeholder="用于管理页面显示，不影响 Adapter 底层协议" />
-          </el-form-item>
-        </el-form>
-        <el-table :data="adapterCategoriesOf(registerPreview)" border size="small" class="industrial-table review-table">
-          <el-table-column label="设备类别" min-width="150">
-            <template #default="{ row }"><strong>{{ row.categoryName || '-' }}</strong></template>
-          </el-table-column>
-          <el-table-column label="类别说明" min-width="190">
-            <template #default="{ row }"><el-input v-model="row.categoryDescription" size="small" placeholder="类别说明" /></template>
-          </el-table-column>
-          <el-table-column label="设备模板" min-width="150">
-            <template #default="{ row }">{{ row.deviceTemplate?.templateName || row.deviceTemplate?.name || '-' }}</template>
-          </el-table-column>
-          <el-table-column label="模板说明" min-width="210">
-            <template #default="{ row }"><el-input v-model="row.deviceTemplate.description" size="small" placeholder="模板说明" /></template>
-          </el-table-column>
-          <el-table-column label="能力摘要" min-width="220">
-            <template #default="{ row }">{{ asArray(row.deviceTemplate?.attributes).length }} 属性 / {{ asArray(row.deviceTemplate?.commands).length }} 命令 / {{ eventCount(row.deviceTemplate?.events) }} 事件 / {{ asArray(row.devicePoints).length }} 点位</template>
-          </el-table-column>
-        </el-table>
-        <div class="review-actions">
-          <el-button type="primary" :disabled="!selectedPendingAdapterName" :loading="registerLoading" @click="completeReviewedRegistration">按当前审阅完成注册</el-button>
-        </div>
-      </section>
+            <div v-if="registerSource === 'mqtt'" class="source-content" v-loading="pendingLoading">
+              <div class="source-hint">
+                <span>监听主题</span><code>smartlab/adapter/register</code>
+                <el-tag size="small" :type="mqttConnected ? 'success' : 'danger'" effect="plain">{{ mqttConnected ? 'Broker 在线' : 'Broker 未连接' }}</el-tag>
 
-      <details class="manual-register-panel">
-        <summary>手动导入配置</summary>
-        <el-form label-width="96px" size="small" class="register-form">
-          <el-form-item label="Adapter 名称">
-            <el-input v-model="registerForm.adapterName" placeholder="可为空，解析配置后自动带出" />
-          </el-form-item>
-          <el-form-item label="配置格式">
-            <el-select v-model="registerForm.rawConfigFormat">
-              <el-option label="JSON" value="JSON" />
-              <el-option label="INI" value="INI" />
-              <el-option label="YAML" value="YAML" />
-              <el-option label="XML" value="XML" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="配置文件">
-            <div class="upload-row">
-              <el-upload :auto-upload="false" :show-file-list="false" accept=".json,.txt,.ini,.yaml,.yml,.xml" :on-change="importRegisterFile">
-                <el-button :icon="Upload">上传配置</el-button>
-              </el-upload>
-              <el-button plain @click="parseRegisterConfig">解析预览</el-button>
+
+              </div>
+              <div v-if="pendingRegistrations.length === 0" class="compact-empty">等待 Adapter 向注册主题发布配置</div>
+              <el-table v-else :data="pendingRegistrations" border size="small" class="industrial-table">
+                <el-table-column label="Adapter" min-width="180"><template #default="{ row }"><strong>{{ row.adapterName }}</strong></template></el-table-column>
+                <el-table-column label="收到时间" min-width="155"><template #default="{ row }">{{ formatTime(row.receivedAt) }}</template></el-table-column>
+                <el-table-column label="类别 / 模板 / 点位" min-width="150"><template #default="{ row }">{{ pendingCategoryCount(row) }} / {{ pendingTemplateCount(row) }} / {{ pendingPointCount(row) }}</template></el-table-column>
+                <el-table-column label="格式" width="80"><template #default="{ row }">{{ row.rawConfigFormat || 'JSON' }}</template></el-table-column>
+                <el-table-column label="操作" width="150" fixed="right"><template #default="{ row }"><el-button type="primary" size="small" @click="reviewPendingRegistration(row)">解析并审阅</el-button><el-button type="danger" link size="small" @click="discardPendingRegistration(row)">忽略</el-button></template></el-table-column>
+              </el-table>
             </div>
-          </el-form-item>
-          <el-form-item label="配置内容">
-            <el-input v-model="registerForm.rawConfigContent" type="textarea" :rows="8" placeholder="粘贴 adapter-manifest.json 或 AdapterRegisterRequest.rawConfigContent" />
-          </el-form-item>
-        </el-form>
 
-        <section v-if="registerPreview" class="preview-box">
-          <div><span>Adapter</span><strong>{{ registerPreview.adapterName }}</strong></div>
-          <div><span>类别</span><strong>{{ adapterCategoriesOf(registerPreview).length }}</strong></div>
-          <div><span>点位</span><strong>{{ adapterPointsOf(registerPreview).length }}</strong></div>
-        </section>
+            <div v-else class="source-content manual-source">
+              <p class="source-copy">上传原始配置文件，或直接粘贴配置内容。系统会自动识别 Adapter 名称与配置格式，再进入审阅。</p>
+              <el-form label-width="92px" size="small" class="register-form">
+                <el-form-item label="配置格式"><el-select v-model="registerForm.rawConfigFormat"><el-option label="JSON" value="JSON" /><el-option label="INI" value="INI" /><el-option label="YAML" value="YAML" /><el-option label="XML" value="XML" /></el-select></el-form-item>
+                <el-form-item label="配置文件">
+                  <el-upload drag :auto-upload="false" :show-file-list="false" accept=".json,.txt,.ini,.yaml,.yml,.xml" :on-change="importRegisterFile">
+                    <el-icon class="upload-icon"><Upload /></el-icon><div class="el-upload__text">拖拽配置文件到此处，或 <em>点击选择</em></div>
+                  </el-upload>
+                </el-form-item>
+                <el-form-item label="配置内容"><el-input v-model="registerForm.rawConfigContent" type="textarea" :rows="8" @input="resetManualPreview" placeholder="粘贴 Adapter 原始配置内容" /></el-form-item>
+                <el-form-item label=""><el-button type="primary" :loading="registerLoading" @click="parseRegisterConfig">解析配置</el-button></el-form-item>
+              </el-form>
+            </div>
+          </section>
 
-        <div class="manual-actions">
-          <el-button plain :loading="registerLoading" @click="parseRegisterConfig">解析</el-button>
-          <el-button type="primary" :loading="registerLoading" @click="registerAdapter">保存注册</el-button>
-        </div>
-      </details>
+          <section id="register-parse" class="register-section" :class="{ disabled: !registerPreview }">
+            <div class="drawer-section-head"><h3>解析结果</h3><span v-if="registerPreview">已生成统一契约</span></div>
+            <div v-if="!registerPreview" class="compact-empty">完成来源配置后，系统将在此显示解析结果</div>
+            <div v-else class="parse-summary">
+              <div><span>Adapter</span><strong>{{ registerPreview.adapterName }}</strong></div>
+              <div><span>类别</span><strong>{{ adapterCategoriesOf(registerPreview).length }}</strong></div>
+              <div><span>模板</span><strong>{{ adapterCategoriesOf(registerPreview).length }}</strong></div>
+              <div><span>点位</span><strong>{{ adapterPointsOf(registerPreview).length }}</strong></div>
+            </div>
+          </section>
 
-      <template #footer>
-        <div class="drawer-footer">
-          <el-button @click="registerDrawerVisible = false">关闭</el-button>
-        </div>
-      </template>
+          <section id="register-review" class="register-section" :class="{ disabled: !registerPreview }">
+            <div class="drawer-section-head"><h3>审阅配置</h3><span v-if="registerPreview">仅可编辑说明字段</span></div>
+            <div v-if="!registerPreview" class="compact-empty">请先解析配置</div>
+            <template v-else>
+              <el-form label-width="92px" size="small" class="review-form"><el-form-item label="Adapter 说明"><el-input v-model="registerPreview.adapterDescription" placeholder="用于管理页面显示，不影响底层协议" /></el-form-item></el-form>
+              <el-table :data="adapterCategoriesOf(registerPreview)" border size="small" class="industrial-table review-table">
+                <el-table-column label="类别 / 说明" min-width="200">
+                  <template #default="{ row }"><strong>{{ row.categoryName || '-' }}</strong><el-input v-model="row.categoryDescription" class="description-input" size="small" placeholder="类别说明" /></template>
+                </el-table-column>
+                <el-table-column label="模板 / 说明" min-width="230">
+                  <template #default="{ row }"><strong>{{ row.deviceTemplate?.templateName || row.deviceTemplate?.name || '-' }}</strong><el-input v-model="row.deviceTemplate.description" class="description-input" size="small" placeholder="模板说明" /></template>
+                </el-table-column>
+                <el-table-column label="属性" min-width="190">
+                  <template #default="{ row }"><div class="contract-tag-list"><el-tag v-for="attr in asArray(row.deviceTemplate?.attributes)" :key="attr.name" size="small" effect="plain">{{ attr.name }} · {{ attr.dataType }}</el-tag><span v-if="!asArray(row.deviceTemplate?.attributes).length">-</span></div></template>
+                </el-table-column>
+                <el-table-column label="命令" min-width="180">
+                  <template #default="{ row }"><div class="contract-tag-list"><el-tag v-for="command in asArray(row.deviceTemplate?.commands)" :key="command.name" size="small" type="primary" effect="plain">{{ command.name }} · {{ asArray(command.parameters).length }} 参数</el-tag><span v-if="!asArray(row.deviceTemplate?.commands).length">-</span></div></template>
+                </el-table-column>
+                <el-table-column label="事件" min-width="180">
+                  <template #default="{ row }"><div class="contract-tag-list"><el-tag v-for="event in eventList(row.deviceTemplate?.events)" :key="`${event.type}-${event.name}`" size="small" type="warning" effect="plain">{{ event.name }}</el-tag><span v-if="!eventList(row.deviceTemplate?.events).length">-</span></div></template>
+                </el-table-column>
+                <el-table-column label="设备点位" min-width="180">
+                  <template #default="{ row }"><div class="contract-tag-list"><el-tag v-for="point in asArray(row.devicePoints)" :key="point.devicePoint" size="small" type="success" effect="plain">{{ point.devicePoint }} · {{ point.index ?? '-' }}</el-tag><span v-if="!asArray(row.devicePoints).length">-</span></div></template>
+                </el-table-column>
+              </el-table>
+            </template>
+          </section>
+
+          <section id="register-save" class="register-section" :class="{ disabled: !registerPreview }">
+            <div class="drawer-section-head"><h3>保存注册</h3></div>
+            <div class="save-panel"><span>确认后将保存审阅后的统一配置，并注册到设备模型可选择的 Adapter 列表。</span><el-button type="primary" :disabled="!registerPreview" :loading="registerLoading" @click="saveReviewedRegistration">确认并保存</el-button></div>
+          </section>
+        </el-scrollbar>
+      </div>
+      <template #footer><div class="drawer-footer"><el-button @click="registerDrawerVisible = false">取消</el-button></div></template>
     </el-drawer>
   </div>
 </template>
@@ -307,13 +293,12 @@
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Connection, Delete, Plus, Refresh, Search, Upload } from '@element-plus/icons-vue'
+import { MoreFilled, Plus, Search, Upload } from '@element-plus/icons-vue'
 
 const keyword = ref('')
 const activeTab = ref('runtime')
 const activeKey = ref('')
 const loading = ref(false)
-const mqttLoading = ref(false)
 const adapters = ref([])
 const instances = ref([])
 const models = ref({})
@@ -323,9 +308,11 @@ const registerLoading = ref(false)
 const pendingLoading = ref(false)
 const pendingRegistrations = ref([])
 const registerPreview = ref(null)
+const registerSource = ref('mqtt')
 const selectedPendingAdapterName = ref('')
 const registerForm = reactive({ adapterName: '', rawConfigFormat: 'JSON', rawConfigContent: '' })
 let registrationStream = null
+let mqttStatusTimer = null
 
 const fetchData = async () => {
   loading.value = true
@@ -370,21 +357,9 @@ const getMqttStatus = async () => {
   }
 }
 
-const reconnectMqtt = async () => {
-  mqttLoading.value = true
-  try {
-    try {
-      await axios.post('/api/adapter/protocol/mqtt/reconnect')
-    } catch (error) {
-      await axios.post('/api/adapter/mqtt/mqtt/reconnect')
-    }
-    ElMessage.success('已发起 MQTT 重连')
-    await fetchMqttStatus()
-  } finally {
-    mqttLoading.value = false
-  }
+const handleAdapterAction = async (command) => {
+  if (command === 'delete' && activeAdapter.value) await deleteAdapter(activeAdapter.value)
 }
-
 const filteredAdapters = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
   if (!kw) return adapters.value
@@ -494,7 +469,16 @@ const closeRegistrationStream = () => {
   }
 }
 
+const resetRegisterPreview = () => {
+  registerPreview.value = null
+  selectedPendingAdapterName.value = ''
+}
+
+const resetManualPreview = () => {
+  if (registerSource.value === 'manual') resetRegisterPreview()
+}
 const reviewPendingRegistration = (item) => {
+  registerSource.value = 'mqtt'
   selectedPendingAdapterName.value = item?.adapterName || ''
   registerPreview.value = cloneJson(item?.parsedConfig || null)
 }
@@ -507,6 +491,7 @@ const completeReviewedRegistration = () => {
 
 const openRegisterDrawer = () => {
   registerPreview.value = null
+  registerSource.value = 'mqtt'
   selectedPendingAdapterName.value = ''
   connectRegistrationStream()
   registerForm.adapterName = ''
@@ -572,7 +557,22 @@ const parseRegisterConfig = async () => {
   }
 }
 
+const saveReviewedRegistration = async () => {
+  if (!registerPreview.value) {
+    ElMessage.warning('请先完成配置解析')
+    return
+  }
+  if (registerSource.value === 'mqtt') {
+    await completeReviewedRegistration()
+    return
+  }
+  await registerAdapter()
+}
 const registerAdapter = async () => {
+  if (!registerPreview.value) {
+    ElMessage.warning('请先解析并审阅配置')
+    return
+  }
   if (!registerForm.rawConfigContent.trim()) {
     ElMessage.warning('\u8bf7\u5148\u586b\u5199\u6216\u4e0a\u4f20\u914d\u7f6e\u5185\u5bb9')
     return
@@ -607,6 +607,7 @@ const deleteAdapter = async (adapter) => {
 const importRegisterFile = (file) => {
   const rawFile = file?.raw
   if (!rawFile) return false
+  resetManualPreview()
   const reader = new FileReader()
   reader.onload = () => { registerForm.rawConfigContent = String(reader.result || '') }
   reader.readAsText(rawFile, 'utf-8')
@@ -625,7 +626,12 @@ const buildRegisterPayload = () => {
 }
 
 const manifestAdapterName = (content) => {
-  try { return JSON.parse(content)?.adapterName || '' } catch { return '' }
+  try {
+    const jsonName = JSON.parse(content)?.adapterName
+    if (jsonName) return String(jsonName).trim()
+  } catch { /* fall through to INI */ }
+  const iniMatch = String(content || '').match(/^\s*adapterName\s*=\s*([^;#\r\n]+)\s*$/mi)
+  return iniMatch ? iniMatch[1].trim() : ''
 }
 
 const cloneJson = value => value == null ? null : JSON.parse(JSON.stringify(value))
@@ -664,111 +670,127 @@ const visibleCommandParams = command => asArray(command?.parameters || command?.
 onMounted(() => {
   fetchData()
   connectRegistrationStream()
+  mqttStatusTimer = window.setInterval(fetchMqttStatus, 30000)
 })
-onUnmounted(closeRegistrationStream)
+onUnmounted(() => {
+  closeRegistrationStream()
+  if (mqttStatusTimer) window.clearInterval(mqttStatusTimer)
+})
 </script>
 
 <style scoped>
-.adapter-management-page { height: calc(100vh - 52px); min-height: 0; display: flex; flex-direction: column; background: #eef2f6; color: #172033; overflow: hidden; }
-.page-toolbar { height: 60px; padding: 0 16px; border-bottom: 1px solid #cbd5e1; background: #fff; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
-.toolbar-title h1 { margin: 0; font-size: 20px; line-height: 1.2; color: #0f172a; }
-.toolbar-title span { color: #64748b; font-size: 12px; }
-.toolbar-actions { display: flex; align-items: center; gap: 8px; }
-.toolbar-actions .el-input { width: 220px; }
-.adapter-workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: 330px minmax(0, 1fr); }
-.adapter-sidebar { min-width: 0; background: #f8fafc; border-right: 1px solid #cbd5e1; display: flex; flex-direction: column; overflow: hidden; }
-.list-title { height: 42px; padding: 0 12px; border-top: 1px solid #e2e8f0; border-bottom: 1px solid #e2e8f0; background: #fff; display: flex; align-items: center; justify-content: space-between; }
-.list-title strong { font-size: 14px; color: #0f172a; }
-.list-title em { font-style: normal; color: #64748b; font-size: 12px; }
-.adapter-list { flex: 1; min-height: 0; overflow: auto; padding: 10px; }
-.adapter-list-item { width: 100%; margin-bottom: 8px; padding: 10px; border: 1px solid #dbe4ef; border-radius: 6px; background: #fff; text-align: left; cursor: pointer; display: grid; gap: 5px; }
-.adapter-list-item.active { border-color: #2563eb; background: #eff6ff; }
-.adapter-name { color: #0f172a; font-size: 14px; font-weight: 800; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.adapter-subline { color: #64748b; font-size: 12px; }
-.adapter-status { width: fit-content; padding: 2px 7px; border-radius: 999px; background: #e2e8f0; color: #475569; font-size: 11px; font-weight: 800; }
-.adapter-status.online, .adapter-status.alive, .adapter-status.registered { background: #dcfce7; color: #15803d; }
-.adapter-status.degraded { background: #fef3c7; color: #b45309; }
-.adapter-detail { min-width: 0; min-height: 0; overflow: auto; padding: 12px; }
-.empty-detail { background: #fff; display: flex; align-items: center; justify-content: center; }
-.detail-header { min-height: 58px; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; display: flex; align-items: center; justify-content: space-between; }
-.detail-header h2 { margin: 2px 0 0; font-size: 22px; line-height: 1.2; color: #0f172a; }
-.detail-actions { display: flex; gap: 8px; }
-.metric-grid { margin-top: 10px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
-.metric-grid article { padding: 10px 12px; border: 1px solid #dbe4ef; border-radius: 6px; background: #fff; display: grid; gap: 5px; }
-.metric-grid strong { font-size: 16px; color: #0f172a; }
-.adapter-tabs { margin-top: 10px; padding: 0 10px 10px; border: 1px solid #cbd5e1; border-radius: 7px; background: #fff; }
-.content-block { margin-top: 10px; padding: 10px; border: 1px solid #dbe4ef; border-radius: 6px; background: #fff; }
-.block-head { margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
-.block-head h3 { margin: 0; font-size: 16px; color: #0f172a; }
-.block-head em { font-style: normal; color: #64748b; font-size: 12px; }
-.template-tags, .param-tags, .mapping-chips { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
-.mapping-chips span { padding: 2px 6px; border: 1px solid #bfdbfe; border-radius: 4px; color: #1d4ed8; background: #eff6ff; font-size: 12px; }
-.mapping-chips em { color: #94a3b8; font-style: normal; }
-.industrial-table :deep(.el-table__cell) { padding: 7px 8px; }
-.json-block pre { max-height: 500px; overflow: auto; margin: 0; padding: 10px; border: 1px solid #e2e8f0; border-radius: 5px; background: #0f172a; color: #e2e8f0; font-size: 12px; line-height: 1.5; }
-.register-form :deep(.el-select) { width: 100%; }
-.upload-row { display: flex; gap: 8px; align-items: center; }
-.register-flow-card { margin-bottom: 10px; padding: 12px; border: 1px solid #bfdbfe; border-left: 3px solid #2563eb; border-radius: 6px; background: #eff6ff; }
-.flow-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.flow-head div { display: grid; gap: 4px; min-width: 0; }
-.flow-head span { color: #64748b; font-size: 12px; }
-.flow-head strong { color: #0f172a; font-size: 15px; word-break: break-all; }
-.flow-actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
-.pending-register-panel { min-height: 130px; padding: 10px; border: 1px solid #dbe4ef; border-radius: 6px; background: #fff; }
-.drawer-section-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.drawer-section-head h3 { margin: 0; color: #0f172a; font-size: 15px; }
-.drawer-section-head span { color: #64748b; font-size: 12px; }
-.register-review-panel { margin-top: 10px; padding: 10px; border: 1px solid #cbd5e1; background: #fff; }
-.review-form { margin-bottom: 8px; }
-.review-actions { height: 42px; display: flex; align-items: flex-end; justify-content: flex-end; }
-.review-table :deep(.el-input__wrapper) { box-shadow: none; border-radius: 0; }
-.manual-register-panel { margin-top: 10px; border: 1px solid #dbe4ef; border-radius: 6px; background: #fff; padding: 10px; }
-.manual-register-panel summary { cursor: pointer; color: #0f172a; font-weight: 700; }
-.manual-register-panel .register-form { margin-top: 10px; }
-.manual-actions { display: flex; justify-content: flex-end; gap: 8px; }
-.preview-box { margin-top: 8px; padding: 10px; border: 1px solid #bfdbfe; border-radius: 6px; background: #eff6ff; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.preview-box div { display: grid; gap: 4px; }
-.preview-box span { color: #64748b; font-size: 12px; }
-.preview-box strong { color: #0f172a; font-size: 15px; }
-.drawer-footer { display: flex; justify-content: flex-end; gap: 8px; }
-.mqtt-strip { height: 46px; padding: 0 12px; border-bottom: 1px solid #cbd5e1; background: #fff; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 8px; }
-.strip-label { color: #64748b; font-size: 12px; font-weight: 700; }
-.mqtt-strip strong { color: #0f172a; font-size: 14px; }
-.adapter-list { padding: 0; }
-.adapter-list-item { margin: 0; border: 0; border-bottom: 1px solid #dbe4ef; border-radius: 0; background: #fff; grid-template-columns: 1fr auto; align-items: center; column-gap: 8px; }
-.adapter-list-item.active { border-color: #dbe4ef; background: #eaf2ff; box-shadow: inset 3px 0 0 #2563eb; }
-.adapter-subline { grid-column: 1 / 3; }
-.adapter-status { border-radius: 3px; }
-.adapter-detail { padding: 0; background: #eef2f6; }
-.detail-header { min-height: 58px; padding: 10px 14px; border-width: 0 0 1px; border-radius: 0; }
-.runtime-table { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-bottom: 1px solid #cbd5e1; background: #fff; }
-.runtime-table div { min-width: 0; padding: 9px 12px; border-right: 1px solid #e2e8f0; display: grid; gap: 3px; }
+.adapter-management-page { height: calc(100vh - 52px); min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: #f0f2f5; color: #1e2533; }
+.adapter-workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: 286px minmax(0, 1fr); }
+.adapter-sidebar { min-width: 0; display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid #d9dde6; background: #fff; }
+.list-title { height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #edf0f4; }
+.list-title strong { color: #344054; font-size: 13px; font-weight: 600; }
+.list-title em { color: #8a93a6; font-size: 12px; font-style: normal; }
+.sidebar-toolbar { height: 42px; padding: 0 10px 0 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e5e7eb; }
+.sidebar-toolbar .list-title { height: auto; padding: 0; border: 0; flex: 1; }
+.sidebar-search { padding: 8px; border-bottom: 1px solid #edf0f4; }
+.sidebar-search :deep(.el-input__wrapper) { min-height: 28px; }
+.detail-actions { display: flex; align-items: center; gap: 8px; }
+.danger-menu-item { color: var(--color-danger) !important; }
+.compact-empty { padding: 14px 0; color: #8a93a6; font-size: 12px; text-align: center; }
+.adapter-list { flex: 1; min-height: 0; overflow: auto; padding: 4px; }
+.adapter-list-item { width: 100%; min-height: 60px; padding: 8px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 6px; row-gap: 2px; border: 0; border-radius: 3px; background: transparent; text-align: left; cursor: pointer; transition: background-color .15s ease; }
+.adapter-list-item:hover { background: #f6f8fb; }
+.adapter-list-item.active { background: #e8f1fb; box-shadow: inset 3px 0 0 var(--color-primary); }
+.adapter-name { min-width: 0; overflow: hidden; color: #1e2533; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.adapter-subline { grid-column: 1 / 3; overflow: hidden; color: #7b8798; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+.adapter-status { padding: 0 5px; border-radius: 2px; background: #eef1f5; color: #596579; font-size: 11px; line-height: 18px; }
+.adapter-status.online, .adapter-status.alive, .adapter-status.registered { background: #e7f7ee; color: #1a8754; }
+.adapter-status.degraded { background: #fff4df; color: #b76a00; }
+.adapter-detail { min-width: 0; min-height: 0; overflow: auto; padding: 10px 12px 12px; background: #f0f2f5; }
+.empty-detail { display: flex; align-items: center; justify-content: center; }
+.detail-header { min-height: 50px; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid #d9dde6; background: #fff; }
+.detail-header h2 { margin: 0; color: #1e2533; font-size: 18px; font-weight: 600; line-height: 24px; }
+.detail-header p { max-width: 720px; margin: 2px 0 0; overflow: hidden; color: #6b7280; font-size: 12px; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
+.detail-actions { flex: 0 0 auto; }
+.runtime-table { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); margin-bottom: 8px; border: 1px solid #d9dde6; border-top: 0; background: #fff; }
+.runtime-table div { min-width: 0; padding: 8px 12px; display: grid; gap: 2px; border-right: 1px solid #e5e7eb; }
 .runtime-table div:last-child { border-right: 0; }
-.runtime-table span { color: #64748b; font-size: 12px; }
-.runtime-table strong { color: #0f172a; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.adapter-tabs { margin: 0; padding: 0 12px 12px; border-width: 0; border-radius: 0; background: #fff; }
+.runtime-table span { color: #7b8798; font-size: 11px; }
+.runtime-table strong { overflow: hidden; color: #344054; font-size: 14px; font-weight: 600; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.adapter-tabs { padding: 0 10px 10px; border: 1px solid #d9dde6; background: #fff; }
 .adapter-tabs :deep(.el-tabs__header) { margin: 0; }
-.content-block { margin-top: 10px; padding: 0; border: 1px solid #cbd5e1; border-radius: 0; background: #fff; }
-.block-head { height: 40px; margin: 0; padding: 0 10px; border-bottom: 1px solid #dbe4ef; background: #f8fafc; }
-.relation-name { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.relation-name strong { color: #0f172a; }
-.relation-name span { color: #64748b; font-size: 12px; }
-.mapping-chips span { border-radius: 2px; background: #f8fbff; }
-.mapping-chips b { margin-right: 4px; color: #0f172a; }
-.mapping-chips i { margin: 0 4px; color: #64748b; font-style: normal; }
-.param-table-list { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
-.param-table-list span { display: inline-flex; align-items: center; overflow: hidden; border: 1px solid #cbd5e1; background: #fff; }
-.param-table-list b { padding: 2px 7px; color: #0f172a; font-weight: 700; }
-.param-table-list em { padding: 2px 7px; border-left: 1px solid #cbd5e1; background: #f1f5f9; color: #475569; font-style: normal; }
-.param-table-list i { color: #94a3b8; font-style: normal; }
-.binding-tree { padding: 8px 10px; }
-.binding-tree :deep(.el-tree-node__content) { height: 34px; border-bottom: 1px solid #eef2f6; }
-.binding-node { width: 100%; display: grid; grid-template-columns: minmax(180px, 0.6fr) minmax(220px, 1fr); gap: 14px; align-items: center; }
-.binding-node.model .binding-label { font-weight: 800; color: #0f172a; }
-.binding-node.instance .binding-label { color: #1d4ed8; font-weight: 700; }
-.binding-node.point .binding-label { color: #059669; }
-.binding-meta { color: #64748b; font-size: 12px; }
-.register-flow-card, .pending-register-panel, .register-review-panel, .manual-register-panel, .preview-box { border-radius: 0; }
-.preview-box { background: #fff; border-color: #cbd5e1; }
-@media (max-width: 1120px) { .adapter-workspace { grid-template-columns: 280px minmax(0, 1fr); } .template-grid, .command-grid, .metric-grid { grid-template-columns: 1fr; } }
-</style>
+.adapter-tabs :deep(.el-tabs__item) { height: 40px; padding: 0 14px; font-size: 13px; }
+.content-block { margin-top: 8px; border: 1px solid #e0e4eb; background: #fff; }
+.block-head { height: 36px; padding: 0 10px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e5e7eb; background: #f8fafc; }
+.block-head h3 { margin: 0; color: #344054; font-size: 13px; font-weight: 600; }
+.block-head em { color: #7b8798; font-size: 11px; font-style: normal; }
+.industrial-table :deep(.el-table__cell) { padding: 6px 8px; }
+.industrial-table :deep(th.el-table__cell) { background: #f3f6fa; color: #4a5568; font-size: 11px; font-weight: 600; }
+.relation-name { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.relation-name strong { overflow: hidden; color: #344054; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.relation-name span { color: #7b8798; font-size: 11px; }
+.mapping-chips, .param-table-list { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.mapping-chips span { padding: 0 5px; border: 1px solid #d9dde6; border-radius: 2px; color: #596579; font-size: 11px; line-height: 19px; }
+.mapping-chips b { color: #344054; }
+.mapping-chips i { margin: 0 3px; color: #8a93a6; font-style: normal; }
+.mapping-chips em, .param-table-list i { color: #a1a9b7; font-size: 11px; font-style: normal; }
+.param-table-list span { display: inline-flex; overflow: hidden; border: 1px solid #d9dde6; border-radius: 2px; }
+.param-table-list b { padding: 0 6px; color: #344054; font-size: 11px; line-height: 19px; }
+.param-table-list em { padding: 0 6px; border-left: 1px solid #d9dde6; background: #f8fafc; color: #7b8798; font-size: 11px; font-style: normal; line-height: 19px; }
+.binding-tree { padding: 4px 8px; }
+.binding-tree :deep(.el-tree-node__content) { height: 30px; border-bottom: 1px solid #f0f2f5; }
+.binding-node { width: 100%; display: grid; grid-template-columns: minmax(180px, .6fr) minmax(220px, 1fr); gap: 12px; }
+.binding-label { color: #344054; font-size: 13px; }
+.binding-node.model .binding-label { font-weight: 600; }
+.binding-node.instance .binding-label { color: var(--color-primary); }
+.binding-node.point .binding-label { color: var(--color-success); }
+.binding-meta { color: #7b8798; font-size: 11px; }
+.json-block pre { max-height: 500px; margin: 0; padding: 12px; overflow: auto; background: #1e2533; color: #e8edf4; font-size: 11px; line-height: 1.5; }
+.drawer-section-head { height: 28px; margin-bottom: 8px; display: flex; align-items: center; justify-content: space-between; }
+.drawer-section-head h3 { margin: 0; color: #344054; font-size: 13px; font-weight: 600; }
+.drawer-section-head span { color: #7b8798; font-size: 11px; }
+.review-form { margin-bottom: 8px; }
+.review-actions, .manual-actions, .drawer-footer { display: flex; justify-content: flex-end; gap: 8px; }
+.review-actions { padding-top: 8px; }
+.review-table :deep(.el-input__wrapper) { min-height: 28px; box-shadow: none; }
+.description-input { width: 100%; margin-top: 6px; }
+.contract-tag-list { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 24px; }
+.contract-tag-list > span { color: #98a2b3; font-size: 12px; }
+.contract-description { display: block; margin-top: 3px; color: #667085; font-size: 12px; }
+.broker-state { flex: 0 0 auto; margin-right: 8px; }
+.manual-register-panel summary { color: #344054; font-size: 13px; font-weight: 600; cursor: pointer; }
+.manual-register-hint { margin: 6px 0 0; color: #7b8798; font-size: 11px; }
+.manual-register-panel .register-form { margin-top: 8px; }
+.register-form :deep(.el-select) { width: 100%; }
+.upload-row { display: flex; align-items: center; gap: 6px; }
+.preview-box { margin: 8px 0; padding: 8px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; border: 1px solid #e0e4eb; background: #f8fafc; }
+.preview-box div { display: grid; gap: 2px; }
+.preview-box span { color: #7b8798; font-size: 11px; }
+.preview-box strong { color: #344054; font-size: 13px; font-weight: 600; }
+.register-section { margin: 0; padding: 12px; border: 1px solid #d9dde6; background: #fff; }
+.register-section + .register-section { margin-top: 8px; }
+.register-section.disabled { background: #fafbfd; }
+.register-source-picker { margin-bottom: 10px; }
+.source-content { min-width: 0; }
+.source-hint { min-height: 30px; margin-bottom: 8px; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; color: #6b7280; font-size: 12px; }
+.source-hint code { padding: 2px 5px; border: 1px solid #d9dde6; background: #f8fafc; color: #344054; font-family: Consolas, Menlo, monospace; font-size: 11px; }
+.source-copy { margin: 0 0 10px; color: #6b7280; font-size: 12px; line-height: 18px; }
+.manual-source :deep(.el-upload), .manual-source :deep(.el-upload-dragger) { width: 100%; }
+.manual-source :deep(.el-upload-dragger) { height: 76px; padding: 12px; border-radius: 3px; }
+.upload-icon { margin: 0 0 4px; color: var(--color-primary); font-size: 22px; }
+.parse-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid #e0e4eb; background: #f8fafc; }
+.parse-summary div { min-width: 0; padding: 8px 10px; display: grid; gap: 2px; border-right: 1px solid #e0e4eb; }
+.parse-summary div:last-child { border-right: 0; }
+.parse-summary span { color: #7b8798; font-size: 11px; }
+.parse-summary strong { overflow: hidden; color: #344054; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.save-panel { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #6b7280; font-size: 12px; line-height: 18px; }
+.save-panel .el-button { flex: 0 0 auto; }
+@media (max-width: 760px) {
+  .adapter-management-page { height: auto; min-height: calc(100vh - 52px); overflow: visible; }
+  .adapter-workspace { grid-template-columns: 1fr; }
+  .adapter-sidebar { max-height: 280px; border-right: 0; border-bottom: 1px solid #d9dde6; }
+  .adapter-detail { overflow: visible; padding: 8px; }
+  .detail-header { padding: 10px; }
+  .runtime-table { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .runtime-table div:nth-child(2n) { border-right: 0; }
+  .adapter-tabs { padding: 0 8px 8px; }
+  .binding-node { grid-template-columns: 1fr; gap: 1px; }
+  .parse-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .parse-summary div:nth-child(2n) { border-right: 0; }
+  .save-panel { align-items: flex-start; flex-direction: column; }
+}</style>

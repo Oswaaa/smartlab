@@ -8,11 +8,11 @@ import java.time.OffsetDateTime;
 import lombok.Data;
 
 @Data
-@TableName(value = "\"STEP_LOG\"", autoResultMap = false)
+@TableName(value = "\"EXECUTION_LOG\"", autoResultMap = false)
 /**
- * 工作流节点步骤执行历史日志实体。对应 STEP_LOGS 表，保存特定工作流任务中单个节点执行成败与返回报文。
+ * 统一执行日志实体。对应 EXECUTION_LOG 表，记录任务、手动控制、约束与系统来源的执行日志。
  */
-public class StepLog {
+public class ExecutionLog {
 
     @TableId(value = "id", type = IdType.AUTO)
     private Long id;

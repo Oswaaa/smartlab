@@ -6,10 +6,10 @@ import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.common.PageResult;
 import com.smartlab.management.dto.workflow.TaskMonitorSummary;
-import com.smartlab.management.entity.workflow.StepLog;
+import com.smartlab.management.entity.workflow.ExecutionLog;
 import com.smartlab.management.entity.workflow.Task;
 import com.smartlab.management.entity.workflow.TaskStep;
-import com.smartlab.management.mapper.workflow.StepLogMapper;
+import com.smartlab.management.mapper.workflow.ExecutionLogMapper;
 import com.smartlab.management.mapper.workflow.TaskMapper;
 import com.smartlab.management.mapper.workflow.TaskStepMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
@@ -22,7 +22,7 @@ import java.util.Map;
 
 /**
  * 任务表服务。
- * 对应 TASK、TASK_STEP、STEP_LOG 三张任务运行记录表。
+ * 对应 TASK、TASK_STEP、EXECUTION_LOG 三张任务运行记录表。
  */
 @Service
 /**
@@ -32,13 +32,13 @@ public class TaskService extends ManagementCrudService<Task> {
 
     private final TaskMapper taskMapper;
     private final TaskStepMapper taskStepMapper;
-    private final StepLogMapper stepLogMapper;
+    private final ExecutionLogMapper executionLogMapper;
 
-    public TaskService(TaskMapper taskMapper, TaskStepMapper taskStepMapper, StepLogMapper stepLogMapper) {
+    public TaskService(TaskMapper taskMapper, TaskStepMapper taskStepMapper, ExecutionLogMapper executionLogMapper) {
         super(taskMapper);
         this.taskMapper = taskMapper;
         this.taskStepMapper = taskStepMapper;
-        this.stepLogMapper = stepLogMapper;
+        this.executionLogMapper = executionLogMapper;
     }
 
     public PageResult<Task> page(long pageNo, long pageSize, String keyword, String status) {
@@ -122,17 +122,17 @@ public class TaskService extends ManagementCrudService<Task> {
         return task;
     }
 
-    public List<StepLog> logs(Long taskId, Long afterLogId, Integer limit) {
-        LambdaQueryWrapper<StepLog> query = Wrappers.lambdaQuery();
-        query.eq(StepLog::getTaskId, taskId);
+    public List<ExecutionLog> logs(Long taskId, Long afterLogId, Integer limit) {
+        LambdaQueryWrapper<ExecutionLog> query = Wrappers.lambdaQuery();
+        query.eq(ExecutionLog::getTaskId, taskId);
         if (afterLogId != null) {
-            query.gt(StepLog::getId, afterLogId);
+            query.gt(ExecutionLog::getId, afterLogId);
         }
-        query.orderByAsc(StepLog::getId);
+        query.orderByAsc(ExecutionLog::getId);
         if (limit != null && limit > 0) {
             query.last("limit " + Math.min(limit, 1000));
         }
-        return stepLogMapper.selectList(query);
+        return executionLogMapper.selectList(query);
     }
 
     public List<TaskStep> snapshots(Long taskId) {
@@ -179,14 +179,14 @@ public class TaskService extends ManagementCrudService<Task> {
     }
 
     private void appendLog(Long taskId, String sourceType, Long deviceInstanceId, String level, String message) {
-        StepLog log = new StepLog();
+        ExecutionLog log = new ExecutionLog();
         log.setSourceType(sourceType);
         log.setTaskId(taskId);
         log.setDeviceInstanceId(deviceInstanceId);
         log.setLogLevel(level);
         log.setLogInfo(message);
         log.setLogTime(OffsetDateTime.now());
-        stepLogMapper.insert(log);
+        executionLogMapper.insert(log);
     }
 
     private Object first(Map<String, Object> payload, String... keys) {

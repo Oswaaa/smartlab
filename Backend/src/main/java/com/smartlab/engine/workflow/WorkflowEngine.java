@@ -7,12 +7,12 @@ import com.smartlab.engine.statemachine.StateMachineEngine;
 import com.smartlab.management.entity.resource.device.DeviceTwinStates;
 import com.smartlab.management.entity.workflow.FlowModels;
 import com.smartlab.management.entity.workflow.FlowNode;
-import com.smartlab.management.entity.workflow.StepLog;
+import com.smartlab.management.entity.workflow.ExecutionLog;
 import com.smartlab.management.entity.workflow.Task;
 import com.smartlab.management.entity.workflow.TaskStep;
 import com.smartlab.management.mapper.workflow.FlowModelsMapper;
 import com.smartlab.management.mapper.workflow.FlowNodeMapper;
-import com.smartlab.management.mapper.workflow.StepLogMapper;
+import com.smartlab.management.mapper.workflow.ExecutionLogMapper;
 import com.smartlab.management.mapper.workflow.TaskMapper;
 import com.smartlab.management.mapper.workflow.TaskStepMapper;
 import com.smartlab.management.service.db.resource.device.DeviceTwinStateService;
@@ -38,19 +38,19 @@ public class WorkflowEngine {
     private final TaskStepMapper taskStepMapper;
     private final FlowModelsMapper flowModelsMapper;
     private final FlowNodeMapper flowNodeMapper;
-    private final StepLogMapper stepLogMapper;
+    private final ExecutionLogMapper executionLogMapper;
     private final StateMachineEngine stateMachineEngine;
     private final DeviceTwinStateService deviceTwinStateService;
 
     public WorkflowEngine(TaskMapper taskMapper, TaskStepMapper taskStepMapper,
                           FlowModelsMapper flowModelsMapper, FlowNodeMapper flowNodeMapper,
-                          StepLogMapper stepLogMapper,
+                          ExecutionLogMapper executionLogMapper,
                           StateMachineEngine stateMachineEngine, DeviceTwinStateService deviceTwinStateService) {
         this.taskMapper = taskMapper;
         this.taskStepMapper = taskStepMapper;
         this.flowModelsMapper = flowModelsMapper;
         this.flowNodeMapper = flowNodeMapper;
-        this.stepLogMapper = stepLogMapper;
+        this.executionLogMapper = executionLogMapper;
         this.stateMachineEngine = stateMachineEngine;
         this.deviceTwinStateService = deviceTwinStateService;
     }
@@ -347,13 +347,13 @@ public class WorkflowEngine {
     }
 
     private void appendLog(Long taskId, Long deviceInstanceId, String level, String message) {
-        StepLog logEntry = new StepLog();
+        ExecutionLog logEntry = new ExecutionLog();
         logEntry.setSourceType("TASK");
         logEntry.setTaskId(taskId);
         logEntry.setDeviceInstanceId(deviceInstanceId);
         logEntry.setLogLevel(level);
         logEntry.setLogInfo(message);
         logEntry.setLogTime(OffsetDateTime.now());
-        stepLogMapper.insert(logEntry);
+        executionLogMapper.insert(logEntry);
     }
 }

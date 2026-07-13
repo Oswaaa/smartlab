@@ -3,7 +3,7 @@ package com.smartlab.management.controller.workflow;
 import com.smartlab.management.dto.common.ApiResponse;
 import com.smartlab.management.dto.common.PageResult;
 import com.smartlab.management.dto.workflow.TaskMonitorSummary;
-import com.smartlab.management.entity.workflow.StepLog;
+import com.smartlab.management.entity.workflow.ExecutionLog;
 import com.smartlab.management.entity.workflow.Task;
 import com.smartlab.management.entity.workflow.TaskStep;
 import com.smartlab.management.service.db.workflow.TaskService;
@@ -84,7 +84,7 @@ public class TaskController {
     }
 
     @GetMapping("/logs/{taskId}")
-    public ApiResponse<List<StepLog>> logs(@PathVariable Long taskId,
+    public ApiResponse<List<ExecutionLog>> logs(@PathVariable Long taskId,
                                            @RequestParam(required = false) Long afterLogId,
                                            @RequestParam(required = false) Integer limit) {
         return ApiResponse.ok(taskService.logs(taskId, afterLogId, limit));

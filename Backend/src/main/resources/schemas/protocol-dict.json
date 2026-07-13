@@ -36,8 +36,8 @@
 
     "WorkflowNodeFunctionType": {
       "type": "string",
-      "enum": ["START", "END", "BRANCH", "SYNC", "WAIT", "LOOP", "JOIN", "EXPRESSION"],
-      "description": "工作流内置基础逻辑节点类型"
+      "enum": ["START", "END", "BRANCH", "AGGREGATE"],
+      "description": "工作流内置基础逻辑节点类型：开始、结束、条件分支、聚合汇合"
     },
 
     "WorkflowNodeAction": {

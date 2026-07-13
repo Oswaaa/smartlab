@@ -550,7 +550,7 @@
       direction="rtl"
       size="78%"
       destroy-on-close
-      class="instance-create-drawer"
+      class="instance-create-drawer unified-workflow-drawer"
     >
       <div class="drawer-body">
         <div class="detail-anchor-layout instance-edit-workbench">
@@ -700,7 +700,7 @@
         </div>
       </div>
       <template #footer>
-        <div style="padding: 10px 20px; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end; gap: 8px;">
+        <div class="drawer-footer unified-drawer-footer">
           <el-button size="small" @click="createDrawerVisible = false">取消</el-button>
           <el-button size="small" type="primary" :loading="creating" :disabled="!canSubmitCreate" @click="submitCreate">确认并保存</el-button>
         </div>

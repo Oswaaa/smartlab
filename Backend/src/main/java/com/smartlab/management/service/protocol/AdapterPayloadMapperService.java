@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.engine.statemachine.StateMachineEngine;
+import com.smartlab.global.protocol.ProtocolDictionaryService;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.adapter.AdapterManifestService;
 import com.smartlab.management.dto.resource.adapter.AdapterRouteDTO;
@@ -43,6 +44,7 @@ public class AdapterPayloadMapperService {
     private final DeviceTwinStatesMapper twinStatesMapper;
     private final AdapterIndexService adapterIndexService;
     private final AdapterManifestService adapterManifestService;
+    private final ProtocolDictionaryService protocolDictionaryService;
     private final StateMachineEngine stateMachineEngine;
     private final DataIndexService dataIndexService;
     private final DataRecordService dataRecordService;
@@ -53,6 +55,7 @@ public class AdapterPayloadMapperService {
             DeviceTwinStatesMapper twinStatesMapper,
             AdapterIndexService adapterIndexService,
             AdapterManifestService adapterManifestService,
+            ProtocolDictionaryService protocolDictionaryService,
             DataIndexService dataIndexService,
             DataRecordService dataRecordService,
             @Lazy StateMachineEngine stateMachineEngine) {
@@ -61,6 +64,7 @@ public class AdapterPayloadMapperService {
         this.twinStatesMapper = twinStatesMapper;
         this.adapterIndexService = adapterIndexService;
         this.adapterManifestService = adapterManifestService;
+        this.protocolDictionaryService = protocolDictionaryService;
         this.dataIndexService = dataIndexService;
         this.dataRecordService = dataRecordService;
         this.stateMachineEngine = stateMachineEngine;
@@ -117,6 +121,7 @@ public class AdapterPayloadMapperService {
         payload.put("commandName", commandName);
         payload.set("parameters", mappedParameters);
         payload.put("timestamp", Instant.now().toEpochMilli());
+        protocolDictionaryService.validateDefinition("CommandMessageFormat", payload);
 
         ObjectNode result = JsonNodeSupport.objectNode();
         result.put("topic", commandTopic(instance.getBoundAdapterName(), instance.getBoundDevicePoint()));
@@ -441,15 +446,21 @@ public class AdapterPayloadMapperService {
     }
 
     private String commandTopic(String adapterName, String devicePoint) {
-        return "smartlab/adapter/" + adapterName + "/" + devicePoint + "/command";
+        return protocolDictionaryService.resolveMqttTopic("commandTopic", Map.of(
+                "adapterName", adapterName,
+                "devicePoint", devicePoint));
     }
 
     private String telemetryTopic(String adapterName, String devicePoint) {
-        return "smartlab/adapter/" + adapterName + "/" + devicePoint + "/telemetry";
+        return protocolDictionaryService.resolveMqttTopic("telemetryTopic", Map.of(
+                "adapterName", adapterName,
+                "devicePoint", devicePoint));
     }
 
     private String eventTopic(String adapterName, String devicePoint) {
-        return "smartlab/adapter/" + adapterName + "/" + devicePoint + "/event";
+        return protocolDictionaryService.resolveMqttTopic("eventTopic", Map.of(
+                "adapterName", adapterName,
+                "devicePoint", devicePoint));
     }
 
     private Iterable<JsonNode> iterable(JsonNode node) {

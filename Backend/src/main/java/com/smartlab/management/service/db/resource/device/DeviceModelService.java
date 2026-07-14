@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.smartlab.global.protocol.ProtocolDictionaryService;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.common.PageResult;
 import com.smartlab.management.dto.resource.data.DataTemplateSaveDTO;
@@ -45,18 +46,21 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
     private final DeviceInstancesMapper deviceInstancesMapper;
     private final DeviceCategoryService deviceCategoryService;
     private final AdapterManifestService adapterManifestService;
+    private final ProtocolDictionaryService protocolDictionaryService;
     private final DataTemplateService dataTemplateService;
 
     public DeviceModelService(DeviceModelsMapper mapper,
             DeviceInstancesMapper deviceInstancesMapper,
             DeviceCategoryService deviceCategoryService,
             AdapterManifestService adapterManifestService,
+            ProtocolDictionaryService protocolDictionaryService,
             DataTemplateService dataTemplateService) {
         super(mapper);
         this.mapper = mapper;
         this.deviceInstancesMapper = deviceInstancesMapper;
         this.deviceCategoryService = deviceCategoryService;
         this.adapterManifestService = adapterManifestService;
+        this.protocolDictionaryService = protocolDictionaryService;
         this.dataTemplateService = dataTemplateService;
     }
 
@@ -497,85 +501,34 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
 
     private ArrayNode generateStandardInterfaces(List<String> adapterEvents) {
         ArrayNode interfaces = JsonNodeSupport.arrayNode();
+        interfaces.add(createInterface("Interface_workflow_in", "IN", "WORKFLOW", protocolArray("WorkflowControlSignal")));
+        interfaces.add(createInterface("Interface_status_out", "OUT", "STAT", protocolArray("StatusSignal")));
+        interfaces.add(createInterface("Interface_control_in", "IN", "CONTROL", protocolArray("ManualControlSignal")));
+        interfaces.add(createInterface("Interface_constraint_in", "IN", "CONSTRAINT", protocolArray("ConstraintControlSignal")));
+        interfaces.add(createInterface("Interface_adapter_out", "OUT", "ADAPTER", protocolArray("AdapterOutboundSignal")));
 
-        ObjectNode workflowIn = JsonNodeSupport.objectNode();
-        workflowIn.put("name", "Interface_workflow_in");
-        workflowIn.put("direction", "IN");
-        workflowIn.put("interfaceType", "WORKFLOW");
-        ArrayNode workflowSignals = JsonNodeSupport.arrayNode();
-        for (String sig : new String[] { "EXECUTE_START", "EXECUTE_PAUSE", "EXECUTE_RESUME", "EXECUTE_CANCEL",
-                "EXECUTE_RESET" }) {
-            workflowSignals.add(sig);
-        }
-        workflowIn.set("allowedSignals", workflowSignals);
-        interfaces.add(workflowIn);
-
-        ObjectNode statusOut = JsonNodeSupport.objectNode();
-        statusOut.put("name", "Interface_status_out");
-        statusOut.put("direction", "OUT");
-        statusOut.put("interfaceType", "STAT");
-        ArrayNode statusSignals = JsonNodeSupport.arrayNode();
-        for (String sig : new String[] { "OP_STATE", "CMD_STATE" }) {
-            statusSignals.add(sig);
-        }
-        statusOut.set("allowedSignals", statusSignals);
-        interfaces.add(statusOut);
-
-        ObjectNode controlIn = JsonNodeSupport.objectNode();
-        controlIn.put("name", "Interface_control_in");
-        controlIn.put("direction", "IN");
-        controlIn.put("interfaceType", "CONTROL");
-        ArrayNode controlSignals = JsonNodeSupport.arrayNode();
-        for (String sig : new String[] { "MANUAL_EXECUTE", "MANUAL_CANCEL", "MANUAL_PAUSE", "MANUAL_RESUME",
-                "MANUAL_RESET" }) {
-            controlSignals.add(sig);
-        }
-        controlIn.set("allowedSignals", controlSignals);
-        interfaces.add(controlIn);
-
-        ObjectNode constraintIn = JsonNodeSupport.objectNode();
-        constraintIn.put("name", "Interface_constraint_in");
-        constraintIn.put("direction", "IN");
-        constraintIn.put("interfaceType", "CONSTRAINT");
-        ArrayNode constraintSignals = JsonNodeSupport.arrayNode();
-        for (String sig : new String[] { "CONSTRAINT_CANCEL", "CONSTRAINT_PAUSE", "CONSTRAINT_RESUME",
-                "CONSTRAINT_RESET" }) {
-            constraintSignals.add(sig);
-        }
-        constraintIn.set("allowedSignals", constraintSignals);
-        interfaces.add(constraintIn);
-
-        ObjectNode adapterOut = JsonNodeSupport.objectNode();
-        adapterOut.put("name", "Interface_adapter_out");
-        adapterOut.put("direction", "OUT");
-        adapterOut.put("interfaceType", "ADAPTER");
-        ArrayNode adapterOutSignals = JsonNodeSupport.arrayNode();
-        for (String sig : new String[] { "CMD_START", "CMD_CANCEL", "CMD_PAUSE", "CMD_RESUME", "CMD_RESET" }) {
-            adapterOutSignals.add(sig);
-        }
-        adapterOut.set("allowedSignals", adapterOutSignals);
-        interfaces.add(adapterOut);
-
-        ObjectNode adapterIn = JsonNodeSupport.objectNode();
-        adapterIn.put("name", "Interface_adapter_in");
-        adapterIn.put("direction", "IN");
-        adapterIn.put("interfaceType", "ADAPTER");
         ArrayNode adapterInSignals = JsonNodeSupport.arrayNode();
         for (String sig : adapterEvents) {
             adapterInSignals.add(sig);
         }
-        adapterIn.set("allowedSignals", adapterInSignals);
-        interfaces.add(adapterIn);
-
+        interfaces.add(createInterface("Interface_adapter_in", "IN", "ADAPTER", adapterInSignals));
         return interfaces;
+    }
+
+    private ObjectNode createInterface(String name, String direction, String interfaceType, ArrayNode allowedSignals) {
+        ObjectNode node = JsonNodeSupport.objectNode();
+        node.put("name", protocolEnumValue("SystemInterfaceName", name));
+        node.put("direction", direction);
+        node.put("interfaceType", protocolEnumValue("SystemInterfaceType", interfaceType));
+        node.set("allowedSignals", allowedSignals);
+        return node;
     }
 
     private ObjectNode generateStandardCmdLifecycleSpace() {
         ObjectNode cmdSpace = JsonNodeSupport.objectNode();
-        cmdSpace.put("initialStateName", "IDLE");
+        cmdSpace.put("initialStateName", protocolEnumValue("CommandLifecycleState", "IDLE"));
         ArrayNode states = JsonNodeSupport.arrayNode();
-        for (String stateName : new String[] { "IDLE", "SENT", "RECEIVED", "RUNNING", "DONE", "FAILED", "TIMEOUT",
-                "CANCELLED" }) {
+        for (String stateName : protocolDictionaryService.enumValues("CommandLifecycleState")) {
             ObjectNode state = JsonNodeSupport.objectNode();
             state.put("stateName", stateName);
             state.set("onEntry", createStatusOnEntryActions("CMD_STATE", stateName));
@@ -584,14 +537,13 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         cmdSpace.set("states", states);
         return cmdSpace;
     }
-
     private ArrayNode createStatusOnEntryActions(String signalName, String stateName) {
         ArrayNode actions = JsonNodeSupport.arrayNode();
         ObjectNode action = JsonNodeSupport.objectNode();
         action.put("actionName", "SEND");
         ObjectNode payload = JsonNodeSupport.objectNode();
-        payload.put("interfaceName", "Interface_status_out");
-        payload.put("signalName", signalName);
+        payload.put("interfaceName", protocolEnumValue("SystemInterfaceName", "Interface_status_out"));
+        payload.put("signalName", protocolSignal(signalName));
         payload.put("stateName", stateName);
         action.set("payload", payload);
         actions.add(action);
@@ -653,8 +605,8 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         transition.put("toStateName", toState);
 
         ObjectNode trigger = JsonNodeSupport.objectNode();
-        trigger.put("interfaceName", triggerInterface);
-        trigger.put("signalName", triggerSignal);
+        trigger.put("interfaceName", protocolEnumValue("SystemInterfaceName", triggerInterface));
+        trigger.put("signalName", protocolSignal(triggerSignal));
         transition.set("trigger", trigger);
 
         ArrayNode actions = JsonNodeSupport.arrayNode();
@@ -662,8 +614,8 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             ObjectNode action = JsonNodeSupport.objectNode();
             action.put("actionName", actionName);
             ObjectNode payload = JsonNodeSupport.objectNode();
-            payload.put("interfaceName", actionInterface);
-            payload.put("signalName", actionSignal);
+            payload.put("interfaceName", protocolEnumValue("SystemInterfaceName", actionInterface));
+            payload.put("signalName", protocolSignal(actionSignal));
             action.set("payload", payload);
             actions.add(action);
         }
@@ -671,6 +623,47 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         return transition;
     }
 
+
+    private ArrayNode protocolArray(String definitionName) {
+        ArrayNode array = JsonNodeSupport.arrayNode();
+        for (String value : protocolDictionaryService.enumValues(definitionName)) {
+            array.add(value);
+        }
+        return array;
+    }
+
+    private String protocolEnumValue(String definitionName, String value) {
+        if (value == null || !protocolDictionaryService.enumValues(definitionName).contains(value)) {
+            throw new IllegalArgumentException("Protocol definition " + definitionName + " 不包含: " + value);
+        }
+        return value;
+    }
+
+    private String protocolSignal(String signalName) {
+        if (signalName == null) {
+            return null;
+        }
+        if (!standardSystemSignals().contains(signalName)) {
+            throw new IllegalArgumentException("Protocol signal 未定义: " + signalName);
+        }
+        return signalName;
+    }
+
+    private Set<String> standardTriggerSignals() {
+        Set<String> signals = new HashSet<>();
+        signals.addAll(protocolDictionaryService.enumValues("WorkflowControlSignal"));
+        signals.addAll(protocolDictionaryService.enumValues("ManualControlSignal"));
+        signals.addAll(protocolDictionaryService.enumValues("ConstraintControlSignal"));
+        signals.addAll(protocolDictionaryService.enumValues("AdapterCommandLifecycleEvent"));
+        return signals;
+    }
+
+    private Set<String> standardSystemSignals() {
+        Set<String> signals = standardTriggerSignals();
+        signals.addAll(protocolDictionaryService.enumValues("AdapterOutboundSignal"));
+        signals.addAll(protocolDictionaryService.enumValues("StatusSignal"));
+        return signals;
+    }
     private ObjectNode parseOpStateSpace(JsonNode node) {
         ObjectNode opSpace = JsonNodeSupport.objectNode();
         String initial = "IDLE";
@@ -725,10 +718,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             return;
         }
 
-        Set<String> standardTriggerSignals = Set.of(
-                "EXECUTE_START", "MANUAL_EXECUTE", "COMMAND_RECEIVED", "COMMAND_RUNNING",
-                "COMMAND_COMPLETED", "COMMAND_FAILED", "COMMAND_TIMEOUT", "COMMAND_CANCELLED",
-                "EXECUTE_CANCEL", "MANUAL_CANCEL", "CONSTRAINT_CANCEL");
+        Set<String> standardTriggerSignals = standardTriggerSignals();
 
         for (JsonNode t : sourceTransitions) {
             if (!t.isObject() || !t.has("fromStateName") || !t.has("toStateName") || !t.has("trigger")) {

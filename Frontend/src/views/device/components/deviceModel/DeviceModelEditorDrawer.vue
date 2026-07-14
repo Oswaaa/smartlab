@@ -143,8 +143,7 @@
               <el-form label-width="90px" size="small">
                 <el-form-item label="协议类型">
                   <el-select v-model="draft.adapterContract.config.protocol">
-                    <el-option label="MQTT" value="MQTT" />
-                    <el-option label="HTTP" value="HTTP" />
+                    <el-option v-for="protocol in communicationProtocols" :key="protocol" :label="protocol" :value="protocol" />
                   </el-select>
                 </el-form-item>
                 <el-form-item label="注册 Adapter">
@@ -692,7 +691,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, computed, watch, defineComponent, nextTick, resolveComponent, h } from 'vue'
+import { ref, reactive, computed, watch, defineComponent, nextTick, resolveComponent, h, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Delete, Upload, Warning, Lock, Right, Close, Refresh } from '@element-plus/icons-vue'
 import {
@@ -711,6 +710,8 @@ import {
   attributeDataTypes,
   adapterDataTypes,
   operators,
+  communicationProtocols,
+  loadProtocolMetadata,
   standardCmdEvents,
   defaultStateSpace,
   defaultAdapterContract,
@@ -789,6 +790,10 @@ function capabilityParameterOptionsDetailedByKey(capabilityKey) {
 }
 
 // ─── Local UI Components ──────────────────────────────
+onMounted(() => {
+  loadProtocolMetadata().catch(() => {})
+})
+
 const DataTypeSelect = defineComponent({
   name: 'DataTypeSelect',
   props: { modelValue: String, options: { type: Array, default: () => [] } },
@@ -862,7 +867,6 @@ function emptyDraft() {
 }
 
 function openForCreate(categoryId) {
-  console.log('[Drawer] openForCreate called with categoryId:', categoryId)
   try {
     drawerMode.value = 'create'
     replaceDraft(emptyDraft())
@@ -872,19 +876,16 @@ function openForCreate(categoryId) {
     loadPropertyTypesForTemplate()
     fetchRegisteredAdapters() // 自动加载已注册的 Adapter 列表，免去手动刷新
     drawerVisible.value = true
-    console.log('[Drawer] drawerVisible set to true successfully.')
   } catch (err) {
     console.error('[Drawer] Failed in openForCreate:', err)
   }
 }
 
 async function openForEdit(model, defaultAttrs) {
-  console.log('[Drawer] openForEdit called for model:', model?.modelId)
   try {
     drawerMode.value = 'edit'
     // 立刻打开抽屉，让滑入动画即时开始，不被任何计算阻塞
     drawerVisible.value = true
-    console.log('[Drawer] drawerVisible set to true successfully.')
 
     // 等 Vue 完成本轮渲染帧后，再执行重数据填充，确保不阻塞动画
     await nextTick()
@@ -895,7 +896,6 @@ async function openForEdit(model, defaultAttrs) {
 
     // 纯净的异步兜底逻辑：仅在缓存为空且有模型ID时启动静默网络抓取
     if ((!defaultAttrs || defaultAttrs.length === 0) && model?.modelId) {
-      console.log('[Drawer] defaultAttrs is empty. Fetching fallback template attributes in background...')
       const fallbackAttrs = await fetchDefaultTemplateAttributes(model.modelId, model.attributes || [])
       if (asArray(fallbackAttrs).length > 0) {
         const normalizedAttributes = normalizeAttributes(draft.attributes)

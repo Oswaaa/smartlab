@@ -36,10 +36,6 @@ mqtt:
   username: lab_system
   password: 123456
   auto-start: true
-  register-topic: smartlab/adapter/register
-  adapter-heartbeat-topic-pattern: smartlab/adapter/{adapterName}/heartbeat
-  device-telemetry-topic-pattern: smartlab/adapter/{adapterName}/{devicePoint}/telemetry
-  device-event-topic-pattern: smartlab/adapter/{adapterName}/{devicePoint}/event
   reconnect-delay-ms: 15000
 
 logging:

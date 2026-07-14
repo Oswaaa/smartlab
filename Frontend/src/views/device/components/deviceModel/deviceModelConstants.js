@@ -1,14 +1,61 @@
+import axios from 'axios'
+import { reactive } from 'vue'
+
 // ==========================================
 // 1. UI 静态常量与下拉菜单项
 // ==========================================
-export const attributeDataTypes = ['INTEGER', 'DOUBLE', 'BOOLEAN']
-export const adapterDataTypes = ['INTEGER', 'DOUBLE', 'BOOLEAN', 'STRING']
-export const operators = ['GT', 'LT', 'GE', 'LE', 'EQ', 'NE', 'BETWEEN', 'IN']
-export const interfaceTypes = ['WORKFLOW', 'STAT', 'ADAPTER', 'CONTROL', 'CONSTRAINT']
-export const stateActionNames = ['SEND', 'ASSIGN']
-export const standardCmdEvents = ['COMMAND_RECEIVED', 'COMMAND_RUNNING', 'COMMAND_COMPLETED', 'COMMAND_FAILED', 'COMMAND_TIMEOUT', 'COMMAND_CANCELLED']
-export const adapterOutSignals = ['CMD_START', 'CMD_CANCEL', 'CMD_PAUSE', 'CMD_RESUME', 'CMD_RESET']
+export const attributeDataTypes = reactive(['INTEGER', 'DOUBLE', 'BOOLEAN'])
+export const adapterDataTypes = reactive(['INTEGER', 'DOUBLE', 'BOOLEAN', 'STRING'])
+export const operators = reactive(['GT', 'LT', 'GE', 'LE', 'EQ', 'NE', 'BETWEEN', 'IN'])
+export const interfaceTypes = reactive(['WORKFLOW', 'STAT', 'ADAPTER', 'CONTROL', 'CONSTRAINT'])
+export const stateActionNames = reactive(['SEND', 'ASSIGN'])
+export const standardCmdEvents = reactive(['COMMAND_RECEIVED', 'COMMAND_RUNNING', 'COMMAND_COMPLETED', 'COMMAND_FAILED', 'COMMAND_TIMEOUT', 'COMMAND_CANCELLED'])
+export const adapterOutSignals = reactive(['CMD_START', 'CMD_CANCEL', 'CMD_PAUSE', 'CMD_RESUME', 'CMD_RESET'])
+export const communicationProtocols = reactive(['MQTT', 'HTTP'])
+export const adapterRegisterFormats = reactive(['JSON', 'INI', 'YAML', 'XML'])
+export const commandLifecycleStates = reactive(['IDLE', 'SENT', 'RECEIVED', 'RUNNING', 'DONE', 'FAILED', 'TIMEOUT', 'CANCELLED'])
+export const workflowControlSignals = reactive(['EXECUTE_START', 'EXECUTE_PAUSE', 'EXECUTE_RESUME', 'EXECUTE_CANCEL', 'EXECUTE_RESET'])
+export const manualControlSignals = reactive(['MANUAL_EXECUTE', 'MANUAL_CANCEL', 'MANUAL_PAUSE', 'MANUAL_RESUME', 'MANUAL_RESET'])
+export const constraintControlSignals = reactive(['CONSTRAINT_CANCEL', 'CONSTRAINT_PAUSE', 'CONSTRAINT_RESUME', 'CONSTRAINT_RESET'])
+export const statusSignals = reactive(['OP_STATE', 'CMD_STATE'])
+export const mqttTopics = reactive({
+  registerTopic: '',
+  heartbeatTopic: '',
+  commandTopic: '',
+  telemetryTopic: '',
+  eventTopic: ''
+})
 
+
+function replaceArray(target, values) {
+  if (!Array.isArray(values) || values.length === 0) return
+  target.splice(0, target.length, ...values)
+}
+
+export function applyProtocolMetadata(metadata = {}) {
+  replaceArray(attributeDataTypes, metadata.dataTypes?.filter(type => type !== 'JSON'))
+  replaceArray(adapterDataTypes, metadata.dataTypes)
+  replaceArray(operators, metadata.constraintOperators)
+  replaceArray(communicationProtocols, metadata.communicationProtocols)
+  replaceArray(adapterRegisterFormats, metadata.adapterRegisterFormats)
+  replaceArray(standardCmdEvents, metadata.adapterCommandLifecycleEvents)
+  replaceArray(adapterOutSignals, metadata.adapterOutboundSignals)
+  replaceArray(commandLifecycleStates, metadata.commandLifecycleStates)
+  replaceArray(workflowControlSignals, metadata.workflowControlSignals)
+  replaceArray(manualControlSignals, metadata.manualControlSignals)
+  replaceArray(constraintControlSignals, metadata.constraintControlSignals)
+  replaceArray(statusSignals, metadata.statusSignals)
+  if (metadata.mqttTopics && typeof metadata.mqttTopics === 'object') {
+    Object.assign(mqttTopics, metadata.mqttTopics)
+  }
+}
+
+export async function loadProtocolMetadata() {
+  const res = await axios.get('/api/protocol/dictionary/frontend-metadata')
+  const metadata = res.data?.data || res.data || {}
+  applyProtocolMetadata(metadata)
+  return metadata
+}
 // ==========================================
 // 2. 信号格式化与展示辅助函数
 // ==========================================
@@ -40,7 +87,7 @@ export function formatSignalShortName(signalName) {
 }
 
 export function getSignalsForInterface(interfaceName) {
-  if (interfaceName === 'Interface_status_out') return ['OP_STATE', 'CMD_STATE']
+  if (interfaceName === 'Interface_status_out') return statusSignals
   if (interfaceName === 'Interface_adapter_out') return adapterOutSignals
   return []
 }
@@ -81,18 +128,18 @@ export function defaultCommandLifecycle() {
 }
 
 export function commandLifecycleStateNames() {
-  return ['IDLE', 'SENT', 'RECEIVED', 'RUNNING', 'DONE', 'FAILED', 'TIMEOUT', 'CANCELLED']
+  return commandLifecycleStates
 }
 
 export function defaultInterfaces(adapterSignals = []) {
   const signals = uniqueStrings([...standardCmdEvents, ...asArray(adapterSignals).filter(Boolean)])
   return [
-    { _key: 'iface_workflow', name: 'Interface_workflow_in', direction: 'IN', interfaceType: 'WORKFLOW', allowedSignals: ['EXECUTE_START', 'EXECUTE_PAUSE', 'EXECUTE_RESUME', 'EXECUTE_CANCEL', 'EXECUTE_RESET'] },
-    { _key: 'iface_status', name: 'Interface_status_out', direction: 'OUT', interfaceType: 'STAT', allowedSignals: ['OP_STATE', 'CMD_STATE'] },
-    { _key: 'iface_control', name: 'Interface_control_in', direction: 'IN', interfaceType: 'CONTROL', allowedSignals: ['MANUAL_EXECUTE', 'MANUAL_CANCEL', 'MANUAL_PAUSE', 'MANUAL_RESUME', 'MANUAL_RESET'] },
-    { _key: 'iface_constraint', name: 'Interface_constraint_in', direction: 'IN', interfaceType: 'CONSTRAINT', allowedSignals: ['CONSTRAINT_CANCEL', 'CONSTRAINT_PAUSE', 'CONSTRAINT_RESUME', 'CONSTRAINT_RESET'] },
+    { _key: 'iface_workflow', name: 'Interface_workflow_in', direction: 'IN', interfaceType: 'WORKFLOW', allowedSignals: [...workflowControlSignals] },
+    { _key: 'iface_status', name: 'Interface_status_out', direction: 'OUT', interfaceType: 'STAT', allowedSignals: [...statusSignals] },
+    { _key: 'iface_control', name: 'Interface_control_in', direction: 'IN', interfaceType: 'CONTROL', allowedSignals: [...manualControlSignals] },
+    { _key: 'iface_constraint', name: 'Interface_constraint_in', direction: 'IN', interfaceType: 'CONSTRAINT', allowedSignals: [...constraintControlSignals] },
     { _key: 'iface_adapter_in', name: 'Interface_adapter_in', direction: 'IN', interfaceType: 'ADAPTER', allowedSignals: signals },
-    { _key: 'iface_adapter_out', name: 'Interface_adapter_out', direction: 'OUT', interfaceType: 'ADAPTER', allowedSignals: adapterOutSignals }
+    { _key: 'iface_adapter_out', name: 'Interface_adapter_out', direction: 'OUT', interfaceType: 'ADAPTER', allowedSignals: [...adapterOutSignals] }
   ]
 }
 

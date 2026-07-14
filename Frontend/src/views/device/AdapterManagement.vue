@@ -209,7 +209,7 @@
 
             <div v-if="registerSource === 'mqtt'" class="source-content" v-loading="pendingLoading">
               <div class="source-hint">
-                <span>监听主题</span><code>smartlab/adapter/register</code>
+                <span>监听主题</span><code>{{ mqttTopics.registerTopic }}</code>
                 <el-tag size="small" :type="mqttConnected ? 'success' : 'danger'" effect="plain">{{ mqttConnected ? 'Broker 在线' : 'Broker 未连接' }}</el-tag>
 
 
@@ -227,7 +227,7 @@
             <div v-else class="source-content manual-source">
               <p class="source-copy">上传原始配置文件，或直接粘贴配置内容。系统会自动识别 Adapter 名称与配置格式，再进入审阅。</p>
               <el-form label-width="92px" size="small" class="register-form">
-                <el-form-item label="配置格式"><el-select v-model="registerForm.rawConfigFormat"><el-option label="JSON" value="JSON" /><el-option label="INI" value="INI" /><el-option label="YAML" value="YAML" /><el-option label="XML" value="XML" /></el-select></el-form-item>
+                <el-form-item label="配置格式"><el-select v-model="registerForm.rawConfigFormat"><el-option v-for="format in adapterRegisterFormats" :key="format" :label="format" :value="format" /></el-select></el-form-item>
                 <el-form-item label="配置文件">
                   <el-upload drag :auto-upload="false" :show-file-list="false" accept=".json,.txt,.ini,.yaml,.yml,.xml" :on-change="importRegisterFile">
                     <el-icon class="upload-icon"><Upload /></el-icon><div class="el-upload__text">拖拽配置文件到此处，或 <em>点击选择</em></div>
@@ -294,6 +294,7 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { MoreFilled, Plus, Search, Upload } from '@element-plus/icons-vue'
+import { adapterRegisterFormats, loadProtocolMetadata, mqttTopics } from './components/deviceModel/deviceModelConstants'
 
 const keyword = ref('')
 const activeTab = ref('runtime')

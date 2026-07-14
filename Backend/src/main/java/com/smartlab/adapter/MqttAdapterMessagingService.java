@@ -4,6 +4,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.engine.statemachine.StateMachineSendActionEvent;
+import com.smartlab.global.protocol.ProtocolDictionaryService;
+import com.smartlab.global.protocol.ProtocolTopicMatch;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.resource.adapter.AdapterRouteDTO;
 import com.smartlab.management.entity.resource.adapter.AdapterIndex;
@@ -53,6 +55,7 @@ public class MqttAdapterMessagingService implements MqttCallback {
 
     private final AdapterIndexService adapterIndexService;
     private final AdapterPayloadMapperService protocolMapperService;
+    private final ProtocolDictionaryService protocolDictionaryService;
     private final Executor executor;
     private final Set<String> subscribedTopics = ConcurrentHashMap.newKeySet();
     private final Map<String, Map<String, Object>> pendingAdapterRegistrations = new ConcurrentHashMap<>();
@@ -73,17 +76,6 @@ public class MqttAdapterMessagingService implements MqttCallback {
     @Value("${mqtt.auto-start:true}")
     private boolean autoStart;
 
-    @Value("${mqtt.register-topic:smartlab/adapter/register}")
-    private String registerTopic;
-
-    @Value("${mqtt.adapter-heartbeat-topic-pattern:smartlab/adapter/{adapterName}/heartbeat}")
-    private String adapterHeartbeatTopicPattern;
-
-    @Value("${mqtt.device-telemetry-topic-pattern:smartlab/adapter/{adapterName}/{devicePoint}/telemetry}")
-    private String deviceTelemetryTopicPattern;
-
-    @Value("${mqtt.device-event-topic-pattern:smartlab/adapter/{adapterName}/{devicePoint}/event}")
-    private String deviceEventTopicPattern;
 
     private volatile MqttClient client;
     private volatile String connectionStatus = "NOT_STARTED";
@@ -93,9 +85,11 @@ public class MqttAdapterMessagingService implements MqttCallback {
 
     public MqttAdapterMessagingService(AdapterIndexService adapterIndexService,
             AdapterPayloadMapperService protocolMapperService,
+            ProtocolDictionaryService protocolDictionaryService,
             @Qualifier("workflowTaskExecutor") Executor executor) {
         this.adapterIndexService = adapterIndexService;
         this.protocolMapperService = protocolMapperService;
+        this.protocolDictionaryService = protocolDictionaryService;
         this.executor = executor;
     }
 
@@ -144,7 +138,7 @@ public class MqttAdapterMessagingService implements MqttCallback {
         status.put("broker", broker);
         status.put("clientId", clientId);
         status.put("usernameConfigured", username != null && !username.isBlank());
-        status.put("registerTopic", registerTopic);
+        status.put("registerTopic", registerTopic());
         status.put("lastError", lastError);
         status.put("lastAttemptAt", lastAttemptAt == null ? null : lastAttemptAt.toString());
         status.put("lastConnectedAt", lastConnectedAt == null ? null : lastConnectedAt.toString());
@@ -253,7 +247,7 @@ public class MqttAdapterMessagingService implements MqttCallback {
     }
 
     public void subscribeRegistrationTopics() {
-        subscribeTopics(registerTopic);
+        subscribeTopics(registerTopic());
     }
 
     public void trySubscribeDevicePointTopics(String adapterName, String devicePoint) {
@@ -272,8 +266,12 @@ public class MqttAdapterMessagingService implements MqttCallback {
             throw new IllegalArgumentException("Adapter 标识和设备点字段不能为空");
         }
         subscribeTopics(
-                topic(deviceTelemetryTopicPattern, adapterName, devicePoint),
-                topic(deviceEventTopicPattern, adapterName, devicePoint));
+                protocolDictionaryService.resolveMqttTopic("telemetryTopic", Map.of(
+                        "adapterName", adapterName,
+                        "devicePoint", devicePoint)),
+                protocolDictionaryService.resolveMqttTopic("eventTopic", Map.of(
+                        "adapterName", adapterName,
+                        "devicePoint", devicePoint)));
     }
 
     @Override
@@ -311,7 +309,10 @@ public class MqttAdapterMessagingService implements MqttCallback {
     }
 
     private void routeIncomingMessage(String topic, JsonNode payload) {
-        if (registerTopic.equals(topic)) {
+        ProtocolTopicMatch topicMatch = protocolDictionaryService.matchMqttTopic(topic)
+                .orElseThrow(() -> new IllegalArgumentException("未知 MQTT topic: " + topic));
+        if ("registerTopic".equals(topicMatch.topicName())) {
+            protocolDictionaryService.validateDefinition("AdapterRegisterRequest", payload);
             Map<String, Object> body = JsonNodeSupport.MAPPER.convertValue(payload, new TypeReference<>() {
             });
             ObjectNode manifest = adapterIndexService.previewRegisterPayload(body);
@@ -341,31 +342,29 @@ public class MqttAdapterMessagingService implements MqttCallback {
             log.info("收到 Adapter 注册请求，已进入待确认队列: {}", adapterName);
             return;
         }
-        String[] parts = topic.split("/");
-        if (parts.length == 4 && "smartlab".equals(parts[0]) && "adapter".equals(parts[1])
-                && "heartbeat".equals(parts[3])) {
-            adapterIndexService.heartbeat(parts[2], payload.path("status").asText("ONLINE"));
+
+        Map<String, String> variables = topicMatch.variables();
+        if ("heartbeatTopic".equals(topicMatch.topicName())) {
+            protocolDictionaryService.validateDefinition("AdapterHeartbeat", payload);
+            adapterIndexService.heartbeat(variables.get("adapterName"), payload.path("status").asText("ONLINE"));
             return;
         }
-        if (parts.length == 5 && "smartlab".equals(parts[0]) && "adapter".equals(parts[1])) {
-            String adapterName = parts[2];
-            String devicePoint = parts[3];
-            switch (parts[4]) {
-                case "telemetry" -> protocolMapperService.applyTelemetry(adapterName, devicePoint, payload);
-                case "event" -> protocolMapperService.applyAdapterEvent(adapterName, devicePoint, payload);
-                default -> {
-                    // command topics are system-outbound.
-                }
-            }
+        if ("telemetryTopic".equals(topicMatch.topicName())) {
+            protocolDictionaryService.validateDefinition("TelemetryMessageFormat", payload);
+            protocolMapperService.applyTelemetry(variables.get("adapterName"), variables.get("devicePoint"), payload);
+            return;
+        }
+        if ("eventTopic".equals(topicMatch.topicName())) {
+            protocolDictionaryService.validateDefinition("EventMessageFormat", payload);
+            protocolMapperService.applyAdapterEvent(variables.get("adapterName"), variables.get("devicePoint"), payload);
         }
     }
-
     private void trySubscribeAdapterHeartbeat(String adapterName) {
         if (adapterName == null || adapterName.isBlank()) {
             return;
         }
         try {
-            subscribeTopics(topic(adapterHeartbeatTopicPattern, adapterName, null));
+            subscribeTopics(protocolDictionaryService.resolveMqttTopic("heartbeatTopic", Map.of("adapterName", adapterName)));
         } catch (Exception e) {
             log.warn("MQTT Adapter 心跳订阅暂未成功, adapter={}, reason={}", adapterName, e.getMessage());
         }
@@ -380,8 +379,12 @@ public class MqttAdapterMessagingService implements MqttCallback {
             if (adapterName == null || adapterName.isBlank() || devicePoint == null || devicePoint.isBlank()) {
                 continue;
             }
-            topics.add(topic(deviceTelemetryTopicPattern, adapterName, devicePoint));
-            topics.add(topic(deviceEventTopicPattern, adapterName, devicePoint));
+            topics.add(protocolDictionaryService.resolveMqttTopic("telemetryTopic", Map.of(
+                    "adapterName", adapterName,
+                    "devicePoint", devicePoint)));
+            topics.add(protocolDictionaryService.resolveMqttTopic("eventTopic", Map.of(
+                    "adapterName", adapterName,
+                    "devicePoint", devicePoint)));
         }
         subscribeTopics(topics.toArray(String[]::new));
     }
@@ -450,10 +453,7 @@ public class MqttAdapterMessagingService implements MqttCallback {
         lastError = e == null ? "unknown" : e.getMessage();
     }
 
-    private String topic(String pattern, String adapterName, String devicePoint) {
-        String result = pattern == null ? "" : pattern;
-        result = result.replace("{adapterName}", adapterName == null ? "" : adapterName.trim());
-        result = result.replace("{devicePoint}", devicePoint == null ? "" : devicePoint.trim());
-        return result;
+    private String registerTopic() {
+        return protocolDictionaryService.resolveMqttTopic("registerTopic", Map.of());
     }
 }

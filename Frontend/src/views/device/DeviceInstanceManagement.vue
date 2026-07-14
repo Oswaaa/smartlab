@@ -347,11 +347,12 @@
               <el-table-column label="条件算子" width="110">
                 <template #default="{ row }">
                   <el-select v-model="row.operator" size="small">
-                    <el-option label="≤ (小于等于)" value="LTE" />
-                    <el-option label="≥ (大于等于)" value="GTE" />
-                    <el-option label="< (小于)" value="LT" />
-                    <el-option label="> (大于)" value="GT" />
-                    <el-option label="= (等于)" value="EQ" />
+                    <el-option
+                      v-for="operator in operators"
+                      :key="operator"
+                      :label="operatorLabel(operator)"
+                      :value="operator"
+                    />
                   </el-select>
                 </template>
               </el-table-column>
@@ -716,6 +717,12 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
 import { useAuthStore } from '../../stores/authStore'
 import DeviceModelTree from './components/DeviceModelTree.vue'
+import {
+  loadProtocolMetadata,
+  manualControlSignals,
+  mqttTopics,
+  operators
+} from './components/deviceModel/deviceModelConstants'
 
 interface DeviceModel {
   modelId: string
@@ -760,7 +767,7 @@ interface DeviceSnapshot {
 
 interface InstanceConstraint {
   objectAttributeName: string
-  operator: 'LTE' | 'GTE' | 'LT' | 'GT' | 'EQ'
+  operator: 'LE' | 'GE' | 'LT' | 'GT' | 'EQ' | 'LTE' | 'GTE'
   boundaryValue: number | null
   unit: string
   violationStateName: string
@@ -944,14 +951,17 @@ const availableDataTemplates = computed(() => {
   return dataTemplates.value.filter(tpl => !tpl.deviceModelId || !modelId || String(tpl.deviceModelId) === String(modelId))
 })
 
+const resolveTopicPattern = (pattern: string, variables: Record<string, string>) =>
+  String(pattern || '').replace(/\{([^}]+)\}/g, (_, key) => variables[key] || '')
+
 const mqttTopicRows = (adapterName?: string, devicePoint?: string) => {
   const ready = !!adapterName && !!devicePoint
-  const base = ready ? `smartlab/adapter/${adapterName}/${devicePoint}` : ''
+  const variables = { adapterName: adapterName || '', devicePoint: devicePoint || '' }
   return [
-    { type: 'command', label: '命令', direction: '系统 → Adapter', topic: ready ? `${base}/command` : '' },
-    { type: 'telemetry', label: '遥测', direction: 'Adapter → 系统', topic: ready ? `${base}/telemetry` : '' },
-    { type: 'event', label: '事件', direction: 'Adapter → 系统', topic: ready ? `${base}/event` : '' },
-    { type: 'heartbeat', label: '心跳', direction: 'Adapter → 系统', topic: adapterName ? `smartlab/adapter/${adapterName}/heartbeat` : '' }
+    { type: 'command', label: '命令', direction: '系统 → Adapter', topic: ready ? resolveTopicPattern(mqttTopics.commandTopic, variables) : '' },
+    { type: 'telemetry', label: '遥测', direction: 'Adapter → 系统', topic: ready ? resolveTopicPattern(mqttTopics.telemetryTopic, variables) : '' },
+    { type: 'event', label: '事件', direction: 'Adapter → 系统', topic: ready ? resolveTopicPattern(mqttTopics.eventTopic, variables) : '' },
+    { type: 'heartbeat', label: '心跳', direction: 'Adapter → 系统', topic: adapterName ? resolveTopicPattern(mqttTopics.heartbeatTopic, variables) : '' }
   ]
 }
 
@@ -1162,9 +1172,15 @@ const getAttributeDisplayName = (identifier: string) => {
   return prop ? (prop.displayName || prop.name) : identifier
 }
 
+const normalizeConstraintOperator = (op: string) => {
+  if (op === 'LTE') return 'LE'
+  if (op === 'GTE') return 'GE'
+  return op || 'LE'
+}
+
 const operatorLabel = (op: string) => {
-  if (op === 'LTE') return '≤ 小于等于'
-  if (op === 'GTE') return '≥ 大于等于'
+  if (op === 'LE' || op === 'LTE') return '≤ 小于等于'
+  if (op === 'GE' || op === 'GTE') return '≥ 大于等于'
   if (op === 'LT') return '< 小于'
   if (op === 'GT') return '> 大于'
   if (op === 'EQ') return '= 等于'
@@ -1235,7 +1251,7 @@ const viewDetails = (instance: DeviceInstance) => {
 
   localConstraints.value = asArray(list).map((c: any) => ({
     objectAttributeName: c.objectAttributeName || '',
-    operator: c.operator || 'LTE',
+    operator: normalizeConstraintOperator(c.operator || 'LE'),
     boundaryValue: c.boundaryValue != null ? c.boundaryValue : null,
     unit: c.unit || '',
     violationStateName: c.violationStateName || '',
@@ -1336,7 +1352,7 @@ const deleteInstance = async (id: string) => {
 const addConstraint = () => {
   localConstraints.value.push({
     objectAttributeName: '',
-    operator: 'LTE',
+    operator: 'LE',
     boundaryValue: null,
     unit: '',
     violationStateName: '',
@@ -1906,7 +1922,7 @@ const submitCreate = async () => {
     const modelConstraints = asArray(wizardModel.value?.intrinsicConstraints || wizardModel.value?.intrinsicConstraint)
     const constraints = modelConstraints.map((c: any) => ({
       objectAttributeName: c.objectAttributeName || '',
-      operator: c.operator || 'LTE',
+      operator: normalizeConstraintOperator(c.operator || 'LE'),
       boundaryValue: c.boundaryValue != null ? c.boundaryValue : null,
       unit: c.unit || '',
       violationStateName: c.violationStateName || '',
@@ -2008,7 +2024,7 @@ const sendManualCommand = async () => {
   try {
     const res = await axios.post(`/api/device/instance/control/${activeInstance.value.instanceId}`, {
       commandId: controlCommandId.value,
-      signalName: 'MANUAL_EXECUTE',
+      signalName: manualControlSignals[0] || 'MANUAL_EXECUTE',
       parameters: params
     })
     
@@ -2030,7 +2046,10 @@ const sendManualCommand = async () => {
   }
 }
 
-onMounted(loadData)
+onMounted(() => {
+  loadProtocolMetadata().catch(() => {})
+  loadData()
+})
 onUnmounted(() => {
   stopPolling()
   if (instanceSearchTimer) window.clearTimeout(instanceSearchTimer)

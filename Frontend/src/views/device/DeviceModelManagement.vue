@@ -317,10 +317,7 @@ async function saveCategoryApi(categoryName, parentCategoryId, categoryId = null
 }
 
 function openCreateDrawerWithCategory(data) {
-  console.log('[Parent] openCreateDrawerWithCategory triggered, data:', data)
   const catId = data?.categoryId ?? data?.id
-  console.log('[Parent] Resolved catId:', catId)
-  console.log('[Parent] Current drawer ref instance:', editorDrawerRef.value)
   editorDrawerRef.value?.openForCreate(catId)
 }
 
@@ -405,20 +402,16 @@ watch(selectedModelId, id => {
 
 
 function openCreateDrawer() {
-  console.log('[Parent] openCreateDrawer triggered.')
-  console.log('[Parent] Current drawer ref instance:', editorDrawerRef.value)
   editorDrawerRef.value?.openForCreate(selectedCategoryId.value)
 }
 
 function handleModelSaved(savedModelId) {
-  console.log('[Parent] Model saved event captured. Saved ID:', savedModelId)
   selectedCategoryId.value = ''
   selectedModelId.value = savedModelId
   loadData()
 }
 
 function openEditDrawer(model) {
-  console.log('[Parent] openEditDrawer triggered instantly.')
   editorDrawerRef.value?.openForEdit(model, defaultTemplateAttributes.value)
 }
 

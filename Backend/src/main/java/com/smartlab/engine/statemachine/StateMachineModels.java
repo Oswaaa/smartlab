@@ -45,6 +45,8 @@ public class StateMachineModels {
      * 状态转移规则
      */
     public record TransitionRule(
+            String stateSpace,
+            String regionName,
             String fromState,
             String toState,
             String triggerInterface,
@@ -55,6 +57,8 @@ public class StateMachineModels {
             JsonNode trigger = node.path("trigger");
             String trigInterface = trigger.path("interfaceName").asText("");
             String trigSignal = trigger.path("signalName").asText("");
+            String stateSpace = node.path("stateSpace").asText("");
+            String regionName = node.path("regionName").asText("");
             String fromState = node.path("fromStateName").asText("");
             String toState = node.path("toStateName").asText("");
 
@@ -65,7 +69,11 @@ public class StateMachineModels {
                     actions.add(ActionDefinition.fromJson(actionNode));
                 }
             }
-            return new TransitionRule(fromState, toState, trigInterface, trigSignal, actions);
+            return new TransitionRule(stateSpace, regionName, fromState, toState, trigInterface, trigSignal, actions);
+        }
+
+        public boolean automatic() {
+            return triggerInterface.isBlank() && triggerSignal.isBlank();
         }
     }
 
@@ -89,9 +97,10 @@ public class StateMachineModels {
      */
     public record EventContext(
             DeviceInstances instance,
+            DeviceModels model,
             DeviceTwinStates twinState,
             String triggerInterface,
             String triggerSignal,
-            Map<String, Object> payloadContext
+            Map<String, Object> executionContext
     ) {}
 }

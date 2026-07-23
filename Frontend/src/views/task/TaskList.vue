@@ -9,7 +9,7 @@
             <el-button @click="refreshTaskList" :loading="loading">
               <el-icon><Refresh /></el-icon> 刷新
             </el-button>
-            <el-button type="primary" class="premium-btn" @click="openCreateDrawer">
+            <el-button type="primary" @click="openCreateDrawer">
               <el-icon class="mr-1"><Plus /></el-icon> 新建任务
             </el-button>
           </div>
@@ -36,16 +36,16 @@
         </el-table-column>
         <el-table-column label="关联流程" min-width="160">
           <template #default="{ row }">
-            <div v-if="getWorkflowName(row.templateId) !== row.templateId" style="font-weight: 500; color: #334155;">{{ getWorkflowName(row.templateId) }}</div>
-            <div style="font-size: 11px; color: #94a3b8; font-family: monospace;">ID: {{ row.templateId || '-' }}</div>
+            <div v-if="getWorkflowName(row.flowModelId) !== String(row.flowModelId)" style="font-weight: 500; color: #334155;">{{ getWorkflowName(row.flowModelId) }}</div>
+            <div style="font-size: 11px; color: #94a3b8; font-family: monospace;">ID: {{ row.flowModelId || '-' }}</div>
           </template>
         </el-table-column>
-        <el-table-column prop="currentStatus" label="状态" width="110" align="center">
+        <el-table-column prop="taskStatus" label="状态" width="110" align="center">
           <template #default="{ row }">
             <div class="status-badge-container">
-              <span :class="['pulse-dot', (row.currentStatus || '').toLowerCase()]" v-if="row.currentStatus === 'RUNNING'"></span>
-              <el-tag :type="getStatusType(row.currentStatus)" effect="dark" class="status-tag">
-                {{ getStatusLabel(row.currentStatus) }}
+              <span :class="['pulse-dot', (row.taskStatus || '').toLowerCase()]" v-if="row.taskStatus === 'RUNNING'"></span>
+              <el-tag :type="getStatusType(row.taskStatus)" effect="dark" class="status-tag">
+                {{ getStatusLabel(row.taskStatus) }}
               </el-tag>
             </div>
           </template>
@@ -61,7 +61,7 @@
             <div class="time-range-cell">
               <div><span class="time-label">始：</span>{{ formatTime(row.startTime) }}</div>
               <div v-if="row.endTime"><span class="time-label">终：</span>{{ formatTime(row.endTime) }}</div>
-              <div v-else-if="row.currentStatus === 'RUNNING'" style="color: #2563eb; font-size: 12px;">运行中...</div>
+              <div v-else-if="row.taskStatus === 'RUNNING'" style="color: #2563eb; font-size: 12px;">运行中...</div>
             </div>
           </template>
         </el-table-column>
@@ -81,8 +81,8 @@
                 type="primary"
                 size="small"
                 plain
-                :disabled="row.currentStatus !== 'PENDING'"
-                @click="startTask(row.taskId)"
+                :disabled="row.taskStatus !== 'PENDING'"
+                @click="startTask(row.id)"
               >
                 启动
               </el-button>
@@ -90,8 +90,8 @@
                 type="warning"
                 size="small"
                 plain
-                :disabled="!['PENDING', 'RUNNING'].includes(row.currentStatus)"
-                @click="abortTask(row.taskId)"
+                :disabled="!['PENDING', 'RUNNING'].includes(row.taskStatus)"
+                @click="abortTask(row.id)"
               >
                 终止
               </el-button>
@@ -99,7 +99,7 @@
                 type="danger"
                 size="small"
                 plain
-                @click="confirmDeleteTask(row.taskId)"
+                @click="confirmDeleteTask(row.id)"
               >
                 删除
               </el-button>
@@ -123,7 +123,7 @@
     </el-card>
 
     <!-- Create Task Drawer -->
-    <el-drawer v-model="createDrawerVisible" title="新建任务" size="640px" class="model-drawer" destroy-on-close>
+    <el-drawer v-model="createDrawerVisible" title="新建任务" size="78%" class="model-drawer unified-workflow-drawer" destroy-on-close>
       <div class="drawer-body" style="padding: 0 16px;">
         <el-form
           ref="createFormRef"
@@ -140,9 +140,9 @@
               <el-form-item label="任务名称" prop="taskName">
                 <el-input v-model="createForm.taskName" placeholder="例如：批次PCR扩增与物料搅拌" />
               </el-form-item>
-              <el-form-item label="关联流程" prop="templateId">
+              <el-form-item label="关联流程" prop="flowModelId">
                 <el-select
-                  v-model="createForm.templateId"
+                  v-model="createForm.flowModelId"
                   placeholder="请选择流程"
                   style="width: 100%"
                   v-loading="loadingWorkflows"
@@ -150,9 +150,9 @@
                 >
                   <el-option
                     v-for="tpl in processTemplates"
-                    :key="tpl.templateId"
-                    :label="tpl.templateName"
-                    :value="tpl.templateId"
+                    :key="tpl.id"
+                    :label="tpl.flowName"
+                    :value="tpl.id"
                   />
                 </el-select>
               </el-form-item>
@@ -167,7 +167,7 @@
               </div>
               <div v-for="model in requiredModels" :key="model.nodeId" style="width: 100%; margin-bottom: 16px;">
                 <div style="font-size: 13px; margin-bottom: 6px; font-weight: 600; color: #334155;">{{ model.nodeType }} (节点: {{ model.nodeIdRef }}):</div>
-                <el-select v-model="createForm.resourceMap[model.nodeIdRef]" placeholder="请选择设备实例" style="width: 100%">
+                <el-select v-model="createForm.resourceMap[model.nodeId]" placeholder="请选择设备实例" style="width: 100%">
                   <el-option
                     v-for="inst in availableInstances[model.deviceModelId] || []"
                     :key="inst.id"
@@ -235,7 +235,7 @@
                     </div>
                     <div v-else-if="row.sourceType === 'NODE_LIFECYCLE_STATE'" style="display: flex; gap: 8px;">
                       <el-select v-model="row.workflowTemplateId" placeholder="流程模板(可选)" size="small" clearable style="width: 150px;">
-                        <el-option v-for="tpl in processTemplates" :key="tpl.templateId" :label="tpl.templateName" :value="tpl.templateId" />
+                        <el-option v-for="tpl in processTemplates" :key="tpl.id" :label="tpl.flowName" :value="tpl.id" />
                       </el-select>
                       <el-input v-model="row.nodeName" placeholder="节点名(nodeIdRef)" size="small" style="width: 120px;" />
                     </div>
@@ -270,7 +270,7 @@
                 <el-table-column prop="operator" label="运算符" width="120">
                   <template #default="{ row }">
                     <el-select v-model="row.operator" size="small">
-                      <el-option v-for="op in ['GT','LT','EQ','NEQ','GTE','LTE','IN','NOT_IN']" :key="op" :label="op" :value="op" />
+                      <el-option v-for="op in constraintOperators" :key="op" :label="op" :value="op" />
                     </el-select>
                   </template>
                 </el-table-column>
@@ -323,7 +323,7 @@
     </el-drawer>
 
     <!-- Monitor Tab Drawer -->
-    <el-drawer v-model="monitorDrawerVisible" :title="`任务详情: ${activeTask?.taskName || ''}`" size="680px">
+    <el-drawer v-model="monitorDrawerVisible" :title="`任务详情 · ${activeTask?.taskName || ''}`" size="78%" class="unified-workflow-drawer">
       <div v-if="activeTask" class="monitor-container">
         <!-- Meta Cards -->
         <div class="monitor-header-card">
@@ -332,12 +332,12 @@
             <div class="monitor-task-meta">
               <span>ID: {{ activeTask.taskId }}</span>
               <span>·</span>
-              <span>流程: {{ getWorkflowName(activeTask.templateId) }}</span>
+              <span>流程: {{ getWorkflowName(activeTask.flowModelId) }}</span>
             </div>
           </div>
           <div class="monitor-header-right">
-            <el-tag :type="getStatusType(activeTask.currentStatus)" size="large" effect="dark">
-              {{ getStatusLabel(activeTask.currentStatus) }}
+            <el-tag :type="getStatusType(activeTask.taskStatus)" size="large" effect="dark">
+              {{ getStatusLabel(activeTask.taskStatus) }}
             </el-tag>
           </div>
         </div>
@@ -380,6 +380,18 @@
                     <span class="snap-label">耗时：</span>
                     <span class="snap-val">{{ step.durationMs }}ms</span>
                   </div>
+                  <div class="snap-row" v-if="step.parentStepId != null">
+                    <span class="snap-label">父步骤：</span>
+                    <span class="snap-val">#{{ step.parentStepId }}</span>
+                  </div>
+                  <div class="snap-row" v-if="step.interfaceInSnapshot?.messageId">
+                    <span class="snap-label">外部调用：</span>
+                    <span class="snap-val runtime-id">{{ step.interfaceInSnapshot.messageId }}</span>
+                  </div>
+                  <div class="snap-row" v-if="step.interfaceInSnapshot?.capabilityRef">
+                    <span class="snap-label">设备能力：</span>
+                    <span class="snap-val">{{ step.interfaceInSnapshot.capabilityRef }} · 实例 {{ step.interfaceInSnapshot.deviceInstanceId }}</span>
+                  </div>
                   <div class="snap-row" v-if="step.variableSpace && Object.keys(step.variableSpace).length > 0">
                     <span class="snap-label">变量空间：</span>
                     <div class="snap-tags mt-1">
@@ -387,7 +399,7 @@
                         v-for="(val, key) in step.variableSpace"
                         :key="key" type="info" size="small" class="mr-2 mb-1"
                       >
-                        {{ key }}: {{ val }}
+                        {{ key }}: {{ formatRuntimeValue(val) }}
                       </el-tag>
                     </div>
                   </div>
@@ -437,28 +449,16 @@
 
           <!-- Tab 4: Supplemental constraints mapping -->
           <el-tab-pane label="任务约束" name="constraints">
-            <div class="constraints-section" v-if="activeTask.globalConstraints">
-              <div v-if="activeTask.globalConstraints.observableObjects_O?.length > 0" class="constraint-group">
+            <div class="constraints-section" v-if="activeTask.taskConstraints">
+              <div v-if="activeTask.taskConstraints.observableObjects?.length" class="constraint-group">
                 <div class="constraint-group-title">可观测对象</div>
-                <el-tag v-for="obj in activeTask.globalConstraints.observableObjects_O" :key="obj" type="info" size="small" style="margin: 2px;">{{ obj }}</el-tag>
+                <el-tag v-for="item in activeTask.taskConstraints.observableObjects" :key="item.name" type="info" size="small" style="margin: 2px;">{{ item.name }}</el-tag>
               </div>
-              <div v-if="activeTask.globalConstraints.handlingActions_H?.length > 0" class="constraint-group">
-                <div class="constraint-group-title">操作动作</div>
-                <el-tag v-for="act in activeTask.globalConstraints.handlingActions_H" :key="act" type="warning" size="small" style="margin: 2px;">{{ act }}</el-tag>
+              <div v-if="activeTask.taskConstraints.constraints?.length" class="constraint-group">
+                <div class="constraint-group-title">约束规则</div>
+                <el-tag v-for="rule in activeTask.taskConstraints.constraints" :key="rule.name" type="warning" size="small" style="margin: 2px;">{{ rule.name }}：{{ rule.observedObjectName }} {{ rule.operator }} {{ rule.threshold }}</el-tag>
               </div>
-              <div v-if="activeTask.globalConstraints.globalConstraints_B0?.length > 0" class="constraint-group">
-                <div class="constraint-group-title">全局约束</div>
-                <el-tag v-for="c in activeTask.globalConstraints.globalConstraints_B0" :key="c" type="danger" size="small" style="margin: 2px;">{{ c }}</el-tag>
-              </div>
-              <div v-if="activeTask.globalConstraints.taskRequirements_U?.goals_G?.length > 0" class="constraint-group">
-                <div class="constraint-group-title">任务目标</div>
-                <el-tag v-for="g in activeTask.globalConstraints.taskRequirements_U.goals_G" :key="g" type="success" size="small" style="margin: 2px;">{{ g }}</el-tag>
-              </div>
-              <div v-if="activeTask.globalConstraints.taskRequirements_U?.taskConstraints_Btau?.length > 0" class="constraint-group">
-                <div class="constraint-group-title">任务限制</div>
-                <el-tag v-for="c in activeTask.globalConstraints.taskRequirements_U.taskConstraints_Btau" :key="c" size="small" style="margin: 2px;">{{ c }}</el-tag>
-              </div>
-              <el-empty v-if="!hasAnyConstraint(activeTask.globalConstraints)" description="未配置任务约束" />
+              <el-empty v-if="!hasAnyConstraint(activeTask.taskConstraints)" description="未配置任务约束" />
             </div>
             <el-empty v-else description="未配置任务约束" />
           </el-tab-pane>
@@ -475,18 +475,17 @@ import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'elem
 import { Plus, Refresh, Delete, ArrowRight } from '@element-plus/icons-vue'
 
 interface TaskInstance {
-  taskId: number
+  id: number
   taskName: string
   taskDesc?: string
-  templateId: string
-  flowModelId?: number
-  globalConstraints: Record<string, any>
+  flowModelId: number
+  taskConstraints: Record<string, any>
   resourceMap?: Record<string, any>
   taskVariables?: Record<string, any>
-  currentStatus: string
+  taskStatus: string
   currentNodeIdRef?: number
   currentFlowNodeId?: number
-  startTime: string
+  startTime?: string
   endTime?: string
 }
 
@@ -520,8 +519,8 @@ interface StepLog {
 }
 
 interface WorkflowTemplate {
-  templateId: string
-  templateName: string
+  id: number
+  flowName: string
 }
 
 // Stats & lists
@@ -546,7 +545,7 @@ const createDrawerVisible = ref(false)
 const createFormRef = ref<FormInstance>()
 const createForm = ref({
   taskName: '',
-  templateId: '',
+  flowModelId: null,
   resourceMap: {} as Record<string, string>,
   constraintsForm: {
     observableObjects: [] as any[],
@@ -555,13 +554,16 @@ const createForm = ref({
 })
 const creating = ref(false)
 const allModels = ref<any[]>([])
+const constraintDataTypes = ref<string[]>(['INTEGER', 'DOUBLE', 'STRING', 'BOOLEAN', 'JSON'])
+const constraintOperators = ref<string[]>(['>', '<', '>=', '<=', '=', '!=', 'BETWEEN', 'IN'])
+const systemViolationActions = ref<string[]>(['HALT', 'PAUSE', 'ALERT', 'LOG_ONLY'])
 const modelAttributes = ref<Record<string, string[]>>({})
 
 const addObservableObject = () => {
   createForm.value.constraintsForm.observableObjects.push({
     name: '',
     sourceType: 'DEVICE_ATTRIBUTE',
-    dataType: 'FLOAT',
+    dataType: 'DOUBLE',
     deviceModelId: undefined,
     deviceInstanceId: undefined,
     targetName: ''
@@ -572,7 +574,7 @@ const addConstraintRule = () => {
   createForm.value.constraintsForm.constraints.push({
     name: '',
     observedObjectName: '',
-    operator: 'EQ',
+    operator: '=',
     threshold: '',
     violationActions: []
   })
@@ -590,7 +592,7 @@ const fetchModelAttributes = async (row: any) => {
       }
       
       if (!availableInstances.value[row.deviceModelId]) {
-        const listRes = await axios.get(`/api/device/instance/page?modelId=${row.deviceModelId}&pageSize=100`)
+        const listRes = await axios.get(`/api/device/instance/page?modelId=${row.deviceModelId}&pageSize=100&lifecycleStatus=${encodeURIComponent('使用中')}`)
         if (listRes.data?.success) {
           availableInstances.value[row.deviceModelId] = listRes.data.data.records || []
         } else {
@@ -601,6 +603,16 @@ const fetchModelAttributes = async (row: any) => {
       modelAttributes.value[row.deviceModelId] = []
     }
   }
+}
+
+const fetchConstraintMetadata = async () => {
+  try {
+    const res = await axios.get('/api/schema-metadata/frontend')
+    const metadata = res.data?.data || res.data || {}
+    constraintDataTypes.value = metadata.constraint?.dataTypes || constraintDataTypes.value
+    constraintOperators.value = metadata.constraint?.operators || constraintOperators.value
+    systemViolationActions.value = metadata.constraint?.violationActions || systemViolationActions.value
+  } catch { ElMessage.error('加载约束协议元数据失败') }
 }
 
 const fetchAllModels = async () => {
@@ -627,7 +639,7 @@ const handleTemplateChange = async (val: string) => {
   
   if (!val) return
   try {
-    const res = await axios.get(`/api/workflow/node/list?flowModelId=${val}`)
+    const res = await axios.get(`/api/workflow/required-resources/${val}`)
     if (res.data?.success && res.data.data) {
       const nodes = res.data.data || []
       const reqModels: RequiredModel[] = []
@@ -643,7 +655,7 @@ const handleTemplateChange = async (val: string) => {
           
           if (!availableInstances.value[n.deviceModelId]) {
             try {
-              const listRes = await axios.get(`/api/device/instance/page?modelId=${n.deviceModelId}&pageSize=100`)
+              const listRes = await axios.get(`/api/device/instance/page?modelId=${n.deviceModelId}&pageSize=100&lifecycleStatus=${encodeURIComponent('使用中')}`)
               if (listRes.data?.success) {
                 availableInstances.value[n.deviceModelId] = listRes.data.data.records || []
               } else {
@@ -682,7 +694,7 @@ let latestDetailLogId = 0
 // Form rules
 const createRules = ref<FormRules>({
   taskName: [{ required: true, message: '请输入任务名称', trigger: 'blur' }],
-  templateId: [{ required: true, message: '请选择流程', trigger: 'change' }]
+  flowModelId: [{ required: true, message: '请选择流程', trigger: 'change' }]
 })
 
 // Stats computed
@@ -787,9 +799,9 @@ const fetchWorkflows = async () => {
 }
 
 // Workflow Name mapping helper
-const getWorkflowName = (tplId: string) => {
-  const match = processTemplates.value.find(w => w.templateId === tplId)
-  return match ? match.templateName : tplId
+const getWorkflowName = (flowModelId: number) => {
+  const match = processTemplates.value.find(workflow => workflow.id === Number(flowModelId))
+  return match ? match.flowName : String(flowModelId || '-')
 }
 
 // Status Badges helpers
@@ -869,7 +881,7 @@ const fetchLogsAndSnapshots = async (silent = false) => {
   }
   
   try {
-    const taskId = activeTask.value.taskId
+    const taskId = activeTask.value.id
     
     // Concurrently load snapshots & logs
     const logsUrl = latestDetailLogId > 0
@@ -905,14 +917,14 @@ const fetchLogsAndSnapshots = async (silent = false) => {
     const taskRes = await axios.get(`/api/task/${taskId}`)
     if (taskRes.data?.success && taskRes.data.data) {
       const updated = taskRes.data.data
-      activeTask.value.currentStatus = updated.currentStatus
+      activeTask.value.taskStatus = updated.taskStatus
       activeTask.value.startTime = updated.startTime
       activeTask.value.endTime = updated.endTime
       
       // Find matching item in main list and sync
       const mainMatch = tasks.value.find(t => t.taskId === taskId)
       if (mainMatch) {
-        mainMatch.currentStatus = updated.currentStatus
+        mainMatch.taskStatus = updated.taskStatus
         mainMatch.startTime = updated.startTime
         mainMatch.endTime = updated.endTime
       }
@@ -996,7 +1008,7 @@ const confirmDeleteTask = async (taskId: number) => {
 const openCreateDrawer = () => {
   createForm.value = {
     taskName: '',
-    templateId: '',
+    flowModelId: null,
     resourceMap: {},
     constraintsForm: {
       observableObjects: [],
@@ -1019,8 +1031,8 @@ const submitCreateTask = async () => {
       try {
         const payload = {
           taskName: createForm.value.taskName,
-          flowModelId: createForm.value.templateId,
-          globalConstraints: createForm.value.constraintsForm,
+          flowModelId: createForm.value.flowModelId,
+          taskConstraints: createForm.value.constraintsForm,
           resourceMap: createForm.value.resourceMap
         }
         
@@ -1048,6 +1060,13 @@ const formatTime = (timeStr: string) => {
   if (!timeStr) return '-'
   const date = new Date(timeStr)
   return date.toLocaleString()
+}
+const formatRuntimeValue = (value: unknown) => {
+  if (value == null) return 'null'
+  if (typeof value === 'object') {
+    try { return JSON.stringify(value) } catch { return String(value) }
+  }
+  return String(value)
 }
 
 const formatLogTime = (timeStr: string) => {
@@ -1086,16 +1105,8 @@ const stopMainListPolling = () => {
   }
 }
 
-const hasAnyConstraint = (c: Record<string, any>) => {
-  if (!c) return false
-  return (
-    (c.observableObjects_O?.length > 0) ||
-    (c.handlingActions_H?.length > 0) ||
-    (c.globalConstraints_B0?.length > 0) ||
-    (c.taskRequirements_U?.goals_G?.length > 0) ||
-    (c.taskRequirements_U?.taskConstraints_Btau?.length > 0)
-  )
-}
+const hasAnyConstraint = (constraints: any) =>
+  Boolean(constraints?.observableObjects?.length || constraints?.constraints?.length)
 
 onMounted(() => {
   refreshTaskList()
@@ -1654,6 +1665,32 @@ onUnmounted(() => {
   font-weight: 700;
 }
 
+
+/* Enterprise task console overrides */
+.task-list-fullscreen { padding: 16px 20px 20px; overflow: hidden; }
+.table-card-fullscreen { height: 100%; display: flex; flex-direction: column; border: 1px solid #e5e7eb !important; border-radius: 6px !important; }
+.table-card-fullscreen :deep(.el-card__header) { min-height: 58px; padding: 10px 16px; border-bottom: 1px solid #e5e7eb; }
+.table-card-fullscreen :deep(.el-card__body) { flex: 1; min-height: 0; padding: 0; display: flex; flex-direction: column; }
+.card-header-fullscreen { height: 100%; display: flex; align-items: center; justify-content: space-between; }
+.header-title { color: #111827; font-size: 20px; font-weight: 600; }
+.header-actions-right { display: flex; align-items: center; gap: 8px; }
+.task-summary-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid #e5e7eb; border-radius: 6px; background: #fff; }
+.task-summary-strip > div { min-height: 62px; padding: 10px 16px; border-right: 1px solid #e5e7eb; display: flex; flex-direction: column; justify-content: center; }
+.task-summary-strip > div:last-child { border-right: 0; }
+.task-summary-strip span { color: #6b7280; font-size: 12px; }
+.task-summary-strip strong { margin-top: 2px; color: #111827; font-size: 20px; line-height: 24px; }
+.task-summary-strip .metric-label { color: #6b7280; font-size: 12px; }
+.task-summary-strip .metric-value { margin-top: 2px; color: #111827; font-size: 20px; line-height: 24px; }
+.task-summary-strip .metric-note { color: #8a93a6; font-size: 12px; }
+.custom-table { flex: 1; min-height: 0; border-radius: 0; }
+.custom-table :deep(th.el-table__cell) { border-bottom: 1px solid #e5e7eb; text-transform: none; letter-spacing: 0; }
+.custom-table :deep(td.el-table__cell) { padding: 8px 0; }
+.pagination-bar { min-height: 52px; box-sizing: border-box; padding: 10px 16px; border-top: 1px solid #e5e7eb; }
+.status-tag { border-radius: 4px; box-shadow: none; }
+.premium-btn { background: #1677ff; box-shadow: none; transform: none; }
+.monitor-header-card, .schema-info-bar { background: #fafbfc; border: 1px solid #e5e7eb; border-radius: 6px; box-shadow: none; }
+.node-snapshot-card { border-radius: 6px; box-shadow: none; transform: none; }
+.log-container { border-radius: 6px; box-shadow: none; }
+.model-drawer .drawer-body { padding: 0 24px !important; }
+@media (max-width: 800px) { .task-list-fullscreen { padding: 12px; } .task-summary-strip { grid-template-columns: repeat(2, 1fr); } }
 </style>
-
-

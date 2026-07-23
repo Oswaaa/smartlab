@@ -1,359 +1,329 @@
 package com.smartlab.engine.workflow;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.smartlab.engine.statemachine.StateMachineEngine;
-import com.smartlab.management.entity.resource.device.DeviceTwinStates;
-import com.smartlab.management.entity.workflow.FlowModels;
+import com.smartlab.engine.statemachine.StateMachineInterfaceSignalEvent;
+import com.smartlab.engine.workflow.action.WorkflowActionContext;
+import com.smartlab.engine.workflow.action.WorkflowActionDefinition;
+import com.smartlab.engine.workflow.action.WorkflowActionRegistry;
+import com.smartlab.engine.workflow.action.WorkflowActionStatus;
+import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.entity.workflow.FlowNode;
-import com.smartlab.management.entity.workflow.ExecutionLog;
 import com.smartlab.management.entity.workflow.Task;
 import com.smartlab.management.entity.workflow.TaskStep;
-import com.smartlab.management.mapper.workflow.FlowModelsMapper;
-import com.smartlab.management.mapper.workflow.FlowNodeMapper;
-import com.smartlab.management.mapper.workflow.ExecutionLogMapper;
-import com.smartlab.management.mapper.workflow.TaskMapper;
-import com.smartlab.management.mapper.workflow.TaskStepMapper;
-import com.smartlab.management.service.db.resource.device.DeviceTwinStateService;
-import com.smartlab.global.util.JsonNodeSupport;
-import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.smartlab.management.service.db.workflow.FlowNodeService;
+import com.smartlab.management.service.db.workflow.WorkflowRuntimeService;
+import com.smartlab.management.service.db.workflow.WorkflowService;
+import com.smartlab.management.service.db.workflow.WorkflowTaskResourceService;
+import java.time.Instant;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-import java.time.OffsetDateTime;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.HashMap;
-import java.util.stream.Collectors;
+import java.util.Set;
+import java.util.UUID;
 
+/** Executes compiled workflow definitions without accessing database mappers directly. */
 @Service
 public class WorkflowEngine {
-
     private static final Logger log = LoggerFactory.getLogger(WorkflowEngine.class);
+    private static final int MAX_SUB_FLOW_DEPTH = 32;
+    private static final Object[] TASK_LOCKS = createTaskLocks(256);
 
-    private final TaskMapper taskMapper;
-    private final TaskStepMapper taskStepMapper;
-    private final FlowModelsMapper flowModelsMapper;
-    private final FlowNodeMapper flowNodeMapper;
-    private final ExecutionLogMapper executionLogMapper;
-    private final StateMachineEngine stateMachineEngine;
-    private final DeviceTwinStateService deviceTwinStateService;
+    private final WorkflowRuntimeService runtime;
+    private final WorkflowService workflowService;
+    private final FlowNodeService flowNodeService;
+    private final WorkflowConditionEvaluator conditionEvaluator;
+    private final WorkflowActionRegistry actionRegistry;
+    private final WorkflowExecutionOperations executionOperations;
 
-    public WorkflowEngine(TaskMapper taskMapper, TaskStepMapper taskStepMapper,
-                          FlowModelsMapper flowModelsMapper, FlowNodeMapper flowNodeMapper,
-                          ExecutionLogMapper executionLogMapper,
-                          StateMachineEngine stateMachineEngine, DeviceTwinStateService deviceTwinStateService) {
-        this.taskMapper = taskMapper;
-        this.taskStepMapper = taskStepMapper;
-        this.flowModelsMapper = flowModelsMapper;
-        this.flowNodeMapper = flowNodeMapper;
-        this.executionLogMapper = executionLogMapper;
-        this.stateMachineEngine = stateMachineEngine;
-        this.deviceTwinStateService = deviceTwinStateService;
+    public WorkflowEngine(WorkflowRuntimeService runtime, WorkflowService workflowService,
+                          FlowNodeService flowNodeService, WorkflowConditionEvaluator conditionEvaluator,
+                          WorkflowActionRegistry actionRegistry, WorkflowExecutionOperations executionOperations) {
+        this.runtime = runtime;
+        this.workflowService = workflowService;
+        this.flowNodeService = flowNodeService;
+        this.conditionEvaluator = conditionEvaluator;
+        this.actionRegistry = actionRegistry;
+        this.executionOperations = executionOperations;
     }
 
-    @Scheduled(fixedDelay = 2000)
+    @Scheduled(fixedDelay = 1000)
     public void driveWorkflows() {
-        List<Task> runningTasks = taskMapper.selectList(Wrappers.<Task>lambdaQuery().eq(Task::getTaskStatus, "RUNNING"));
-        for (Task task : runningTasks) {
+        for (Task task : runtime.runningTasks()) {
             try {
                 processTask(task);
             } catch (Exception e) {
-                log.error("执行任务 {} 失败", task.getId(), e);
-                appendLog(task.getId(), null, "ERROR", "执行引擎异常: " + e.getMessage());
+                log.error("工作流任务 {} 调度失败", task.getId(), e);
+                runtime.failTask(task, e.getMessage());
             }
         }
     }
 
-    private void processTask(Task task) {
-        FlowModels flowModel = flowModelsMapper.selectById(task.getFlowModelId());
-        if (flowModel == null) {
-            failTask(task, "找不到关联的流程模型");
+    void processTask(Task task) { synchronized (taskLock(task.getId())) { processTaskLocked(task); } }
+    private void processTaskLocked(Task task) {
+        List<TaskStep> active = runtime.activeSteps(task.getId());
+        if (active.isEmpty()) {
+            if (runtime.steps(task.getId()).isEmpty()) {
+                startFlow(task, task.getFlowModelId(), null, 0);
+            } else {
+                runtime.failTask(task, "流程没有活动步骤且尚未到达 END");
+            }
             return;
         }
-
-        List<TaskStep> activeSteps = taskStepMapper.selectList(
-                Wrappers.<TaskStep>lambdaQuery().eq(TaskStep::getTaskId, task.getId())
-                        .in(TaskStep::getNodeStatus, "PENDING", "RUNNING"));
-
-        if (activeSteps.isEmpty()) {
-            List<TaskStep> completedSteps = taskStepMapper.selectList(
-                    Wrappers.<TaskStep>lambdaQuery().eq(TaskStep::getTaskId, task.getId())
-                            .eq(TaskStep::getNodeStatus, "COMPLETED"));
-            if (completedSteps.isEmpty()) {
-                // 初始化主流程
-                startFlow(task, flowModel.getId(), null, 0);
-            }
-        } else {
-            // 将节点列表按模型分组缓存，避免多次查询
-            Map<Long, List<FlowNode>> modelNodesCache = new HashMap<>();
-            
-            for (TaskStep step : activeSteps) {
-                Long currentModelId = getModelIdForStep(task, step);
-                if (currentModelId == null) continue;
-                
-                List<FlowNode> flowNodes = modelNodesCache.computeIfAbsent(currentModelId, 
-                    id -> flowNodeMapper.selectList(Wrappers.<FlowNode>lambdaQuery().eq(FlowNode::getFlowModelId, id)));
-                
-                processStep(task, currentModelId, flowNodes, step);
+        for (TaskStep step : active) {
+            if (!"RUNNING".equals(runtime.task(task.getId()).getTaskStatus())) return;
+            try {
+                processStep(task, step);
+            } catch (Exception e) {
+                runtime.failStep(step, e.getMessage());
             }
         }
-    }
-
-    private Long getModelIdForStep(Task task, TaskStep step) {
-        if (step.getParentStepId() == null) {
-            return task.getFlowModelId();
-        }
-        TaskStep parentStep = taskStepMapper.selectById(step.getParentStepId());
-        if (parentStep == null) return null;
-        FlowNode parentNode = flowNodeMapper.selectById(parentStep.getFlowNodeId());
-        if (parentNode == null) return null;
-        return parentNode.getSubFlowModelId();
     }
 
     private void startFlow(Task task, Long flowModelId, Long parentStepId, int depth) {
-        List<FlowNode> flowNodes = flowNodeMapper.selectList(
-                Wrappers.<FlowNode>lambdaQuery().eq(FlowNode::getFlowModelId, flowModelId));
-                
-        FlowNode startNode = flowNodes.stream()
-                .filter(n -> "FUNCTIONAL_NODE".equals(n.getNodeType()) && 
-                             n.getCapability() != null && 
-                             "START".equals(n.getCapability().path("functionType").asText()))
-                .findFirst().orElse(null);
-
-        if (startNode == null) {
-            if (depth == 0) failTask(task, "流程中没有找到 START 节点");
-            return;
-        }
-
-        startNewStep(task, startNode, parentStepId, depth, JsonNodeSupport.objectNode());
+        if (flowModelId == null) throw new IllegalArgumentException("子流程节点缺少流程模型引用");
+        if (depth > MAX_SUB_FLOW_DEPTH) throw new IllegalStateException("子流程嵌套超过 " + MAX_SUB_FLOW_DEPTH + " 层");
+        var compiled = workflowService.compileDefinition(flowModelId);
+        FlowNode start = nodeByRef(flowModelId, compiled.startNodeIdRef());
+        runtime.createStep(task, start, parentStepId, depth, JsonNodeSupport.objectNode());
     }
 
-    private void processStep(Task task, Long currentModelId, List<FlowNode> flowNodes, TaskStep step) {
-        FlowNode nodeDef = flowNodes.stream().filter(n -> n.getId().equals(step.getFlowNodeId())).findFirst().orElse(null);
-        if (nodeDef == null) {
-            failStep(step, "找不到节点定义: " + step.getFlowNodeId());
-            return;
+    private void processStep(Task task, TaskStep step) {
+        FlowNode node = flowNodeService.getById(step.getFlowNodeId());
+        if (node == null) throw new IllegalArgumentException("找不到 FLOW_NODE: " + step.getFlowNodeId());
+        if ("PENDING".equals(step.getNodeStatus())) runtime.startStep(task, step);
+        if (!executeActions(task, step, node)) return;
+
+        switch (node.getNodeType()) {
+            case "FUNCTIONAL_NODE" -> executeFunctional(task, step, node);
+            case "DEVICE_CAPABILITY_NODE" -> throw new IllegalStateException("设备动作链必须以 EMIT_SIGNAL 结束");
+            case "SUB_FLOW_NODE" -> executeSubFlow(task, step, node);
+            default -> throw new IllegalArgumentException("不支持的节点类型: " + node.getNodeType());
         }
+    }
 
-        String nodeType = nodeDef.getNodeType();
-        
-        if ("PENDING".equals(step.getNodeStatus())) {
-            step.setNodeStatus("RUNNING");
-            step.setStartTime(OffsetDateTime.now());
-            taskStepMapper.updateById(step);
-            appendLog(task.getId(), null, "INFO", "节点 [REF:" + nodeDef.getNodeIdRef() + "] 开始执行");
-
-            if ("DEVICE_CAPABILITY_NODE".equals(nodeType)) {
-                triggerDevice(task, step, nodeDef);
-            } else if ("SUB_FLOW_NODE".equals(nodeType)) {
-                // 启动子流程
-                startFlow(task, nodeDef.getSubFlowModelId(), step.getId(), step.getStepDepth() + 1);
-            } else {
-                // FUNCTIONAL_NODE
-                String funcType = nodeDef.getCapability() != null ? nodeDef.getCapability().path("functionType").asText() : "";
-                if ("WAIT".equals(funcType)) {
-                    step.setInterfaceInSnapshot(JsonNodeSupport.objectNode().put("waitStartTime", System.currentTimeMillis()));
-                    taskStepMapper.updateById(step);
-                } else if ("SYNC".equals(funcType) || "JOIN".equals(funcType)) {
-                    completeStep(task, currentModelId, step, nodeDef, "flow_out");
-                } else if ("BRANCH".equals(funcType)) {
-                    completeStep(task, currentModelId, step, nodeDef, "flow_yes"); 
-                } else if ("END".equals(funcType)) {
-                    completeStep(task, currentModelId, step, nodeDef, "flow_out");
-                    if (step.getStepDepth() == 0) {
-                        completeTask(task);
-                    } else {
-                        // 子流程结束，标记父 SUB_FLOW_NODE 步骤为 COMPLETED
-                        TaskStep parentStep = taskStepMapper.selectById(step.getParentStepId());
-                        if (parentStep != null) {
-                            Long parentModelId = getModelIdForStep(task, parentStep);
-                            if (parentModelId != null) {
-                                FlowNode parentNodeDef = flowNodeMapper.selectById(parentStep.getFlowNodeId());
-                                completeStep(task, parentModelId, parentStep, parentNodeDef, "flow_out");
-                            }
-                        }
-                    }
-                } else {
-                    completeStep(task, currentModelId, step, nodeDef, "flow_out");
+    private void executeFunctional(Task task, TaskStep step, FlowNode node) {
+        String functionType = node.getCapability().path("functionType").asText("");
+        switch (functionType) {
+            case "START" -> completeAndRoute(task, step, node, outputInterface(node), JsonNodeSupport.objectNode());
+            case "END" -> finishFlow(task, step, node);
+            case "BRANCH" -> {
+                if ("RUNNING".equals(step.getNodeStatus())) {
+                    String selected = selectBranch(task, step, node);
+                    completeAndRoute(task, step, node, selected,
+                            JsonNodeSupport.objectNode().put("selectedInterface", selected));
                 }
             }
-        } else if ("RUNNING".equals(step.getNodeStatus())) {
-            if ("DEVICE_CAPABILITY_NODE".equals(nodeType)) {
-                checkDeviceStatus(task, currentModelId, step, nodeDef);
-            } else if ("FUNCTIONAL_NODE".equals(nodeType)) {
-                String funcType = nodeDef.getCapability() != null ? nodeDef.getCapability().path("functionType").asText() : "";
-                if ("WAIT".equals(funcType)) {
-                    long waitStart = step.getInterfaceInSnapshot() != null ? step.getInterfaceInSnapshot().path("waitStartTime").asLong(0) : 0;
-                    long duration = nodeDef.getCapability().path("durationMs").asLong(0);
-                    if (System.currentTimeMillis() - waitStart >= duration) {
-                        completeStep(task, currentModelId, step, nodeDef, "flow_out");
-                    }
-                }
+            case "AGGREGATE" -> {
+                if (aggregateReady(task, step, node))
+                    completeAndRoute(task, step, node, outputInterface(node), JsonNodeSupport.objectNode().put("policy", "ALL"));
+            }
+            default -> throw new IllegalArgumentException("不支持的功能节点: " + functionType);
+        }
+    }
+
+    private boolean executeActions(Task task, TaskStep step, FlowNode node) {
+        if (node.getActions() == null || !node.getActions().isArray() || node.getActions().isEmpty()) return true;
+        ObjectNode variables = (ObjectNode) mergeVariables(task, step);
+        for (JsonNode actionNode : node.getActions()) {
+            WorkflowActionDefinition action = WorkflowActionDefinition.from(actionNode);
+            var result = actionRegistry.required(action.actionName()).execute(
+                    action, new WorkflowActionContext(task, step, node, variables, Instant.now(), executionOperations));
+            if (!result.variableUpdates().isEmpty()) {
+                runtime.mergeVariableSpace(step, result.variableUpdates());
+                mergeObject(variables, result.variableUpdates());
+            }
+            if (result.status() == WorkflowActionStatus.SUSPEND_UNTIL
+                    || result.status() == WorkflowActionStatus.AWAIT_EXTERNAL_SIGNAL) return false;
+        }
+        return true;
+    }
+
+    private void mergeObject(ObjectNode target, JsonNode updates) {
+        updates.fields().forEachRemaining(entry -> {
+            JsonNode existing = target.get(entry.getKey());
+            if (existing != null && existing.isObject() && entry.getValue().isObject())
+                mergeObject((ObjectNode) existing, entry.getValue());
+            else target.set(entry.getKey(), entry.getValue().deepCopy());
+        });
+    }
+
+
+    private void executeSubFlow(Task task, TaskStep step, FlowNode node) {
+        boolean hasChildren = runtime.steps(task.getId()).stream().anyMatch(child -> step.getId().equals(child.getParentStepId()));
+        if (!hasChildren) startFlow(task, node.getSubFlowModelId(), step.getId(), step.getStepDepth() + 1);
+    }
+
+    private void finishFlow(Task task, TaskStep endStep, FlowNode endNode) {
+        runtime.completeStep(endStep, JsonNodeSupport.objectNode());
+        if (endStep.getParentStepId() == null) {
+            runtime.completeTask(task);
+            return;
+        }
+        TaskStep parentStep = runtime.step(endStep.getParentStepId());
+        if (parentStep == null) throw new IllegalStateException("子流程父步骤不存在");
+        FlowNode parentNode = flowNodeService.getById(parentStep.getFlowNodeId());
+        runtime.completeStep(parentStep, JsonNodeSupport.objectNode().put("subFlowModelId", endNode.getFlowModelId()));
+        route(task, parentStep, parentNode, outputInterface(parentNode));
+    }
+
+    private void completeAndRoute(Task task, TaskStep step, FlowNode node, String sourceInterface, JsonNode output) {
+        runtime.completeStep(step, output);
+        route(task, step, node, sourceInterface);
+    }
+
+    private void route(Task task, TaskStep completed, FlowNode node, String sourceInterface) {
+        var compiled = workflowService.compileDefinition(node.getFlowModelId());
+        for (var connection : compiled.outgoing(node.getNodeIdRef())) {
+            if (!sourceInterface.equals(connection.sourceInterface())) continue;
+            FlowNode target = nodeByRef(node.getFlowModelId(), connection.targetNodeIdRef());
+            ObjectNode input = JsonNodeSupport.objectNode();
+            input.put("sourceNodeIdRef", node.getNodeIdRef());
+            input.put("sourceInterface", sourceInterface);
+            if (completed.getInterfaceOutSnapshot() != null)
+                input.set("sourceOutput", completed.getInterfaceOutSnapshot().deepCopy());
+            TaskStep targetStep = runtime.createStep(task, target, completed.getParentStepId(), completed.getStepDepth(), input);
+            runtime.mergeVariableSpace(targetStep, mapPortValues(node, target, completed));
+        }
+    }
+
+    private ObjectNode mapPortValues(FlowNode sourceNode, FlowNode targetNode, TaskStep sourceStep) {
+        ObjectNode values = JsonNodeSupport.objectNode();
+        if (sourceNode.getPorts() == null || sourceNode.getPorts().isEmpty()
+                || targetNode.getPorts() == null || targetNode.getPorts().isEmpty()) return values;
+        JsonNode connections = workflowService.getDefinition(sourceNode.getFlowModelId()).getPortConnections();
+        if (connections == null || !connections.isArray()) return values;
+        for (JsonNode connection : connections) {
+            JsonNode source = connection.path("source");
+            JsonNode target = connection.path("target");
+            if (source.path("nodeIdRef").asLong() != sourceNode.getNodeIdRef()
+                    || target.path("nodeIdRef").asLong() != targetNode.getNodeIdRef()) continue;
+            String sourcePortName = source.path("portName").asText("");
+            String targetPortName = target.path("portName").asText("");
+            String sourceVariable = portVariable(sourceNode.getPorts(), sourcePortName, sourcePortName);
+            String targetVariable = portVariable(targetNode.getPorts(), targetPortName, targetPortName);
+            JsonNode value = valueFromStep(sourceStep, sourceVariable);
+            if (value != null && !value.isMissingNode()) values.set(targetVariable, value.deepCopy());
+        }
+        return values;
+    }
+
+    private String portVariable(JsonNode ports, String portName, String fallback) {
+        if (ports != null && ports.isArray()) {
+            for (JsonNode port : ports) {
+                if (portName.equals(port.path("name").asText()))
+                    return port.path("internalVariableName").asText(fallback);
+            }
+        }
+        return fallback;
+    }
+
+    private JsonNode valueFromStep(TaskStep step, String variableName) {
+        JsonNode value = step.getVariableSpace() == null ? null : step.getVariableSpace().get(variableName);
+        if (value != null) return value;
+        return step.getInterfaceOutSnapshot() == null ? null : step.getInterfaceOutSnapshot().get(variableName);
+    }
+
+    private String outputInterface(FlowNode node) {
+        String selected = null;
+        if (node.getInterfaces() != null && node.getInterfaces().isArray()) {
+            for (JsonNode item : node.getInterfaces()) {
+                if (!"OUT".equals(item.path("direction").asText())) continue;
+                if (selected != null) throw new IllegalArgumentException("非分支节点只能声明一个输出接口: " + node.getNodeIdRef());
+                selected = item.path("name").asText("");
+            }
+        }
+        if (selected == null || selected.isBlank())
+            throw new IllegalArgumentException("节点缺少输出接口: " + node.getNodeIdRef());
+        return selected;
+    }
+
+    private String selectBranch(Task task, TaskStep step, FlowNode node) {
+        JsonNode variables = mergeVariables(task, step);
+        String fallback = null;
+        for (JsonNode branch : node.getCapability().path("branches")) {
+            String interfaceName = branch.path("interfaceName").asText("");
+            if (branch.path("isDefault").asBoolean(false)) fallback = interfaceName;
+            else if (conditionEvaluator.evaluate(branch.path("condition"), variables)) return interfaceName;
+        }
+        if (fallback != null) return fallback;
+        throw new IllegalStateException("BRANCH 没有匹配条件且未配置默认出口");
+    }
+
+    private boolean aggregateReady(Task task, TaskStep aggregateStep, FlowNode node) {
+        var compiled = workflowService.compileDefinition(node.getFlowModelId());
+        Set<Long> predecessors = new HashSet<>();
+        compiled.incoming(node.getNodeIdRef()).forEach(c -> predecessors.add(c.sourceNodeIdRef()));
+        List<TaskStep> contextSteps = runtime.steps(task.getId()).stream()
+                .filter(item -> java.util.Objects.equals(item.getParentStepId(), aggregateStep.getParentStepId()))
+                .filter(item -> java.util.Objects.equals(item.getStepDepth(), aggregateStep.getStepDepth()))
+                .toList();
+        boolean anyActivated = false;
+        for (Long predecessor : predecessors) {
+            List<TaskStep> activated = contextSteps.stream().filter(item -> predecessor.equals(item.getNodeIdRef())).toList();
+            if (activated.isEmpty()) return false;
+            anyActivated = true;
+            if (activated.stream().anyMatch(item -> !"COMPLETED".equals(item.getNodeStatus()))) return false;
+        }
+        return anyActivated && !predecessors.isEmpty();
+    }
+
+    @EventListener
+    public void handleStateMachineSignal(StateMachineInterfaceSignalEvent event) {
+        JsonNode signal = event.signal();
+        if (!"STAT".equals(event.interfaceType())
+                || !"CMD_STATE".equals(signal.path("signalName").asText())) return;
+        String messageId = String.valueOf(event.executionContext().getOrDefault("messageId", ""));
+        TaskStep located = runtime.findRunningDeviceStepByMessageId(messageId);
+        if (located == null) return;
+        synchronized (taskLock(located.getTaskId())) {
+            TaskStep step = runtime.findRunningDeviceStepByMessageId(messageId);
+            if (step == null) return;
+            String cmdState = signal.path("payload").path("state").asText("");
+            if ("COMPLETED".equals(cmdState)) {
+                Task task = runtime.task(step.getTaskId());
+                FlowNode node = flowNodeService.getById(step.getFlowNodeId());
+                ObjectNode output = JsonNodeSupport.objectNode();
+                output.put("messageId", messageId);
+                output.put("cmdState", cmdState);
+                completeAndRoute(task, step, node, outputInterface(node), output);
+            } else if ("FAILED".equals(cmdState) || "ABORTED".equals(cmdState)) {
+                runtime.failStep(step, "设备指令状态: " + cmdState);
             }
         }
     }
 
-    private void triggerDevice(Task task, TaskStep step, FlowNode nodeDef) {
-        String nodeRefId = String.valueOf(nodeDef.getNodeIdRef());
-        JsonNode resourceMap = task.getResourceMap();
-        Long instanceId = null;
-        if (resourceMap != null && resourceMap.has(nodeRefId)) {
-            instanceId = resourceMap.get(nodeRefId).asLong();
-        }
-
-        if (instanceId == null) {
-            failStep(step, "无法分配设备资源，节点 REF: " + nodeRefId);
-            return;
-        }
-
-        ObjectNode snapshot = step.getInterfaceInSnapshot() == null ? JsonNodeSupport.objectNode() : (ObjectNode) step.getInterfaceInSnapshot().deepCopy();
-        snapshot.put("boundInstanceId", instanceId);
-        step.setInterfaceInSnapshot(snapshot);
-        taskStepMapper.updateById(step);
-
-        JsonNode actions = nodeDef.getActions();
-        if (actions == null || !actions.isArray() || actions.isEmpty()) {
-             failStep(step, "节点未配置设备动作");
-             return;
-        }
-        
-        JsonNode action = actions.get(0);
-        String commandId = action.path("payload").path("commandId").asText("");
-        JsonNode paramsNode = action.path("payload").path("parameters");
-        Map<String, Object> parameters = new HashMap<>();
-        if (paramsNode != null && paramsNode.isObject()) {
-            paramsNode.fields().forEachRemaining(entry -> parameters.put(entry.getKey(), entry.getValue().asText()));
-        }
-
-        try {
-            stateMachineEngine.handleManualControl(instanceId, "EXECUTE_START", commandId, parameters);
-            appendLog(task.getId(), instanceId, "INFO", "已向设备下发指令: " + commandId);
-        } catch (Exception e) {
-            failStep(step, "设备控制调用失败: " + e.getMessage());
-        }
+    private FlowNode nodeByRef(Long flowModelId, long nodeIdRef) {
+        return workflowService.nodes(flowModelId).stream()
+                .filter(node -> node.getNodeIdRef() == nodeIdRef)
+                .findFirst().orElseThrow(() -> new IllegalArgumentException("流程节点不存在: " + nodeIdRef));
     }
 
-    private void checkDeviceStatus(Task task, Long currentModelId, TaskStep step, FlowNode nodeDef) {
-        Long instanceId = step.getInterfaceInSnapshot().path("boundInstanceId").asLong(0);
-        if (instanceId == 0) {
-            failStep(step, "节点丢失绑定的设备实例");
-            return;
-        }
-
-        DeviceTwinStates twinState = deviceTwinStateService.getByInstanceId(instanceId);
-        if (twinState == null) return;
-
-        String cmdState = twinState.getCurrentCmdState();
-        if ("IDLE".equals(cmdState) || "SUCCESS".equals(cmdState) || "COMPLETED".equals(cmdState)) {
-            appendLog(task.getId(), instanceId, "INFO", "设备指令执行完成");
-            completeStep(task, currentModelId, step, nodeDef, "flow_out");
-        } else if ("FAILED".equals(cmdState) || "ERROR".equals(cmdState)) {
-            failStep(step, "设备报告错误状态: " + cmdState);
-        }
+    private static Object[] createTaskLocks(int count) {
+        Object[] locks = new Object[count];
+        for (int i = 0; i < count; i++) locks[i] = new Object();
+        return locks;
     }
 
-    private void completeStep(Task task, Long currentModelId, TaskStep step, FlowNode nodeDef, String outputInterfacePrefix) {
-        step.setNodeStatus("COMPLETED");
-        step.setEndTime(OffsetDateTime.now());
-        if (step.getStartTime() != null) {
-            step.setDurationMs(step.getEndTime().toInstant().toEpochMilli() - step.getStartTime().toInstant().toEpochMilli());
-        }
-        taskStepMapper.updateById(step);
-        appendLog(task.getId(), null, "INFO", "节点 [REF:" + nodeDef.getNodeIdRef() + "] 执行完成");
-
-        FlowModels currentFlowModel = flowModelsMapper.selectById(currentModelId);
-        if (currentFlowModel == null) return;
-
-        JsonNode connections = currentFlowModel.getInterfaceConnection();
-        if (connections != null && connections.isArray()) {
-            for (JsonNode conn : connections) {
-                String sourceRef = conn.path("source").path("interfaceRef").asText("");
-                String expectedRefPrefix = nodeDef.getNodeIdRef() + "_" + outputInterfacePrefix;
-                String expectedRefFallback = nodeDef.getNodeIdRef() + "_";
-
-                if (sourceRef.startsWith(expectedRefPrefix) || sourceRef.startsWith(expectedRefFallback)) {
-                    String targetRef = conn.path("target").path("interfaceRef").asText("");
-                    String targetNodeRefStr = targetRef.split("_")[0];
-                    try {
-                        Long targetNodeRef = Long.valueOf(targetNodeRefStr);
-                        FlowNode nextNodeDef = flowNodeMapper.selectOne(
-                            Wrappers.<FlowNode>lambdaQuery()
-                                .eq(FlowNode::getFlowModelId, currentModelId)
-                                .eq(FlowNode::getNodeIdRef, targetNodeRef)
-                        );
-                        if (nextNodeDef != null) {
-                            startNewStep(task, nextNodeDef, step.getParentStepId(), step.getStepDepth(), JsonNodeSupport.objectNode());
-                        }
-                    } catch (NumberFormatException e) {
-                        log.warn("无法解析 targetRef: {}", targetRef);
-                    }
-                }
-            }
-        }
+    private Object taskLock(Long taskId) {
+        if (taskId == null) throw new IllegalArgumentException("任务 ID 不能为空");
+        return TASK_LOCKS[Math.floorMod(Long.hashCode(taskId), TASK_LOCKS.length)];
     }
 
-    private void startNewStep(Task task, FlowNode nodeDef, Long parentStepId, int depth, JsonNode inputSnapshot) {
-        long count = taskStepMapper.selectCount(Wrappers.<TaskStep>lambdaQuery()
-            .eq(TaskStep::getTaskId, task.getId())
-            .eq(TaskStep::getFlowNodeId, nodeDef.getId())
-            .eq(parentStepId != null, TaskStep::getParentStepId, parentStepId)
-            .in(TaskStep::getNodeStatus, "PENDING", "RUNNING"));
-        if (count > 0) return;
-
-        TaskStep newStep = new TaskStep();
-        newStep.setTaskId(task.getId());
-        newStep.setFlowNodeId(nodeDef.getId());
-        newStep.setNodeIdRef(nodeDef.getNodeIdRef());
-        newStep.setParentStepId(parentStepId);
-        newStep.setStepDepth(depth);
-        newStep.setNodeStatus("PENDING");
-        newStep.setInterfaceInSnapshot(inputSnapshot);
-        
-        taskStepMapper.insert(newStep);
-        appendLog(task.getId(), null, "INFO", "触发节点 [REF:" + nodeDef.getNodeIdRef() + "]");
-    }
-
-    private void completeTask(Task task) {
-        if (!"COMPLETED".equals(task.getTaskStatus())) {
-            task.setTaskStatus("COMPLETED");
-            task.setEndTime(OffsetDateTime.now());
-            taskMapper.updateById(task);
-            appendLog(task.getId(), null, "INFO", "流程到达 END，任务成功结束");
-        }
-    }
-
-    private void failStep(TaskStep step, String reason) {
-        step.setNodeStatus("FAILED");
-        step.setEndTime(OffsetDateTime.now());
-        taskStepMapper.updateById(step);
-        appendLog(step.getTaskId(), null, "ERROR", "节点执行失败: " + reason);
-        
-        Task task = taskMapper.selectById(step.getTaskId());
-        if (task != null) {
-            failTask(task, "由于节点执行失败导致任务失败");
-        }
-    }
-
-    private void failTask(Task task, String reason) {
-        if ("FAILED".equals(task.getTaskStatus())) return;
-        task.setTaskStatus("FAILED");
-        task.setEndTime(OffsetDateTime.now());
-        taskMapper.updateById(task);
-        appendLog(task.getId(), null, "ERROR", "任务失败: " + reason);
-    }
-
-    private void appendLog(Long taskId, Long deviceInstanceId, String level, String message) {
-        ExecutionLog logEntry = new ExecutionLog();
-        logEntry.setSourceType("TASK");
-        logEntry.setTaskId(taskId);
-        logEntry.setDeviceInstanceId(deviceInstanceId);
-        logEntry.setLogLevel(level);
-        logEntry.setLogInfo(message);
-        logEntry.setLogTime(OffsetDateTime.now());
-        executionLogMapper.insert(logEntry);
+    private JsonNode mergeVariables(Task task, TaskStep step) {
+        ObjectNode result = JsonNodeSupport.objectNode();
+        if (task.getTaskVariables() != null && task.getTaskVariables().isObject())
+            task.getTaskVariables().fields().forEachRemaining(entry -> result.set(entry.getKey(), entry.getValue()));
+        if (step.getVariableSpace() != null && step.getVariableSpace().isObject())
+            step.getVariableSpace().fields().forEachRemaining(entry -> result.set(entry.getKey(), entry.getValue()));
+        return result;
     }
 }

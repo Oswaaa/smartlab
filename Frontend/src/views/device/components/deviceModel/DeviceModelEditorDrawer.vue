@@ -139,12 +139,10 @@
                     <div id="edit-adapter" class="anchor-section industrial-section">
             <h2 class="section-heading"><span class="section-index">03</span>Adapter 契约</h2>
             <section class="drawer-section">
-              <div class="section-title"><h3>契约来源</h3></div>
+              <div class="section-title"><div class="section-header-copy"><h3>契约来源</h3><p class="section-note">Adapter 定义由注册配置提供，不可在设备模型中修改；本页面仅选择契约并配置业务映射。</p></div><el-tag size="small" type="info" effect="plain">只读来源</el-tag></div>
               <el-form label-width="90px" size="small">
                 <el-form-item label="协议类型">
-                  <el-select v-model="draft.adapterContract.config.protocol">
-                    <el-option v-for="protocol in communicationProtocols" :key="protocol" :label="protocol" :value="protocol" />
-                  </el-select>
+                  <el-text>{{ draft.adapterContract.config.protocol || '—' }}</el-text>
                 </el-form-item>
                 <el-form-item label="注册 Adapter">
                   <div class="registered-adapter-picker" v-loading="registeredAdapterLoading">
@@ -168,397 +166,298 @@
                     <el-button plain :icon="Refresh" @click="fetchRegisteredAdapters">刷新</el-button>
                   </div>
                 </el-form-item>
-                <el-form-item label="配置文本">
-                  <div class="config-import">
-                    <el-upload :auto-upload="false" :show-file-list="false" accept=".json,.txt" :on-change="importAdapterFile">
-                      <el-button :icon="Upload">上传配置</el-button>
-                    </el-upload>
-                    <el-button type="primary" plain @click="applyAdapterConfigText">解析到契约</el-button>
-                  </div>
-                  <el-input v-model="adapterConfigText" type="textarea" :rows="5" placeholder="可粘贴 JSON 格式的 Adapter 配置文本，或从上方选择已注册 Adapter。" />
-                </el-form-item>
               </el-form>
             </section>
 
-            <section class="drawer-section">
+                        <section class="drawer-section">
               <div class="section-title">
-                <h3>Adapter 命令</h3>
-                <el-button type="primary" plain size="small" :icon="Plus" @click="addAdapterCommand">新增命令</el-button>
+                <div>
+                  <h3>Adapter 命令</h3>
+                  <p class="section-note">来源于已注册 Adapter，仅展示系统可见参数；内部参数不会进入设备能力模型。</p>
+                </div>
               </div>
               <div v-if="draft.adapterContract.commands.length > 0" class="editor-card-list command-editor-list">
                 <article v-for="(command, commandIndex) in draft.adapterContract.commands" :key="command._key" class="editor-card command-editor-card">
                   <div class="editor-card-head">
                     <div class="editor-card-title">
                       <span class="item-index">{{ commandIndex + 1 }}</span>
-                      <el-input v-model="command.commandName" size="small" placeholder="命令名，例如：set_temperature" />
+                      <strong>{{ command.commandName }}</strong>
                     </div>
-                    <el-button link type="danger" :icon="Delete" @click="removeAdapterCommand(command)">删除</el-button>
-                  </div>
-                  <div class="nested-toolbar">
-                    <span>命令参数</span>
-                    <el-button size="small" type="primary" plain circle :icon="Plus" title="添加参数" @click="addCommandParameter(command)" />
+                    <el-text type="info">{{ command.description || '暂无说明' }}</el-text>
                   </div>
                   <el-table v-if="visibleCommandParameters(command).length > 0" :data="visibleCommandParameters(command)" border size="small" class="nested-table">
-                    <el-table-column label="参数名" min-width="180">
-                      <template #default="{ row }"><el-input v-model="row.paramName" size="small" placeholder="例如：target_temp" /></template>
-                    </el-table-column>
-                    <el-table-column label="数据类型" width="140">
-                      <template #default="{ row }"><data-type-select v-model="row.dataType" :options="adapterDataTypes" /></template>
-                    </el-table-column>
-                    <el-table-column label="" width="54" fixed="right">
-                      <template #default="{ row }"><el-button link type="danger" :icon="Delete" @click="removeObjectRow(command.commandParameters, row)" /></template>
+                    <el-table-column prop="paramName" label="参数名" min-width="180" />
+                    <el-table-column prop="dataType" label="数据类型" width="140" />
+                    <el-table-column prop="description" label="说明" min-width="220">
+                      <template #default="{ row }">{{ row.description || '—' }}</template>
                     </el-table-column>
                   </el-table>
-                  <div v-if="visibleCommandParameters(command).length === 0" class="compact-empty inline-empty">暂无系统参数</div>
+                  <div v-else class="compact-empty inline-empty">该命令没有系统可见参数</div>
                 </article>
               </div>
-              <div v-else class="compact-empty block-empty">暂无 Adapter 命令，请点击右上角“新增命令”进行配置</div>
+              <div v-else class="compact-empty block-empty">当前 Adapter 类别未声明命令</div>
             </section>
 
             <section class="drawer-section">
               <div class="section-title">
-                <h3>Adapter 属性</h3>
-                <el-button type="primary" plain size="small" :icon="Plus" @click="addAdapterAttribute">新增属性</el-button>
+                <div>
+                  <h3>Adapter 遥测属性</h3>
+                  <p class="section-note">属性定义由注册配置提供；模型仅配置业务属性映射。</p>
+                </div>
               </div>
-              <div v-if="draft.adapterContract.telemetry.adapterAttributes.length === 0" class="compact-empty block-empty">暂无 Adapter 属性，请点击右上角“新增属性”进行配置</div>
+              <div v-if="draft.adapterContract.telemetry.adapterAttributes.length === 0" class="compact-empty block-empty">当前 Adapter 类别未声明遥测属性</div>
               <el-table v-else :data="draft.adapterContract.telemetry.adapterAttributes" border size="small">
-                <el-table-column label="属性字段" min-width="180">
-                  <template #default="{ row }"><el-input v-model="row.name" size="small" placeholder="例如：temperature" /></template>
-                </el-table-column>
-                <el-table-column label="数据类型" width="140">
-                  <template #default="{ row }"><data-type-select v-model="row.dataType" :options="adapterDataTypes" /></template>
-                </el-table-column>
-                <el-table-column label="说明" min-width="220">
-                  <template #default="{ row }"><el-input v-model="row.description" size="small" placeholder="可选" /></template>
-                </el-table-column>
-                <el-table-column label="" width="54" fixed="right">
-                  <template #default="{ $index }"><el-button link type="danger" :icon="Delete" @click="removeAdapterAttribute($index)" /></template>
+                <el-table-column prop="name" label="属性字段" min-width="180" />
+                <el-table-column prop="dataType" label="数据类型" width="140" />
+                <el-table-column prop="description" label="说明" min-width="220">
+                  <template #default="{ row }">{{ row.description || '—' }}</template>
                 </el-table-column>
               </el-table>
             </section>
 
             <section class="drawer-section">
               <div class="section-title">
-                <h3>Adapter 事件</h3>
-                <el-button type="primary" plain size="small" :icon="Plus" @click="addAdapterEvent">新增事件</el-button>
+                <div>
+                  <h3>Adapter 事件</h3>
+                  <p class="section-note">命令事件用于执行生命周期，功能事件用于设备业务状态转移。</p>
+                </div>
               </div>
-              <div v-if="draft.adapterContract.events.length === 0" class="compact-empty block-empty">暂无 Adapter 事件，请点击右上角“新增事件”进行配置</div>
-              <el-table v-else :data="draft.adapterContract.events" border size="small">
-                <el-table-column label="事件名" min-width="180">
-                  <template #default="{ row }"><el-input v-model="row.eventName" size="small" placeholder="例如：COMMAND_DONE" /></template>
+              <el-table :data="draft.adapterContract.events" border size="small">
+                <el-table-column label="事件域" width="120">
+                  <template #default="{ row }"><el-tag size="small" effect="plain" :type="row.eventType === 'CMD' ? 'primary' : 'success'">{{ row.eventType }}</el-tag></template>
                 </el-table-column>
-                <el-table-column label="说明" min-width="240">
-                  <template #default="{ row }"><el-input v-model="row.description" size="small" placeholder="可选" /></template>
-                </el-table-column>
-                <el-table-column label="" width="54" fixed="right">
-                  <template #default="{ $index }"><el-button link type="danger" :icon="Delete" @click="removeAdapterEvent($index)" /></template>
+                <el-table-column prop="eventName" label="事件名" min-width="220" />
+                <el-table-column prop="description" label="说明" min-width="260">
+                  <template #default="{ row }">{{ row.description || '—' }}</template>
                 </el-table-column>
               </el-table>
+              <div v-if="draft.adapterContract.events.length === 0" class="compact-empty block-empty">当前 Adapter 类别未声明事件</div>
             </section>
-          </div>
+            </div>
 
-                    <div id="edit-mapping" class="anchor-section industrial-section">
+          <div id="edit-mapping" class="anchor-section industrial-section">
             <h2 class="section-heading"><span class="section-index">04</span>映射关系</h2>
             <section class="drawer-section">
               <div class="section-title">
-                <h3>属性映射</h3>
-                <el-button type="primary" plain size="small" :icon="Plus" @click="addAttributeMapping">新增映射</el-button>
+                <div class="section-header-copy">
+                  <h3>属性映射</h3>
+                  <p class="section-note">将模型业务属性与 Adapter 遥测字段逐一对应。</p>
+                </div>
+                <div class="section-actions"><el-button type="primary" plain size="small" :icon="Plus" @click="addAttributeMapping">新增映射</el-button></div>
               </div>
-              <div v-if="draft.adapterContract.telemetry.attributesMapping.length === 0" class="compact-empty block-empty">暂无属性映射，请点击右上角“新增映射”进行配置</div>
-              <el-table v-else :data="draft.adapterContract.telemetry.attributesMapping" border size="small">
-                <el-table-column label="模型属性" min-width="200">
+              <div v-if="draft.adapterContract.telemetry.attributesMapping.length === 0" class="compact-empty block-empty">暂无属性映射，可使用上方按钮添加</div>
+              <el-table v-else :data="draft.adapterContract.telemetry.attributesMapping" border size="small" class="editor-table">
+                <el-table-column label="模型属性" min-width="220">
                   <template #default="{ row }">
-                    <el-select v-model="row.modelAttributeKey" size="small" filterable @change="handleAttributeMappingModelChange(row)">
+                    <el-select v-model="row.modelAttributeKey" size="small" filterable placeholder="选择模型属性" @change="handleAttributeMappingModelChange(row)">
                       <el-option v-for="attr in attributeOptions" :key="attr.key" :label="attr.label" :value="attr.key" :disabled="isAttributeOptionUsed(attr.key, row)" />
                     </el-select>
                   </template>
                 </el-table-column>
-                <el-table-column label="Adapter 属性" min-width="200">
+                <el-table-column label="映射" width="72" align="center"><template #default>→</template></el-table-column>
+                <el-table-column label="Adapter 属性" min-width="220">
                   <template #default="{ row }">
-                    <el-select v-model="row.adapterAttrName" size="small" filterable @change="handleAdapterAttributeMappingChange(row)">
-                      <el-option v-for="attr in adapterAttributeNameOptionsDetailed" :key="attr.name" :label="attr.name + (isAttrDataTypeMatch(row.modelAttributeKey, attr.dataType) ? '' : ' (类型不匹配)')" :value="attr.name" :disabled="isAdapterAttributeUsed(attr.name, row) || !isAttrDataTypeMatch(row.modelAttributeKey, attr.dataType)" />
+                    <el-select v-model="row.adapterAttrName" size="small" filterable placeholder="选择 Adapter 属性" @change="handleAdapterAttributeMappingChange(row)">
+                      <el-option v-for="attr in adapterAttributeNameOptionsDetailed" :key="attr.name" :label="attr.name + (isAttrDataTypeMatch(row.modelAttributeKey, attr.dataType) ? '' : '（类型不匹配）')" :value="attr.name" :disabled="isAdapterAttributeUsed(attr.name, row) || !isAttrDataTypeMatch(row.modelAttributeKey, attr.dataType)" />
                     </el-select>
                   </template>
                 </el-table-column>
-                <el-table-column label="" width="54" fixed="right">
-                  <template #default="{ $index }"><el-button link type="danger" :icon="Delete" @click="removeRow(draft.adapterContract.telemetry.attributesMapping, $index)" /></template>
+                <el-table-column label="操作" width="64" fixed="right" align="center">
+                  <template #default="{ $index }"><el-button link type="danger" :icon="Delete" title="删除映射" @click="removeRow(draft.adapterContract.telemetry.attributesMapping, $index)" /></template>
                 </el-table-column>
               </el-table>
             </section>
 
             <section class="drawer-section">
               <div class="section-title">
-                <h3>功能映射</h3>
-                <el-button type="primary" plain size="small" :icon="Plus" @click="addFunctionMapping">新增映射</el-button>
+                <div class="section-header-copy">
+                  <h3>操作映射</h3>
+                  <p class="section-note">将模型操作及其参数映射到 Adapter 命令的系统可见参数。</p>
+                </div>
+                <div class="section-actions"><el-button type="primary" plain size="small" :icon="Plus" @click="addFunctionMapping">新增映射</el-button></div>
               </div>
-              <div v-if="draft.functionMappings.length === 0" class="compact-empty block-empty">暂无功能映射，请点击右上角“新增映射”进行配置</div>
+              <div v-if="draft.functionMappings.length === 0" class="compact-empty block-empty">暂无操作映射，可使用上方按钮添加</div>
               <div v-else class="function-mapping-card-list">
                 <article v-for="(row, rowIndex) in draft.functionMappings" :key="row._key || rowIndex" class="function-mapping-editor-card">
                   <div class="function-map-editor-head">
                     <div class="function-map-selects">
-                      <label>
-                        <span>模型操作</span>
-                        <el-select v-model="row.capabilityKey" size="small" filterable placeholder="选择模型操作" @change="handleFunctionMappingCapabilityChange(row)">
-                          <el-option
-                            v-for="capability in capabilitySelectOptions"
-                            :key="capability.key"
-                            :label="capability.label"
-                            :value="capability.key"
-                            :disabled="isCapabilityMapped(capability.key, row)"
-                          />
-                        </el-select>
-                      </label>
+                      <label><span>模型操作</span><el-select v-model="row.capabilityKey" size="small" filterable placeholder="选择模型操作" @change="handleFunctionMappingCapabilityChange(row)"><el-option v-for="capability in capabilitySelectOptions" :key="capability.key" :label="capability.label" :value="capability.key" :disabled="isCapabilityMapped(capability.key, row)" /></el-select></label>
                       <span class="mapping-direction">→</span>
-                      <label>
-                        <span>Adapter 命令</span>
-                        <el-select v-model="row.adapterCommandName" size="small" filterable clearable placeholder="选择 Adapter 命令" @change="handleFunctionMappingCommandChange(row)">
-                          <el-option v-for="cmd in commandNameOptions" :key="cmd" :label="cmd" :value="cmd" :disabled="isAdapterCommandMapped(cmd, row)" />
-                        </el-select>
-                      </label>
+                      <label><span>Adapter 命令</span><el-select v-model="row.adapterCommandName" size="small" filterable clearable placeholder="选择 Adapter 命令" @change="handleFunctionMappingCommandChange(row)"><el-option v-for="cmd in commandNameOptions" :key="cmd" :label="cmd" :value="cmd" /></el-select></label>
                     </div>
                     <el-button link type="danger" :icon="Delete" @click="removeRow(draft.functionMappings, rowIndex)">删除</el-button>
                   </div>
-
                   <div class="param-map-editor compact-param-editor">
                     <div v-for="(mapping, index) in row.parameterMapping" :key="mapping._key || index" class="param-map-row" :class="{ invalid: isParameterMappingInvalid(row, mapping), fixed: mapping.isFixedValue }">
-                      <div class="param-map-field">
-                        <span class="param-map-label">功能参数</span>
-                        <el-select v-model="mapping.capabilityParamKey" size="small" filterable placeholder="选择功能参数" @change="handleCapabilityParameterChange(row, mapping)">
-                          <el-option v-for="param in capabilityParameterOptionsDetailedByKey(row.capabilityKey)" :key="param._key" :label="(param.displayName || param.name) + ' · ' + param.dataType + (isParamDataTypeMatch(mapping.commandParamName, row.adapterCommandName, param.dataType) ? '' : ' (类型不匹配)')" :value="param._key" :disabled="isCapabilityParamMapped(row, param._key, mapping) || !isParamDataTypeMatch(mapping.commandParamName, row.adapterCommandName, param.dataType)" />
-                        </el-select>
-                      </div>
-                      <div class="param-map-field">
-                        <span class="param-map-label">Adapter 参数</span>
-                        <el-select v-model="mapping.commandParamName" size="small" filterable placeholder="选择命令参数" @change="handleParameterCommandChange(row, mapping)">
-                          <el-option v-for="param in commandParameterOptionsDetailed(row.adapterCommandName)" :key="param.paramName" :label="param.paramName + ' · ' + param.dataType" :value="param.paramName" :disabled="isCommandParamMapped(row, param.paramName, mapping)" />
-                        </el-select>
-                      </div>
-                      <div class="param-map-mode">
-                        <span class="param-map-label">取值方式</span>
-                        <el-switch v-model="mapping.isFixedValue" size="small" active-text="固定" inactive-text="映射" @change="handleParameterFixedChange(mapping)" />
-                      </div>
-                      <div v-if="mapping.isFixedValue" class="param-map-field fixed-input-field">
-                        <span class="param-map-label">固定值</span>
-                        <el-input v-model="mapping.fixedValue" size="small" :placeholder="fixedValuePlaceholder(row, mapping)" />
-                      </div>
+                      <div class="param-map-field"><span class="param-map-label">功能参数</span><el-select v-model="mapping.capabilityParamKey" size="small" filterable placeholder="选择功能参数" @change="handleCapabilityParameterChange(row, mapping)"><el-option v-for="param in capabilityParameterOptionsDetailedByKey(row.capabilityKey)" :key="param._key" :label="(param.displayName || param.name) + ' · ' + param.dataType + (isParamDataTypeMatch(mapping.commandParamName, row.adapterCommandName, param.dataType) ? '' : '（类型不匹配）')" :value="param._key" :disabled="isCapabilityParamMapped(row, param._key, mapping) || !isParamDataTypeMatch(mapping.commandParamName, row.adapterCommandName, param.dataType)" /></el-select></div>
+                      <div class="param-map-field"><span class="param-map-label">Adapter 参数</span><el-select v-model="mapping.commandParamName" size="small" filterable placeholder="选择命令参数" @change="handleParameterCommandChange(row, mapping)"><el-option v-for="param in commandParameterOptionsDetailed(row.adapterCommandName)" :key="param.paramName" :label="param.paramName + ' · ' + param.dataType" :value="param.paramName" :disabled="isCommandParamMapped(row, param.paramName, mapping)" /></el-select></div>
+                      <div class="param-map-mode"><span class="param-map-label">取值方式</span><el-switch v-model="mapping.isFixedValue" size="small" active-text="固定" inactive-text="映射" @change="handleParameterFixedChange(mapping)" /></div>
+                      <div v-if="mapping.isFixedValue" class="param-map-field fixed-input-field"><span class="param-map-label">固定值</span><el-input v-model="mapping.fixedValue" size="small" :placeholder="fixedValuePlaceholder(row, mapping)" /></div>
                       <el-button link type="danger" :icon="Delete" class="param-delete-btn" @click="removeRow(row.parameterMapping, index)" />
                       <span v-if="isParameterMappingInvalid(row, mapping)" class="map-warning">{{ parameterMappingWarning(row, mapping) }}</span>
                     </div>
-                    <div class="param-map-toolbar">
-                      <span v-if="row.parameterMapping.length === 0" class="no-mapping-placeholder">未配置参数映射</span>
-                      <span v-else></span>
-                      <el-button size="small" type="primary" plain :icon="Plus" class="add-mapping-btn" @click="addParameterMapping(row)">新增参数映射</el-button>
-                    </div>
+                    <div class="param-map-toolbar"><span v-if="row.parameterMapping.length === 0" class="no-mapping-placeholder">未配置参数映射</span><span v-else></span><el-button size="small" type="primary" plain :icon="Plus" class="add-mapping-btn" @click="addParameterMapping(row)">新增参数映射</el-button></div>
                   </div>
                 </article>
               </div>
             </section>
           </div>
 
-                    <div id="edit-state" class="anchor-section industrial-section">
+          <div id="edit-state" class="anchor-section industrial-section">
             <h2 class="section-heading"><span class="section-index">05</span>状态机</h2>
-            <h2 class="state-group-title first">接口定义</h2>
-            <section class="drawer-section locked-section">
+            <!-- 05 状态机 (上下布局：上为执行生命周期与规则表，下为功能状态分区) -->
+            <section class="drawer-section state-lifecycle-top-card">
               <div class="section-title">
                 <div class="locked-heading">
                   <el-icon><Lock /></el-icon>
-                  <h3>对外接口定义</h3>
-                  <el-tag size="small" effect="plain" type="info">系统自动生成</el-tag>
+                  <h3>执行生命周期</h3>
+                  <el-tag size="small" effect="plain" type="info">系统内置规范</el-tag>
                 </div>
               </div>
-              <el-table :data="stateMachineInterfaceRows" border size="small" class="locked-table">
-                <el-table-column label="接口名称" min-width="140">
+              <div class="lifecycle-flow-chain-bar">
+                <div class="chain-item"><span class="chain-label">初始状态</span><el-tag size="small" type="success" effect="light">IDLE</el-tag></div>
+                <div class="chain-sep">|</div>
+                <div class="chain-item"><span class="chain-label">主主推移链</span><div class="chain-pills"><el-tag size="small" effect="plain" type="info">IDLE</el-tag><el-icon><Right /></el-icon><el-tag size="small" effect="plain" type="primary">SENT</el-tag><el-icon><Right /></el-icon><el-tag size="small" effect="plain" type="primary">RECEIVED</el-tag><el-icon><Right /></el-icon><el-tag size="small" effect="plain" type="primary">RUNNING</el-tag><el-icon><Right /></el-icon><el-tag size="small" effect="light" type="success">COMPLETED</el-tag></div></div>
+                <div class="chain-sep">|</div>
+                <div class="chain-item"><span class="chain-label">分支终态</span><div class="chain-pills"><el-tag size="small" effect="light" type="danger">FAILED</el-tag><span class="slash">/</span><el-tag size="small" effect="plain" type="warning">ABORTING</el-tag><el-icon><Right /></el-icon><el-tag size="small" effect="light" type="warning">ABORTED</el-tag></div></div>
+              </div>
+            </section>
+
+            <section class="drawer-section">
+              <div class="section-title">
+                <div class="section-header-copy">
+                  <h3>执行生命周期转移规则</h3>
+                  <p class="section-note">描述指令在设备上的全生命周期机制。包含系统内置的自动发信/中止下发规则，以及可绑定适配器的阶段推进事件。</p>
+                </div>
+              </div>
+              <el-table :data="mergedLifecycleRules" border size="small" class="stacked-lifecycle-table" style="width: 100%;">
+                <el-table-column label="阶段流转规则" width="220" align="center">
                   <template #default="{ row }">
-                    <span>{{ row.name }}</span>
+                    <div class="stacked-cell align-center">
+                      <div class="cell-line-upper">
+                        <span class="flow-label-sub">原状态:</span>
+                        <el-tag size="small" type="info" effect="plain" class="state-pill">{{ row.fromStateNames ? row.fromStateNames.join(' / ') : row.fromStateName }}</el-tag>
+                      </div>
+                      <div class="cell-line-lower">
+                        <span class="flow-label-sub">目标:</span>
+                        <el-tag size="small" :type="row.toStateName === 'COMPLETED' ? 'success' : row.toStateName === 'ABORTED' ? 'warning' : row.toStateName === 'FAILED' ? 'danger' : 'primary'" effect="light" class="state-pill">{{ row.toStateName || '保持原状态' }}</el-tag>
+                      </div>
+                    </div>
                   </template>
                 </el-table-column>
-                <el-table-column label="方向" width="100">
+
+                <el-table-column label="说明" min-width="240">
                   <template #default="{ row }">
-                    <span>{{ row.direction }}</span>
+                    <div class="stacked-cell">
+                      <div class="cell-line-upper">
+                        <el-tag size="small" effect="light" type="info" class="status-badge" v-if="row.type === 'system'">系统固定规则</el-tag>
+                        <el-tag size="small" effect="light" :type="row.kind === 'FAILURE' ? 'danger' : row.kind === 'TERMINATION' ? 'warning' : 'primary'" class="status-badge" v-else>
+                          {{ row.kind === 'FAILURE' ? '失败分支规则' : row.kind === 'TERMINATION' ? '终止分支规则' : '正常推进阶段' }}
+                        </el-tag>
+                      </div>
+                      <div class="cell-line-lower desc-text">{{ row.description }}</div>
+                    </div>
                   </template>
                 </el-table-column>
-                <el-table-column label="类型" width="120">
+
+                <el-table-column label="触发条件与事件绑定" min-width="320">
                   <template #default="{ row }">
-                    <span>{{ row.interfaceType }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="允许的信号" min-width="240">
-                  <template #default="{ row }">
-                    <el-tag v-for="sig in row.allowedSignals" :key="sig" size="small" class="tag-gap">{{ sig }}</el-tag>
+                    <div class="stacked-cell">
+                      <div v-if="row.type === 'system'" class="system-triggers-list">
+                        <div v-for="(trig, tIdx) in row.triggers" :key="tIdx" class="trigger-chip-item">
+                          <span class="trig-label">{{ trig.label }}:</span>
+                          <span class="locked-action-badge compact"><el-icon><Lock /></el-icon>{{ trig.interfaceName }}</span>
+                          <span class="signal-tag-bold"><el-icon><Discount /></el-icon>{{ trig.signalName }}</span>
+                        </div>
+                      </div>
+                      <div v-else class="adapter-trigger-binding">
+                        <div class="cell-line-upper">
+                          <span class="locked-action-badge compact"><el-icon><Lock /></el-icon>{{ adapterInterfaceName() }}</span>
+                          <span class="binding-tip-text" v-if="row.kind === 'FAILURE' || row.kind === 'TERMINATION'">(可选绑定适配器事件)</span>
+                        </div>
+                        <div class="cell-line-lower">
+                          <div class="binding-select-wrapper">
+                            <el-select v-model="executionLifecycleBindings[row.key]" clearable filterable size="small" style="width: 100%;" :placeholder="row.kind === 'FAILURE' || row.kind === 'TERMINATION' ? '可选绑定事件（留空则不启用该分支）' : row.triggerPolicy === 'REQUIRED' ? '请选择完成事件' : '可选绑定事件（留空则自动推进下个阶段）'">
+                              <el-option v-for="eventName in adapterCmdEventOptions" :key="eventName" :label="eventName" :value="eventName" />
+                            </el-select>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
                   </template>
                 </el-table-column>
               </el-table>
             </section>
 
-            <h2 class="state-group-title">状态</h2>
-            <div class="state-card-grid">
-              <section class="drawer-section state-card locked-section">
-                <div class="section-title">
-                  <div class="locked-heading">
-                    <el-icon><Lock /></el-icon>
-                    <h3>指令生命周期</h3>
-                    <el-tag size="small" effect="plain" type="info">系统固定</el-tag>
-                  </div>
+            <!-- 下方：功能状态 (OP State Regions 全宽独占) -->
+            <section class="drawer-section">
+              <div class="section-title">
+                <div class="section-header-copy">
+                  <h3>功能状态</h3>
+                  <p class="section-note">描述设备并行的业务维度（Regions），可自定义多个分区。</p>
                 </div>
-                <div class="state-summary-row">
-                  <span class="state-summary-label">初始状态</span>
-                  <div><el-tag size="small" type="success" effect="plain">{{ draft.cmdState.initialStateName }}</el-tag></div>
-                </div>
-                <div class="state-summary-row align-top">
-                  <span class="state-summary-label">状态名称</span>
-                  <div class="state-token-list">
-                    <el-tag v-for="state in draft.cmdState.states" :key="state.stateName" size="small" class="state-token filled">{{ state.stateName }}</el-tag>
-                  </div>
-                </div>
-              </section>
-
-              <section class="drawer-section state-card">
-                <div class="section-title">
-                  <div class="locked-heading">
-                    <h3>功能状态</h3>
-                  </div>
+                <div class="section-actions"><el-button type="primary" plain size="small" :icon="Plus" @click="addOpStateRegion">新增分区</el-button></div>
+              </div>
+              
+              <div v-for="(region, rIndex) in draft.opState.regions" :key="region._key || rIndex" class="region-block" style="border: 1px solid var(--el-border-color-light); border-radius: 4px; padding: 12px; margin-bottom: 12px;">
+                <div class="region-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                  <el-input v-model="region.regionName" size="small" placeholder="分区名称" style="width: 200px;" />
+                  <el-button link type="danger" :icon="Delete" @click="removeOpStateRegion(rIndex)" />
                 </div>
                 <div class="state-summary-row">
                   <span class="state-summary-label">初始状态</span>
                   <div class="state-input-with-warning">
-                    <el-select v-model="draft.opState.initialStateName" filterable allow-create size="small" class="state-inline-select">
-                      <el-option v-for="name in opStateNameOptions" :key="name" :label="name" :value="name" />
+                    <el-select v-model="region.initialStateName" filterable allow-create size="small" class="state-inline-select">
+                      <el-option v-for="name in getRegionStateOptions(region)" :key="name" :label="name" :value="name" />
                     </el-select>
-                    <span class="warning-slot">
-                      <el-tooltip v-if="isInitialOpStateInvalid" content="该状态已删除或不存在" placement="top">
-                        <el-icon class="inline-warning-icon"><Warning /></el-icon>
-                      </el-tooltip>
-                    </span>
+                    <span class="warning-slot"><el-tooltip v-if="isRegionInitialStateInvalid(region)" content="该状态不存在" placement="top"><el-icon class="inline-warning-icon"><Warning /></el-icon></el-tooltip></span>
                   </div>
                 </div>
-                <div class="state-summary-row align-top" style="margin-top: 12px;">
-                  <span class="state-summary-label">状态名称</span>
+                <div class="state-summary-row align-top">
+                  <span class="state-summary-label">状态列表</span>
                   <div class="state-token-list">
-                    <el-tag v-for="(state, $index) in draft.opState.states" :key="state._key || $index" size="small" closable @close="removeOpState($index)" class="state-token filled closable-state-token">
+                    <el-tag v-for="(state, $index) in region.states" :key="state._key || $index" size="small" closable @close="removeOpState(region, $index)" class="state-token filled closable-state-token">
                       <span class="state-token-text">{{ state.stateName || '未命名' }}</span>
-                      <span class="state-token-warning-slot">
-                        <el-tooltip v-if="stateUsageWarning(state.stateName)" :content="stateUsageWarning(state.stateName)" placement="top">
-                          <el-icon class="state-warning-icon"><Warning /></el-icon>
-                        </el-tooltip>
-                      </span>
+                      <span class="state-token-warning-slot"><el-tooltip v-if="stateUsageWarning(state.stateName)" :content="stateUsageWarning(state.stateName)" placement="top"><el-icon class="state-warning-icon"><Warning /></el-icon></el-tooltip></span>
                     </el-tag>
-                    <el-input v-if="opStateInputVisible" ref="OpStateInputRef" v-model="opStateInputValue" size="small" style="width: 90px;" @keyup.enter="handleOpStateInputConfirm" @blur="handleOpStateInputConfirm" />
-                    <el-button v-else size="small" plain class="compact-action-btn" @click="showOpStateInput">+ 新增</el-button>
+                    <el-input v-if="opStateInputVisibleMap[region._key]" :ref="el => setOpStateInputRef(el, region._key)" v-model="opStateInputValueMap[region._key]" size="small" class="state-name-input" @keyup.enter="handleOpStateInputConfirm(region)" @blur="handleOpStateInputConfirm(region)" />
+                    <el-button v-else size="small" plain class="compact-action-btn" @click="showOpStateInput(region)">新增状态</el-button>
                   </div>
-                </div>
-              </section>
-            </div>
-
-            <h2 class="state-group-title">转移规则</h2>
-            <section class="drawer-section locked-section">
-              <div class="section-title">
-                <div class="locked-heading">
-                  <el-icon><Lock /></el-icon>
-                  <h3>指令生命周期转移规则</h3>
-                  <el-tag size="small" effect="plain" type="info">系统固定</el-tag>
                 </div>
               </div>
-              <el-table :data="commandLifecycleTransitionRows" border size="small" class="transition-table locked-table compact-transition-table">
-                <el-table-column prop="description" label="规则说明" width="145" />
-                <el-table-column label="状态流转" width="150">
-                  <template #default="{ row }">
-                    <span style="display: flex; align-items: center; gap: 4px; color: var(--el-text-color-regular); font-size: 12px;">{{ row.fromStateName }} <el-icon><Right /></el-icon> {{ row.toStateName }}</span>
-                  </template>
-                </el-table-column>
-                <el-table-column label="触发条件" width="190">
-                  <template #default="{ row }">
-                    <div style="display: flex; flex-direction: column; gap: 4px;">
-                      <el-tag size="small" type="info" effect="plain" style="align-self: flex-start">{{ row.trigger.interfaceName }}</el-tag>
-                      <span style="font-size: 12px; color: var(--el-text-color-regular);">{{ row.trigger.signalName }}</span>
-                    </div>
-                  </template>
-                </el-table-column>
-                <el-table-column label="转移动作" min-width="160">
-                  <template #default="{ row }">
-                    <div class="serious-actions-container">
-                      <div v-for="(act, aIdx) in row.actions" :key="aIdx" class="serious-action-wrapper">
-                        <el-tag size="small" type="info" effect="plain" class="serious-action-tag">
-                          {{ describeAction(act) }}
-                        </el-tag>
-                      </div>
-                    </div>
-                  </template>
-                </el-table-column>
-              </el-table>
             </section>
 
             <section class="drawer-section">
-              <div class="section-title">
-                <h3>功能状态转移规则</h3>
-                <el-button type="primary" plain size="small" :icon="Plus" @click="addStateTransition">新增规则</el-button>
-              </div>
-              <div v-if="stateMachineWarningMessages.length" class="state-warning-panel">
-                <div v-for="message in stateMachineWarningMessages" :key="message" class="state-warning-item">
-                  <el-icon class="inline-warning-icon"><Warning /></el-icon>
-                  <span>{{ message }}</span>
-                </div>
-              </div>
-              <div v-if="draft.stateTransitions.length === 0" class="compact-empty block-empty">暂无功能状态转移规则，请点击右上角“新增规则”进行配置</div>
-              <el-table v-else :data="draft.stateTransitions" border size="small" class="transition-table compact-transition-table">
-                <el-table-column label="说明" width="150">
-                  <template #default="{ row }">
-                    <div class="field-with-warning">
-                      <span class="warning-slot">
-                        <el-tooltip v-if="transitionWarning(row)" :content="transitionWarning(row)" placement="top">
-                          <el-icon class="inline-warning-icon"><Warning /></el-icon>
-                        </el-tooltip>
-                      </span>
-                      <el-input v-model="row.description" size="small" placeholder="可选" />
-                    </div>
-                  </template>
-                </el-table-column>
-                <el-table-column label="状态流转" width="210">
-                  <template #default="{ row }">
-                    <div style="display: flex; align-items: center; gap: 6px;">
-                      <state-select v-model="row.fromStateName" :options="opStateNameOptions" style="flex: 1" />
-                      <el-icon><Right /></el-icon>
-                      <state-select v-model="row.toStateName" :options="opStateNameOptions" style="flex: 1" />
-                    </div>
-                  </template>
-                </el-table-column>
-                <el-table-column label="触发条件" width="170">
-                  <template #default="{ row }">
-                    <div style="display: flex; flex-direction: column; gap: 6px;">
-                      <span class="locked-action"><el-icon><Lock /></el-icon><span>Interface_adapter_in</span></span>
-                      <state-select v-model="row.trigger.signalName" :options="adapterEventOptions" style="width: 100%" />
-                    </div>
-                  </template>
-                </el-table-column>
-                <el-table-column label="动作" min-width="210">
-                  <template #default="{ row, $index }">
-                    <div class="transition-action-cell">
-                      <div class="transition-action-list">
-                        <div v-for="(act, aIdx) in row.actions" :key="aIdx" class="transition-action-row">
-                          <span class="action-editor-label">发送</span>
-                          <el-select v-model="act.payload.signalName" size="small" placeholder="选择信号">
-                            <el-option v-for="sig in getSignalsForInterface(act.payload.interfaceName)" :key="sig" :label="sig" :value="sig" />
-                          </el-select>
-                          <el-button link type="info" :icon="Close" @click="row.actions.splice(aIdx, 1)" title="取消动作" />
-                        </div>
-                        <el-button size="small" plain :icon="Plus" class="compact-action-btn" @click="ensureTransitionAction(row)">添加</el-button>
-                      </div>
-                      <el-button link type="danger" :icon="Delete" @click="removeRow(draft.stateTransitions, $index)" title="删除该规则" />
-                    </div>
-                  </template>
-                </el-table-column>
+              <div class="section-title"><div class="section-header-copy"><h3>功能状态转移规则</h3><p class="section-note">只使用 Adapter 功能事件（OP）触发设备业务状态变化。</p></div><div class="section-actions"><el-button type="primary" plain size="small" :icon="Plus" :disabled="adapterOpEventOptions.length === 0" @click="addStateTransition">新增规则</el-button></div></div>
+              <div v-if="stateMachineWarningMessages.length" class="state-warning-panel"><div v-for="message in stateMachineWarningMessages" :key="message" class="state-warning-item"><el-icon class="inline-warning-icon"><Warning /></el-icon><span>{{ message }}</span></div></div>
+              <div v-if="operationTransitionRows.length === 0" class="compact-empty block-empty">暂无功能状态转移规则，可使用上方按钮添加</div>
+              <el-table v-else :data="operationTransitionRows" border size="small" class="transition-table editor-table operation-transition-table">
+                <el-table-column label="说明" min-width="120"><template #default="{ row }"><div class="field-with-warning"><span class="warning-slot"><el-tooltip v-if="transitionWarning(row)" :content="transitionWarning(row)" placement="top"><el-icon class="inline-warning-icon"><Warning /></el-icon></el-tooltip></span><el-input v-model="row.description" size="small" placeholder="可选" /></div></template></el-table-column>
+                <el-table-column label="所属分区" min-width="120"><template #default="{ row }"><el-select v-model="row.regionName" size="small"><el-option v-for="region in draft.opState.regions" :key="region._key" :label="region.regionName" :value="region.regionName" /></el-select></template></el-table-column>
+                <el-table-column label="状态流转" min-width="300"><template #default="{ row }"><div class="transition-state-pair"><state-select v-model="row.fromStateName" :options="getRegionStateOptionsByName(row.regionName)" /><el-icon><Right /></el-icon><state-select v-model="row.toStateName" :options="getRegionStateOptionsByName(row.regionName)" /></div></template></el-table-column>
+                <el-table-column label="触发条件" min-width="240"><template #default="{ row }"><div class="transition-trigger-editor"><span class="locked-action"><el-icon><Lock /></el-icon>{{ adapterInterfaceName() }}</span><state-select v-model="row.trigger.signalName" :options="adapterOpEventOptions" /></div></template></el-table-column>
+                <el-table-column label="转移动作" min-width="280"><template #default="{ row }"><div class="transition-action-list"><div v-for="(act, aIdx) in row.actions" :key="aIdx" class="transition-action-row"><span class="action-editor-label">发送</span><el-select v-model="act.payload.signalName" size="small" placeholder="选择信号"><el-option v-for="sig in getSignalsForInterface(act.payload.interfaceName)" :key="sig" :label="sig" :value="sig" /></el-select><el-button link type="info" :icon="Close" title="移除动作" @click="row.actions.splice(aIdx, 1)" /></div><el-button size="small" plain :icon="Plus" class="compact-action-btn" @click="ensureTransitionAction(row)">添加动作</el-button></div></template></el-table-column>
+                <el-table-column label="操作" width="64" fixed="right" align="center"><template #default="{ row }"><el-button link type="danger" :icon="Delete" title="删除规则" @click="removeObjectRow(draft.stateTransitions, row)" /></template></el-table-column>
               </el-table>
             </section>
+
+
           </div>
 
-                    <div id="edit-constraint" class="anchor-section industrial-section">
+          <div id="edit-constraint" class="anchor-section industrial-section">
             <h2 class="section-heading"><span class="section-index">06</span>内置约束</h2>
             <section class="drawer-section">
               <div class="section-title">
-                <h3>内置约束</h3>
-                <el-button type="primary" plain size="small" :icon="Plus" @click="addIntrinsicConstraint">新增约束</el-button>
+                <div class="section-header-copy">
+                  <h3>内置约束</h3>
+                  <p class="section-note">设备自动监测的参数限制。配置此处的违规状态会被引擎识别为异常状态跳转规则并内部闭环触发，无需在功能状态转移中重复配置。</p>
+                </div>
+                <div class="section-actions">
+                  <el-button type="primary" plain size="small" :icon="Plus" @click="addIntrinsicConstraint">新增约束</el-button>
+                </div>
               </div>
-              <div v-if="draft.intrinsicConstraints.length === 0" class="compact-empty block-empty">暂无内置约束，请点击右上角“新增约束”进行配置</div>
-              <el-table v-else :data="draft.intrinsicConstraints" border size="small">
+              <div v-if="draft.intrinsicConstraints.length === 0" class="compact-empty block-empty">暂无内置约束，可使用上方按钮添加</div>
+              <el-table v-else :data="draft.intrinsicConstraints" border size="small" class="editor-table constraint-table">
                 <el-table-column label="约束属性" min-width="170">
                   <template #default="{ row }">
                     <el-select v-model="row.objectAttributeKey" size="small" filterable>
@@ -566,16 +465,16 @@
                     </el-select>
                   </template>
                 </el-table-column>
-                <el-table-column label="比较符" width="120">
+                <el-table-column label="比较符" width="100" align="center">
                   <template #default="{ row }"><el-select v-model="row.operator" size="small"><el-option v-for="operator in operators" :key="operator" :label="operator" :value="operator" /></el-select></template>
                 </el-table-column>
-                <el-table-column label="阈值" width="150">
+                <el-table-column label="阈值" width="120" align="center">
                   <template #default="{ row }"><el-input v-model="row.boundaryValue" size="small" /></template>
                 </el-table-column>
-                <el-table-column label="违规状态" min-width="160">
-                  <template #default="{ row }"><state-select v-model="row.violationStateName" :options="opStateNameOptions" /></template>
+                <el-table-column label="违规状态" min-width="160" align="center">
+                  <template #default="{ row }"><state-select v-model="row.violationStateName" :options="exceptionOpStateNameOptions" /></template>
                 </el-table-column>
-                <el-table-column label="" width="54" fixed="right">
+                <el-table-column label="操作" width="64" fixed="right" align="center">
                   <template #default="{ $index }"><el-button link type="danger" :icon="Delete" @click="removeRow(draft.intrinsicConstraints, $index)" /></template>
                 </el-table-column>
               </el-table>
@@ -583,15 +482,15 @@
           </div>
 
           <div id="edit-bom" class="anchor-section industrial-section">
-            <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px;">组件结构清单</h2>
+            <h2 class="section-heading"><span class="section-index">07</span>组件结构清单</h2>
             <section class="drawer-section">
               <div class="section-title">
                 <h3>BOM 清单</h3>
                 <el-button type="primary" plain size="small" :icon="Plus" @click="addBomComponent">新增组件</el-button>
               </div>
-              <div v-if="draft.componentsBom.length === 0" class="compact-empty block-empty">暂无组件，请点击右上角“新增组件”进行配置</div>
-              <el-table v-else :data="draft.componentsBom" border size="small">
-                <el-table-column label="组件名称 (slotName)" min-width="160">
+              <div v-if="draft.componentsBom.length === 0" class="compact-empty block-empty">暂无组件，可使用上方按钮添加</div>
+              <el-table v-else :data="draft.componentsBom" border size="small" class="editor-table bom-table">
+                <el-table-column label="组件名称" min-width="160">
                   <template #default="{ row }"><el-input v-model="row.slotName" size="small" placeholder="例如：搅拌电机" /></template>
                 </el-table-column>
                 <el-table-column label="设备类别" min-width="180">
@@ -608,10 +507,10 @@
                     />
                   </template>
                 </el-table-column>
-                <el-table-column label="数量 (quantity)" width="120">
+                <el-table-column label="数量" width="120">
                   <template #default="{ row }"><el-input-number v-model="row.quantity" size="small" :min="1" style="width: 100%" /></template>
                 </el-table-column>
-                <el-table-column label="描述 (description)" min-width="200">
+                <el-table-column label="说明" min-width="200">
                   <template #default="{ row }"><el-input v-model="row.description" size="small" placeholder="说明" /></template>
                 </el-table-column>
                 <el-table-column label="" width="54" fixed="right">
@@ -668,32 +567,12 @@
         </div>
       </template>
     </el-drawer>
-
-  <el-dialog v-model="adapterTemplateDialogVisible" title="选择要绑定的 Adapter 类别" width="500px">
-    <div style="margin-bottom: 15px;">检测到配置文件中包含 Adapter 类别，请选择需要绑定到当前设备模型的类别：</div>
-    <el-form label-width="80px">
-      <el-form-item label="选择类别">
-        <el-select v-model="selectedAdapterTemplate" placeholder="请选择类别" style="width: 100%">
-          <el-option
-            v-for="item in adapterTemplatesList"
-            :key="adapterCategoryKey(item)"
-            :label="adapterCategoryLabel(item)"
-            :value="adapterCategoryKey(item)"
-          />
-        </el-select>
-      </el-form-item>
-    </el-form>
-    <template #footer>
-      <el-button @click="adapterTemplateDialogVisible = false">取消</el-button>
-      <el-button type="primary" @click="confirmAdapterTemplateSelection">确认绑定</el-button>
-    </template>
-  </el-dialog>
 </template>
 
 <script setup>
 import { ref, reactive, computed, watch, defineComponent, nextTick, resolveComponent, h, onMounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Delete, Upload, Warning, Lock, Right, Close, Refresh } from '@element-plus/icons-vue'
+import { Plus, Delete, Warning, Lock, Right, Close, Refresh, Discount, Promotion } from '@element-plus/icons-vue'
 import {
   saveDeviceModel,
   previewDeviceModel,
@@ -704,24 +583,23 @@ import {
 } from './deviceModelManagementApi'
 import {
   adapterDeviceCategoryOptions,
-  buildAdapterContractFromManifestCategory,
   adapterCategoryKey,
   adapterCategoryLabel,
   attributeDataTypes,
   adapterDataTypes,
   operators,
-  communicationProtocols,
-  loadProtocolMetadata,
-  standardCmdEvents,
+  ensureProtocolMetadataLoaded,
   defaultStateSpace,
   defaultAdapterContract,
   defaultInterfaces,
   defaultCommandLifecycleTransitions,
+  executionLifecycleMainPath,
   defaultCommandLifecycle,
   getSignalsForInterface,
   defaultStateEntryActions,
   adapterInterfaceName
 } from './deviceModelConstants'
+import { buildLifecycleRuleRows, serializeLifecycleTransitions, hydrateLifecycleBindings } from './deviceModelLifecycle.js'
 import {
   asArray, firstDefined, deepClone, ensureArrayField, isNumeric,
   numericOrNull, stringValue, stringId, normalizeDataType, makeUiKey,
@@ -729,7 +607,7 @@ import {
   eventTypeLabel, operatorLabel, valueKindLabel, directionLabel,
   formatTime, formatJson, dataTypeOptions, describeAction,
   capabilityParamDisplayName, functionMappingGroups, capabilityMappingRows,
-  displayAttributeName, normalizeCommandParameter, normalizeEventsToFlatList,
+  displayAttributeName, normalizeCommandParameter, isAdapterInternalParameter,
   normalizeAttributes, normalizeCapabilities, extractFunctionMappings,
   normalizeFunctionMappings, normalizeAdapterContract, normalizePorts,
   normalizeOperator, normalizeIntrinsicConstraints, normalizeInterfaces,
@@ -751,14 +629,7 @@ const drawerMode = ref('create')
 
 const drawerTitle = computed(() => drawerMode.value === 'create' ? '新建设备模型' : '编辑设备模型')
 
-// ── Adapter 选择对话框 ────────────────────────────────
-const adapterTemplateDialogVisible = ref(false)
-const adapterTemplatesList = ref([])
-const selectedAdapterTemplate = ref('')
-const tempAdapterConfigRaw = ref(null)
-
 // ── Adapter 注册相关 ──────────────────────────────────
-const adapterConfigText = ref('')
 const registeredAdapters = ref([])
 const registeredAdapterLoading = ref(false)
 const selectedRegisteredAdapterName = ref('')
@@ -791,7 +662,7 @@ function capabilityParameterOptionsDetailedByKey(capabilityKey) {
 
 // ─── Local UI Components ──────────────────────────────
 onMounted(() => {
-  loadProtocolMetadata().catch(() => {})
+  ensureProtocolMetadataLoaded().catch(error => console.warn('[Drawer] 状态机元数据预加载失败，将在打开抽屉时重试', error))
 })
 
 const DataTypeSelect = defineComponent({
@@ -847,6 +718,7 @@ const categoryTreeForSelect = computed(() => {
 // ─── Public API (exposed to parent) ─────────────────
 const saving = ref(false)
 const draft = reactive(emptyDraft())
+const executionLifecycleBindings = reactive({})
 
 function emptyDraft() {
   return {
@@ -866,8 +738,9 @@ function emptyDraft() {
   }
 }
 
-function openForCreate(categoryId) {
+async function openForCreate(categoryId) {
   try {
+    await ensureProtocolMetadataLoaded()
     drawerMode.value = 'create'
     replaceDraft(emptyDraft())
     if (categoryId) {
@@ -877,12 +750,15 @@ function openForCreate(categoryId) {
     fetchRegisteredAdapters() // 自动加载已注册的 Adapter 列表，免去手动刷新
     drawerVisible.value = true
   } catch (err) {
+    drawerVisible.value = false
+    ElMessage.error('加载状态机模型元数据失败：' + (err?.message || '未知错误'))
     console.error('[Drawer] Failed in openForCreate:', err)
   }
 }
 
 async function openForEdit(model, defaultAttrs) {
   try {
+    await ensureProtocolMetadataLoaded()
     drawerMode.value = 'edit'
     // 立刻打开抽屉，让滑入动画即时开始，不被任何计算阻塞
     drawerVisible.value = true
@@ -892,7 +768,7 @@ async function openForEdit(model, defaultAttrs) {
 
     replaceDraft(fromModelToDraft(model, defaultAttrs))
     loadPropertyTypesForTemplate()
-    prepareAdapterSourcePicker(draft.adapterContract?.config?.adapterName, draft.adapterContract?.config?.categoryName || draft.adapterContract?.config?.templateName)
+    prepareAdapterSourcePicker(draft.adapterContract?.config?.adapterName, draft.adapterContract?.config?.categoryName)
 
     // 纯净的异步兜底逻辑：仅在缓存为空且有模型ID时启动静默网络抓取
     if ((!defaultAttrs || defaultAttrs.length === 0) && model?.modelId) {
@@ -907,6 +783,8 @@ async function openForEdit(model, defaultAttrs) {
       }
     }
   } catch (err) {
+    drawerVisible.value = false
+    ElMessage.error('打开设备模型失败：' + (err?.message || '未知错误'))
     console.error('[Drawer] Failed in openForEdit:', err)
   }
 }
@@ -917,18 +795,111 @@ defineExpose({ openForCreate, openForEdit, buildSavePayload, fromModelToDraft, r
 function addBomComponent() {
   draft.componentsBom.push({ _key: makeUiKey('bom'), slotName: '', categoryId: '', quantity: 1, description: '' })
 }
-const adapterEventOptions = computed(() => opEventNames(draft.adapterContract.events))
-const adapterSignalOptions = computed(() => uniqueStrings([...standardCmdEvents, ...adapterEventOptions.value]))
+const adapterCmdEvents = computed(() => asArray(draft.adapterContract.events).filter(event => event.eventType === 'CMD'))
+const adapterOpEvents = computed(() => asArray(draft.adapterContract.events).filter(event => event.eventType === 'OP'))
+const adapterCmdEventOptions = computed(() => adapterEventNames(adapterCmdEvents.value))
+const adapterOpEventOptions = computed(() => adapterEventNames(adapterOpEvents.value))
+watch(adapterCmdEventOptions, eventNames => {
+  Object.keys(executionLifecycleBindings).forEach(key => {
+    if (executionLifecycleBindings[key] && !eventNames.includes(executionLifecycleBindings[key])) {
+      executionLifecycleBindings[key] = ''
+    }
+  })
+})
+const adapterSignalOptions = computed(() => uniqueStrings([...adapterCmdEventOptions.value, ...adapterOpEventOptions.value]))
 const generatedInterfaces = computed(() => defaultInterfaces(adapterSignalOptions.value))
 
 const stateMachineInterfaceRows = computed(() => interfaceLocked.value ? generatedInterfaces.value : draft.stateMachineInterfaces)
 const commandLifecycleTransitionRows = computed(() => defaultCommandLifecycleTransitions())
-const opStateNameOptions = computed(() => draft.opState.states.map(item => item.stateName).filter(Boolean))
-const isInitialOpStateInvalid = computed(() => !!draft.opState.initialStateName && !opStateNameOptions.value.includes(draft.opState.initialStateName))
+const groupedCommandLifecycleTransitions = computed(() => {
+  const rules = commandLifecycleTransitionRows.value
+  const groups = []
+  
+  // 1. 合并 IDLE -> SENT
+  const startRules = rules.filter(r => r.fromStateName === 'IDLE' && r.toStateName === 'SENT')
+  if (startRules.length > 0) {
+    groups.push({
+      key: 'sys_start',
+      fromStateName: 'IDLE',
+      toStateName: 'SENT',
+      description: '下发指令并启动 (自动向适配器发送报文)',
+      triggers: startRules.map(r => ({
+        interfaceName: r.trigger?.interfaceName,
+        signalName: r.trigger?.signalName,
+        label: r.trigger?.signalName === 'WF_EXECUTE_START' ? '工作流触发' : '控制台手动下发'
+      })),
+      actions: startRules[0].actions
+    })
+  }
+
+  // 2. 合并 RUNNING -> ABORTING
+  const abortRules = rules.filter(r => r.actions?.[0]?.payload?.signalName === 'CMD_ABORT')
+  if (abortRules.length > 0) {
+    groups.push({
+      key: 'sys_abort',
+      fromStateName: 'RUNNING',
+      toStateName: 'ABORTING',
+      description: '下发指令中止请求 (自动向适配器发送 ABORT 报文)',
+      triggers: abortRules.map(r => ({
+        interfaceName: r.trigger?.interfaceName,
+        signalName: r.trigger?.signalName,
+        label: r.trigger?.signalName === 'WF_EXECUTE_ABORT' ? '工作流请求中止' : r.trigger?.signalName === 'MANUAL_EXECUTE_ABORT' ? '控制台手动中止' : '约束违规中止'
+      })),
+      actions: abortRules[0].actions
+    })
+  }
+
+  return groups
+})
+const executionLifecycleRuleRows = computed(() => buildLifecycleRuleRows(executionLifecycleMainPath))
+const mergedLifecycleRules = computed(() => {
+  const sysRules = groupedCommandLifecycleTransitions.value.map(r => ({ ...r, type: 'system' }))
+  const bindRules = executionLifecycleRuleRows.value.map(r => {
+    let desc = ''
+    if (r.kind === 'FAILURE') {
+      desc = '适配器异常失败 (可选绑定失败上报)'
+    } else if (r.kind === 'TERMINATION') {
+      desc = '适配器中止确认 (可选绑定中止确认)'
+    } else {
+      if (r.fromStateName === 'SENT' && r.toStateName === 'RECEIVED') desc = '适配器确认接收 (消息自动推移)'
+      else if (r.fromStateName === 'RECEIVED' && r.toStateName === 'RUNNING') desc = '适配器确认运行 (运行自动推移)'
+      else if (r.fromStateName === 'RUNNING' && r.toStateName === 'COMPLETED') desc = '适配器完成执行 (需绑定完成事件)'
+      else desc = '适配器回传执行进度'
+    }
+    return { ...r, type: 'binding', description: desc }
+  })
+  return [...sysRules, ...bindRules]
+})
+const operationTransitionRows = computed(() => draft.stateTransitions.filter(row => row.stateSpace === 'OP'))
+const commandStateNameOptions = computed(() => draft.cmdState.states.map(item => item.stateName).filter(Boolean))
+const opStateNameOptions = computed(() => {
+  return (draft.opState.regions || []).flatMap(r => r.states || []).map(item => item.stateName).filter(Boolean)
+})
+
+const exceptionOpStateNameOptions = computed(() => {
+  return (draft.opState.regions || [])
+    .filter(r => r.regionName === 'Exception')
+    .flatMap(r => r.states || [])
+    .map(item => item.stateName)
+    .filter(Boolean)
+})
+
+function getRegionStateOptions(region) {
+  return (region.states || []).map(item => item.stateName).filter(Boolean)
+}
+
+function getRegionStateOptionsByName(regionName) {
+  const region = (draft.opState.regions || []).find(r => r.regionName === regionName)
+  return region ? getRegionStateOptions(region) : []
+}
+
+function isRegionInitialStateInvalid(region) {
+  return !!region.initialStateName && !getRegionStateOptions(region).includes(region.initialStateName)
+}
 
 function stateUsageWarning(stateName) {
   if (!stateName) return '状态名未填写'
-  const used = draft.stateTransitions.some(t => t.fromStateName === stateName || t.toStateName === stateName)
+  const used = operationTransitionRows.value.some(t => t.fromStateName === stateName || t.toStateName === stateName)
   if (!used) return '状态未在任何转移规则中使用'
   return ''
 }
@@ -941,13 +912,15 @@ function transitionWarning(row) {
 
 const stateMachineWarningMessages = computed(() => {
   const messages = []
-  if (draft.stateTransitions.length > 0) {
-    draft.opState.states.forEach(state => {
-      const warning = stateUsageWarning(state.stateName)
-      if (warning) messages.push('状态 ' + (state.stateName || '未命名') + '：' + warning)
+  if (operationTransitionRows.value.length > 0) {
+    (draft.opState.regions || []).forEach(region => {
+      (region.states || []).forEach(state => {
+        const warning = stateUsageWarning(state.stateName)
+        if (warning) messages.push('分区 ' + (region.regionName || '未命名') + ' 的状态 ' + (state.stateName || '未命名') + '：' + warning)
+      })
     })
   }
-  draft.stateTransitions.forEach((row, index) => {
+  operationTransitionRows.value.forEach((row, index) => {
     const warning = transitionWarning(row)
     if (warning) messages.push('规则 ' + (index + 1) + '：' + warning)
   })
@@ -1015,6 +988,23 @@ function cleanInterfaces(rows) {
 
 function cleanStateSpace(space, fallback, type) {
   const norm = normalizeStateSpace(space, fallback, type)
+  if (type === 'OP') {
+    return {
+      regions: (norm.regions || []).map(r => ({
+        regionName: stringValue(r.regionName),
+        initialStateName: stringValue(r.initialStateName),
+        states: (r.states || []).map(s => {
+          const stateName = stringValue(s.stateName)
+          const onEntry = s.onEntry.map(a => ({ actionName: stringValue(a.actionName), payload: normalizePayload(a.payload || a.parameters) })).filter(a => a.actionName)
+          return {
+            stateName,
+            onEntry: onEntry.length ? onEntry : defaultStateEntryActions(type, stateName)
+          }
+        }).filter(s => s.stateName)
+      })).filter(r => r.regionName)
+    }
+  }
+
   return {
     initialStateName: norm.initialStateName,
     states: norm.states.map(s => {
@@ -1030,12 +1020,36 @@ function cleanStateSpace(space, fallback, type) {
 
 function cleanTransitions(rows) {
   return asArray(rows).map(r => ({
+    stateSpace: String(r.stateSpace || '').toUpperCase(),
+    regionName: String(r.stateSpace || '').toUpperCase() === 'OP' ? stringValue(r.regionName) : undefined,
     description: stringValue(r.description),
     fromStateName: stringValue(r.fromStateName),
     toStateName: stringValue(r.toStateName),
-    trigger: { interfaceName: stringValue(r.trigger?.interfaceName || adapterInterfaceName()), signalName: stringValue(r.trigger?.signalName) },
+    trigger: r.trigger == null ? null : {
+      interfaceName: stringValue(r.trigger.interfaceName || adapterInterfaceName()),
+      signalName: stringValue(r.trigger.signalName)
+    },
     actions: asArray(r.actions).map(a => ({ actionName: stringValue(a.actionName), payload: normalizePayload(a.payload || a.parameters) })).filter(a => a.actionName)
-  })).filter(r => r.fromStateName && r.toStateName && r.trigger.interfaceName && r.trigger.signalName)
+  })).filter(r => ['CMD', 'OP'].includes(r.stateSpace)
+    && r.fromStateName
+    && r.toStateName
+    && (r.trigger == null || (r.trigger.interfaceName && r.trigger.signalName)))
+}
+
+function buildExecutionLifecycleTransitions() {
+  if (executionLifecycleMainPath.length === 0) {
+    throw new Error('状态机执行生命周期元数据尚未加载')
+  }
+  return serializeLifecycleTransitions(
+    executionLifecycleRuleRows.value,
+    executionLifecycleBindings,
+    adapterInterfaceName()
+  )
+}
+
+function hydrateExecutionLifecycleBindings(rows) {
+  Object.keys(executionLifecycleBindings).forEach(key => { delete executionLifecycleBindings[key] })
+  Object.assign(executionLifecycleBindings, hydrateLifecycleBindings(rows, executionLifecycleRuleRows.value))
 }
 
 function cleanAdapterContract(contract, attrNameByKey) {
@@ -1084,7 +1098,7 @@ function buildSavePayload(includeBlankBasic = true, propertyTypes = []) {
     stateMachineInterfaces: cleanInterfaces(stateMachineInterfaceRows.value),
     opState: cleanStateSpace(draft.opState, 'IDLE', 'OP'),
     cmdState: cleanStateSpace(draft.cmdState, 'IDLE', 'CMD'),
-    stateTransitions: cleanTransitions(draft.stateTransitions),
+    stateTransitions: [...buildExecutionLifecycleTransitions(), ...cleanTransitions(operationTransitionRows.value)],
     componentsBom: asArray(draft.componentsBom).map(item => ({
       slotName: stringValue(item.slotName),
       categoryId: item.categoryId ? Number(item.categoryId) : null,
@@ -1204,7 +1218,9 @@ function replaceDraft(next) {
   draft.intrinsicConstraints.splice(0, draft.intrinsicConstraints.length, ...normalizeIntrinsicConstraints(next.intrinsicConstraints, draft.attributes))
   draft.adapterContract = normalizeAdapterContract(next.adapterContract, draft.attributes)
   draft.stateMachineInterfaces.splice(0, draft.stateMachineInterfaces.length, ...normalizeInterfaces(next.stateMachineInterfaces))
-  draft.stateTransitions.splice(0, draft.stateTransitions.length, ...normalizeTransitions(next.stateTransitions))
+  const normalizedTransitions = normalizeTransitions(next.stateTransitions)
+  hydrateExecutionLifecycleBindings(normalizedTransitions)
+  draft.stateTransitions.splice(0, draft.stateTransitions.length, ...normalizedTransitions.filter(row => row.stateSpace === 'OP'))
   draft.componentsBom.splice(0, draft.componentsBom.length, ...asArray(next.componentsBom))
   draft.opState = normalizeStateSpace(next.opState, 'IDLE', 'OP')
   draft.cmdState = normalizeStateSpace(next.cmdState, 'IDLE', 'CMD')
@@ -1233,23 +1249,7 @@ function removeCapabilityParameter(capability, index) {
   if (removed?._key) capability.parameterMapping = asArray(capability.parameterMapping).filter(item => item.capabilityParamKey !== removed._key)
 }
 
-function addAdapterCommand() {
-  draft.adapterContract.commands.push({ _key: makeUiKey('cmd'), commandName: '', commandParameters: [] })
-}
-function removeAdapterCommand(command) {
-  removeObjectRow(draft.adapterContract.commands, command)
-}
-function addCommandParameter(command) {
-  ensureArrayField(command, 'commandParameters').push({ _key: makeUiKey('cmd_param'), paramName: '', dataType: 'DOUBLE' })
-}
-function addAdapterAttribute() { draft.adapterContract.telemetry.adapterAttributes.push({ _key: makeUiKey('adapter_attr'), name: '', dataType: 'DOUBLE', description: '' }) }
 
-function removeAdapterAttribute(index) {
-  removeRow(draft.adapterContract.telemetry.adapterAttributes, index)
-}
-
-function addAdapterEvent() { draft.adapterContract.events.push({ _key: makeUiKey('event'), eventName: '', description: '' }) }
-function removeAdapterEvent(index) { removeRow(draft.adapterContract.events, index) }
 
 function addAttributeMapping() {
   draft.adapterContract.telemetry.attributesMapping.push({ _key: makeUiKey('attr_map'), adapterAttrName: '', modelAttributeKey: '', modelAttributeName: '' })
@@ -1367,7 +1367,7 @@ function isCapabilityMapped(key, row) {
 }
 
 function isAdapterCommandMapped(name, row) {
-  return !!name && draft.functionMappings.some(mapping => mapping !== row && mapping.adapterCommandName === name)
+  return false
 }
 
 function isCommandParamMapped(row, paramName, current) {
@@ -1426,65 +1426,93 @@ function isCapabilityParamMapped(row, paramKey, current) {
 }
 
 function visibleCommandParameters(command) {
-  return asArray(command?.commandParameters).filter(param => param.internal !== true)
+  return asArray(command?.commandParameters).filter(param => !isAdapterInternalParameter(param))
 }
 
 function addIntrinsicConstraint() {
-  draft.intrinsicConstraints.push({ _key: makeUiKey('constraint'), objectAttributeKey: '', objectAttributeName: '', operator: 'GT', boundaryValue: '', violationStateName: '' })
+  draft.intrinsicConstraints.push({ _key: makeUiKey('constraint'), objectAttributeKey: '', objectAttributeName: '', operator: '>', boundaryValue: '', violationStateName: '' })
 }
 
 function removeRow(rows, index) { rows.splice(index, 1) }
 
-const opStateInputVisible = ref(false)
-const opStateInputValue = ref('')
-const OpStateInputRef = ref(null)
+const opStateInputVisibleMap = reactive({})
+const opStateInputValueMap = reactive({})
+const opStateInputRefs = reactive({})
 
-const showOpStateInput = () => {
-  opStateInputVisible.value = true
-  nextTick(() => {
-    OpStateInputRef.value?.focus()
+function setOpStateInputRef(el, key) {
+  if (el) {
+    opStateInputRefs[key] = el
+  }
+}
+
+function addOpStateRegion() {
+  const newKey = makeUiKey('region')
+  if (!draft.opState.regions) {
+    draft.opState.regions = []
+  }
+  draft.opState.regions.push({
+    _key: newKey,
+    regionName: '新建分区',
+    initialStateName: 'IDLE',
+    states: [{ _key: makeUiKey('state'), stateName: 'IDLE', onEntry: [] }]
   })
 }
 
-const handleOpStateInputConfirm = () => {
-  if (opStateInputValue.value) {
-    if (!draft.opState.states) {
-      draft.opState.states = []
+function removeOpStateRegion(index) {
+  draft.opState.regions.splice(index, 1)
+}
+
+function showOpStateInput(region) {
+  const key = region._key
+  opStateInputVisibleMap[key] = true
+  nextTick(() => {
+    opStateInputRefs[key]?.focus()
+  })
+}
+
+function handleOpStateInputConfirm(region) {
+  const key = region._key
+  const value = opStateInputValueMap[key]
+  if (value) {
+    const stateName = value.trim()
+    if (!region.states) {
+      region.states = []
     }
-    const stateName = opStateInputValue.value.trim()
-    if (stateName && !draft.opState.states.find(s => s.stateName === stateName)) {
-      draft.opState.states.push({
+    if (stateName && !region.states.find(s => s.stateName === stateName)) {
+      region.states.push({
         _key: makeUiKey('state'),
         stateName: stateName,
         onEntry: defaultStateEntryActions('OP', stateName)
       })
     }
   }
-  opStateInputVisible.value = false
-  opStateInputValue.value = ''
+  opStateInputVisibleMap[key] = false
+  opStateInputValueMap[key] = ''
 }
 
-const removeOpState = (index) => {
-  draft.opState.states.splice(index, 1)
+function removeOpState(region, index) {
+  region.states.splice(index, 1)
 }
+
 function removeObjectRow(rows, row) { const index = rows.indexOf(row); if (index >= 0) rows.splice(index, 1) }
 
 function addStateTransition() {
+  const firstRegion = draft.opState.regions?.[0]?.regionName || 'Main'
   draft.stateTransitions.push({
     _key: makeUiKey('transition'),
+    stateSpace: 'OP',
+    regionName: firstRegion,
+    description: '',
     fromStateName: '',
     toStateName: '',
-    trigger: { interfaceName: adapterInterfaceName(), signalName: '' },
+    trigger: { interfaceName: adapterInterfaceName(), signalName: adapterOpEventOptions.value[0] || '' },
     actions: []
   })
 }
 
 function ensureTransitionAction(row) {
   if (!row.actions) row.actions = []
-  row.actions.push({
-    actionName: 'SEND',
-    payload: { interfaceName: 'Interface_adapter_out', signalName: '' }
-  })
+  row.actions.push(adapterOutAction(''))
 }
 
 function parsedAdapterConfig(adapter) {
@@ -1495,9 +1523,9 @@ function parsedAdapterConfig(adapter) {
   return adapter.parsedConfig || {}
 }
 
-function prepareAdapterSourcePicker(adapterName = '', templateName = '') {
+function prepareAdapterSourcePicker(adapterName = '', categoryName = '') {
   selectedRegisteredAdapterName.value = adapterName || ''
-  selectedRegisteredAdapterTemplate.value = templateName || ''
+  selectedRegisteredAdapterTemplate.value = categoryName || ''
   fetchRegisteredAdapters()
 }
 
@@ -1509,9 +1537,16 @@ async function fetchRegisteredAdapters() {
       selectedRegisteredAdapterName.value = ''
       selectedRegisteredAdapterTemplate.value = ''
     }
-    if (selectedRegisteredAdapterName.value && selectedRegisteredAdapterTemplate.value) {
-      const hasTemplate = registeredAdapterTemplateOptions.value.some(option => adapterCategoryKey(option) === selectedRegisteredAdapterTemplate.value)
-      if (!hasTemplate) selectedRegisteredAdapterTemplate.value = ''
+    if (selectedRegisteredAdapterName.value) {
+      const options = registeredAdapterTemplateOptions.value
+      if (options.length > 0) {
+        const hasTemplate = options.some(option => adapterCategoryKey(option) === selectedRegisteredAdapterTemplate.value)
+        if (!hasTemplate || !selectedRegisteredAdapterTemplate.value) {
+          selectedRegisteredAdapterTemplate.value = adapterCategoryKey(options[0])
+        }
+      } else {
+        selectedRegisteredAdapterTemplate.value = ''
+      }
     }
   } catch (error) {
     registeredAdapters.value = []
@@ -1522,6 +1557,12 @@ async function fetchRegisteredAdapters() {
 
 function handleRegisteredAdapterChange() {
   selectedRegisteredAdapterTemplate.value = ''
+  nextTick(() => {
+    const options = registeredAdapterTemplateOptions.value
+    if (options.length > 0) {
+      selectedRegisteredAdapterTemplate.value = adapterCategoryKey(options[0])
+    }
+  })
 }
 
 async function applyRegisteredAdapterContract() {
@@ -1551,48 +1592,14 @@ function assignAdapterContract(contract) {
   draft.adapterContract.telemetry.attributesMapping.splice(0, draft.adapterContract.telemetry.attributesMapping.length, ...normalized.telemetry.attributesMapping)
   draft.adapterContract.events.splice(0, draft.adapterContract.events.length, ...normalized.events)
 }
-function applyAdapterConfigText() {
-  try {
-    const parsed = JSON.parse(adapterConfigText.value)
-    const categories = adapterDeviceCategoryOptions(parsed)
-    if (categories.length === 0) {
-      ElMessage.warning('配置文本中未找到合法的 deviceCategories 数组')
-      return
-    }
-    tempAdapterConfigRaw.value = parsed
-    adapterTemplatesList.value = categories
-    selectedAdapterTemplate.value = adapterCategoryKey(categories[0])
-    adapterTemplateDialogVisible.value = true
-  } catch (error) {
-    ElMessage.error('配置文本不是有效的 JSON')
-  }
-}
-
-function confirmAdapterTemplateSelection() {
-  if (!selectedAdapterTemplate.value) {
-    ElMessage.warning('请选择一个 Adapter 类别')
-    return
-  }
-  const parsed = tempAdapterConfigRaw.value
-  const selected = adapterTemplatesList.value.find(function(item) { return adapterCategoryKey(item) === selectedAdapterTemplate.value })
-  if (!selected) return
-
-  assignAdapterContract(buildAdapterContractFromManifestCategory(parsed, selected.category))
-
-  adapterTemplateDialogVisible.value = false
-  ElMessage.success('已成功解析并绑定类别: ' + selected.name)
-}
-
-function opEventNames(events) {
+function adapterEventNames(events) {
   const rows = Array.isArray(events)
     ? events
-    : [...asArray(events?.cmdEvents).map(event => ({ ...event, eventType: 'CMD' })), ...asArray(events?.opEvents).map(event => ({ ...event, eventType: 'OP' }))]
-  return rows.filter(event => String(event.eventType || '').toUpperCase() !== 'CMD' && !standardCmdEvents.includes(event.eventName || event.name)).map(event => event.eventName || event.name).filter(Boolean)
+    : [...asArray(events?.cmdEvents), ...asArray(events?.opEvents)]
+  return rows.map(event => event.eventName || event.name).filter(Boolean)
 }
 
-function allStateTransitions(rows) {
-  return [...defaultCommandLifecycleTransitions(), ...cleanTransitions(rows)]
-}
+
 
 function signalOptionsForInterface(interfaceName) {
   const iface = stateMachineInterfaceRows.value.find(item => item.name === interfaceName)
@@ -1605,14 +1612,6 @@ function uniqueStrings(values) {
 
 
 
-function importAdapterFile(file) {
-  const rawFile = file?.raw
-  if (!rawFile) return false
-  const reader = new FileReader()
-  reader.onload = () => { adapterConfigText.value = String(reader.result || '') }
-  reader.readAsText(rawFile, 'utf-8')
-  return false
-}
 
 
 
@@ -1671,7 +1670,7 @@ function summaryText(model) {
 .locked-section { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; }
 .state-group-title { margin: 24px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--el-border-color-lighter); color: var(--el-text-color-primary); font-size: 16px; font-weight: 600; }
 .state-group-title.first { margin-top: 0; }
-.state-card-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.state-card-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 10px; }
 .state-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; }
 .state-summary-row { display: grid; grid-template-columns: 72px minmax(0, 1fr); align-items: center; gap: 10px; min-height: 32px; margin-top: 8px; }
 .state-summary-row.align-top { align-items: flex-start; }
@@ -1706,12 +1705,13 @@ function summaryText(model) {
 .nested-toolbar { justify-content: space-between; margin: 10px 0 8px; color: var(--color-text-sub); font-size: 12px; font-weight: 600; }
 .nested-table { background: #fff; }
 .block-empty { margin-top: 4px; }
-.drawer-section { margin-top: 8px; border: 1px solid #e5e7eb; border-radius: 4px; padding: 10px; background: #fff; }
+.drawer-section { margin-top: 12px; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; background: #ffffff; box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.03); transition: all 0.2s ease-in-out; }
+.drawer-section:hover { box-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.06), 0 2px 4px -2px rgba(15, 23, 42, 0.04); }
 .drawer-footer { justify-content: flex-end; display: flex; align-items: center; gap: 8px; }
 .model-edit-workbench { display: flex; min-height: 0; overflow: hidden; height: calc(100vh - 120px); }
 .edit-scroll-content { flex: 1; min-width: 0; }
-.edit-scroll-content :deep(.el-scrollbar__view) { padding: 12px 14px 22px; }
-.capability-editor-card, .capability-editor-list, .capability-title-editor { border-left: 3px solid #409eff; }
+.edit-scroll-content :deep(.el-scrollbar__view) { padding: 14px 18px 28px; }
+.capability-editor-card, .capability-editor-list, .capability-title-editor { border-left: 3px solid #3b82f6; }
 .command-editor-card, .command-editor-list { border-left: 3px solid #10b981; }
 .locked-table :deep(.el-table__body-wrapper) { background: #ffffff; }
 .locked-action { max-width: 100%; color: #475569; font-size: 12px; line-height: 1.45; display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; white-space: normal; }
@@ -1719,55 +1719,71 @@ function summaryText(model) {
 /* ── 锚点布局与导航样式 ── */
 .detail-anchor-layout { min-height: 0; background: #fff; border-top: 1px solid #e5e7eb; }
 .detail-anchor-menu {
-  width: 168px;
+  width: 172px;
   flex-shrink: 0;
-  padding: 10px 8px;
+  padding: 12px 8px;
   background: #f8fafc;
-  border-right: 1px solid #dfe3ea !important;
+  border-right: 1px solid #e2e8f0 !important;
 }
 .detail-anchor-menu :deep(.el-anchor__link) {
-  margin-bottom: 3px;
-  padding: 8px 10px;
-  border-radius: 4px;
+  margin-bottom: 4px;
+  padding: 8px 12px;
+  border-radius: 6px;
   color: #475569;
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+.detail-anchor-menu :deep(.el-anchor__link:hover) {
+  background: #f1f5f9;
+  color: #0f172a;
 }
 .detail-anchor-menu :deep(.el-anchor__link.is-active) {
-  background: #dbeafe;
-  color: #1d4ed8;
+  background: #eff6ff;
+  color: #2563eb;
+  font-weight: 700;
 }
 .anchor-section { scroll-margin-top: 8px; }
 .anchor-section.industrial-section {
-  margin-bottom: 12px;
-  padding-top: 2px;
+  margin-bottom: 16px;
+  padding-top: 4px;
 }
 .section-heading {
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin: 0 0 8px !important;
-  padding: 0 0 7px;
-  border-bottom: 1px solid #dfe6ef;
+  gap: 10px;
+  margin: 0 0 10px !important;
+  padding: 0 0 8px;
+  border-bottom: 2px solid #f1f5f9;
   color: #0f172a;
   font-size: 16px;
   font-weight: 800;
 }
 .section-index {
   display: inline-flex;
-  width: 30px;
-  height: 22px;
+  width: 32px;
+  height: 24px;
   align-items: center;
   justify-content: center;
   border: 1px solid #bfdbfe;
-  border-radius: 4px;
-  background: #eff6ff;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
   color: #1d4ed8;
   font-size: 12px;
   font-weight: 800;
+  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.1);
 }
-.section-title { justify-content: space-between; margin-bottom: 8px; min-height: 26px; }
-.section-title h3 { margin: 0; font-size: 15px; line-height: 1.3; letter-spacing: 0; }
+.section-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; min-height: 28px; }
+.section-title h3 { margin: 0; font-size: 15px; line-height: 1.35; letter-spacing: 0; }
+.section-header-copy { min-width: 0; flex: 1; }
+.section-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.editor-table { width: 100%; }
+.editor-table :deep(.el-table__cell) { padding: 7px 8px; vertical-align: middle; }
+.editor-table :deep(.cell) { line-height: 1.45; }
+.editor-table :deep(.el-select), .editor-table :deep(.el-input) { width: 100%; }
+.operation-transition-table :deep(.el-table__body td) { vertical-align: top; }
+.state-name-input { width: 132px; }
+.constraint-table, .bom-table { table-layout: fixed; }
 .tag-gap { margin: 2px 6px 2px 0; }
 
 /* ── 列表卡片编辑器样式 ── */
@@ -1806,4 +1822,389 @@ function summaryText(model) {
 .model-json-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; min-height: 0; }
 .json-panel { min-width: 0; border: 1px solid #dfe4ed; border-radius: 4px; padding: 10px; background: #fff; }
 .json-panel pre { margin: 0; max-height: 560px; overflow: auto; padding: 12px; border-radius: 6px; background: #111827; color: #e5e7eb; font-size: 12px; line-height: 1.55; tab-size: 2; }
-</style>
+
+.event-domain-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.event-domain-panel { min-width: 0; }
+.event-domain-title { margin-bottom: 6px; color: #334155; font-size: 13px; font-weight: 700; }
+.section-note { margin: 3px 0 0; color: #64748b; font-size: 12px; line-height: 1.4; }
+/* ── 上下对齐 (Stacked Table Cells) 专属样式 ── */
+.stacked-lifecycle-table {
+  margin-top: 12px;
+  border-radius: 8px;
+  overflow: hidden;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.02);
+}
+
+.stacked-lifecycle-table :deep(.el-table__header th) {
+  background: #f8fafc;
+  color: #475569;
+  font-weight: 700;
+  font-size: 12px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.stacked-lifecycle-table :deep(.el-table__row td) {
+  padding: 10px 12px;
+  border-bottom: 1px solid #f1f5f9;
+  vertical-align: top;
+}
+
+.stacked-lifecycle-table :deep(.el-table__row:hover td) {
+  background-color: #f8fafc !important;
+}
+
+.stacked-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+
+.stacked-cell.align-center {
+  align-items: center;
+}
+
+.cell-line-upper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.cell-line-lower {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-height: 24px;
+}
+
+.flow-label-sub {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 42px;
+}
+
+.desc-text {
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.signal-tag-bold {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #0f172a;
+  font-weight: 700;
+  font-size: 12px;
+  background: #f1f5f9;
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.binding-select-wrapper {
+  width: 100%;
+}
+
+.action-tag-bold {
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.action-target-text {
+  color: #047857;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+/* ── 全局根治 Element Plus 表格对不齐 物理硬性修正样式 ── */
+:deep(.el-table) {
+  table-layout: fixed !important;
+  width: 100% !important;
+}
+:deep(.el-table__header),
+:deep(.el-table__body) {
+  width: 100% !important;
+  table-layout: fixed !important;
+}
+:deep(.el-table table) {
+  width: 100% !important;
+  table-layout: fixed !important;
+}
+
+/* ── 05 状态机顶部紧凑生命周期链条 ── */
+.state-lifecycle-top-card {
+  margin-bottom: 12px;
+}
+
+.lifecycle-flow-chain-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 10px 14px;
+}
+
+.chain-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chain-label {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.chain-sep {
+  color: #cbd5e1;
+  font-weight: 300;
+}
+
+.chain-pills {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chain-pills .slash {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.system-triggers-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.trigger-chip-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+
+.trig-label {
+  color: #475569;
+  font-weight: 600;
+  font-size: 11px;
+  min-width: 90px;
+}
+
+.adapter-trigger-binding {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.binding-tip-text {
+  color: #94a3b8;
+  font-size: 11px;
+  font-style: italic;
+}
+
+.no-action-tip {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.no-action-sub {
+  color: #94a3b8;
+  font-size: 11px;
+  font-style: italic;
+}
+
+.pipeline-card-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.03);
+  transition: all 0.2s ease-in-out;
+}
+
+.pipeline-card-item:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 4px 12px -2px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+}
+
+.pipeline-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  background: #f8fafc;
+  border-bottom: 1px solid #e2e8f0;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.pipeline-flow-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #ffffff;
+  padding: 3px 10px;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.state-chip { border-radius: 4px; padding: 1px 6px; }
+.state-chip.from { color: #2563eb; background: #eff6ff; }
+.state-chip.to { color: #059669; background: #ecfdf5; }
+.state-chip.to.aborted { color: #d97706; background: #fffbeb; }
+.state-chip.to.failed { color: #dc2626; background: #fef2f2; }
+.state-chip.muted { color: #64748b; background: #f1f5f9; }
+.state-chip.warning { color: #d97706; background: #fffbeb; }
+.flow-icon { color: #94a3b8; font-size: 12px; font-weight: bold; }
+
+.kind-tag { font-weight: 600; }
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.system-action-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: #ecfdf5;
+  border: 1px solid #a7f3d0;
+  color: #047857;
+  font-size: 12px;
+  font-weight: 600;
+  box-shadow: 0 1px 2px rgba(16, 185, 129, 0.05);
+}
+
+.act-icon { font-size: 13px; }
+.act-sig { font-weight: 800; color: #065f46; }
+.act-arrow { color: #10b981; margin: 0 2px; }
+.act-iface { color: #047857; opacity: 0.85; font-size: 11px; }
+
+.no-action-badge {
+  color: #94a3b8;
+  font-size: 12px;
+  font-style: italic;
+  padding: 3px 8px;
+  background: #ffffff;
+  border-radius: 4px;
+  border: 1px solid #f1f5f9;
+}
+
+.pipeline-card-body {
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.body-desc {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.info-icon { color: #3b82f6; font-size: 14px; flex-shrink: 0; }
+
+.body-trigger-panel {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-radius: 6px;
+  border: 1px solid #f1f5f9;
+  flex-wrap: wrap;
+}
+
+.trigger-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.system-trigger-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 6px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: #334155;
+  font-size: 12px;
+}
+
+.system-trigger-pill .sep { color: #cbd5e1; }
+
+.adapter-trigger-editor {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 280px;
+  flex-wrap: wrap;
+}
+
+.iface-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  color: #64748b;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.trigger-select-input {
+  flex: 1;
+  min-width: 240px;
+}
+
+@media (max-width: 1100px) {
+  .registered-adapter-picker { grid-template-columns: 1fr 1fr; }
+  .function-map-selects, .param-map-row, .param-map-row.fixed { grid-template-columns: 1fr; }
+  .mapping-direction { display: none; }
+  .state-card-grid, .model-json-grid { grid-template-columns: 1fr; }
+}
+@media (max-width: 900px) {
+  .event-domain-grid { grid-template-columns: 1fr; }
+  .section-title { align-items: stretch; }
+  .section-actions { width: 100%; margin-left: 0; }
+}</style>

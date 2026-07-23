@@ -1,4 +1,4 @@
-import { attributeDataTypes, adapterDataTypes, operators, standardCmdEvents, defaultStateSpace, defaultAdapterContract, defaultInterfaces, defaultCommandLifecycleTransitions } from './deviceModelConstants'
+import { attributeDataTypes, adapterDataTypes, operators, defaultStateSpace, defaultOpStateSpace, defaultAdapterContract, defaultInterfaces, defaultCommandLifecycleTransitions } from './deviceModelConstants'
 
 export function asArray(value) { return Array.isArray(value) ? value : [] }
 
@@ -45,13 +45,13 @@ export function materializedName(item, fallback, used) {
 
 export function eventTypeLabel(type) {
   const upper = String(type || '').toUpperCase()
-  if (upper === 'CMD') return '指令周期'
+  if (upper === 'CMD') return '执行生命周期'
   if (upper === 'OP') return '业务事件'
   return '事件'
 }
 
 export function operatorLabel(operator) {
-  const labels = { GT: '>', LT: '<', GE: '>=', LE: '<=', EQ: '=', NE: '!=', BETWEEN: '介于', IN: '属于' }
+  const labels = { '>': '大于', '<': '小于', '>=': '大于等于', '<=': '小于等于', '=': '等于', '!=': '不等于', BETWEEN: '介于', IN: '属于' }
   return labels[operator] || operator || '-'
 }
 
@@ -120,32 +120,41 @@ export function capabilityMappingRows(capabilities) {
 
 export function displayAttributeName(name, attributes) { if (!name) return '-'; const attr = asArray(attributes).find(item => item.name === name); return attr?.displayName || name }
 
+export function isAdapterInternalParameter(param) {
+  const internalValue = param?.internal
+  return internalValue === true
+    || String(internalValue ?? '').trim().toLowerCase() === 'true'
+    || stringValue(param?.sourceField).length > 0
+}
+
 export function normalizeCommandParameter(param) {
+  const internal = isAdapterInternalParameter(param)
   const normalized = {
     paramName: stringValue(param.paramName || param.name),
     dataType: normalizeDataType(param.dataType, 'DOUBLE', adapterDataTypes),
     description: stringValue(param.description),
-    internal: !!param.internal
+    internal
   }
-  if (param.internal) {
+  if (internal) {
     normalized.sourceField = stringValue(param.sourceField)
   }
   return normalized
 }
 
 export function normalizeEventsToFlatList(events) {
-  if (!events) return []
-  const rawEvents = Array.isArray(events)
-    ? events
-    : [
-        ...asArray(events.cmdEvents).map(e => ({ ...e, eventType: 'CMD' })),
-        ...asArray(events.opEvents).map(e => ({ ...e, eventType: 'OP' }))
-      ]
-  return rawEvents.map(event => ({
-    eventName: stringValue(event.eventName || event.name),
-    description: stringValue(event.description),
-    eventType: String(event.eventType || (String(event.eventName || event.name).startsWith('COMMAND_') ? 'CMD' : 'OP')).toUpperCase()
-  }))
+  if (!events || Array.isArray(events)) return []
+  return [
+    ...asArray(events.cmdEvents).map(event => ({
+      eventName: stringValue(event.eventName || event.name),
+      description: stringValue(event.description),
+      eventType: 'CMD'
+    })),
+    ...asArray(events.opEvents).map(event => ({
+      eventName: stringValue(event.eventName || event.name),
+      description: stringValue(event.description),
+      eventType: 'OP'
+    }))
+  ]
 }
 
 export function normalizeAttributes(value) { return asArray(value).map(item => ({ _key: item._key || makeUiKey('attr'), name: stringValue(item.name), displayName: stringValue(item.displayName || item.name), valueKind: item.valueKind === 'DISCRETE' ? 'DISCRETE' : 'CONTINUOUS', dataType: normalizeDataType(item.dataType, 'DOUBLE', attributeDataTypes), unit: stringValue(item.unit) })) }
@@ -237,28 +246,18 @@ export function normalizeAdapterContract(value, attributes = []) {
       })
     })
   } else {
-    eventsList = asArray(contract.events || contract.adapterEvents).map(event => ({
-      _key: event._key || makeUiKey('event'),
-      eventName: stringValue(event.eventName || event.name),
-      description: stringValue(event.description),
-      eventType: String(event.eventType || (String(event.eventName || event.name).startsWith('COMMAND_') ? 'CMD' : 'OP')).toUpperCase()
-    }))
+    eventsList = []
   }
 
   return {
-    config: { protocol: contract.config?.protocol || contract.protocol || 'MQTT', adapterName: stringValue(contract.config?.adapterName || contract.adapterName), templateName: stringValue(contract.config?.templateName || contract.templateName) },
+    config: { protocol: contract.config?.protocol || contract.protocol || '', adapterName: stringValue(contract.config?.adapterName || contract.adapterName), categoryName: stringValue(contract.config?.categoryName || contract.categoryName) },
     commands: asArray(contract.commands).map(command => ({
       _key: command._key || makeUiKey('cmd'),
       commandName: stringValue(command.commandName || command.name),
       description: stringValue(command.description),
-      commandParameters: asArray(command.commandParameters || command.parameters).map(param => {
-        const row = { _key: param._key || makeUiKey('cmd_param'), paramName: stringValue(param.paramName || param.name), dataType: normalizeDataType(param.dataType || param.type, 'DOUBLE', adapterDataTypes), description: stringValue(param.description) }
-        if (param.internal === true) {
-          row.internal = true
-          row.sourceField = stringValue(param.sourceField)
-        }
-        return row
-      })
+      commandParameters: asArray(command.commandParameters || command.parameters)
+        .filter(param => !isAdapterInternalParameter(param))
+        .map(param => ({ _key: param._key || makeUiKey('cmd_param'), paramName: stringValue(param.paramName || param.name), dataType: normalizeDataType(param.dataType || param.type, 'DOUBLE', adapterDataTypes), description: stringValue(param.description) }))
     })),
     telemetry: { adapterAttributes: asArray(telemetry.adapterAttributes).map(attr => ({ _key: attr._key || makeUiKey('adapter_attr'), name: stringValue(attr.name), dataType: normalizeDataType(attr.dataType || attr.type, 'DOUBLE', adapterDataTypes), description: stringValue(attr.description) })), attributesMapping: asArray(telemetry.attributesMapping).map(mapping => ({ _key: mapping._key || makeUiKey('attr_map'), adapterAttrName: stringValue(mapping.adapterAttrName), modelAttributeName: stringValue(mapping.modelAttributeName), modelAttributeKey: mapping.modelAttributeKey || findKeyByName(attributes, mapping.modelAttributeName) })) },
     events: eventsList
@@ -267,13 +266,45 @@ export function normalizeAdapterContract(value, attributes = []) {
 
 export function normalizePorts(value, attributes = []) { return asArray(value).map(item => ({ _key: item._key || makeUiKey('port'), portName: stringValue(item.portName), displayName: stringValue(item.displayName || item.portName), direction: item.direction || 'OUT', bindingAttrName: stringValue(item.bindingAttrName), bindingAttrKey: item.bindingAttrKey || findKeyByName(attributes, item.bindingAttrName) })) }
 
-export function normalizeOperator(value) { const text = String(value || '').toUpperCase(); return operators.includes(text) ? text : 'GT' }
+export function normalizeOperator(value) {
+  const text = String(value || '').trim()
+  if (!text) return '>'
+  if (!operators.includes(text)) throw new Error(`不支持的约束操作符: ${text}`)
+  return text
+}
 
-export function normalizeIntrinsicConstraints(value, attributes = []) { return asArray(value).map(item => ({ _key: item._key || makeUiKey('constraint'), objectAttributeName: stringValue(item.objectAttributeName || item.targetAttr), objectAttributeKey: item.objectAttributeKey || findKeyByName(attributes, item.objectAttributeName || item.targetAttr), operator: normalizeOperator(item.operator), boundaryValue: firstDefined(item.boundaryValue, item.threshold, ''), violationStateName: stringValue(item.violationStateName || item.violationStateRef) })) }
+export function normalizeIntrinsicConstraints(value, attributes = []) { return asArray(value).map(item => ({ _key: item._key || makeUiKey('constraint'), objectAttributeName: stringValue(item.objectAttributeName), objectAttributeKey: item.objectAttributeKey || findKeyByName(attributes, item.objectAttributeName), operator: normalizeOperator(item.operator), boundaryValue: firstDefined(item.boundaryValue, ''), violationStateName: stringValue(item.violationStateName) })) }
 
 export function normalizeInterfaces(value) { return asArray(value).map(item => ({ _key: item._key || makeUiKey('iface'), name: stringValue(item.name), direction: item.direction || 'IN', interfaceType: item.interfaceType || 'ADAPTER', allowedSignals: asArray(item.allowedSignals).map(stringValue).filter(Boolean) })) }
 
 export function normalizeStateSpace(value, fallback, spaceType) {
+  if (spaceType === 'OP') {
+    const source = value && typeof value === 'object' ? value : { regions: [] }
+    const regions = asArray(source.regions).length > 0 ? asArray(source.regions) : defaultOpStateSpace(fallback).regions
+    return {
+      regions: regions.map((region, index) => {
+        const states = asArray(region.states).length > 0 ? asArray(region.states) : [{ stateName: fallback }]
+        return {
+          _key: region._key || makeUiKey('region'),
+          regionName: stringValue(region.regionName || ('分区 ' + (index + 1))),
+          initialStateName: stringValue(region.initialStateName || states[0]?.stateName || fallback),
+          states: states.map(item => {
+            const onEntry = asArray(item.onEntry).map(action => ({
+              _key: action._key || makeUiKey('action'),
+              actionName: stringValue(action.actionName),
+              payload: normalizePayload(action.payload || action.parameters)
+            }))
+            return {
+              _key: item._key || makeUiKey('state'),
+              stateName: stringValue(item.stateName || item.name),
+              onEntry
+            }
+          })
+        }
+      })
+    }
+  }
+
   const source = value && typeof value === 'object' ? value : defaultStateSpace(fallback)
   const states = asArray(source.states).length ? asArray(source.states) : defaultStateSpace(fallback).states
   return {
@@ -293,7 +324,31 @@ export function normalizeStateSpace(value, fallback, spaceType) {
   }
 }
 
-export function normalizeTransitions(value) { return asArray(value).map(item => ({ _key: item._key || makeUiKey('transition'), description: stringValue(item.description), fromStateName: stringValue(item.fromStateName), toStateName: stringValue(item.toStateName), trigger: { interfaceName: stringValue(item.trigger?.interfaceName || adapterInterfaceName()), signalName: stringValue(item.trigger?.signalName) }, actions: asArray(item.actions).map(action => ({ _key: action._key || makeUiKey('action'), actionName: stringValue(action.actionName), payload: normalizePayload(action.payload || action.parameters) })) })) }
+export function normalizeTransitions(value) {
+  return asArray(value).map(item => {
+    const stateSpace = String(item.stateSpace || '').toUpperCase()
+    if (!['CMD', 'OP'].includes(stateSpace)) {
+      throw new Error('状态转移必须明确声明 stateSpace 为 CMD 或 OP')
+    }
+    return {
+      _key: item._key || makeUiKey('transition'),
+      stateSpace,
+      regionName: stateSpace === 'OP' ? stringValue(item.regionName || 'Main') : undefined,
+      description: stringValue(item.description),
+      fromStateName: stringValue(item.fromStateName),
+      toStateName: stringValue(item.toStateName),
+      trigger: item.trigger == null ? null : {
+        interfaceName: stringValue(item.trigger.interfaceName || adapterInterfaceName()),
+        signalName: stringValue(item.trigger.signalName)
+      },
+      actions: asArray(item.actions).map(action => ({
+        _key: action._key || makeUiKey('action'),
+        actionName: stringValue(action.actionName),
+        payload: normalizePayload(action.payload || action.parameters)
+      }))
+    }
+  })
+}
 
 export function normalizePayload(value) { return value && typeof value === 'object' && !Array.isArray(value) ? value : {} }
 

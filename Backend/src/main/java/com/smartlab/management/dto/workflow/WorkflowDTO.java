@@ -10,8 +10,8 @@ import java.util.Map;
  */
 public class WorkflowDTO {
 
-    private String templateId;
-    private String templateName;
+    private Long id;
+    private String flowName;
     private List<Map<String, Object>> nodesDef;
     private List<Map<String, Object>> interfaceConnections;
     private List<Map<String, Object>> portConnections;

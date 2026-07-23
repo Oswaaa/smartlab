@@ -320,7 +320,7 @@ function emptyRuleForm() {
     sourceType: '',
     objectEndpoint: '',
     objectName: '',
-    operator: 'GT',
+    operator: '>',
     threshold: '',
     violationActions: [] as any[],
     description: '',
@@ -345,7 +345,7 @@ async function fetchDeviceRefs() {
   try {
     const [modelRes, instanceRes] = await Promise.all([
       axios.get('/api/device/model/list'),
-      axios.get('/api/device/instance/list')
+      axios.get('/api/device/instance/list', { params: { lifecycleStatus: '使用中' } })
     ])
     if (modelRes.data?.success) deviceModels.value = modelRes.data.data || []
     if (instanceRes.data?.success) deviceInstances.value = instanceRes.data.data || []
@@ -404,7 +404,7 @@ function toEditableRule(row: any) {
     sourceType: row.sourceType || '',
     objectEndpoint: row.objectEndpoint || '',
     objectName: row.objectName || '',
-    operator: row.operator || 'GT',
+    operator: row.operator || '>',
     threshold: row.threshold || '',
     description: row.description || '',
     isEnabled: row.isEnabled !== false,

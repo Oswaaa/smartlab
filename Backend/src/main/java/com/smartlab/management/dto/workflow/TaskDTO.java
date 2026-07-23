@@ -12,9 +12,9 @@ public class TaskDTO {
 
     private Integer taskId;
     private String taskName;
-    private String templateId;
-    private Map<String, Object> globalConstraints;
-    private String currentStatus;
+    private Long flowModelId;
+    private Map<String, Object> taskConstraints;
+    private String taskStatus;
     private OffsetDateTime startTime;
     private OffsetDateTime endTime;
 }

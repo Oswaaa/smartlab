@@ -1,12 +1,15 @@
 package com.smartlab.management.controller.workflow;
 
+import com.smartlab.engine.workflow.WorkflowTaskControlService;
 import com.smartlab.management.dto.common.ApiResponse;
 import com.smartlab.management.dto.common.PageResult;
+import com.smartlab.management.dto.workflow.TaskCreateRequest;
 import com.smartlab.management.dto.workflow.TaskMonitorSummary;
 import com.smartlab.management.entity.workflow.ExecutionLog;
 import com.smartlab.management.entity.workflow.Task;
 import com.smartlab.management.entity.workflow.TaskStep;
 import com.smartlab.management.service.db.workflow.TaskService;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -14,15 +17,13 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/task")
-/**
- * 实验编排工作流执行实例（Task）生命周期监控控制器。追踪工作流实例的启动、挂起、终止及各步骤执行轨迹。
- */
 public class TaskController {
-
     private final TaskService taskService;
+    private final WorkflowTaskControlService taskControlService;
 
-    public TaskController(TaskService taskService) {
+    public TaskController(TaskService taskService, WorkflowTaskControlService taskControlService) {
         this.taskService = taskService;
+        this.taskControlService = taskControlService;
     }
 
     @GetMapping("/page")
@@ -34,14 +35,10 @@ public class TaskController {
     }
 
     @GetMapping("/summary")
-    public ApiResponse<Map<String, Long>> summary() {
-        return ApiResponse.ok(taskService.summary());
-    }
+    public ApiResponse<Map<String, Long>> summary() { return ApiResponse.ok(taskService.summary()); }
 
     @GetMapping("/monitor/summary")
-    public ApiResponse<TaskMonitorSummary> monitorSummary() {
-        return ApiResponse.ok(taskService.monitorSummary());
-    }
+    public ApiResponse<TaskMonitorSummary> monitorSummary() { return ApiResponse.ok(taskService.monitorSummary()); }
 
     @GetMapping("/{id}")
     public ApiResponse<Task> get(@PathVariable Long id) {
@@ -50,43 +47,33 @@ public class TaskController {
     }
 
     @PostMapping("/save")
-    public ApiResponse<Map<String, Long>> save(@RequestBody Map<String, Object> payload) {
-        try {
-            Task task = taskService.savePayload(payload);
-            return ApiResponse.ok(Map.of("taskId", task.getId()));
-        } catch (Exception e) {
-            return ApiResponse.fail(e.getMessage());
-        }
+    public ApiResponse<Map<String, Long>> create(@Valid @RequestBody TaskCreateRequest request) {
+        try { return ApiResponse.ok(Map.of("taskId", taskService.create(request).getId())); }
+        catch (Exception e) { return ApiResponse.fail(e.getMessage()); }
     }
 
     @PostMapping("/start/{id}")
     public ApiResponse<Task> start(@PathVariable Long id) {
-        try {
-            return ApiResponse.ok(taskService.start(id));
-        } catch (Exception e) {
-            return ApiResponse.fail(e.getMessage());
-        }
+        try { return ApiResponse.ok(taskControlService.start(id)); }
+        catch (Exception e) { return ApiResponse.fail(e.getMessage()); }
     }
 
     @PostMapping("/abort/{id}")
     public ApiResponse<Task> abort(@PathVariable Long id) {
-        try {
-            return ApiResponse.ok(taskService.abort(id));
-        } catch (Exception e) {
-            return ApiResponse.fail(e.getMessage());
-        }
+        try { return ApiResponse.ok(taskControlService.abort(id)); }
+        catch (Exception e) { return ApiResponse.fail(e.getMessage()); }
     }
 
     @DeleteMapping("/delete/{id}")
     public ApiResponse<String> delete(@PathVariable Long id) {
-        taskService.delete(id);
-        return ApiResponse.ok("删除成功");
+        try { taskService.deleteTask(id); return ApiResponse.ok("删除成功"); }
+        catch (Exception e) { return ApiResponse.fail(e.getMessage()); }
     }
 
     @GetMapping("/logs/{taskId}")
     public ApiResponse<List<ExecutionLog>> logs(@PathVariable Long taskId,
-                                           @RequestParam(required = false) Long afterLogId,
-                                           @RequestParam(required = false) Integer limit) {
+                                                @RequestParam(required = false) Long afterLogId,
+                                                @RequestParam(required = false) Integer limit) {
         return ApiResponse.ok(taskService.logs(taskId, afterLogId, limit));
     }
 
@@ -94,6 +81,4 @@ public class TaskController {
     public ApiResponse<List<TaskStep>> snapshots(@PathVariable Long taskId) {
         return ApiResponse.ok(taskService.snapshots(taskId));
     }
-
 }
-

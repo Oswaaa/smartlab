@@ -55,7 +55,7 @@
           <el-table :data="runningTasks" size="small" border stripe>
             <el-table-column prop="taskId" label="任务编号" width="90" />
             <el-table-column prop="taskName" label="任务名称" min-width="140" />
-            <el-table-column prop="templateId" label="流程" min-width="120" />
+            <el-table-column prop="flowModelId" label="流程" min-width="120" />
             <el-table-column prop="startTime" label="开始时间" min-width="140">
               <template #default="{ row }">{{ formatTime(row.startTime) }}</template>
             </el-table-column>
@@ -102,41 +102,6 @@
             <span v-else>-</span>
           </el-descriptions-item>
         </el-descriptions>
-
-        <el-divider content-position="left">设备约束</el-divider>
-        <el-table :data="deviceConstraints" size="small" border>
-          <el-table-column label="属性">
-            <template #default="{ row }">
-              <el-select v-model="row.targetAttr" style="width: 100%" placeholder="选择属性">
-                <el-option v-for="attr in currentDeviceAttrs" :key="attr.identifier" :label="attr.name" :value="attr.identifier" />
-              </el-select>
-            </template>
-          </el-table-column>
-          <el-table-column label="条件" width="100">
-            <template #default="{ row }">
-              <el-select v-model="row.operator" style="width: 100%">
-                <el-option label=">" value=">" />
-                <el-option label="<" value="<" />
-                <el-option label=">=" value=">=" />
-                <el-option label="<=" value="<=" />
-                <el-option label="=" value="==" />
-              </el-select>
-            </template>
-          </el-table-column>
-          <el-table-column label="阈值" width="120">
-            <template #default="{ row }"><el-input v-model="row.threshold" /></template>
-          </el-table-column>
-          <el-table-column label="操作" width="64">
-            <template #default="{ $index }">
-              <el-button link type="danger" @click="removeConstraint($index)">删除</el-button>
-            </template>
-          </el-table-column>
-        </el-table>
-
-        <div class="drawer-actions">
-          <el-button @click="addConstraint">新增约束</el-button>
-          <el-button type="primary" :loading="savingConstraint" @click="saveDeviceConstraint">保存约束</el-button>
-        </div>
       </div>
     </el-drawer>
   </div>
@@ -165,14 +130,6 @@ const labConstraint = ref({
 const deviceDrawerVisible = ref(false)
 const currentDevice = ref<any>(null)
 const liveSnapshot = ref<any>(null)
-const deviceConstraints = ref<Array<{ targetAttr: string; operator: string; threshold: string }>>([])
-const savingConstraint = ref(false)
-
-const currentDeviceAttrs = computed(() => {
-  if (!currentDevice.value?.modelId) return []
-  return modelMap.value[currentDevice.value.modelId]?.capabilitySpec?.attributes || []
-})
-
 const mqttStatusLabel = computed(() => {
   if (mqttStatus.value?.enabled === false) return '未启用'
   if (mqttStatus.value?.connected) return '已连接'
@@ -221,7 +178,7 @@ const fetchMqttStatus = async () => {
 const fetchData = async () => {
   try {
     const [deviceRes, modelRes, taskSummaryRes, runningTaskRes, templateRes, dataIndexRes] = await Promise.all([
-      axios.get('/api/device/instance/list'),
+      axios.get('/api/device/instance/list', { params: { lifecycleStatus: '使用中' } }),
       axios.get('/api/device/model/list'),
       axios.get('/api/task/summary'),
       axios.get('/api/task/page', { params: { pageNo: 1, pageSize: 10, status: 'RUNNING' } }),
@@ -270,44 +227,12 @@ const saveLabConstraint = () => {
 
 const openDeviceDrawer = async (device: any) => {
   currentDevice.value = JSON.parse(JSON.stringify(device))
-  const constraints = currentDevice.value?.commConfig?.constraints
-  deviceConstraints.value = Array.isArray(constraints) ? constraints : []
   liveSnapshot.value = null
   deviceDrawerVisible.value = true
   try {
     const res = await axios.get(`/api/device/instance/snapshot/${device.instanceId}`)
     if (res.data?.success) liveSnapshot.value = res.data.data
   } catch {}
-}
-
-const addConstraint = () => {
-  deviceConstraints.value.push({ targetAttr: '', operator: '>', threshold: '' })
-}
-
-const removeConstraint = (idx: number) => {
-  deviceConstraints.value.splice(idx, 1)
-}
-
-const saveDeviceConstraint = async () => {
-  if (!currentDevice.value) return
-  savingConstraint.value = true
-  try {
-    const payload = JSON.parse(JSON.stringify(currentDevice.value))
-    if (!payload.commConfig) payload.commConfig = {}
-    payload.commConfig.constraints = deviceConstraints.value.filter(c => c.targetAttr && c.threshold)
-    const res = await axios.post('/api/device/instance/save', payload)
-    if (res.data?.success) {
-      ElMessage.success('设备约束已保存')
-      await fetchData()
-      deviceDrawerVisible.value = false
-    } else {
-      ElMessage.error(res.data?.message || '保存失败')
-    }
-  } catch (err: any) {
-    ElMessage.error(err?.response?.data?.message || '保存失败')
-  } finally {
-    savingConstraint.value = false
-  }
 }
 
 onMounted(() => {

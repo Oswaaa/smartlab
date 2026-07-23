@@ -22,8 +22,8 @@ public class DeviceTwinStates {
     @TableField("instance_id")
     private Long instanceId;
 
-    @TableField("current_op_state")
-    private String currentOpState;
+    @TableField(value = "current_op_state", typeHandler = PostgresJsonbTypeHandler.class)
+    private JsonNode currentOpState;
 
     @TableField("current_cmd_state")
     private String currentCmdState;
@@ -44,7 +44,7 @@ public class DeviceTwinStates {
         return currentCmdState;
     }
 
-    public String getCurrentOperationState() {
+    public JsonNode getCurrentOperationState() {
         return currentOpState;
     }
 

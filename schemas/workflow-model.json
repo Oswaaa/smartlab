@@ -1,0 +1,425 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DynamicWorkflowModel",
+  "description": "工作流模型规范",
+  "type": "object",
+  "properties": {
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "flowModelId": {
+          "type": [ "integer", "null" ],
+          "description": "工作流模型在数据库中的ID；新建模型尚未持久化时允许为null"
+        },
+        "flowModelName": {
+          "type": "string",
+          "description": "工作流模型名称"
+        },
+        "description": {
+          "type": "string",
+          "description": "工作流模型描述"
+        }
+      },
+      "required": [ "flowModelId", "flowModelName" ]
+    },
+    "nodes": {
+      "type": "array",
+      "description": "工作流节点列表，每个节点是三种类型DEV_NODE、FUNC_NODE、SUBFLOW_NODE之一。",
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/definitions/devNode"
+          },
+          {
+            "$ref": "#/definitions/funcNode"
+          },
+          {
+            "$ref": "#/definitions/subflowNode"
+          }
+        ]
+      }
+    },
+    "interfaceConnections": {
+      "type": "array",
+      "description": "接口连接关系列表",
+      "items": {
+        "oneOf": [
+          {
+            "$ref": "#/definitions/nodeToNodeConnection"
+          },
+          {
+            "$ref": "#/definitions/nodeToDeviceConnection"
+          },
+          {
+            "$ref": "#/definitions/deviceToNodeConnection"
+          }
+        ]
+      }
+    },
+    "portConnections": {
+      "type": "array",
+      "description": "端口连接关系列表",
+      "items": {
+        "type": "object",
+        "properties": {
+          "description": {
+            "type": "string"
+          },
+          "source": {
+            "$ref": "#/definitions/nodePortRef"
+          },
+          "target": {
+            "$ref": "#/definitions/nodePortRef"
+          }
+        },
+        "required": [ "source", "target" ]
+      }
+    }
+  },
+  "required": [ "metadata", "nodes", "interfaceConnections", "portConnections" ],
+  "definitions": {
+    "NodeLifecycleState": {
+      "type": "string",
+      "enum": [ "PENDING", "RUNNING", "SUCCEEDED", "FAILED", "TERMINATING", "TERMINATED" ],
+      "description": "具有生命周期的节点可使用的状态"
+    },
+    "WorkflowNodeFunctionType": {
+      "type": "string",
+      "enum": [ "START", "END", "BRANCH", "AGGREGATE" ],
+      "description": "功能节点类型"
+    },
+    "WorkflowNodeAction": {
+      "type": "object",
+      "properties": {
+        "actionName": {
+          "type": "string",
+          "enum": [ "ACTIVATE", "DEACTIVATE", "EMIT", "COMPLETE", "FAIL", "RESET" ]
+        },
+        "payload": {
+          "type": "object",
+          "properties": {
+            "interfaceName": {
+              "type": "string"
+            },
+            "signalName": {
+              "type": "string"
+            },
+            "value": {}
+          }
+        }
+      },
+      "required": [ "actionName" ]
+    },
+    "nodeInterfaceRef": {
+      "type": "object",
+      "properties": {
+        "nodeName": {
+          "type": "string"
+        },
+        "interfaceName": {
+          "type": "string"
+        }
+      },
+      "required": [ "nodeName", "interfaceName" ]
+    },
+    "deviceInterfaceRef": {
+      "type": "object",
+      "properties": {
+        "deviceInstanceId": {
+          "type": "integer"
+        },
+        "interfaceName": {
+          "type": "string"
+        }
+      },
+      "required": [ "deviceInstanceId", "interfaceName" ]
+    },
+    "nodePortRef": {
+      "type": "object",
+      "properties": {
+        "nodeName": {
+          "type": "string"
+        },
+        "portName": {
+          "type": "string"
+        }
+      },
+      "required": [ "nodeName", "portName" ]
+    },
+    "nodeToNodeConnection": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "connectionType": {
+          "const": "NODE_TO_NODE"
+        },
+        "source": {
+          "$ref": "#/definitions/nodeInterfaceRef"
+        },
+        "target": {
+          "$ref": "#/definitions/nodeInterfaceRef"
+        }
+      },
+      "required": [ "connectionType", "source", "target" ]
+    },
+    "nodeToDeviceConnection": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "connectionType": {
+          "const": "NODE_TO_DEVICE"
+        },
+        "source": {
+          "$ref": "#/definitions/nodeInterfaceRef"
+        },
+        "target": {
+          "$ref": "#/definitions/deviceInterfaceRef"
+        }
+      },
+      "required": [ "connectionType", "source", "target" ]
+    },
+    "deviceToNodeConnection": {
+      "type": "object",
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "connectionType": {
+          "const": "DEVICE_TO_NODE"
+        },
+        "source": {
+          "$ref": "#/definitions/deviceInterfaceRef"
+        },
+        "target": {
+          "$ref": "#/definitions/nodeInterfaceRef"
+        }
+      },
+      "required": [ "connectionType", "source", "target" ]
+    },
+    "baseNode": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "节点标识名，在同一工作流内唯一"
+        },
+        "internalVariables": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "dataType": {
+                "$ref": "protocol-spec.json#/definitions/DataType"
+              },
+              "attributesMapping": {
+                "type": "string"
+              }
+            },
+            "required": [ "name", "dataType" ]
+          }
+        },
+        "lifecycle": {
+          "type": "object",
+          "properties": {
+            "initialStateName": {
+              "$ref": "#/definitions/NodeLifecycleState"
+            },
+            "states": {
+              "type": "array",
+              "items": {
+                "$ref": "#/definitions/NodeLifecycleState"
+              }
+            },
+            "transitions": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "description": {
+                    "type": "string"
+                  },
+                  "fromStateName": {
+                    "$ref": "#/definitions/NodeLifecycleState"
+                  },
+                  "toStateName": {
+                    "$ref": "#/definitions/NodeLifecycleState"
+                  }
+                },
+                "required": [ "fromStateName", "toStateName" ]
+              }
+            }
+          },
+          "required": [ "initialStateName", "states", "transitions" ]
+        },
+        "interfaces": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "direction": {
+                "$ref": "protocol-spec.json#/definitions/InterfaceDirection"
+              },
+              "interfaceType": {
+                "allOf": [
+                  {
+                    "$ref": "protocol-spec.json#/definitions/InterfaceType"
+                  },
+                  {
+                    "enum": [ "WORKFLOW", "STATE", "CONSTRAINT" ]
+                  }
+                ]
+              },
+              "allowedSignals": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "bindingTriggers": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/definitions/bindingTrigger"
+                }
+              }
+            },
+            "required": [ "name", "direction", "interfaceType" ]
+          }
+        },
+        "ports": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "direction": {
+                "$ref": "protocol-spec.json#/definitions/InterfaceDirection"
+              },
+              "internalVariableName": {
+                "type": "string"
+              }
+            },
+            "required": [ "name", "direction", "internalVariableName" ]
+          }
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/WorkflowNodeAction"
+          }
+        }
+      },
+      "required": [ "name", "interfaces", "ports", "actions" ]
+    },
+    "bindingTrigger": {
+      "type": "object",
+      "properties": {
+        "condition": {
+          "type": "object",
+          "properties": {
+            "object": {
+              "type": "string"
+            },
+            "operator": {
+              "$ref": "protocol-spec.json#/definitions/ConstraintOperator"
+            },
+            "threshold": {
+              "type": [ "number", "string", "boolean", "array" ]
+            }
+          },
+          "required": [ "object", "operator", "threshold" ]
+        },
+        "action": {
+          "$ref": "#/definitions/WorkflowNodeAction"
+        }
+      },
+      "required": [ "condition", "action" ]
+    },
+    "devNode": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/baseNode"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "nodeType": {
+              "const": "DEV_NODE"
+            },
+            "deviceModelId": {
+              "type": [ "integer", "null" ]
+            },
+            "capability": {
+              "type": "object",
+              "properties": {
+                "capabilityName": {
+                  "type": "string"
+                },
+                "capabilityParameters": {
+                  "type": "object"
+                }
+              },
+              "required": [ "capabilityName" ]
+            }
+          },
+          "required": [ "nodeType", "deviceModelId", "lifecycle", "capability" ]
+        }
+      ]
+    },
+    "funcNode": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/baseNode"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "nodeType": {
+              "const": "FUNC_NODE"
+            },
+            "functionType": {
+              "$ref": "#/definitions/WorkflowNodeFunctionType"
+            },
+            "expression": {
+              "type": "string"
+            }
+          },
+          "required": [ "nodeType", "functionType" ]
+        }
+      ]
+    },
+    "subflowNode": {
+      "allOf": [
+        {
+          "$ref": "#/definitions/baseNode"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "nodeType": {
+              "const": "SUBFLOW_NODE"
+            },
+            "subFlowModelId": {
+              "type": "integer"
+            },
+            "subFlowModelDescription": {
+              "type": "string"
+            }
+          },
+          "required": [ "nodeType", "subFlowModelId", "lifecycle" ]
+        }
+      ]
+    }
+  }
+}

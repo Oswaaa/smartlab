@@ -87,10 +87,10 @@ import { saveDeviceModel, deleteDeviceModel, previewDeviceModel, fetchModelBundl
 import { listDataPropertyTypes, fetchDefaultTemplateAttributes, listRegisteredAdapters, fetchRegisteredAdapterContract } from './components/deviceModel/deviceModelManagementApi'
 import { stringId, normalizeModelBundle, normalizeModel, asArray } from './components/deviceModel/normalizers.js'
 import { adapterDeviceCategoryOptions, adapterCategoryKey, adapterCategoryLabel, buildAdapterContractFromManifestCategory } from './components/deviceModel/deviceModelConstants'
-import { attributeDataTypes, adapterDataTypes, operators, interfaceTypes, stateActionNames, standardCmdEvents } from './components/deviceModel/deviceModelConstants'
+import { attributeDataTypes, adapterDataTypes, operators, interfaceTypes, stateActionNames } from './components/deviceModel/deviceModelConstants'
 import { getSignalTagType, formatSignalName, formatSignalShortName, getSignalsForInterface } from './components/deviceModel/deviceModelConstants'
 import { defaultAdapterContract, defaultStateSpace, defaultCommandLifecycle, commandLifecycleStateNames } from './components/deviceModel/deviceModelConstants'
-import { defaultInterfaces, adapterInterfaceName, adapterOutAction, defaultStateEntryActions, defaultCommandLifecycleTransitions } from './components/deviceModel/deviceModelConstants'
+import { defaultInterfaces, adapterInterfaceName, adapterOutAction, defaultStateEntryActions, ensureProtocolMetadataLoaded } from './components/deviceModel/deviceModelConstants'
 
 const authStore = useAuthStore()
 
@@ -206,9 +206,6 @@ const selectedCategoryCanCreateModel = computed(() => {
   return selectedCategoryChildren.value.length === 0
 })
 
-function isCommandLifecycleTransition(row) {
-  return defaultCommandLifecycleTransitions().some(item => item.fromStateName === row?.fromStateName && item.toStateName === row?.toStateName && item.trigger.interfaceName === row?.trigger?.interfaceName && item.trigger.signalName === row?.trigger?.signalName)
-}
 
 
 function startCategoryMigration(data) {
@@ -330,6 +327,7 @@ const stateMachineModelJson = computed(() => selectedModelBundle.value.stateMach
 async function loadData() {
   loading.value = true
   try {
+    await ensureProtocolMetadataLoaded()
     const workspace = await loadModelWorkspace()
     categories.value = workspace.categories
     models.value = workspace.models.map(raw => normalizeModel(raw, categories.value))
@@ -944,4 +942,13 @@ onMounted(loadData)
 }
 
 
+
+/* Unified device model console */
+.device-model-page { background: #f5f7fa; }
+.content-shell { height: 100%; }
+.global-top-bar { min-height: 64px; padding: 10px 20px !important; }
+.detail-head { padding: 12px 16px; }
+.info-section, .summary-card, .editor-card, .locked-section, .state-card, .boxed-section { border-radius: 6px; box-shadow: none; }
+.section-heading { border-left-width: 3px; font-size: 14px; }
+.category-detail-scroll { background: #f5f7fa; }
 </style>

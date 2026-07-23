@@ -1,0 +1,66 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "system-execution-spec.json",
+  "title": "SystemExecutionSpec",
+  "description": "系统执行规范，定义状态机引擎、工作流引擎、约束引擎及其集成规则。该文件描述固定运行时语义，不保存具体设备、工作流或约束实例。",
+  "stateMachineEngine": {
+    "standardInterfaces": [
+      { "name": "Interface_workflow_in", "direction": "IN", "interfaceType": "WORKFLOW", "allowedSignalsRef": "protocol-spec.json#/definitions/WorkflowControlSignal" },
+      { "name": "Interface_control_in", "direction": "IN", "interfaceType": "CONTROL", "allowedSignalsRef": "protocol-spec.json#/definitions/ManualControlSignal" },
+      { "name": "Interface_constraint_in", "direction": "IN", "interfaceType": "CONSTRAINT", "allowedSignalsRef": "protocol-spec.json#/definitions/ConstraintControlSignal" },
+      { "name": "Interface_adapter_in", "direction": "IN", "interfaceType": "ADAPTER", "allowedSignals": [] },
+      { "name": "Interface_adapter_out", "direction": "OUT", "interfaceType": "ADAPTER", "allowedSignalsRef": "protocol-spec.json#/definitions/AdapterOutboundSignal" },
+      { "name": "Interface_state_out", "direction": "OUT", "interfaceType": "STATE", "allowedSignalsRef": "protocol-spec.json#/definitions/StatusSignal" }
+    ],
+    "commandStateNames": [ "IDLE", "SENT", "RECEIVED", "RUNNING", "COMPLETED", "FAILED", "ABORTING", "ABORTED" ],
+    "commandTerminalStates": [ "COMPLETED", "FAILED", "ABORTED" ],
+    "automaticTransitionStateSpaces": [ "CMD" ],
+    "executionLifecycleMainPath": [
+      { "fromStateName": "IDLE", "toStateName": "SENT", "triggerPolicy": "SYSTEM" },
+      { "fromStateName": "SENT", "toStateName": "RECEIVED", "triggerPolicy": "OPTIONAL" },
+      { "fromStateName": "RECEIVED", "toStateName": "RUNNING", "triggerPolicy": "OPTIONAL" },
+      { "fromStateName": "RUNNING", "toStateName": "COMPLETED", "triggerPolicy": "REQUIRED" }
+    ],
+    "executionLifecycleBranches": [
+      { "kind": "FAILURE", "targetStateName": "FAILED", "sourceStateNames": [ "SENT", "RECEIVED", "RUNNING" ], "triggerPolicy": "OPTIONAL_EVENT" },
+      { "kind": "TERMINATION", "targetStateName": "ABORTED", "sourceStateNames": [ "ABORTING" ], "triggerPolicy": "OPTIONAL_EVENT" }
+    ],
+    "systemTransitions": [
+      { "stateSpace": "CMD", "fromStateName": "IDLE", "toStateName": "SENT", "trigger": { "interfaceName": "Interface_workflow_in", "signalName": "WF_EXECUTE_START" }, "actions": [ { "actionName": "SEND", "payload": { "interfaceName": "Interface_adapter_out", "signalName": "CMD_START" } } ] },
+      { "stateSpace": "CMD", "fromStateName": "IDLE", "toStateName": "SENT", "trigger": { "interfaceName": "Interface_control_in", "signalName": "MANUAL_EXECUTE_START" }, "actions": [ { "actionName": "SEND", "payload": { "interfaceName": "Interface_adapter_out", "signalName": "CMD_START" } } ] },
+      { "stateSpace": "CMD", "fromStateName": "RUNNING", "toStateName": "ABORTING", "trigger": { "interfaceName": "Interface_workflow_in", "signalName": "WF_EXECUTE_ABORT" }, "actions": [ { "actionName": "SEND", "payload": { "interfaceName": "Interface_adapter_out", "signalName": "CMD_ABORT" } } ] },
+      { "stateSpace": "CMD", "fromStateName": "RUNNING", "toStateName": "ABORTING", "trigger": { "interfaceName": "Interface_control_in", "signalName": "MANUAL_EXECUTE_ABORT" }, "actions": [ { "actionName": "SEND", "payload": { "interfaceName": "Interface_adapter_out", "signalName": "CMD_ABORT" } } ] },
+      { "stateSpace": "CMD", "fromStateName": "RUNNING", "toStateName": "ABORTING", "trigger": { "interfaceName": "Interface_constraint_in", "signalName": "CONSTRAINT_ABORT" }, "actions": [ { "actionName": "SEND", "payload": { "interfaceName": "Interface_adapter_out", "signalName": "CMD_ABORT" } } ] }
+    ],
+    "actionCatalog": [
+      { "actionName": "SEND", "allowedContexts": [ "ON_ENTRY", "TRANSITION" ], "payloadDefinition": "StateMachineAction.payload", "effect": "向目标输出接口发送协议规范中的系统信号" }
+    ]
+  },
+  "workflowEngine": {
+    "workflowLifecycleStates": [ "PENDING", "RUNNING", "PAUSED", "SUCCEEDED", "FAILED", "TERMINATED" ],
+    "executionRules": { "startNodeFunctionType": "START", "endNodeFunctionType": "END", "terminalNodeStates": [ "SUCCEEDED", "FAILED", "TERMINATED" ], "subflowExecution": "SUBFLOW_NODE激活时创建子流程执行上下文，父节点等待子流程终态后推进。" },
+    "actionExecutionRules": {
+      "ACTIVATE": "激活当前节点；DEV_NODE向目标设备状态机发送WF_EXECUTE_START，SUBFLOW_NODE启动子流程。",
+      "DEACTIVATE": "中止当前节点执行。",
+      "EMIT": "从指定OUT接口发送工作流信号。",
+      "COMPLETE": "将当前节点推进为SUCCEEDED。",
+      "FAIL": "将当前节点推进为FAILED。",
+      "RESET": "将当前节点重置为PENDING。"
+    }
+  },
+  "constraintEngine": {
+    "expressionFunctions": [ "delta(var,seconds)", "avg(var,seconds)", "rate(var)" ],
+    "violationActionExecutionRules": {
+      "ABORT": "向受约束执行上下文关联的设备状态机发送CONSTRAINT_ABORT，并终止相关工作流。",
+      "PAUSE": "暂停相关工作流实例。",
+      "ALERT": "生成告警事件。",
+      "LOG_ONLY": "仅记录违规日志。"
+    }
+  },
+  "integration": {
+    "modelCompilationOrder": [ "protocol-spec", "device-capability-model", "device-state-machine-model", "workflow-model", "constraint-model" ],
+    "stateMachineMergePolicy": "标准接口和systemTransitions由状态机引擎注入；设备状态机模型不得覆盖同名标准接口或固定转移。",
+    "referenceValidation": "编译阶段校验能力名、属性名、接口名、端口名、状态名、节点名和动作名的引用完整性。",
+    "failurePropagation": "设备状态机FAILED或ABORTED时，关联工作流节点按配置进入FAILED或TERMINATED；约束引擎动作优先于普通工作流动作。"
+  }
+}

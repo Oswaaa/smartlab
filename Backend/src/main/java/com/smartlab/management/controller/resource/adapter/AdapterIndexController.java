@@ -107,10 +107,9 @@ public class AdapterIndexController {
 
     @GetMapping("/{adapterName}/device-points")
     public ApiResponse<JsonNode> devicePoints(@PathVariable String adapterName,
-                                             @RequestParam(required = false) String templateName,
-                                             @RequestParam(required = false) String categoryName) {
+                                             @RequestParam String categoryName) {
         try {
-            return ApiResponse.ok(service.listDevicePoints(adapterName, templateName, categoryName));
+            return ApiResponse.ok(service.listDevicePoints(adapterName, categoryName));
         } catch (Exception e) {
             return ApiResponse.fail(e.getMessage());
         }
@@ -118,13 +117,9 @@ public class AdapterIndexController {
 
     @GetMapping("/{adapterName}/adapter-contract")
     public ApiResponse<ObjectNode> adapterContract(@PathVariable String adapterName,
-                                                   @RequestParam(required = false) String templateName,
-                                                   @RequestParam(required = false) String categoryName) {
+                                                   @RequestParam String categoryName) {
         try {
-            if ((templateName == null || templateName.isBlank()) && (categoryName == null || categoryName.isBlank())) {
-                return ApiResponse.fail("请选择 Adapter 类别或模板");
-            }
-            return ApiResponse.ok(service.buildAdapterContract(adapterName, templateName, categoryName));
+            return ApiResponse.ok(service.buildAdapterContract(adapterName, categoryName));
         } catch (Exception e) {
             return ApiResponse.fail(e.getMessage());
         }

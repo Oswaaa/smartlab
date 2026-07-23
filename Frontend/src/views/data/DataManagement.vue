@@ -36,7 +36,7 @@
         <div class="toolbar-actions">
           <el-button @click="loadAll">刷新</el-button>
           <el-button v-if="selectedTemplate" type="primary" @click="openDatasetDrawer(selectedTemplate)">用模板建表</el-button>
-          <el-button v-if="selectedInstance" type="primary" @click="openDatasetDrawer(null, selectedInstance)">为该设备建表</el-button>
+          <el-button v-if="selectedInstance && isUsableInstance(selectedInstance)" type="primary" @click="openDatasetDrawer(null, selectedInstance)">为该设备建表</el-button>
           <el-button v-if="selectedDataset" @click="exportDataset">导出 CSV</el-button>
           <el-popconfirm v-if="selectedDataset" title="确认删除该数据表？物理表会同步删除" @confirm="deleteDataset(selectedDataset)">
             <template #reference><el-button type="danger" plain>删除数据表</el-button></template>
@@ -63,7 +63,7 @@
               <template #default="{ row }">{{ valueOf(row, field.columnName) }}</template>
             </el-table-column>
           </el-table>
-          <el-pagination class="pager" background small layout="total, sizes, prev, pager, next" :total="recordPage.total" :current-page="recordPage.pageNo" :page-size="recordPage.pageSize" :page-sizes="[50,100,200,500]" @current-change="page => { recordPage.pageNo = page; loadRecords() }" @size-change="size => { recordPage.pageNo = 1; recordPage.pageSize = size; loadRecords() }" />
+          <el-pagination class="pager" background size="small" layout="total, sizes, prev, pager, next" :total="recordPage.total" :current-page="recordPage.pageNo" :page-size="recordPage.pageSize" :page-sizes="[50,100,200,500]" @current-change="page => { recordPage.pageNo = page; loadRecords() }" @size-change="size => { recordPage.pageNo = 1; recordPage.pageSize = size; loadRecords() }" />
         </section>
 
         <section v-else-if="selectedTemplate" class="workspace-section">
@@ -90,23 +90,23 @@
             <div><span>绑定 Adapter</span><strong>{{ selectedInstance.boundAdapterName || '-' }}</strong></div>
             <div><span>设备点位</span><strong>{{ selectedInstance.boundDevicePoint || '-' }}</strong></div>
           </div>
-          <el-empty description="该设备实例下暂无数据表"><el-button type="primary" @click="openDatasetDrawer(null, selectedInstance)">为该设备建表</el-button></el-empty>
+          <el-empty description="该设备实例下暂无数据表"><el-button v-if="isUsableInstance(selectedInstance)" type="primary" @click="openDatasetDrawer(null, selectedInstance)">为该设备建表</el-button></el-empty>
         </section>
 
         <section v-else class="workspace-empty"><el-empty description="请选择左侧数据表、模板或设备实例" /></section>
       </main>
     </section>
 
-    <el-drawer v-model="datasetDrawer.visible" title="新建数据表" size="520px">
+    <el-drawer v-model="datasetDrawer.visible" title="新建数据表" size="78%" class="unified-workflow-drawer">
       <el-form label-position="top" class="drawer-form">
         <el-form-item label="数据表说明"><el-input v-model="datasetDrawer.dataDesc" placeholder="例如：高压报警专项数据" /></el-form-item>
         <el-form-item label="数据模板"><el-select v-model="datasetDrawer.templateId" filterable placeholder="请选择模板"><el-option v-for="tpl in templates" :key="tpl.id" :label="tpl.templateName" :value="tpl.id" /></el-select></el-form-item>
-        <el-form-item label="绑定设备实例"><el-select v-model="datasetDrawer.deviceInstanceId" filterable placeholder="请选择设备"><el-option v-for="ins in instances" :key="instanceId(ins)" :label="instancePath(ins)" :value="Number(instanceId(ins))" /></el-select></el-form-item>
+        <el-form-item label="绑定设备实例"><el-select v-model="datasetDrawer.deviceInstanceId" filterable placeholder="请选择设备"><el-option v-for="ins in usableInstances" :key="instanceId(ins)" :label="instancePath(ins)" :value="Number(instanceId(ins))" /></el-select></el-form-item>
       </el-form>
       <template #footer><el-button @click="datasetDrawer.visible = false">取消</el-button><el-button type="primary" :loading="saving" @click="createDataset">保存建表</el-button></template>
     </el-drawer>
 
-    <el-drawer v-model="templateDrawer.visible" title="新增数据模板" size="680px">
+    <el-drawer v-model="templateDrawer.visible" title="新增数据模板" size="78%" class="unified-workflow-drawer">
       <el-form label-position="top" class="drawer-form">
         <div class="form-grid two">
           <el-form-item label="模板名称"><el-input v-model="templateDrawer.templateName" /></el-form-item>
@@ -162,6 +162,7 @@ const templateDrawer = reactive({ visible: false, templateName: '', templateDesc
 
 const modelMap = computed(() => Object.fromEntries(models.value.map(m => [String(modelId(m)), m])))
 const templateMap = computed(() => Object.fromEntries(templates.value.map(t => [String(t.id), t])))
+const usableInstances = computed(() => instances.value.filter(isUsableInstance))
 const childrenByCategory = computed(() => {
   const map = new Map()
   categories.value.forEach(cat => {
@@ -314,6 +315,10 @@ function renderChart() {
 }
 
 function openDatasetDrawer(template = null, instance = null) {
+  if (instance && !isUsableInstance(instance)) {
+    ElMessage.warning('已注销设备不能新建数据表')
+    return
+  }
   datasetDrawer.visible = true
   datasetDrawer.templateId = template?.id || selectedDataset.value?.dataTemplateId || selectedTemplate.value?.id || null
   if (instance) datasetDrawer.deviceInstanceId = Number(instanceId(instance))
@@ -324,6 +329,8 @@ function openDatasetDrawer(template = null, instance = null) {
 }
 
 async function createDataset() {
+  const selected = instances.value.find(ins => Number(instanceId(ins)) === Number(datasetDrawer.deviceInstanceId))
+  if (selected && !isUsableInstance(selected)) { ElMessage.warning('已注销设备不能新建数据表'); return }
   if (!datasetDrawer.templateId || !datasetDrawer.deviceInstanceId) { ElMessage.warning('请选择模板和设备实例'); return }
   saving.value = true
   try {
@@ -391,6 +398,8 @@ function formatTime(value) { return value ? new Date(value).toLocaleString('zh-C
 function isUnitField(row) { return String(row?.columnName || '').endsWith('_unit') }
 function stripUnit(value) { return String(value || '').replace(/_unit$/, '') }
 function modelId(model) { return model?.modelId || model?.id }
+function isUsableInstance(instance) { return instance?.lifecycleStatus === '使用中' }
+
 function instanceId(instance) { return instance?.instanceId || instance?.id }
 function modelName(id) { return modelMap.value[String(id)]?.modelName || '-' }
 function templateName(id) { return templateMap.value[String(id)]?.templateName || '-' }
@@ -449,4 +458,14 @@ onUnmounted(() => { window.removeEventListener('resize', resizeChart); disposeCh
 .field-head { background: #f1f5f9; font-weight: 800; color: #334155; }
 .field-row:last-child { border-bottom: 0; }
 @media (max-width: 1180px) { .meta-table { grid-template-columns: repeat(2, minmax(0, 1fr)); } .field-head, .field-row { grid-template-columns: 1fr; } }
+
+/* Enterprise data console overrides */
+.data-workbench { background: #f5f7fa; }
+.asset-header { min-height: 56px; padding: 8px 12px; border-color: #e5e7eb; }
+.asset-search { margin: 8px 12px; }
+.workspace-toolbar h1 { font-size: 20px; font-weight: 600; }
+.workspace-body { padding: 12px 16px 20px; }
+.workspace-section { border-radius: 6px; }
+.chart-box { height: 300px; border-color: #e5e7eb; }
+.field-editor { border-radius: 6px; overflow: hidden; }
 </style>

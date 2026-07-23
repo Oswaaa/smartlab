@@ -36,7 +36,7 @@ public class AdapterManifestService {
     private static final Pattern TEMPLATE_SECTION = Pattern.compile("deviceTemplates\\.([A-Za-z][A-Za-z0-9_-]*)");
     private static final Pattern TEMPLATE_COMMAND_SECTION = Pattern
             .compile("deviceTemplates\\.([A-Za-z][A-Za-z0-9_-]*)\\.commands\\.([A-Za-z][A-Za-z0-9_-]*)");
-    private static final Pattern POINT_SECTION = Pattern.compile("devicePoints\\.([A-Za-z][A-Za-z0-9_-]*)");
+    private static final Pattern POINT_SECTION = Pattern.compile("devicePoints\\.([A-Za-z0-9][A-Za-z0-9_-]*)");
 
     public ObjectNode parseRawConfig(String adapterName, String rawConfigFormat, String rawConfigContent) {
         return parseRawConfig(adapterName, rawConfigFormat, rawConfigContent, null);
@@ -49,7 +49,7 @@ public class AdapterManifestService {
         }
         String format = rawConfigFormat == null ? "JSON" : rawConfigFormat.trim().toUpperCase(Locale.ROOT);
         JsonNode raw;
-        if ("JSON".equals(format) || rawConfigContent.trim().startsWith("{")) {
+        if ("JSON".equals(format)) {
             raw = readJson(rawConfigContent);
         } else if ("INI".equals(format)) {
             raw = parseIniConfig(adapterName, rawConfigContent);
@@ -210,20 +210,21 @@ public class AdapterManifestService {
         if (manifest == null || templateName == null || templateName.isBlank()) {
             return null;
         }
-        JsonNode category = findCategory(manifest, templateName);
-        if (category != null) {
-            return category.path("deviceTemplate");
+        for (JsonNode category : array(manifest.get("deviceCategories"))) {
+            JsonNode template = category.path("deviceTemplate");
+            if (templateName.equals(template.path("templateName").asText())) {
+                return template;
+            }
         }
         return null;
     }
 
-    public JsonNode findCategory(JsonNode manifest, String categoryOrTemplateName) {
-        if (manifest == null || categoryOrTemplateName == null || categoryOrTemplateName.isBlank()) {
+    public JsonNode findCategory(JsonNode manifest, String categoryName) {
+        if (manifest == null || categoryName == null || categoryName.isBlank()) {
             return null;
         }
         for (JsonNode category : array(manifest.get("deviceCategories"))) {
-            if (categoryOrTemplateName.equals(category.path("categoryName").asText())
-                    || categoryOrTemplateName.equals(category.path("deviceTemplate").path("templateName").asText())) {
+            if (categoryName.equals(category.path("categoryName").asText())) {
                 return category;
             }
         }
@@ -249,27 +250,24 @@ public class AdapterManifestService {
         return point == null ? null : point.path("templateName").asText(null);
     }
 
-    public ObjectNode buildAdapterContract(AdapterIndex adapter, String templateName) {
+    public ObjectNode buildAdapterContract(AdapterIndex adapter, String categoryName) {
         if (adapter == null || adapter.getParsedConfig() == null) {
             throw new IllegalArgumentException("Adapter 未注册或没有解析后的配置");
         }
-        JsonNode category = findCategory(adapter.getParsedConfig(), templateName);
-        JsonNode template = category == null ? findTemplate(adapter.getParsedConfig(), templateName)
-                : category.path("deviceTemplate");
-        if (template == null || template.isMissingNode() || template.isNull()) {
-            throw new IllegalArgumentException("Adapter 模板不存在: " + templateName);
+        JsonNode category = findCategory(adapter.getParsedConfig(), categoryName);
+        if (category == null) {
+            throw new IllegalArgumentException("Adapter 类别不存在: " + categoryName);
         }
-        String resolvedTemplateName = template.path("templateName").asText(templateName);
+        JsonNode template = category.path("deviceTemplate");
+        if (template.isMissingNode() || template.isNull()) {
+            throw new IllegalArgumentException("Adapter 类别缺少唯一设备模板: " + categoryName);
+        }
 
         ObjectNode contract = JsonNodeSupport.objectNode();
         ObjectNode config = contract.putObject("config");
         config.put("protocol", "MQTT");
         config.put("adapterName", adapter.getAdapterName());
-        config.put("templateName", resolvedTemplateName);
-        if (category != null) {
-            config.put("categoryName", category.path("categoryName").asText(""));
-            config.put("categoryDescription", category.path("categoryDescription").asText(""));
-        }
+        config.put("categoryName", category.path("categoryName").asText());
 
         ArrayNode commands = contract.putArray("commands");
         for (JsonNode command : array(template.get("commands"))) {
@@ -278,14 +276,12 @@ public class AdapterManifestService {
             commandNode.put("description", command.path("description").asText(""));
             ArrayNode params = commandNode.putArray("commandParameters");
             for (JsonNode param : array(command.get("parameters"))) {
+                if (isInternalCommandParameter(param)) {
+                    continue;
+                }
                 ObjectNode paramNode = params.addObject();
                 paramNode.put("paramName", param.path("name").asText());
                 paramNode.put("dataType", normalizeDataType(param.path("dataType").asText("STRING")));
-                boolean internal = param.path("internal").asBoolean(false);
-                paramNode.put("internal", internal);
-                if (internal) {
-                    paramNode.put("sourceField", param.path("sourceField").asText(""));
-                }
                 if (param.hasNonNull("description")) {
                     paramNode.put("description", param.path("description").asText());
                 }
@@ -303,8 +299,8 @@ public class AdapterManifestService {
         telemetry.putArray("attributesMapping");
 
         ObjectNode events = contract.putObject("events");
-        events.set("cmdEvents", copyArray(template.path("events").get("cmdEvents")));
-        events.set("opEvents", copyArray(template.path("events").get("opEvents")));
+        events.set("cmdEvents", toModelContractEvents(template.path("events").get("cmdEvents")));
+        events.set("opEvents", toModelContractEvents(template.path("events").get("opEvents")));
 
         return contract;
     }
@@ -314,7 +310,8 @@ public class AdapterManifestService {
     }
 
     public boolean isInternalCommandParameter(JsonNode commandParameter) {
-        return commandParameter != null && commandParameter.path("internal").asBoolean(false);
+        return commandParameter != null && (commandParameter.path("internal").asBoolean(false)
+                || !commandParameter.path("sourceField").asText("").isBlank());
     }
 
     public String normalizeDataType(String value) {
@@ -323,10 +320,12 @@ public class AdapterManifestService {
         }
         String upper = value.trim().toUpperCase(Locale.ROOT);
         return switch (upper) {
-            case "INT", "INTEGER", "LONG" -> "INTEGER";
-            case "FLOAT", "DOUBLE", "NUMBER", "NUMERIC" -> "DOUBLE";
-            case "BOOL", "BOOLEAN" -> "BOOLEAN";
-            default -> "STRING";
+            case "INTEGER" -> "INTEGER";
+            case "DOUBLE" -> "DOUBLE";
+            case "BOOLEAN" -> "BOOLEAN";
+            case "STRING" -> "STRING";
+            case "JSON" -> "JSON";
+            default -> throw new IllegalArgumentException("不支持的数据类型: " + value);
         };
     }
 
@@ -893,6 +892,18 @@ public class AdapterManifestService {
             copy.add(item);
         }
         return copy;
+    }
+
+    private ArrayNode toModelContractEvents(JsonNode node) {
+        ArrayNode events = JsonNodeSupport.arrayNode();
+        for (JsonNode item : array(node)) {
+            ObjectNode event = events.addObject();
+            event.put("eventName", item.path("name").asText(item.path("eventName").asText("")));
+            if (item.hasNonNull("description")) {
+                event.put("description", item.path("description").asText());
+            }
+        }
+        return events;
     }
 
     private String text(JsonNode node, String key, String fallback) {

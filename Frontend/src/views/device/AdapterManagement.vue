@@ -294,7 +294,10 @@ import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { MoreFilled, Plus, Search, Upload } from '@element-plus/icons-vue'
+import { useAuthStore } from '../../stores/authStore'
 import { adapterRegisterFormats, loadProtocolMetadata, mqttTopics } from './components/deviceModel/deviceModelConstants'
+
+const authStore = useAuthStore()
 
 const keyword = ref('')
 const activeTab = ref('runtime')
@@ -442,7 +445,8 @@ const mqttStatusLabel = computed(() => mqttConnected.value ? 'Broker \u5728\u7eb
 const connectRegistrationStream = () => {
   if (registrationStream) return
   try {
-    registrationStream = new EventSource('/api/adapter/protocol/pending-registrations/stream')
+    const token = authStore.token
+    registrationStream = new EventSource('/api/adapter/protocol/pending-registrations/stream?token=' + encodeURIComponent(token))
     registrationStream.addEventListener('pending_snapshot', event => {
       pendingRegistrations.value = asArray(JSON.parse(event.data || '[]'))
     })

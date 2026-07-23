@@ -1,0 +1,87 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "protocol-spec.json",
+  "title": "ProtocolSpec",
+  "description": "系统跨引擎协议规范，定义公共数据类型、系统信号、Adapter通信报文与共享接口词汇。",
+  "x-signalContracts": {
+    "WF_EXECUTE_START": { "producer": "WORKFLOW_ENGINE", "consumer": "STATE_MACHINE_ENGINE", "payloadRef": "#/definitions/CommandContext", "description": "工作流请求执行设备能力" },
+    "WF_EXECUTE_ABORT": { "producer": "WORKFLOW_ENGINE", "consumer": "STATE_MACHINE_ENGINE", "payloadRef": "#/definitions/EmptyPayload", "description": "工作流请求中止当前执行" },
+    "MANUAL_EXECUTE_START": { "producer": "CONTROL", "consumer": "STATE_MACHINE_ENGINE", "payloadRef": "#/definitions/CommandContext", "description": "人工请求执行设备能力" },
+    "MANUAL_EXECUTE_ABORT": { "producer": "CONTROL", "consumer": "STATE_MACHINE_ENGINE", "payloadRef": "#/definitions/EmptyPayload", "description": "人工请求中止当前执行" },
+    "CONSTRAINT_ABORT": { "producer": "CONSTRAINT_ENGINE", "consumer": "STATE_MACHINE_ENGINE", "payloadRef": "#/definitions/EmptyPayload", "description": "约束引擎请求中止当前执行" },
+    "CMD_START": { "producer": "STATE_MACHINE_ENGINE", "consumer": "ADAPTER", "payloadRef": "#/definitions/CommandContext", "description": "状态机向Adapter下发执行指令" },
+    "CMD_ABORT": { "producer": "STATE_MACHINE_ENGINE", "consumer": "ADAPTER", "payloadRef": "#/definitions/EmptyPayload", "description": "状态机向Adapter下发中止指令" },
+    "CMD_STATE": { "producer": "STATE_MACHINE_ENGINE", "consumer": "SYSTEM", "payloadRef": "#/definitions/StateContext", "description": "状态机输出指令生命周期状态" },
+    "OP_STATE": { "producer": "STATE_MACHINE_ENGINE", "consumer": "SYSTEM", "payloadRef": "#/definitions/StateContext", "description": "状态机输出业务功能状态" }
+  },
+  "definitions": {
+    "DataType": { "type": "string", "enum": [ "INTEGER", "DOUBLE", "STRING", "BOOLEAN", "JSON" ], "description": "全局标准数据类型" },
+    "CommunicationProtocol": { "type": "string", "enum": [ "MQTT" ], "description": "Adapter与系统之间使用的通信协议" },
+    "ConstraintOperator": { "type": "string", "enum": [ ">", "<", ">=", "<=", "=", "!=", "BETWEEN", "IN" ], "description": "跨模型共享的标准比较操作符" },
+    "InterfaceDirection": { "type": "string", "enum": [ "IN", "OUT" ], "description": "接口或端口方向" },
+    "InterfaceType": { "type": "string", "enum": [ "WORKFLOW", "STATE", "ADAPTER", "CONTROL", "CONSTRAINT" ], "description": "跨引擎信号接口语义类型" },
+    "SystemSignalName": { "type": "string", "enum": [ "WF_EXECUTE_START", "WF_EXECUTE_ABORT", "MANUAL_EXECUTE_START", "MANUAL_EXECUTE_ABORT", "CONSTRAINT_ABORT", "CMD_START", "CMD_ABORT", "CMD_STATE", "OP_STATE" ] },
+    "WorkflowControlSignal": { "type": "string", "enum": [ "WF_EXECUTE_START", "WF_EXECUTE_ABORT" ] },
+    "ManualControlSignal": { "type": "string", "enum": [ "MANUAL_EXECUTE_START", "MANUAL_EXECUTE_ABORT" ] },
+    "ConstraintControlSignal": { "type": "string", "enum": [ "CONSTRAINT_ABORT" ] },
+    "AdapterOutboundSignal": { "type": "string", "enum": [ "CMD_START", "CMD_ABORT" ] },
+    "StatusSignal": { "type": "string", "enum": [ "CMD_STATE", "OP_STATE" ] },
+    "EmptyPayload": { "type": "object", "description": "无业务载荷的信号载荷" },
+    "CommandContext": {
+      "type": "object",
+      "properties": { "commandName": { "type": "string" }, "parameters": { "type": "object" } },
+      "required": [ "commandName", "parameters" ]
+    },
+    "StateContext": {
+      "type": "object",
+      "properties": { "stateSpace": { "type": "string", "enum": [ "CMD", "OP" ] }, "stateName": { "type": "string" }, "regionName": { "type": "string" } },
+      "required": [ "stateSpace", "stateName" ]
+    },
+    "SystemSignalFormat": {
+      "type": "object",
+      "properties": { "signalName": { "$ref": "#/definitions/SystemSignalName" }, "payload": { "type": "object" } },
+      "required": [ "signalName" ]
+    },
+    "MqttTopicConvention": {
+      "type": "object",
+      "properties": {
+        "registerTopic": { "const": "smartlab/adapter/register" },
+        "heartbeatTopic": { "const": "smartlab/adapter/{adapterName}/heartbeat" },
+        "commandTopic": { "const": "smartlab/adapter/{adapterName}/{devicePoint}/command" },
+        "telemetryTopic": { "const": "smartlab/adapter/{adapterName}/{devicePoint}/telemetry" },
+        "eventTopic": { "const": "smartlab/adapter/{adapterName}/{devicePoint}/event" }
+      },
+      "required": [ "registerTopic", "heartbeatTopic", "commandTopic", "telemetryTopic", "eventTopic" ]
+    },
+    "AdapterRegisterRequest": {
+      "type": "object",
+      "properties": { "adapterName": { "type": "string" }, "rawConfigFormat": { "type": "string", "enum": [ "INI", "JSON" ] }, "rawConfigContent": { "type": "string" }, "timestamp": { "type": "integer" } },
+      "required": [ "adapterName", "rawConfigFormat", "rawConfigContent", "timestamp" ]
+    },
+    "CommandMessageFormat": {
+      "type": "object",
+      "properties": { "messageId": { "type": "string" }, "adapterName": { "type": "string" }, "devicePoint": { "type": "string" }, "commandName": { "type": "string" }, "parameters": { "type": "object" }, "timestamp": { "type": "integer" } },
+      "required": [ "messageId", "adapterName", "devicePoint", "commandName", "parameters", "timestamp" ]
+    },
+    "CommandAbortMessageFormat": {
+      "type": "object",
+      "properties": { "messageId": { "type": "string" }, "adapterName": { "type": "string" }, "devicePoint": { "type": "string" }, "operation": { "const": "ABORT" }, "timestamp": { "type": "integer" } },
+      "required": [ "messageId", "adapterName", "devicePoint", "operation", "timestamp" ]
+    },
+    "TelemetryMessageFormat": {
+      "type": "object",
+      "properties": { "timestamp": { "type": "integer" }, "adapterName": { "type": "string" }, "devicePoint": { "type": "string" }, "telemetryData": { "type": "object" } },
+      "required": [ "timestamp", "adapterName", "devicePoint", "telemetryData" ]
+    },
+    "EventMessageFormat": {
+      "type": "object",
+      "properties": { "timestamp": { "type": "integer" }, "messageId": { "type": "string" }, "adapterName": { "type": "string" }, "devicePoint": { "type": "string" }, "eventName": { "type": "string" }, "payload": { "type": "object" } },
+      "required": [ "timestamp", "adapterName", "devicePoint", "eventName" ]
+    },
+    "AdapterHeartbeat": {
+      "type": "object",
+      "properties": { "status": { "type": "string", "enum": [ "ALIVE", "DEGRADED", "SHUTTING_DOWN" ] }, "timestamp": { "type": "integer" } },
+      "required": [ "status", "timestamp" ]
+    }
+  }
+}

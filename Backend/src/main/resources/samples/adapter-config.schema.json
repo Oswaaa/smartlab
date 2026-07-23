@@ -1,0 +1,231 @@
+{
+    "$schema":  "http://json-schema.org/draft-07/schema#",
+    "$id":  "adapter-config.schema.json",
+    "title":  "SmartLab Adapter Configuration",
+    "description":  "Adapter 开发者编写 JSON/INI 原始配置时遵循的格式规范；adapterSetup.json 与 adapterSetup.ini 是对应示例。",
+    "type":  "object",
+    "properties":  {
+                       "specVersion":  {
+                                           "type":  "string",
+                                           "description":  "Adapter 配置规范版本"
+                                       },
+                       "adapterName":  {
+                                           "type":  "string",
+                                           "description":  "adapter 全局唯一代号"
+                                       },
+                       "adapterDescription":  {
+                                                  "type":  "string",
+                                                  "description":  "adapter 总体说明"
+                                              },
+                       "rawConfigFormat":  {
+                                               "type":  "string",
+                                               "enum":  [
+                                                            "INI",
+                                                            "JSON"
+                                                        ],
+                                               "description":  "当前配置文件实际格式"
+                                           },
+                       "deviceTemplates":  {
+                                               "type":  "array",
+                                               "description":  "Adapter 暴露的设备模板列表",
+                                               "items":  {
+                                                             "$ref":  "#/definitions/AdapterConfigDeviceTemplate"
+                                                         }
+                                           },
+                       "devicePoints":  {
+                                            "type":  "array",
+                                            "description":  "Adapter 管理的设备点列表",
+                                            "items":  {
+                                                          "$ref":  "#/definitions/AdapterConfigDevicePoint"
+                                                      }
+                                        }
+                   },
+    "required":  [
+                     "specVersion",
+                     "adapterName",
+                     "rawConfigFormat",
+                     "deviceTemplates",
+                     "devicePoints"
+                 ],
+    "x-iniSections":  {
+                          "adapter":  "[adapter]",
+                          "template":  "[deviceTemplates.\u003ctemplateName\u003e]",
+                          "attributes":  "[deviceTemplates.\u003ctemplateName\u003e.attributes]",
+                          "command":  "[deviceTemplates.\u003ctemplateName\u003e.commands.\u003ccommandName\u003e]",
+                          "parameters":  "[deviceTemplates.\u003ctemplateName\u003e.commands.\u003ccommandName\u003e.parameters]",
+                          "cmdEvents":  "[deviceTemplates.\u003ctemplateName\u003e.events.cmdEvents]",
+                          "opEvents":  "[deviceTemplates.\u003ctemplateName\u003e.events.opEvents]",
+                          "devicePoint":  "[devicePoints.\u003cdevicePoint\u003e]",
+                          "attributeMapping":  "[devicePoints.\u003cdevicePoint\u003e.attributeMapping]"
+                      },
+    "x-iniValueGrammar":  {
+                              "attribute":  "[\u003cDataType\u003e][\u003cdescription\u003e]",
+                              "parameter":  "[\u003cDataType\u003e][\u003cdescription\u003e][internal=\u003cboolean\u003e][sourceField=\u003cfieldName\u003e]",
+                              "event":  "\u003cdescription\u003e",
+                              "scalar":  "\u003cstring\u003e"
+                          },
+    "definitions":  {
+                        "AdapterConfigDeviceTemplate":  {
+                                                            "type":  "object",
+                                                            "description":  "Adapter 设备模板规范",
+                                                            "properties":  {
+                                                                               "templateName":  {
+                                                                                                    "type":  "string"
+                                                                                                },
+                                                                               "categoryName":  {
+                                                                                                    "type":  "string"
+                                                                                                },
+                                                                               "categoryDescription":  {
+                                                                                                           "type":  "string"
+                                                                                                       },
+                                                                               "description":  {
+                                                                                                   "type":  "string"
+                                                                                               },
+                                                                               "attributes":  {
+                                                                                                  "type":  "array",
+                                                                                                  "items":  {
+                                                                                                                "$ref":  "#/definitions/AdapterConfigAttribute"
+                                                                                                            }
+                                                                                              },
+                                                                               "commands":  {
+                                                                                                "type":  "array",
+                                                                                                "items":  {
+                                                                                                              "$ref":  "#/definitions/AdapterConfigCommand"
+                                                                                                          }
+                                                                                            },
+                                                                               "events":  {
+                                                                                              "$ref":  "#/definitions/AdapterConfigEvents"
+                                                                                          }
+                                                                           },
+                                                            "required":  [
+                                                                             "templateName",
+                                                                             "categoryName",
+                                                                             "attributes",
+                                                                             "commands",
+                                                                             "events"
+                                                                         ]
+                                                        },
+                        "AdapterConfigAttribute":  {
+                                                       "type":  "object",
+                                                       "properties":  {
+                                                                          "name":  {
+                                                                                       "type":  "string"
+                                                                                   },
+                                                                          "dataType":  {
+                                                                                           "$ref":  "#/definitions/DataType"
+                                                                                       },
+                                                                          "description":  {
+                                                                                              "type":  "string"
+                                                                                          }
+                                                                      },
+                                                       "required":  [
+                                                                        "name",
+                                                                        "dataType"
+                                                                    ]
+                                                   },
+                        "AdapterConfigCommand":  {
+                                                     "type":  "object",
+                                                     "properties":  {
+                                                                        "name":  {
+                                                                                     "type":  "string"
+                                                                                 },
+                                                                        "description":  {
+                                                                                            "type":  "string"
+                                                                                        },
+                                                                        "parameters":  {
+                                                                                           "type":  "array",
+                                                                                           "items":  {
+                                                                                                         "$ref":  "#/definitions/AdapterConfigCommandParameter"
+                                                                                                     }
+                                                                                       }
+                                                                    },
+                                                     "required":  [
+                                                                      "name",
+                                                                      "parameters"
+                                                                  ]
+                                                 },
+                        "AdapterConfigCommandParameter":  {
+                                                              "type":  "object",
+                                                              "properties":  {
+                                                                                 "name":  {
+                                                                                              "type":  "string"
+                                                                                          },
+                                                                                 "dataType":  {
+                                                                                                  "$ref":  "#/definitions/DataType"
+                                                                                              },
+                                                                                 "description":  {
+                                                                                                     "type":  "string"
+                                                                                                 },
+                                                                                 "internal":  {
+                                                                                                  "type":  "boolean",
+                                                                                                  "default":  false
+                                                                                              },
+                                                                                 "sourceField":  {
+                                                                                                     "type":  "string"
+                                                                                                 }
+                                                                             },
+                                                              "required":  [
+                                                                               "name",
+                                                                               "dataType"
+                                                                           ]
+                                                          },
+                        "AdapterConfigEvents":  {
+                                                    "type":  "object",
+                                                    "properties":  {
+                                                                       "cmdEvents":  {
+                                                                                         "type":  "array",
+                                                                                         "items":  {
+                                                                                                       "$ref":  "#/definitions/AdapterConfigEvent"
+                                                                                                   }
+                                                                                     },
+                                                                       "opEvents":  {
+                                                                                        "type":  "array",
+                                                                                        "items":  {
+                                                                                                      "$ref":  "#/definitions/AdapterConfigEvent"
+                                                                                                  }
+                                                                                    }
+                                                                   }
+                                                },
+                        "AdapterConfigEvent":  {
+                                                   "type":  "object",
+                                                   "properties":  {
+                                                                      "name":  {
+                                                                                   "type":  "string"
+                                                                               },
+                                                                      "description":  {
+                                                                                          "type":  "string"
+                                                                                      }
+                                                                  },
+                                                   "required":  [
+                                                                    "name"
+                                                                ]
+                                               },
+                        "AdapterConfigDevicePoint":  {
+                                                         "type":  "object",
+                                                         "description":  "Adapter 设备点规范。除标准字段外，可包含 sourceField 引用所需的固定字段。",
+                                                         "properties":  {
+                                                                            "devicePoint":  {
+                                                                                                "type":  "string"
+                                                                                            },
+                                                                            "templateName":  {
+                                                                                                 "type":  "string"
+                                                                                             },
+                                                                            "description":  {
+                                                                                                "type":  "string"
+                                                                                            },
+                                                                            "attributeMapping":  {
+                                                                                                     "type":  "object",
+                                                                                                     "additionalProperties":  {
+                                                                                                                                  "type":  "string"
+                                                                                                                              }
+                                                                                                 }
+                                                                        },
+                                                         "required":  [
+                                                                          "devicePoint",
+                                                                          "templateName",
+                                                                          "attributeMapping"
+                                                                      ],
+                                                         "additionalProperties":  true
+                                                     }
+                    }
+}

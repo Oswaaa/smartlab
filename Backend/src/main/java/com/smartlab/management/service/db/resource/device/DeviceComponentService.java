@@ -3,7 +3,9 @@ package com.smartlab.management.service.db.resource.device;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.entity.resource.device.DeviceComponents;
+import com.smartlab.management.entity.resource.device.DeviceInstanceLifecycle;
 import com.smartlab.management.mapper.resource.device.DeviceComponentsMapper;
+import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,14 +30,18 @@ public class DeviceComponentService extends ManagementCrudService<DeviceComponen
     private static final String STATUS_REPLACED = "已更换";
 
     private final DeviceComponentsMapper mapper;
+    private final DeviceInstancesMapper deviceInstancesMapper;
 
-    public DeviceComponentService(DeviceComponentsMapper mapper) {
+    public DeviceComponentService(DeviceComponentsMapper mapper, DeviceInstancesMapper deviceInstancesMapper) {
         super(mapper);
         this.mapper = mapper;
+        this.deviceInstancesMapper = deviceInstancesMapper;
     }
 
     @Override
     public DeviceComponents save(DeviceComponents entity) {
+        if (entity.getParentInstanceId() != null) requireInstanceUsable(entity.getParentInstanceId(), "父设备实例已注销，组件拓扑只允许查看");
+        if (entity.getSelfInstanceId() != null) requireInstanceUsable(entity.getSelfInstanceId(), "绑定的组件实例已注销");
         if (entity.getComponentName() == null || entity.getComponentName().isBlank()) {
             throw new IllegalArgumentException("组件名称不能为空");
         }
@@ -79,8 +85,10 @@ public class DeviceComponentService extends ManagementCrudService<DeviceComponen
     @Transactional(rollbackFor = Exception.class)
     public DeviceComponents configure(Long id, DeviceComponents payload) {
         DeviceComponents component = requireComponent(id);
+        requireComponentMutable(component);
         requireStatus(component, STATUS_IN_USE, "仅使用中的组件可配置");
         if (payload != null) {
+            if (payload.getSelfInstanceId() != null) requireInstanceUsable(payload.getSelfInstanceId(), "绑定的组件实例已注销");
             component.setSelfInstanceId(payload.getSelfInstanceId());
             if (payload.getSpecification() != null) {
                 component.setSpecification(payload.getSpecification());
@@ -93,6 +101,7 @@ public class DeviceComponentService extends ManagementCrudService<DeviceComponen
     @Transactional(rollbackFor = Exception.class)
     public DeviceComponents markPendingReplacement(Long id, String remark) {
         DeviceComponents component = requireComponent(id);
+        requireComponentMutable(component);
         requireStatus(component, STATUS_IN_USE, "仅使用中的组件可标记为待更换");
         String normalizedRemark = normalizeRemark(remark);
         if (normalizedRemark == null) {
@@ -107,6 +116,7 @@ public class DeviceComponentService extends ManagementCrudService<DeviceComponen
     @Transactional(rollbackFor = Exception.class)
     public DeviceComponents replace(Long id, DeviceComponents replacement) {
         DeviceComponents old = requireComponent(id);
+        requireComponentMutable(old);
         if (!STATUS_IN_USE.equals(old.getStatus()) && !STATUS_PENDING_REPLACEMENT.equals(old.getStatus())) {
             throw new IllegalArgumentException("仅使用中或待更换的组件可执行更换");
         }
@@ -118,6 +128,7 @@ public class DeviceComponentService extends ManagementCrudService<DeviceComponen
         next.setCategoryId(old.getCategoryId());
         next.setParentInstanceId(old.getParentInstanceId());
         next.setSelfInstanceId(replacement == null ? null : replacement.getSelfInstanceId());
+        if (next.getSelfInstanceId() != null) requireInstanceUsable(next.getSelfInstanceId(), "绑定的组件实例已注销");
         next.setSpecification(replacement == null || replacement.getSpecification() == null
                 ? old.getSpecification() : replacement.getSpecification());
         if (next.getSpecification() == null) {
@@ -174,6 +185,15 @@ public class DeviceComponentService extends ManagementCrudService<DeviceComponen
     @Override
     public void delete(Serializable id) {
         throw new IllegalStateException("组件记录不支持物理删除，请通过更换流程保留历史链");
+    }
+
+    private void requireComponentMutable(DeviceComponents component) {
+        requireInstanceUsable(component.getParentInstanceId(), "父设备实例已注销，组件拓扑只允许查看");
+    }
+
+    private void requireInstanceUsable(Long instanceId, String message) {
+        var instance = instanceId == null ? null : deviceInstancesMapper.selectById(instanceId);
+        if (!DeviceInstanceLifecycle.isUsable(instance)) throw new IllegalStateException(message);
     }
 
     private void requireStatus(DeviceComponents component, String status, String message) {

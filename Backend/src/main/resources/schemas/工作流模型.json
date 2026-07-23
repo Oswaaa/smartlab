@@ -1,0 +1,320 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "DynamicWorkflowModel",
+  "description": "工作流模型规范",
+  "type": "object",
+  "properties": {
+    "metadata": {
+      "description": "工作流模型的基本信息",
+      "type": "object",
+      "properties": {
+        "flowModelId": {
+          "type": [ "integer", "null" ],
+          "description": "工作流模型在数据库中的ID；新建模型尚未持久化时允许为null"
+        },
+        "flowModelName": { "type": "string", "description": "工作流模型名称" },
+        "description": { "type": "string", "description": "工作流模型描述" }
+      },
+      "required": [ "flowModelId", "flowModelName" ]
+    },
+    "nodes": {
+      "type": "array",
+      "description": "工作流节点列表，每个节点是三种类型（DEV_NODE/FUNC_NODE/SUBFLOW_NODE）之一，通过nodeType字段区分",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/definitions/devNode" },
+          { "$ref": "#/definitions/funcNode" },
+          { "$ref": "#/definitions/subflowNode" }
+        ]
+      }
+    },
+    "interfaceConnections": {
+      "type": "array",
+      "description": "接口连接关系列表",
+      "items": {
+        "oneOf": [
+          { "$ref": "#/definitions/Node2NodeConn" },
+          { "$ref": "#/definitions/Node2DeviceConn" },
+          { "$ref": "#/definitions/Device2NodeConn" }
+        ]
+      }
+    },
+    "portConnections": {
+      "type": "array",
+      "description": "端口连接关系列表",
+      "items": {
+        "type": "object",
+        "properties": {
+          "description": { "type": "string", "description": "连接说明" },
+          "source": {
+            "type": "object",
+            "description": "数据来源端口，方向须为OUT",
+            "properties": {
+              "nodeName": { "type": "string", "description": "节点的name字段值" },
+              "portName": { "type": "string", "description": "节点上的端口name字段值" }
+            },
+            "required": [ "nodeName", "portName" ]
+          },
+          "target": {
+            "type": "object",
+            "description": "数据目标端口，方向须为IN",
+            "properties": {
+              "nodeName": { "type": "string", "description": "节点的name字段值" },
+              "portName": { "type": "string", "description": "节点上的端口name字段值" }
+            },
+            "required": [ "nodeName", "portName" ]
+          }
+        },
+        "required": [ "source", "target" ]
+      }
+    }
+  },
+  "required": [ "metadata", "nodes", "interfaceConnections", "portConnections" ],
+  "definitions": {
+    "nodeIfRef": {
+      "description": "节点接口引用，标识某个节点上的某个接口，作为接口连接的端点",
+      "type": "object",
+      "properties": {
+        "nodeName": { "type": "string", "description": "目标节点的name字段值" },
+        "interfaceName": { "type": "string", "description": "目标节点上的接口name字段值" }
+      },
+      "required": [ "nodeName", "interfaceName" ]
+    },
+    "deviceIfRef": {
+      "description": "设备状态机接口引用，标识某个设备实例状态机上的某个接口，作为接口连接的端点",
+      "type": "object",
+      "properties": {
+        "deviceInstanceId": { "type": "integer", "description": "设备实例在数据库中的ID" },
+        "interfaceName": { "type": "string", "description": "设备状态机上的接口name字段值" }
+      },
+      "required": [ "deviceInstanceId", "interfaceName" ]
+    },
+    "Node2NodeConn": {
+      "description": "节点→节点的接口连接，用于同一工作流内节点间的信号路由",
+      "type": "object",
+      "properties": {
+        "description": { "type": "string", "description": "连接说明" },
+        "connectionType": { "type": "string", "const": "NODE_TO_NODE" },
+        "source": { "$ref": "#/definitions/nodeIfRef", "description": "发出信号的节点接口（WORKFLOW类型，OUT方向）" },
+        "target": { "$ref": "#/definitions/nodeIfRef", "description": "接收信号的节点接口（WORKFLOW类型，IN方向）" }
+      },
+      "required": [ "connectionType", "source", "target" ]
+    },
+    "Node2DeviceConn": {
+      "description": "节点→设备状态机的接口连接，节点向设备发送控制信号",
+      "type": "object",
+      "properties": {
+        "description": { "type": "string", "description": "连接说明" },
+        "connectionType": { "type": "string", "const": "NODE_TO_DEVICE" },
+        "source": { "$ref": "#/definitions/nodeIfRef", "description": "发出控制信号的节点接口（STATE类型，OUT方向）" },
+        "target": { "$ref": "#/definitions/deviceIfRef", "description": "接收控制信号的设备状态机接口" }
+      },
+      "required": [ "connectionType", "source", "target" ]
+    },
+    "Device2NodeConn": {
+      "description": "设备状态机→节点的接口连接，设备向节点推送状态变化信号",
+      "type": "object",
+      "properties": {
+        "description": { "type": "string", "description": "连接说明" },
+        "connectionType": { "type": "string", "const": "DEVICE_TO_NODE" },
+        "source": { "$ref": "#/definitions/deviceIfRef", "description": "推送状态信号的设备状态机接口" },
+        "target": { "$ref": "#/definitions/nodeIfRef", "description": "接收状态信号的节点接口（STATE类型，IN方向）" }
+      },
+      "required": [ "connectionType", "source", "target" ]
+    },
+    "baseNode": {
+      "description": "所有节点类型的公共字段",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "节点标识名，在同一工作流模型内唯一" },
+        "internalVariables": {
+          "type": "array",
+          "description": "节点内部变量空间，生命周期内持久存在的状态量，可通过attributesMapping与设备属性同步，也可作为纯节点内部量供端口或触发器引用",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string", "description": "变量标识名，在同一节点内唯一；可作为trigger.condition.object的引用目标" },
+              "dataType": { "$ref": "协议规范.json#/definitions/DataType" },
+              "attributesMapping": { "type": "string", "description": "映射的设备属性名（可选）；填写后运行时自动从设备属性同步值仅对DEV_NODE的变量有意义，关联DeviceModel的属性定义" }
+            },
+            "required": [ "name", "dataType" ]
+          }
+        },
+        "lifecycle": {
+          "type": "object",
+          "description": "节点生命周期状态机，定义节点在运行期间经历的状态及合法转移路径",
+          "properties": {
+            "initialStateName": { "$ref": "系统执行规范.json#/definitions/NodeLifecycleState", "description": "节点启动时进入的初始状态，通常为PENDING" },
+            "states": {
+              "type": "array",
+              "description": "此节点使用的生命周期状态子集",
+              "items": { "$ref": "系统执行规范.json#/definitions/NodeLifecycleState" }
+            },
+            "transitions": {
+              "type": "array",
+              "description": "合法的状态转移规则列表，只有在此列表中声明的转移才允许发生",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "description": { "type": "string", "description": "转移说明" },
+                  "fromStateName": { "type": "string", "description": "原状态，states中的某个值" },
+                  "toStateName": { "type": "string", "description": "目标状态，states中的某个值" }
+                },
+                "required": [ "fromStateName", "toStateName" ]
+              }
+            }
+          },
+          "required": [ "initialStateName", "states", "transitions" ]
+        },
+        "interfaces": {
+          "type": "array",
+          "description": "节点接口集合，节点对外暴露的信号通道",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string", "description": "接口标识名，在同一节点内唯一；可作trigger.condition.object的引用目标，以及nodeIfRef.interfaceName的引用键" },
+              "direction": {
+                "type": "string",
+                "enum": [ "IN", "OUT" ]
+              },
+              "interfaceType": {
+                "type": "string",
+                "enum": [ "WORKFLOW", "STATE" ]
+              },
+              "allowedSignals": {
+                "type": "array",
+                "description": "允许通过此接口的信号列表",
+                "items": { "type": "string" }
+              },
+              "bindingTriggers": {
+                "type": "array",
+                "description": "绑定到此接口的触发器列表，各触发器独立求值，互不干扰",
+                "items": {
+                  "type": "object",
+                  "description": "触发器实时监测condition，为真时执行actionName引用的节点动作",
+                  "properties": {
+                    "condition": {
+                      "type": "object",
+                      "description": "结构化条件谓词（object，operator，threshold）",
+                      "properties": {
+                        "object": { "type": "string", "description": "被观测目标的标识名，内部变量名/生命周期状态名/接口信号名" },
+                        "operator": { "$ref": "系统执行规范.json#/definitions/ConstraintOperator" },
+                        "threshold": {
+                          "type": [ "number", "string", "boolean", "array" ],
+                          "description": "比较阈值，类型须与object所指变量的dataType兼容"
+                        }
+                      },
+                      "required": [ "object", "operator", "threshold" ]
+                    },
+                    "action": { "type": "string", "description": "引用所属节点actions[].actionName，后端编译阶段校验引用存在" }
+                  },
+                  "required": [ "condition", "action" ]
+                }
+              }
+            },
+            "required": [ "name", "direction", "interfaceType" ]
+          }
+        },
+        "ports": {
+          "type": "array",
+          "description": "节点数据端口集合，端口读写即对绑定的internalVariable读写",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string", "description": "端口标识名" },
+              "direction": {
+                "type": "string",
+                "enum": [ "IN", "OUT" ],
+                "description": "IN接收上游数据并写入绑定变量，OUT将绑定变量值输出给下游"
+              },
+              "internalVariableName": { "type": "string", "description": "此端口绑定的内部变量名，节点internalVariables中已声明的变量" }
+            },
+            "required": [ "name", "direction", "internalVariableName" ]
+          }
+        },
+        "actions": {
+          "type": "array",
+          "description": "此节点支持的动作定义列表，bindingTriggers中的actionName须引用其中某项actionName",
+          "items": { "$ref": "#/definitions/WorkflowNodeAction" }
+        }
+      },
+      "required": [ "name", "interfaces", "ports", "actions" ]
+    },
+    "devNode": {
+      "description": "设备能力节点",
+      "allOf": [
+        { "$ref": "#/definitions/baseNode" },
+        {
+          "type": "object",
+          "properties": {
+            "nodeType": { "type": "string", "const": "DEV_NODE" },
+            "deviceModelId": {
+              "type": [ "integer", "null" ],
+              "description": "绑定的设备模型ID，模板预览阶段允许为null"
+            },
+            "capability": {
+              "type": "object",
+              "description": "引用设备能力模型中的某项具体能力",
+              "properties": {
+                "capabilityName": { "type": "string", "description": "能力名称，与设备能力模型中capabilities[].capabilityName完全一致" },
+                "capabilityParameters": { "type": "object", "description": "能力参数，具体字段结构由设备能力模型定义" }
+              },
+              "required": [ "capabilityName" ]
+            }
+          },
+          "required": [ "nodeType", "deviceModelId", "lifecycle", "capability" ]
+        }
+      ]
+    },
+    "funcNode": {
+      "description": "功能节点，无生命周期",
+      "allOf": [
+        { "$ref": "#/definitions/baseNode" },
+        {
+          "type": "object",
+          "properties": {
+            "nodeType": { "type": "string", "const": "FUNC_NODE" },
+            "functionType": {
+              "type": "string",
+              "enum": [ "START", "END", "BRANCH", "AGGREGATE" ],
+              "description": "功能节点类型：START起始节点、END终止节点、BRANCH分支节点、AGGREGATE聚合节点"
+            },
+            "expression": { "type": "string", "description": "自定义表达式（可选）；任意functionType均可使用，由后端表达式求值器解析，可引用节点internalVariables中的变量名" }
+          },
+          "required": [ "nodeType", "functionType" ]
+        }
+      ]
+    },
+    "subflowNode": {
+      "description": "子流程节点",
+      "allOf": [
+        { "$ref": "#/definitions/baseNode" },
+        {
+          "type": "object",
+          "properties": {
+            "nodeType": { "type": "string", "const": "SUBFLOW_NODE" },
+            "subFlowModelId": { "type": "integer", "description": "被引用的子流程的工作流模型ID" },
+            "subFlowModelDescription": { "type": "string", "description": "被引用子流程模型的描述" }
+          },
+          "required": [ "nodeType", "subFlowModelId", "lifecycle" ]
+        }
+      ]
+    },
+    "WorkflowNodeAction": {
+      "type": "object",
+      "description": "工作流节点动作定义actionType为EMIT时使用targetInterfaceName和signalName；actionType为UPDATE时使用internalVariableName和valueExpression",
+      "properties": {
+        "actionName": {
+          "type": "string",
+          "enum": [ "EMIT", "UPDATE" ],
+          "description": "动作标识名，EMIT：从目标输出接口发送信号；UPDATE：更新节点内部变量"
+        },
+        "targetInterfaceName": { "type": "string", "description": "EMIT目标OUT接口名，须为节点interfaces[].name" },
+        "signalName": { "type": "string", "description": "EMIT发送的信号名，须包含在目标接口allowedSignals中" },
+        "internalVariableName": { "type": "string", "description": "UPDATE目标内部变量名，须为节点internalVariables[].name" },
+        "valueExpression": { "type": "string", "description": "UPDATE写入值表达式，可引用当前输入信号payload和节点internalVariables" }
+      },
+      "required": [ "actionName", "actionType" ]
+    }
+  }
+}

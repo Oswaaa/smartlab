@@ -236,12 +236,20 @@
 
                 <section class="info-section section-cluster compact-section">
                   <div class="section-title">
-                    <h3>功能状态</h3>
-                    <span class="section-count">{{ selectedOpStates.length }} 个状态</span>
+                    <h3>功能状态 (按分区)</h3>
+                    <span class="section-count">{{ selectedOpStateRegions.length }} 个分区</span>
                   </div>
-                  <div v-if="selectedOpStates.length === 0" class="compact-empty inline-empty">暂无功能状态</div>
-                  <div v-else class="state-token-panel">
-                    <span v-for="state in selectedOpStates" :key="state.stateName" class="filled-state-token op-state-token">{{ state.stateName }}</span>
+                  <div v-if="selectedOpStateRegions.length === 0" class="compact-empty inline-empty">暂无功能状态分区</div>
+                  <div v-else class="region-token-panels">
+                    <div v-for="region in selectedOpStateRegions" :key="region.regionName" class="region-token-panel" style="margin-bottom: 12px;">
+                      <div class="region-title" style="margin-bottom: 8px; font-weight: bold; color: var(--el-text-color-regular);">
+                        <el-tag size="small" effect="dark" style="margin-right: 8px;">{{ region.regionName }}</el-tag>
+                        <span style="font-size: 12px; color: var(--el-text-color-secondary);">初始状态: {{ region.initialStateName }}</span>
+                      </div>
+                      <div class="state-token-panel">
+                        <span v-for="state in region.states" :key="state.stateName" class="filled-state-token op-state-token">{{ state.stateName }}</span>
+                      </div>
+                    </div>
                   </div>
                 </section>
 
@@ -390,7 +398,7 @@ const selectedAdapterAttributes = computed(() => asArray(props.model?.adapterCon
 const selectedAdapterEvents = computed(() => normalizeEventsToFlatList(props.model?.adapterContract?.events))
 const selectedAttributeMappings = computed(() => asArray(props.model?.adapterContract?.telemetry?.attributesMapping))
 const selectedCmdStates = computed(() => asArray(props.model?.cmdState?.states))
-const selectedOpStates = computed(() => asArray(props.model?.opState?.states))
+const selectedOpStateRegions = computed(() => asArray(props.model?.opState?.regions))
 const selectedConstraints = computed(() => asArray(props.model?.intrinsicConstraints))
 const selectedComponentsBom = computed(() => asArray(props.model?.componentsBom))
 

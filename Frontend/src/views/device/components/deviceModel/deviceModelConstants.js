@@ -4,20 +4,22 @@ import { reactive } from 'vue'
 // ==========================================
 // 1. UI 静态常量与下拉菜单项
 // ==========================================
-export const attributeDataTypes = reactive(['INTEGER', 'DOUBLE', 'BOOLEAN'])
-export const adapterDataTypes = reactive(['INTEGER', 'DOUBLE', 'BOOLEAN', 'STRING'])
-export const operators = reactive(['GT', 'LT', 'GE', 'LE', 'EQ', 'NE', 'BETWEEN', 'IN'])
-export const interfaceTypes = reactive(['WORKFLOW', 'STAT', 'ADAPTER', 'CONTROL', 'CONSTRAINT'])
-export const stateActionNames = reactive(['SEND', 'ASSIGN'])
-export const standardCmdEvents = reactive(['COMMAND_RECEIVED', 'COMMAND_RUNNING', 'COMMAND_COMPLETED', 'COMMAND_FAILED', 'COMMAND_TIMEOUT', 'COMMAND_CANCELLED'])
-export const adapterOutSignals = reactive(['CMD_START', 'CMD_CANCEL', 'CMD_PAUSE', 'CMD_RESUME', 'CMD_RESET'])
-export const communicationProtocols = reactive(['MQTT', 'HTTP'])
-export const adapterRegisterFormats = reactive(['JSON', 'INI', 'YAML', 'XML'])
-export const commandLifecycleStates = reactive(['IDLE', 'SENT', 'RECEIVED', 'RUNNING', 'DONE', 'FAILED', 'TIMEOUT', 'CANCELLED'])
-export const workflowControlSignals = reactive(['EXECUTE_START', 'EXECUTE_PAUSE', 'EXECUTE_RESUME', 'EXECUTE_CANCEL', 'EXECUTE_RESET'])
-export const manualControlSignals = reactive(['MANUAL_EXECUTE', 'MANUAL_CANCEL', 'MANUAL_PAUSE', 'MANUAL_RESUME', 'MANUAL_RESET'])
-export const constraintControlSignals = reactive(['CONSTRAINT_CANCEL', 'CONSTRAINT_PAUSE', 'CONSTRAINT_RESUME', 'CONSTRAINT_RESET'])
-export const statusSignals = reactive(['OP_STATE', 'CMD_STATE'])
+export const attributeDataTypes = reactive([])
+export const adapterDataTypes = reactive([])
+export const operators = reactive([])
+export const interfaceTypes = reactive([])
+export const stateActionNames = reactive([])
+export const adapterOutSignals = reactive([])
+export const communicationProtocols = reactive([])
+export const adapterRegisterFormats = reactive([])
+export const commandLifecycleStates = reactive([])
+export const workflowControlSignals = reactive([])
+export const manualControlSignals = reactive([])
+export const constraintControlSignals = reactive([])
+export const statusSignals = reactive([])
+export const standardInterfaces = reactive([])
+export const executionLifecycleMainPath = reactive([])
+export const systemTransitions = reactive([])
 export const mqttTopics = reactive({
   registerTopic: '',
   heartbeatTopic: '',
@@ -33,28 +35,61 @@ function replaceArray(target, values) {
 }
 
 export function applyProtocolMetadata(metadata = {}) {
-  replaceArray(attributeDataTypes, metadata.dataTypes?.filter(type => type !== 'JSON'))
-  replaceArray(adapterDataTypes, metadata.dataTypes)
-  replaceArray(operators, metadata.constraintOperators)
-  replaceArray(communicationProtocols, metadata.communicationProtocols)
-  replaceArray(adapterRegisterFormats, metadata.adapterRegisterFormats)
-  replaceArray(standardCmdEvents, metadata.adapterCommandLifecycleEvents)
-  replaceArray(adapterOutSignals, metadata.adapterOutboundSignals)
-  replaceArray(commandLifecycleStates, metadata.commandLifecycleStates)
-  replaceArray(workflowControlSignals, metadata.workflowControlSignals)
-  replaceArray(manualControlSignals, metadata.manualControlSignals)
-  replaceArray(constraintControlSignals, metadata.constraintControlSignals)
-  replaceArray(statusSignals, metadata.statusSignals)
-  if (metadata.mqttTopics && typeof metadata.mqttTopics === 'object') {
-    Object.assign(mqttTopics, metadata.mqttTopics)
+  const protocol = metadata.protocol || {}
+  const stateMachine = metadata.stateMachine || {}
+  const deviceCapability = metadata.deviceCapability || {}
+  const constraint = metadata.constraint || {}
+  const interfaces = Array.isArray(stateMachine.standardInterfaces) ? stateMachine.standardInterfaces : []
+  const interfaceOf = (direction, type) => interfaces.find(item => item.direction === direction && item.interfaceType === type)
+  const signalsOf = (direction, type) => interfaceOf(direction, type)?.allowedSignals || []
+
+  replaceArray(attributeDataTypes, deviceCapability.dataTypes?.filter(type => type !== 'JSON'))
+  replaceArray(adapterDataTypes, deviceCapability.dataTypes)
+  replaceArray(operators, constraint.operators)
+  replaceArray(communicationProtocols, protocol.communicationProtocols)
+  replaceArray(adapterRegisterFormats, protocol.adapterRegisterFormats)
+  replaceArray(stateActionNames, protocol.stateMachineActionNames)
+  replaceArray(interfaceTypes, stateMachine.interfaceTypes)
+  replaceArray(adapterOutSignals, signalsOf('OUT', 'ADAPTER'))
+  const cmdStates = Array.isArray(stateMachine.commandStateNames) ? stateMachine.commandStateNames : []
+  const normCmdStates = cmdStates.includes('ABORTING') ? cmdStates : [...cmdStates.filter(s => s !== 'ABORTED'), 'ABORTING', 'ABORTED']
+  replaceArray(commandLifecycleStates, normCmdStates)
+  replaceArray(workflowControlSignals, signalsOf('IN', 'WORKFLOW'))
+  replaceArray(manualControlSignals, signalsOf('IN', 'CONTROL'))
+  replaceArray(constraintControlSignals, signalsOf('IN', 'CONSTRAINT'))
+  replaceArray(statusSignals, signalsOf('OUT', 'STAT'))
+  replaceArray(standardInterfaces, interfaces)
+  replaceArray(executionLifecycleMainPath, stateMachine.executionLifecycleMainPath)
+  replaceArray(systemTransitions, stateMachine.systemTransitions)
+  if (protocol.mqttTopics && typeof protocol.mqttTopics === 'object') {
+    Object.assign(mqttTopics, protocol.mqttTopics)
   }
 }
-
 export async function loadProtocolMetadata() {
-  const res = await axios.get('/api/protocol/dictionary/frontend-metadata')
+  const res = await axios.get('/api/schema-metadata/frontend')
   const metadata = res.data?.data || res.data || {}
   applyProtocolMetadata(metadata)
   return metadata
+}
+
+let protocolMetadataLoading = null
+
+export async function ensureProtocolMetadataLoaded(loader = loadProtocolMetadata) {
+  const metadataReady = () => executionLifecycleMainPath.length > 0
+    && systemTransitions.length > 0
+    && communicationProtocols.length > 0
+    && adapterDataTypes.length > 0
+    && standardInterfaces.length > 0
+  if (metadataReady()) return
+  if (!protocolMetadataLoading) {
+    protocolMetadataLoading = Promise.resolve().then(loader).finally(() => {
+      protocolMetadataLoading = null
+    })
+  }
+  await protocolMetadataLoading
+  if (!metadataReady()) {
+    throw new Error('设备模型规范元数据不完整')
+  }
 }
 // ==========================================
 // 2. 信号格式化与展示辅助函数
@@ -63,15 +98,15 @@ export function getSignalTagType(signalName) {
   if (signalName === 'OP_STATE') return 'success'
   if (signalName === 'CMD_STATE') return 'primary'
   if (signalName === 'CMD_START') return 'danger'
-  if (signalName === 'CMD_CANCEL') return 'warning'
+  if (signalName === 'CMD_ABORT') return 'warning'
   return 'info'
 }
 
 export function formatSignalName(signalName) {
   if (signalName === 'OP_STATE') return '输出功能状态 (OP_STATE)'
-  if (signalName === 'CMD_STATE') return '输出指令周期 (CMD_STATE)'
+  if (signalName === 'CMD_STATE') return '输出执行状态 (CMD_STATE)'
   if (signalName === 'CMD_START') return '下发启动命令 (CMD_START)'
-  if (signalName === 'CMD_CANCEL') return '下发取消命令 (CMD_CANCEL)'
+  if (signalName === 'CMD_ABORT') return '下发中止命令 (CMD_ABORT)'
   return signalName || ''
 }
 
@@ -79,17 +114,12 @@ export function formatSignalShortName(signalName) {
   if (signalName === 'OP_STATE') return '输出状态'
   if (signalName === 'CMD_STATE') return '输出指令'
   if (signalName === 'CMD_START') return '启动命令'
-  if (signalName === 'CMD_CANCEL') return '取消命令'
-  if (signalName === 'CMD_PAUSE') return '暂停命令'
-  if (signalName === 'CMD_RESUME') return '恢复命令'
-  if (signalName === 'CMD_RESET') return '重置命令'
+  if (signalName === 'CMD_ABORT') return '中止命令'
   return signalName || ''
 }
 
 export function getSignalsForInterface(interfaceName) {
-  if (interfaceName === 'Interface_status_out') return statusSignals
-  if (interfaceName === 'Interface_adapter_out') return adapterOutSignals
-  return []
+  return asArray(standardInterfaces.find(item => item.name === interfaceName)?.allowedSignals)
 }
 
 // ==========================================
@@ -105,14 +135,37 @@ function normalizeDataType(value, fallback, allowed) {
   return allowed.includes(text) ? text : fallback
 }
 
+function configuredCommunicationProtocol() {
+  return communicationProtocols[0] || ''
+}
+
 export function defaultAdapterContract() {
-  return { config: { protocol: 'MQTT' }, commands: [], telemetry: { adapterAttributes: [], attributesMapping: [] }, events: [] }
+  return { config: { protocol: configuredCommunicationProtocol(), adapterName: '', categoryName: '' }, commands: [], telemetry: { adapterAttributes: [], attributesMapping: [] }, events: [] }
 }
 
 export function defaultStateSpace(initialStateName) {
   return {
     initialStateName,
     states: [{ _key: makeUiKey('state'), stateName: initialStateName, onEntry: defaultStateEntryActions('OP', initialStateName) }]
+  }
+}
+
+export function defaultOpStateSpace(initialStateName) {
+  return {
+    regions: [
+      {
+        _key: makeUiKey('region'),
+        regionName: 'Main',
+        initialStateName,
+        states: [{ _key: makeUiKey('state'), stateName: initialStateName, onEntry: defaultStateEntryActions('OP', initialStateName) }]
+      },
+      {
+        _key: makeUiKey('region'),
+        regionName: 'Exception',
+        initialStateName: 'ABNORMAL',
+        states: [{ _key: makeUiKey('state'), stateName: 'ABNORMAL', onEntry: defaultStateEntryActions('OP', 'ABNORMAL') }]
+      }
+    ]
   }
 }
 
@@ -132,30 +185,36 @@ export function commandLifecycleStateNames() {
 }
 
 export function defaultInterfaces(adapterSignals = []) {
-  const signals = uniqueStrings([...standardCmdEvents, ...asArray(adapterSignals).filter(Boolean)])
-  return [
-    { _key: 'iface_workflow', name: 'Interface_workflow_in', direction: 'IN', interfaceType: 'WORKFLOW', allowedSignals: [...workflowControlSignals] },
-    { _key: 'iface_status', name: 'Interface_status_out', direction: 'OUT', interfaceType: 'STAT', allowedSignals: [...statusSignals] },
-    { _key: 'iface_control', name: 'Interface_control_in', direction: 'IN', interfaceType: 'CONTROL', allowedSignals: [...manualControlSignals] },
-    { _key: 'iface_constraint', name: 'Interface_constraint_in', direction: 'IN', interfaceType: 'CONSTRAINT', allowedSignals: [...constraintControlSignals] },
-    { _key: 'iface_adapter_in', name: 'Interface_adapter_in', direction: 'IN', interfaceType: 'ADAPTER', allowedSignals: signals },
-    { _key: 'iface_adapter_out', name: 'Interface_adapter_out', direction: 'OUT', interfaceType: 'ADAPTER', allowedSignals: [...adapterOutSignals] }
-  ]
+  const adapterInName = standardInterfaceName('IN', 'ADAPTER')
+  const adapterInSignals = uniqueStrings(asArray(adapterSignals).filter(Boolean))
+  return asArray(standardInterfaces).map(item => ({
+    _key: makeUiKey('iface'),
+    name: stringValue(item.name),
+    direction: stringValue(item.direction),
+    interfaceType: stringValue(item.interfaceType),
+    allowedSignals: item.name === adapterInName
+      ? uniqueStrings([...asArray(item.allowedSignals), ...adapterInSignals])
+      : uniqueStrings(item.allowedSignals)
+  })).filter(item => item.name)
+}
+
+function standardInterfaceName(direction, type) {
+  return standardInterfaces.find(item => item.direction === direction && item.interfaceType === type)?.name || ''
 }
 
 export function adapterInterfaceName() {
-  return 'Interface_adapter_in'
+  return standardInterfaceName('IN', 'ADAPTER')
 }
 
 export function adapterOutAction(signalName) {
-  return { actionName: 'SEND', payload: { interfaceName: 'Interface_adapter_out', signalName } }
+  return { actionName: 'SEND', payload: { interfaceName: standardInterfaceName('OUT', 'ADAPTER'), signalName } }
 }
 
 export function defaultStateEntryActions(type, stateName) {
   return [{
     actionName: 'SEND',
     payload: {
-      interfaceName: 'Interface_status_out',
+      interfaceName: standardInterfaceName('OUT', 'STAT'),
       signalName: type === 'CMD' ? 'CMD_STATE' : 'OP_STATE',
       stateName
     }
@@ -163,21 +222,8 @@ export function defaultStateEntryActions(type, stateName) {
 }
 
 export function defaultCommandLifecycleTransitions() {
-  return [
-    { description: '工作流触发指令下发', fromStateName: 'IDLE', toStateName: 'SENT', trigger: { interfaceName: 'Interface_workflow_in', signalName: 'EXECUTE_START' }, actions: [adapterOutAction('CMD_START')] },
-    { description: '用户手动触发指令下发', fromStateName: 'IDLE', toStateName: 'SENT', trigger: { interfaceName: 'Interface_control_in', signalName: 'MANUAL_EXECUTE' }, actions: [adapterOutAction('CMD_START')] },
-    { description: 'Adapter 已接收', fromStateName: 'SENT', toStateName: 'RECEIVED', trigger: { interfaceName: adapterInterfaceName(), signalName: 'COMMAND_RECEIVED' }, actions: [] },
-    { description: 'Adapter 执行中', fromStateName: 'RECEIVED', toStateName: 'RUNNING', trigger: { interfaceName: adapterInterfaceName(), signalName: 'COMMAND_RUNNING' }, actions: [] },
-    { description: '执行完成', fromStateName: 'RUNNING', toStateName: 'DONE', trigger: { interfaceName: adapterInterfaceName(), signalName: 'COMMAND_COMPLETED' }, actions: [] },
-    { description: '执行失败', fromStateName: 'RUNNING', toStateName: 'FAILED', trigger: { interfaceName: adapterInterfaceName(), signalName: 'COMMAND_FAILED' }, actions: [] },
-    { description: '执行超时', fromStateName: 'RUNNING', toStateName: 'TIMEOUT', trigger: { interfaceName: adapterInterfaceName(), signalName: 'COMMAND_TIMEOUT' }, actions: [] },
-    { description: 'Adapter 确认取消', fromStateName: 'SENT', toStateName: 'CANCELLED', trigger: { interfaceName: adapterInterfaceName(), signalName: 'COMMAND_CANCELLED' }, actions: [] },
-    { description: '工作流取消指令', fromStateName: 'RUNNING', toStateName: 'CANCELLED', trigger: { interfaceName: 'Interface_workflow_in', signalName: 'EXECUTE_CANCEL' }, actions: [adapterOutAction('CMD_CANCEL')] },
-    { description: '用户手动取消指令', fromStateName: 'RUNNING', toStateName: 'CANCELLED', trigger: { interfaceName: 'Interface_control_in', signalName: 'MANUAL_CANCEL' }, actions: [adapterOutAction('CMD_CANCEL')] },
-    { description: '约束引擎取消指令', fromStateName: 'RUNNING', toStateName: 'CANCELLED', trigger: { interfaceName: 'Interface_constraint_in', signalName: 'CONSTRAINT_CANCEL' }, actions: [adapterOutAction('CMD_CANCEL')] }
-  ]
+  return systemTransitions.map(transition => JSON.parse(JSON.stringify(transition)))
 }
-
 // ==========================================
 // 4. 适配器 Manifest 配置映射逻辑
 // ==========================================
@@ -229,6 +275,12 @@ export function adapterCategoryLabel(option) {
   return option?.description ? name + ' - ' + option.description : name
 }
 
+function isManifestInternalParameter(param) {
+  const internalValue = param?.internal
+  return internalValue === true
+    || String(internalValue ?? '').trim().toLowerCase() === 'true'
+    || stringValue(param?.sourceField).length > 0
+}
 function normalizeCommandParameter(param) {
   return {
     _key: param._key || makeUiKey('cmd_param'),
@@ -241,14 +293,7 @@ function normalizeCommandParameter(param) {
 }
 
 function normalizeEventsToFlatList(events) {
-  if (Array.isArray(events)) {
-    return events.map(event => ({
-      _key: event._key || makeUiKey('event'),
-      eventName: stringValue(event.eventName || event.name),
-      description: stringValue(event.description),
-      eventType: event.eventType || 'OP'
-    }))
-  }
+  if (Array.isArray(events)) return []
 
   const rows = []
   asArray(events?.cmdEvents).forEach(event => {
@@ -275,7 +320,9 @@ export function buildAdapterContractFromManifestCategory(parsed, category) {
   const commands = asArray(template.commands).map(command => ({
     commandName: stringValue(command.name || command.commandName),
     description: stringValue(command.description),
-    commandParameters: asArray(command.parameters || command.commandParameters).map(normalizeCommandParameter)
+    commandParameters: asArray(command.parameters || command.commandParameters)
+      .filter(param => !isManifestInternalParameter(param))
+      .map(normalizeCommandParameter)
   }))
 
   const adapterAttributes = asArray(template.attributes).map(attr => ({
@@ -286,10 +333,9 @@ export function buildAdapterContractFromManifestCategory(parsed, category) {
 
   return {
     config: {
-      protocol: 'MQTT',
+      protocol: configuredCommunicationProtocol(),
       adapterName: stringValue(parsed.adapterName),
-      categoryName: stringValue(category?.categoryName),
-      templateName: stringValue(template.templateName)
+      categoryName: stringValue(category?.categoryName)
     },
     commands,
     telemetry: { adapterAttributes, attributesMapping: [] },

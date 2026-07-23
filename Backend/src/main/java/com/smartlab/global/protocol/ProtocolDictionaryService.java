@@ -1,8 +1,10 @@
 package com.smartlab.global.protocol;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ArrayNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.networknt.schema.JsonSchema;
+import com.networknt.schema.JsonSchemaFactory;
+import com.networknt.schema.SpecVersion;
+import com.networknt.schema.ValidationMessage;
 import com.smartlab.global.util.JsonNodeSupport;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
@@ -11,9 +13,10 @@ import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -22,6 +25,8 @@ public class ProtocolDictionaryService {
 
     private static final String PROTOCOL_DICT_RESOURCE = "schemas/protocol-dict.json";
     private volatile JsonNode dictionary;
+    private final JsonSchemaFactory schemaFactory = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V7);
+    private final ConcurrentHashMap<String, JsonSchema> definitionSchemas = new ConcurrentHashMap<>();
 
     public JsonNode dictionary() {
         JsonNode cached = dictionary;
@@ -89,33 +94,50 @@ public class ProtocolDictionaryService {
         return Optional.empty();
     }
 
+    public JsonNode signalContract(String signalName) {
+        if (signalName == null || signalName.isBlank()) throw new IllegalArgumentException("信号名不能为空");
+        JsonNode contract = dictionary().path("x-signalContracts").path(signalName);
+        if (!contract.isObject()) throw new IllegalArgumentException("Protocol 未声明系统信号: " + signalName);
+        return contract.deepCopy();
+    }
+
+    public boolean isSystemSignal(String signalName) {
+        return signalName != null && !signalName.isBlank()
+                && dictionary().path("x-signalContracts").path(signalName).isObject();
+    }
+    public boolean requiresCommandPayload(String signalName) {
+        return "COMMAND".equals(signalContract(signalName).path("payloadPolicy").asText());
+    }
+
+    public void validateSignalExecutionContext(String signalName, Map<String, Object> context) {
+        if (!requiresCommandPayload(signalName)) return;
+        if (context == null) throw new IllegalArgumentException(signalName + " 必须携带 commandName 和 parameters");
+        Object commandName = context.get("commandName");
+        if (commandName == null || String.valueOf(commandName).isBlank()) {
+            throw new IllegalArgumentException(signalName + " 缺少 commandName");
+        }
+        Object parameters = context.get("parameters");
+        if (!(parameters instanceof Map<?, ?>)
+                && !(parameters instanceof JsonNode node && node.isObject())) {
+            throw new IllegalArgumentException(signalName + " 的 parameters 必须是对象");
+        }
+    }
+
     public void validateDefinition(String definitionName, JsonNode payload) {
-        JsonNode definition = definition(definitionName);
-        validateNode(definitionName, definition, payload);
+        if (payload == null || payload.isNull() || payload.isMissingNode()) {
+            throw new IllegalArgumentException(definitionName + " 不能为空");
+        }
+        JsonSchema schema = definitionSchemas.computeIfAbsent(definitionName,
+                name -> schemaFactory.getSchema(definition(name)));
+        Set<ValidationMessage> messages = schema.validate(payload);
+        if (!messages.isEmpty()) {
+            StringBuilder error = new StringBuilder("Protocol 校验失败: ").append(definitionName);
+            messages.stream().map(ValidationMessage::getMessage).sorted()
+                    .forEach(message -> error.append("\n- ").append(message));
+            throw new IllegalArgumentException(error.toString());
+        }
     }
 
-    public ObjectNode frontendMetadata() {
-        ObjectNode metadata = JsonNodeSupport.objectNode();
-        metadata.set("dataTypes", textArray(enumValues("DataType")));
-        metadata.set("constraintOperators", textArray(enumValues("ConstraintOperator")));
-        metadata.set("workflowNodeFunctionTypes", textArray(enumValues("WorkflowNodeFunctionType")));
-        metadata.set("communicationProtocols", textArray(enumValues("CommunicationProtocol")));
-        metadata.set("systemInterfaceNames", textArray(enumValues("SystemInterfaceName")));
-        metadata.set("systemInterfaceTypes", textArray(enumValues("SystemInterfaceType")));
-        metadata.set("workflowControlSignals", textArray(enumValues("WorkflowControlSignal")));
-        metadata.set("manualControlSignals", textArray(enumValues("ManualControlSignal")));
-        metadata.set("constraintControlSignals", textArray(enumValues("ConstraintControlSignal")));
-        metadata.set("adapterOutboundSignals", textArray(enumValues("AdapterOutboundSignal")));
-        metadata.set("statusSignals", textArray(enumValues("StatusSignal")));
-        metadata.set("adapterCommandLifecycleEvents", textArray(enumValues("AdapterCommandLifecycleEvent")));
-        metadata.set("commandLifecycleStates", textArray(enumValues("CommandLifecycleState")));
-        metadata.set("adapterRegisterFormats",
-                textArray(enumValuesFromProperty("AdapterRegisterRequest", "rawConfigFormat")));
-
-        ObjectNode mqttTopics = metadata.putObject("mqttTopics");
-        mqttTopicConvention().forEach(mqttTopics::put);
-        return metadata;
-    }
 
     public List<String> enumValuesFromProperty(String definitionName, String propertyName) {
         JsonNode values = definition(definitionName).path("properties").path(propertyName).path("enum");
@@ -177,71 +199,5 @@ public class ProtocolDictionaryService {
             variables.put(names.get(i), matcher.group(i + 1));
         }
         return Optional.of(Map.copyOf(variables));
-    }
-
-    private void validateNode(String path, JsonNode schema, JsonNode payload) {
-        if (schema == null || schema.isMissingNode() || payload == null || payload.isMissingNode() || payload.isNull()) {
-            throw new IllegalArgumentException(path + " 不能为空");
-        }
-        String expectedType = schema.path("type").asText("");
-        if (!expectedType.isBlank() && !matchesType(expectedType, payload)) {
-            throw new IllegalArgumentException(path + " 类型应为 " + expectedType);
-        }
-        JsonNode enumValues = schema.path("enum");
-        if (enumValues.isArray()) {
-            boolean matched = false;
-            for (JsonNode enumValue : enumValues) {
-                if (enumValue.asText().equals(payload.asText())) {
-                    matched = true;
-                    break;
-                }
-            }
-            if (!matched) {
-                throw new IllegalArgumentException(path + " 不在协议枚举范围内: " + payload.asText());
-            }
-        }
-        if (schema.has("const") && !schema.path("const").asText().equals(payload.asText())) {
-            throw new IllegalArgumentException(path + " 必须为 " + schema.path("const").asText());
-        }
-        if ("object".equals(expectedType)) {
-            validateObject(path, schema, payload);
-        }
-    }
-
-    private void validateObject(String path, JsonNode schema, JsonNode payload) {
-        JsonNode required = schema.path("required");
-        for (JsonNode field : required) {
-            String fieldName = field.asText();
-            if (!payload.has(fieldName) || payload.get(fieldName).isNull()) {
-                throw new IllegalArgumentException(path + " 缺少必填字段: " + fieldName);
-            }
-        }
-        JsonNode properties = schema.path("properties");
-        if (!properties.isObject()) {
-            return;
-        }
-        properties.fields().forEachRemaining(entry -> {
-            if (payload.has(entry.getKey()) && !payload.get(entry.getKey()).isNull()) {
-                validateNode(path + "." + entry.getKey(), entry.getValue(), payload.get(entry.getKey()));
-            }
-        });
-    }
-
-    private boolean matchesType(String expectedType, JsonNode payload) {
-        return switch (expectedType.toLowerCase(Locale.ROOT)) {
-            case "object" -> payload.isObject();
-            case "array" -> payload.isArray();
-            case "string" -> payload.isTextual();
-            case "integer" -> payload.isIntegralNumber();
-            case "number" -> payload.isNumber();
-            case "boolean" -> payload.isBoolean();
-            default -> true;
-        };
-    }
-
-    private ArrayNode textArray(List<String> values) {
-        ArrayNode array = JsonNodeSupport.arrayNode();
-        values.forEach(array::add);
-        return array;
     }
 }

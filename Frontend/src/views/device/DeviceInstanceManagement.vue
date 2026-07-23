@@ -22,6 +22,11 @@
             <span class="subtitle">设备实例查看与配置</span>
           </div>
           <div class="actions">
+            <el-select v-model="instanceLifecycleFilter" size="small" class="lifecycle-filter" @change="onLifecycleFilterChange">
+              <el-option label="使用中" value="使用中" />
+              <el-option label="已注销" value="已注销" />
+              <el-option label="全部状态" value="" />
+            </el-select>
             <el-input
               v-model="instanceKeyword"
               class="instance-search"
@@ -76,9 +81,15 @@
                 </div>
               </template>
             </el-table-column>
+            <el-table-column label="生命周期" width="105" align="center">
+              <template #default="{ row }">
+                <el-tag :type="row.lifecycleStatus === '已注销' ? 'info' : 'success'" size="small" effect="plain">{{ row.lifecycleStatus }}</el-tag>
+              </template>
+            </el-table-column>
             <el-table-column label="在线状态" width="105" align="center">
               <template #default="{ row }">
-                <el-tag :type="row.isOnline ? 'success' : 'info'" size="small" effect="plain">{{ row.isOnline ? '在线' : '离线' }}</el-tag>
+                <span v-if="row.lifecycleStatus === '已注销'" class="muted">-</span>
+                <el-tag v-else :type="row.isOnline ? 'success' : 'info'" size="small" effect="plain">{{ row.isOnline ? '在线' : '离线' }}</el-tag>
               </template>
             </el-table-column>
           </el-table>
@@ -94,7 +105,7 @@
             :total="instanceTotal"
             layout="total, sizes, prev, pager, next"
             background
-            small
+            size="small"
             @size-change="handleInstancePageSizeChange"
             @current-change="loadInstances"
           />
@@ -124,8 +135,11 @@
               </el-button>
             </h3>
             <div class="header-status">
-              <span :class="['status-dot', activeInstance.isOnline ? 'online' : 'offline']"></span>
-              <span style="font-weight: 600; color: #334155;">{{ activeInstance.isOnline ? '在线' : '离线' }}</span>
+              <el-tag :type="activeInstanceRetired ? 'info' : 'success'" size="small" effect="plain">{{ activeInstance.lifecycleStatus }}</el-tag>
+              <template v-if="!activeInstanceRetired">
+                <span :class="['status-dot', activeInstance.isOnline ? 'online' : 'offline']"></span>
+                <span style="font-weight: 600; color: #334155;">{{ activeInstance.isOnline ? '在线' : '离线' }}</span>
+              </template>
               <span v-if="snapshot?.currentOperationState" class="divider">/</span>
               <strong v-if="snapshot?.currentOperationState" style="color: #2563eb;">{{ snapshot.currentOperationState }}</strong>
             </div>
@@ -141,11 +155,12 @@
           </div>
         </div>
 
+        <el-alert v-if="activeInstanceRetired" title="该设备实例已注销" description="实例、孪生快照、组件拓扑和历史数据仅供查看，不再参与控制、任务、Adapter 路由或新增业务。" type="info" :closable="false" show-icon style="margin: 12px 20px 0;" />
         <el-tabs v-model="activeTab" style="padding: 12px 20px 20px;">
           <!-- Tab 1: 运行状态 (最高优先级业务数据) -->
           <el-tab-pane label="运行状态" name="status">
             <div class="status-top">
-              <el-tag type="success" size="small">实时状态监控（每 3 秒自动轮询）</el-tag>
+              <el-tag :type="activeInstanceRetired ? 'info' : 'success'" size="small">{{ activeInstanceRetired ? '注销时保留快照' : '实时状态监控（每 3 秒自动轮询）' }}</el-tag>
               <span>上报时间: {{ lastSnapshotTime }}</span>
             </div>
 
@@ -190,7 +205,7 @@
           </el-tab-pane>
 
           <!-- Tab 2: 控制调试 (大厂调试背板交互) -->
-          <el-tab-pane v-if="canControlInstance" label="控制调试" name="control">
+          <el-tab-pane v-if="canControlActiveInstance" label="控制调试" name="control">
             <div class="control-tab-layout">
               <div class="control-left-form">
                 <el-form label-position="top" size="small" class="manual-control-form">
@@ -249,14 +264,7 @@
 
           <!-- Tab 3: 结构拓扑 -->
           <el-tab-pane label="结构拓扑" name="components">
-            <section class="component-create-panel" v-if="false">
-              <el-input v-model="componentForm.componentName" size="small" placeholder="新增槽位名称" />
-              <el-select v-model="componentForm.categoryId" size="small" clearable filterable placeholder="组件类别">
-                <el-option v-for="cat in categories" :key="String(cat.id)" :label="cat.categoryName" :value="String(cat.id)" />
-              </el-select>
-              <el-button type="primary" size="small" :loading="savingComponent" @click="saveComponent">新增槽位</el-button>
-            </section>
-            <el-table :data="instanceComponents" border size="small" v-loading="loadingComponents" class="component-table">
+<el-table :data="instanceComponents" border size="small" v-loading="loadingComponents" class="component-table">
               <el-table-column label="组件槽位" min-width="150" prop="componentName" />
               <el-table-column label="类别" min-width="130">
                 <template #default="{ row }">{{ categoryNameById(row.categoryId) || '-' }}</template>
@@ -281,12 +289,12 @@
                 </template>
               </el-table-column>
 
-              <el-table-column v-if="canEditInstance" label="操作" width="230" fixed="right">
+              <el-table-column label="操作" width="230" fixed="right">
                 <template #default="{ row }">
-                  <el-button v-if="row.status === '使用中'" link type="primary" size="small" @click="openComponentAction(row, 'configure')">配置</el-button>
-                  <el-button v-if="row.status === '使用中'" link type="warning" size="small" @click="markPendingReplacement(row)">标记待更换</el-button>
-                  <el-button v-if="row.status === '使用中'" link type="warning" size="small" @click="openComponentAction(row, 'replace')">直接更换</el-button>
-                  <el-button v-if="row.status === '待更换'" link type="primary" size="small" @click="openComponentAction(row, 'replace')">安装新组件</el-button>
+                  <el-button v-if="canEditActiveInstance && row.status === '使用中'" link type="primary" size="small" @click="openComponentAction(row, 'configure')">配置</el-button>
+                  <el-button v-if="canEditActiveInstance && row.status === '使用中'" link type="warning" size="small" @click="markPendingReplacement(row)">标记待更换</el-button>
+                  <el-button v-if="canEditActiveInstance && row.status === '使用中'" link type="warning" size="small" @click="openComponentAction(row, 'replace')">直接更换</el-button>
+                  <el-button v-if="canEditActiveInstance && row.status === '待更换'" link type="primary" size="small" @click="openComponentAction(row, 'replace')">安装新组件</el-button>
                   <el-button link size="small" @click="showComponentHistory(row)">历史</el-button>
                                   </template>
               </el-table-column>
@@ -295,7 +303,7 @@
 
           <!-- Tab 4: 归档数据 -->
           <el-tab-pane label="归档数据" name="datasets">
-            <div v-if="canCreateDataset" class="dataset-create-panel">
+            <div v-if="canCreateActiveDataset" class="dataset-create-panel">
               <el-select v-model="datasetCreateForm.templateId" size="small" filterable clearable placeholder="选择数据模板">
                 <el-option v-for="tpl in availableDataTemplates" :key="templateIdOf(tpl)" :label="tpl.templateName || '未命名模板'" :value="templateIdOf(tpl)" />
               </el-select>
@@ -309,7 +317,7 @@
               <el-table-column prop="createTime" label="创建时间" min-width="160">
                 <template #default="{ row }">{{ row.createTime ? new Date(row.createTime).toLocaleString() : '-' }}</template>
               </el-table-column>
-              <el-table-column v-if="canDeleteDataset" label="操作" width="90" align="center">
+              <el-table-column v-if="canDeleteActiveDataset" label="操作" width="90" align="center">
                 <template #default="{ row }">
                   <el-popconfirm title="确认注销该归档数据表？物理存储将被清空。" @confirm="deleteInstanceDataSet(row)">
                     <template #reference>
@@ -327,14 +335,14 @@
           <!-- Tab 5: 安全约束 -->
           <el-tab-pane label="安全约束" name="constraints">
             <div class="constraint-actions">
-              <el-button v-if="canEditInstance" type="primary" plain size="small" @click="addConstraint">
+              <el-button v-if="canEditActiveInstance" type="primary" plain size="small" @click="addConstraint">
                 <el-icon><Plus /></el-icon> 添加监控约束规则
               </el-button>
             </div>
-            <el-table :data="localConstraints" border size="small">
+            <el-table :data="localConstraints" border size="small" :class="{ 'retired-readonly-table': activeInstanceRetired }">
               <el-table-column label="监控物理属性" min-width="160">
                 <template #default="{ row }">
-                  <el-select v-model="row.objectAttributeName" size="small" style="width: 100%" placeholder="选择监控的物模型属性">
+                  <el-select v-model="row.objectAttributeName" size="small" :disabled="activeInstanceRetired" style="width: 100%" placeholder="选择监控的物模型属性">
                     <el-option
                       v-for="prop in getModelAttributes(activeInstance.modelId)"
                       :key="prop.identifier || prop.name"
@@ -346,7 +354,7 @@
               </el-table-column>
               <el-table-column label="条件算子" width="110">
                 <template #default="{ row }">
-                  <el-select v-model="row.operator" size="small">
+                  <el-select v-model="row.operator" size="small" :disabled="activeInstanceRetired">
                     <el-option
                       v-for="operator in operators"
                       :key="operator"
@@ -358,38 +366,38 @@
               </el-table-column>
               <el-table-column label="判定阈值" width="120">
                 <template #default="{ row }">
-                  <el-input-number v-model="row.boundaryValue" size="small" style="width: 100%" controls-position="right" />
+                  <el-input-number v-model="row.boundaryValue" size="small" :disabled="activeInstanceRetired" style="width: 100%" controls-position="right" />
                 </template>
               </el-table-column>
               <el-table-column label="物理单位" width="90">
                 <template #default="{ row }">
-                  <el-input v-model="row.unit" size="small" placeholder="℃" />
+                  <el-input v-model="row.unit" size="small" :disabled="activeInstanceRetired" placeholder="℃" />
                 </template>
               </el-table-column>
               <el-table-column label="违规转向状态" min-width="130">
                 <template #default="{ row }">
-                  <el-input v-model="row.violationStateName" size="small" placeholder="如: 超温故障" />
+                  <el-input v-model="row.violationStateName" size="small" :disabled="activeInstanceRetired" placeholder="如: 超温故障" />
                 </template>
               </el-table-column>
               <el-table-column label="约束描述" min-width="160">
                 <template #default="{ row }">
-                  <el-input v-model="row.description" size="small" placeholder="异常规则含义..." />
+                  <el-input v-model="row.description" size="small" :disabled="activeInstanceRetired" placeholder="异常规则含义..." />
                 </template>
               </el-table-column>
-              <el-table-column v-if="canEditInstance" label="操作" width="70" align="center">
+              <el-table-column v-if="canEditActiveInstance" label="操作" width="70" align="center">
                 <template #default="{ $index }">
                   <el-button type="danger" link size="small" @click="removeConstraint($index)">删除</el-button>
                 </template>
               </el-table-column>
             </el-table>
             <div class="footer-actions mt-12">
-              <el-button v-if="canEditInstance" type="primary" size="small" :loading="saving" @click="saveConstraints">保存约束</el-button>
+              <el-button v-if="canEditActiveInstance" type="primary" size="small" :loading="saving" @click="saveConstraints">保存约束</el-button>
             </div>
           </el-tab-pane>
 
           <!-- Tab 6: 资产管理 (资产部署与静态设置) -->
           <el-tab-pane label="资产管理" name="info">
-            <el-form label-position="top" size="small" class="instance-info-grid">
+            <el-form label-position="top" size="small" class="instance-info-grid" :disabled="activeInstanceRetired">
               <el-form-item label="设备实例名称">
                 <el-input v-model="activeInstance.instanceName" />
               </el-form-item>
@@ -439,12 +447,12 @@
             </section>
 
             <div class="footer-actions">
-              <el-popconfirm v-if="canDeleteInstance" title="注销此物理设备？其孪生拓扑关系也将被物理删除！" @confirm="deleteInstance(activeInstance.instanceId)">
+              <el-popconfirm v-if="canRetireActiveInstance" title="注销后设备将不能参与控制、任务和新业务，现有数据与组件历史会完整保留。确认注销？" @confirm="retireInstance(activeInstance.instanceId)">
                 <template #reference>
                   <el-button type="danger" plain size="small">注销设备实例</el-button>
                 </template>
               </el-popconfirm>
-              <el-button v-if="canEditInstance" type="primary" size="small" :loading="saving" @click="saveInstance">保存资产修改</el-button>
+              <el-button v-if="canEditActiveInstance" type="primary" size="small" :loading="saving" @click="saveInstance">保存资产修改</el-button>
             </div>
           </el-tab-pane>
         </el-tabs>
@@ -755,6 +763,7 @@ interface DeviceInstance {
   boundAdapterName?: string
   boundDevicePoint?: string
   instanceConfig?: any
+  lifecycleStatus: '使用中' | '已注销'
   isOnline: boolean
 }
 
@@ -767,7 +776,7 @@ interface DeviceSnapshot {
 
 interface InstanceConstraint {
   objectAttributeName: string
-  operator: 'LE' | 'GE' | 'LT' | 'GT' | 'EQ' | 'LTE' | 'GTE'
+  operator: '>' | '<' | '>=' | '<=' | '=' | '!=' | 'BETWEEN' | 'IN'
   boundaryValue: number | null
   unit: string
   violationStateName: string
@@ -793,6 +802,7 @@ const categoriesMap = ref<Record<string, string>>({})
 const selectedModelId = ref('')
 const sidebarKeyword = ref('')
 const instanceKeyword = ref('')
+const instanceLifecycleFilter = ref<'使用中' | '已注销' | ''>('使用中')
 const loading = ref(false)
 const modelsLoading = ref(false)
 const saving = ref(false)
@@ -830,7 +840,6 @@ const datasetCreateForm = ref({ templateId: '', dataDesc: '' })
 const instanceComponents = ref<any[]>([])
 const loadingComponents = ref(false)
 const savingComponent = ref(false)
-const componentForm = ref({ componentName: '', categoryId: '', selfInstanceId: '', status: '未配置' })
 const componentActionVisible = ref(false)
 const componentActionMode = ref<'configure' | 'replace'>('configure')
 const activeComponent = ref<any>(null)
@@ -866,6 +875,12 @@ const canDeleteInstance = computed(() => authStore.hasPermission('device_instanc
 const canControlInstance = computed(() => authStore.hasPermission('device_instance:control'))
 const canCreateDataset = computed(() => authStore.hasPermission('data_dataset:create'))
 const canDeleteDataset = computed(() => authStore.hasPermission('data_dataset:delete'))
+const activeInstanceRetired = computed(() => activeInstance.value?.lifecycleStatus === '已注销')
+const canEditActiveInstance = computed(() => canEditInstance.value && !activeInstanceRetired.value)
+const canRetireActiveInstance = computed(() => canDeleteInstance.value && !activeInstanceRetired.value)
+const canControlActiveInstance = computed(() => canControlInstance.value && !activeInstanceRetired.value)
+const canCreateActiveDataset = computed(() => canCreateDataset.value && !activeInstanceRetired.value)
+const canDeleteActiveDataset = computed(() => canDeleteDataset.value && !activeInstanceRetired.value)
 
 const selectedModelName = computed(() => {
   if (!selectedModelId.value) {
@@ -1083,8 +1098,7 @@ const loadDevicePoints = async (adapterName: string, target: 'create' | 'drawer'
     const model = target === 'drawer' ? activeInstanceModel.value : wizardModel.value
     const adapterConfig = model?.capabilitySpec?.adapterContract?.config || {}
     const categoryName = adapterConfig.categoryName || undefined
-    const templateName = adapterConfig.templateName || undefined
-    const params = categoryName ? { categoryName } : { templateName }
+    const params = { categoryName }
     const res = await axios.get(`/api/adapter/index/${encodeURIComponent(adapterName)}/device-points`, { params })
     if (res.data?.success) {
       listRef.value = res.data.data || []
@@ -1103,7 +1117,8 @@ const loadInstances = async () => {
     const params: any = {
       pageNo: instancePageNo.value,
       pageSize: instancePageSize.value,
-      keyword: instanceKeyword.value.trim() || undefined
+      keyword: instanceKeyword.value.trim() || undefined,
+      lifecycleStatus: instanceLifecycleFilter.value || undefined
     }
     if (selectedModelId.value) {
       params.modelId = selectedModelId.value
@@ -1144,6 +1159,11 @@ const onInstanceSearchInput = () => {
   }, 250)
 }
 
+const onLifecycleFilterChange = () => {
+  instancePageNo.value = 1
+  loadInstances()
+}
+
 const handleInstancePageSizeChange = (size: number) => {
   instancePageSize.value = size
   instancePageNo.value = 1
@@ -1172,18 +1192,15 @@ const getAttributeDisplayName = (identifier: string) => {
   return prop ? (prop.displayName || prop.name) : identifier
 }
 
-const normalizeConstraintOperator = (op: string) => {
-  if (op === 'LTE') return 'LE'
-  if (op === 'GTE') return 'GE'
-  return op || 'LE'
-}
+const normalizeConstraintOperator = (op: string) => op || '='
 
 const operatorLabel = (op: string) => {
-  if (op === 'LE' || op === 'LTE') return '≤ 小于等于'
-  if (op === 'GE' || op === 'GTE') return '≥ 大于等于'
-  if (op === 'LT') return '< 小于'
-  if (op === 'GT') return '> 大于'
-  if (op === 'EQ') return '= 等于'
+  if (op === '<=') return '≤ 小于等于'
+  if (op === '>=') return '≥ 大于等于'
+  if (op === '<') return '< 小于'
+  if (op === '>') return '> 大于'
+  if (op === '=') return '= 等于'
+  if (op === '!=' || op === 'NE') return '≠ 不等于'
   return op
 }
 
@@ -1251,14 +1268,18 @@ const viewDetails = (instance: DeviceInstance) => {
 
   localConstraints.value = asArray(list).map((c: any) => ({
     objectAttributeName: c.objectAttributeName || '',
-    operator: normalizeConstraintOperator(c.operator || 'LE'),
+    operator: normalizeConstraintOperator(c.operator || '<='),
     boundaryValue: c.boundaryValue != null ? c.boundaryValue : null,
     unit: c.unit || '',
     violationStateName: c.violationStateName || '',
     description: c.description || ''
   }))
 
-  loadDevicePoints(activeInstance.value.boundAdapterName, 'drawer')
+  if (!activeInstanceRetired.value) {
+    loadDevicePoints(activeInstance.value.boundAdapterName, 'drawer')
+  } else {
+    drawerDevicePointOptions.value = []
+  }
   datasetCreateForm.value = { templateId: '', dataDesc: '' }
   controlCommandId.value = activeInstanceCommands.value[0]?.commandId || ''
   resetControlParams()
@@ -1281,7 +1302,7 @@ const onModelChangeInDrawer = (modelId: string) => {
 }
 
 const saveInstance = async () => {
-  if (!activeInstance.value) return
+  if (!activeInstance.value || activeInstanceRetired.value) return
   saving.value = true
   try {
     const payload = JSON.parse(JSON.stringify(activeInstance.value))
@@ -1334,25 +1355,25 @@ const saveInstance = async () => {
   }
 }
 
-const deleteInstance = async (id: string) => {
+const retireInstance = async (id: string) => {
   try {
-    const res = await axios.delete(`/api/device/instance/delete/${id}`)
+    const res = await axios.post(`/api/device/instance/retire/${id}`)
     if (res.data?.success) {
-      ElMessage.success('删除成功')
+      ElMessage.success('设备实例已注销')
       drawerVisible.value = false
       await loadData()
     } else {
-      ElMessage.error(res.data?.message || '删除失败')
+      ElMessage.error(res.data?.message || '注销失败')
     }
   } catch (err: any) {
-    ElMessage.error(err.response?.data?.message || '删除失败')
+    ElMessage.error(err.response?.data?.message || '注销失败')
   }
 }
 
 const addConstraint = () => {
   localConstraints.value.push({
     objectAttributeName: '',
-    operator: 'LE',
+    operator: '<=',
     boundaryValue: null,
     unit: '',
     violationStateName: '',
@@ -1365,7 +1386,7 @@ const removeConstraint = (index: number) => {
 }
 
 const saveConstraints = async () => {
-  if (!activeInstance.value) return
+  if (!activeInstance.value || activeInstanceRetired.value) return
   saving.value = true
   try {
     const payload = JSON.parse(JSON.stringify(activeInstance.value))
@@ -1430,6 +1451,7 @@ const fetchSnapshot = async () => {
 const startPolling = () => {
   stopPolling()
   fetchSnapshot()
+  if (activeInstanceRetired.value) return
   pollingTimer = setInterval(fetchSnapshot, 3000)
 }
 
@@ -1462,33 +1484,6 @@ const loadComponents = async () => {
   }
 }
 
-const saveComponent = async () => {
-  if (!activeInstance.value || !componentForm.value.componentName.trim()) {
-    ElMessage.warning('请输入组件名称')
-    return
-  }
-  savingComponent.value = true
-  try {
-    const res = await axios.post('/api/device/component/save', {
-      componentName: componentForm.value.componentName.trim(),
-      categoryId: componentForm.value.categoryId ? Number(componentForm.value.categoryId) : null,
-      parentInstanceId: Number(activeInstance.value.instanceId),
-      selfInstanceId: null,
-      status: '未配置',
-      specification: {}
-    })
-    if (res.data?.success) {
-      componentForm.value = { componentName: '', categoryId: '', selfInstanceId: '', status: '未配置' }
-      await loadComponents()
-      ElMessage.success('组件槽位已新增')
-    } else {
-      ElMessage.error(res.data?.message || '保存组件失败')
-    }
-  } finally {
-    savingComponent.value = false
-  }
-}
-
 const componentSpecificationLabel = (value: any) => {
   if (!value || (typeof value === 'object' && !Object.keys(value).length)) return '未填写'
   return '查看详情'
@@ -1516,6 +1511,7 @@ const componentCandidateInstances = ref<DeviceInstance[]>([])
 const componentCategoryHasModels = ref(true)
 
 const openComponentAction = async (row: any, mode: 'configure' | 'replace') => {
+  if (activeInstanceRetired.value) return
   activeComponent.value = row
   componentActionMode.value = mode
   componentSelectedModelId.value = ''
@@ -1584,7 +1580,7 @@ const onComponentModelSelect = async (modelId: string) => {
   if (!modelId) return
   try {
     const res = await axios.get('/api/device/instance/page', {
-      params: { pageNo: 1, pageSize: 100, modelId }
+      params: { pageNo: 1, pageSize: 100, modelId, lifecycleStatus: '使用中' }
     })
     if (res.data?.success) {
       componentCandidateInstances.value = (res.data.data?.records || []).map(normalizeInstance)
@@ -1596,7 +1592,7 @@ const onComponentModelSelect = async (modelId: string) => {
 }
 
 const submitComponentAction = async () => {
-  if (!activeComponent.value?.id) return
+  if (!activeComponent.value?.id || activeInstanceRetired.value) return
   const specification: any = {}
   asArray(componentActionForm.value.specificationPairs).forEach(pair => {
     const k = pair.key?.trim()
@@ -1635,25 +1631,8 @@ const submitComponentAction = async () => {
   }
 }
 
-const discardComponent = async (row: any) => {
-  if (!row?.id) return
-  try {
-    await ElMessageBox.confirm('确认将该组件标记为已废弃？', '废弃组件', { type: 'warning' })
-    const res = await axios.post('/api/device/component/' + row.id + '/discard')
-    if (!res.data?.success) {
-      ElMessage.error(res.data?.message || '废弃组件失败')
-      return
-    }
-    await loadComponents()
-    ElMessage.success('组件已废弃')
-  } catch (error: any) {
-    if (error === 'cancel' || error === 'close') return
-    ElMessage.error(error.response?.data?.message || '废弃组件异常')
-  }
-}
-
 const markPendingReplacement = async (row: any) => {
-  if (!row?.id) return
+  if (!row?.id || activeInstanceRetired.value) return
   try {
     const { value } = await ElMessageBox.prompt('请填写待更换原因或维修说明', '标记待更换', {
       inputType: 'textarea',
@@ -1692,18 +1671,6 @@ const showComponentHistory = async (row: any) => {
   }
 }
 
-const deleteComponent = async (row: any) => {
-  const id = row?.id
-  if (!id) return
-  const res = await axios.delete('/api/device/component/delete/' + id)
-  if (res.data?.success) {
-    ElMessage.success('组件已删除')
-    await loadComponents()
-  } else {
-    ElMessage.error(res.data?.message || '删除组件失败')
-  }
-}
-
 const loadDataSets = async () => {
   if (!activeInstance.value) return
   loadingDataSets.value = true
@@ -1722,7 +1689,7 @@ const loadDataSets = async () => {
 }
 
 const createDataSetForInstance = async () => {
-  if (!activeInstance.value) return
+  if (!activeInstance.value || activeInstanceRetired.value) return
   if (!datasetCreateForm.value.templateId) {
     ElMessage.warning('请选择数据模板')
     return
@@ -1766,7 +1733,7 @@ const deleteInstanceDataSet = async (row: any) => {
 }
 
 watch(activeTab, (tab) => {
-  if (tab === 'status') {
+  if (tab === 'status' && !activeInstanceRetired.value) {
     startPolling()
   } else {
     stopPolling()
@@ -1813,6 +1780,7 @@ function normalizeInstance(raw: any): DeviceInstance {
     boundAdapterName,
     boundDevicePoint,
     instanceConfig,
+    lifecycleStatus: raw.lifecycleStatus,
     isOnline: raw.isOnline === true || raw.onlineStatus === 'ONLINE'
   }
 }
@@ -1885,8 +1853,7 @@ const loadWizardDevicePoints = async () => {
     const model = wizardModel.value
     const adapterConfig = model?.capabilitySpec?.adapterContract?.config || {}
     const categoryName = adapterConfig.categoryName || undefined
-    const templateName = adapterConfig.templateName || undefined
-    const params = categoryName ? { categoryName } : { templateName }
+    const params = { categoryName }
     const res = await axios.get(`/api/adapter/index/${encodeURIComponent(wizardAdapterName.value)}/device-points`, { params })
     if (res.data?.success) {
       wizardDevicePoints.value = res.data.data || []
@@ -1922,7 +1889,7 @@ const submitCreate = async () => {
     const modelConstraints = asArray(wizardModel.value?.intrinsicConstraints || wizardModel.value?.intrinsicConstraint)
     const constraints = modelConstraints.map((c: any) => ({
       objectAttributeName: c.objectAttributeName || '',
-      operator: normalizeConstraintOperator(c.operator || 'LE'),
+      operator: normalizeConstraintOperator(c.operator || '<='),
       boundaryValue: c.boundaryValue != null ? c.boundaryValue : null,
       unit: c.unit || '',
       violationStateName: c.violationStateName || '',
@@ -2012,7 +1979,7 @@ const clearConsoleLogs = () => {
 
 // 发送手动指令并记录进反馈终端
 const sendManualCommand = async () => {
-  if (!activeInstance.value || !controlCommandId.value) return
+  if (!activeInstance.value || activeInstanceRetired.value || !controlCommandId.value) return
   sendingControl.value = true
   
   const cmd = activeControlCommand.value
@@ -2024,7 +1991,7 @@ const sendManualCommand = async () => {
   try {
     const res = await axios.post(`/api/device/instance/control/${activeInstance.value.instanceId}`, {
       commandId: controlCommandId.value,
-      signalName: manualControlSignals[0] || 'MANUAL_EXECUTE',
+      signalName: manualControlSignals[0] || 'MANUAL_EXECUTE_START',
       parameters: params
     })
     
@@ -2474,4 +2441,23 @@ onUnmounted(() => {
     grid-template-columns: 1fr;
   }
 }
+
+/* Unified device instance console */
+.instance-page { overflow: hidden; }
+.layout { height: 100%; }
+.main-header { min-height: 64px; }
+.main-header h2 { margin: 0; }
+.subtitle { color: #6b7280; font-size: 12px; }
+.actions { display: flex; align-items: center; gap: 8px; }
+.lifecycle-filter { width: 112px; }
+.instance-search { width: 260px; }
+.add-device-trigger { height: 32px; border-radius: 6px; padding: 0 14px; box-shadow: none; }
+.instance-list-wrap { padding: 12px 16px; }
+.instance-pagination { min-height: 52px; padding: 10px 16px; border-top: 1px solid #e5e7eb; background: #fff; }
+.instance-detail-header { background: #fafbfc; border-color: #e5e7eb; }
+.telemetry-kpi-grid { gap: 8px; }
+.kpi-card { border-radius: 6px; box-shadow: none; }
+.kpi-card:hover { transform: none; box-shadow: none; border-color: #b7d7ff; }
+.section-caption { font-weight: 600; background: #f7f8fa; border-color: #e5e7eb; }
+.drawer-section { box-shadow: none; }
 </style>

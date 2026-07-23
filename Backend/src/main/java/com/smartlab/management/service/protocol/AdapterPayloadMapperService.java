@@ -11,6 +11,7 @@ import com.smartlab.adapter.AdapterManifestService;
 import com.smartlab.management.dto.resource.adapter.AdapterRouteDTO;
 import com.smartlab.management.entity.resource.adapter.AdapterIndex;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
+import com.smartlab.management.entity.resource.device.DeviceInstanceLifecycle;
 import com.smartlab.management.entity.resource.device.DeviceModels;
 import com.smartlab.management.entity.resource.device.DeviceTwinStates;
 import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
@@ -21,6 +22,8 @@ import com.smartlab.management.service.db.resource.data.DataIndexService;
 import com.smartlab.management.service.db.resource.data.DataRecordService;
 import com.smartlab.management.entity.resource.data.DataIndex;
 import org.springframework.context.annotation.Lazy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -38,6 +41,7 @@ import java.util.concurrent.ConcurrentHashMap;
  * 适配器物理报文与物模型逻辑属性双向翻译映射核心转换层服务（原DeviceProtocolMapperService）。
  */
 public class AdapterPayloadMapperService {
+    private static final Logger log = LoggerFactory.getLogger(AdapterPayloadMapperService.class);
 
     private final DeviceInstancesMapper deviceInstancesMapper;
     private final DeviceModelsMapper deviceModelsMapper;
@@ -73,10 +77,12 @@ public class AdapterPayloadMapperService {
     public Map<String, AdapterRouteDTO> refreshAdapterRouteTable() {
         adapterRouteTable.clear();
         List<DeviceInstances> instances = deviceInstancesMapper.selectList(Wrappers.<DeviceInstances>lambdaQuery()
+                .eq(DeviceInstances::getLifecycleStatus, DeviceInstanceLifecycle.IN_USE)
                 .isNotNull(DeviceInstances::getBoundAdapterName)
                 .isNotNull(DeviceInstances::getBoundDevicePoint)
                 .orderByAsc(DeviceInstances::getId));
         for (DeviceInstances instance : instances) {
+            if (!DeviceInstanceLifecycle.isUsable(instance)) continue;
             adapterRouteTable.put(routeKey(instance.getBoundAdapterName(), instance.getBoundDevicePoint()),
                     toRoute(instance));
         }
@@ -95,6 +101,10 @@ public class AdapterPayloadMapperService {
     }
 
     public ObjectNode buildCommandMessage(String id, String commandId, Map<String, Object> parameters) {
+        return buildCommandMessage(id, commandId, null, parameters);
+    }
+
+    public ObjectNode buildCommandMessage(String id, String commandId, String messageId, Map<String, Object> parameters) {
         if (commandId == null || commandId.isBlank()) {
             throw new IllegalArgumentException("commandId 不能为空");
         }
@@ -102,6 +112,7 @@ public class AdapterPayloadMapperService {
         if (instance == null) {
             throw new IllegalArgumentException("设备实例不存在");
         }
+        requireUsable(instance);
         if (!hasAdapterBinding(instance)) {
             throw new IllegalStateException("设备实例未绑定 Adapter 设备点");
         }
@@ -115,7 +126,7 @@ public class AdapterPayloadMapperService {
                 parameters == null ? Map.of() : parameters);
 
         ObjectNode payload = JsonNodeSupport.objectNode();
-        payload.put("messageId", UUID.randomUUID().toString());
+        payload.put("messageId", messageId == null || messageId.isBlank() ? UUID.randomUUID().toString() : messageId);
         payload.put("adapterName", instance.getBoundAdapterName());
         payload.put("devicePoint", instance.getBoundDevicePoint());
         payload.put("commandName", commandName);
@@ -129,6 +140,32 @@ public class AdapterPayloadMapperService {
         return result;
     }
 
+    public ObjectNode buildAbortMessage(String id, String messageId) {
+        if (messageId == null || messageId.isBlank()) {
+            throw new IllegalArgumentException("中止指令缺少 messageId");
+        }
+        DeviceInstances instance = deviceInstancesMapper.selectById(parseId(id));
+        if (instance == null) {
+            throw new IllegalArgumentException("设备实例不存在");
+        }
+        requireUsable(instance);
+        if (!hasAdapterBinding(instance)) {
+            throw new IllegalStateException("设备实例未绑定 Adapter 设备点");
+        }
+
+        ObjectNode payload = JsonNodeSupport.objectNode();
+        payload.put("messageId", messageId);
+        payload.put("adapterName", instance.getBoundAdapterName());
+        payload.put("devicePoint", instance.getBoundDevicePoint());
+        payload.put("operation", "ABORT");
+        payload.put("timestamp", Instant.now().toEpochMilli());
+        protocolDictionaryService.validateDefinition("CommandAbortMessageFormat", payload);
+
+        ObjectNode result = JsonNodeSupport.objectNode();
+        result.put("topic", commandTopic(instance.getBoundAdapterName(), instance.getBoundDevicePoint()));
+        result.set("payload", payload);
+        return result;
+    }
     public ObjectNode buildAdapterBinding(Long modelId, String adapterName, String devicePoint) {
         if (modelId == null) {
             throw new IllegalArgumentException("设备实例缺少 deviceModelId");
@@ -149,10 +186,7 @@ public class AdapterPayloadMapperService {
             throw new IllegalArgumentException("设备模型不存在");
         }
         JsonNode contract = model.getAdapterContract();
-        String modelTemplateName = contract == null ? null : contract.path("config").path("templateName").asText(null);
-        if (modelTemplateName != null && !modelTemplateName.isBlank() && !modelTemplateName.equals(templateName)) {
-            throw new IllegalArgumentException("设备模型绑定的是模板 " + modelTemplateName + "，不能绑定设备点模板 " + templateName);
-        }
+
         String pointCategoryName = point.path("categoryName").asText(null);
         String modelCategoryName = contract == null ? null : contract.path("config").path("categoryName").asText(null);
         if (modelCategoryName != null && !modelCategoryName.isBlank()
@@ -215,17 +249,24 @@ public class AdapterPayloadMapperService {
         if (rawToModel == null || rawToModel.isEmpty()) {
             return;
         }
+        ObjectNode mappedValues = JsonNodeSupport.objectNode();
+        data.fields().forEachRemaining(entry -> {
+            String modelAttr = rawToModel.get(entry.getKey());
+            if (modelAttr == null || modelAttr.isBlank()) return;
+            JsonNode definition = findResolvedAttribute(route.getResolvedAttributes(), entry.getKey(), modelAttr);
+            if (definition == null) {
+                throw new IllegalStateException("Adapter 路由缺少属性类型定义: " + entry.getKey());
+            }
+            mappedValues.set(modelAttr, validatedValue(
+                    entry.getValue(), definition, "telemetry." + entry.getKey()));
+        });
+        if (mappedValues.isEmpty()) return;
         Long instanceId = route.getDeviceInstanceId();
         DeviceTwinStates state = getOrCreateTwinState(instanceId);
         ObjectNode current = state.getCurrentAttr() != null && state.getCurrentAttr().isObject()
                 ? (ObjectNode) state.getCurrentAttr().deepCopy()
                 : JsonNodeSupport.objectNode();
-        data.fields().forEachRemaining(entry -> {
-            String modelAttr = rawToModel.get(entry.getKey());
-            if (modelAttr != null && !modelAttr.isBlank()) {
-                current.set(modelAttr, entry.getValue());
-            }
-        });
+        mappedValues.fields().forEachRemaining(entry -> current.set(entry.getKey(), entry.getValue()));
         state.setCurrentAttr(current);
         state.setOnlineStatus("ONLINE");
         state.setLastOnlineTime(OffsetDateTime.now());
@@ -250,12 +291,12 @@ public class AdapterPayloadMapperService {
                     try {
                         dataRecordService.appendRecord(index.getId(), recordMap);
                     } catch (Exception e) {
-                        // ignore insertion failures (e.g. strict schema constraints)
+                        log.warn("遥测数据写入数据集失败，dataIndexId={}", index.getId(), e);
                     }
                 }
             }
         } catch (Exception e) {
-            e.printStackTrace();
+            log.error("应用 Adapter 遥测数据失败，adapter={}, devicePoint={}", adapterName, devicePoint, e);
         }
     }
 
@@ -268,7 +309,27 @@ public class AdapterPayloadMapperService {
         if (eventName.isBlank()) {
             return;
         }
+        DeviceModels model = deviceModelsMapper.selectById(route.getDeviceModelId());
+        if (isConfiguredEvent(model, "cmdEvents", eventName)
+                && message.path("messageId").asText("").isBlank()) {
+            throw new IllegalArgumentException("Adapter 指令事件必须携带 messageId: " + eventName);
+        }
+
         stateMachineEngine.dispatchAdapterEvent(route.getDeviceInstanceId(), eventName, message);
+    }
+
+    private boolean isConfiguredEvent(DeviceModels model, String groupName, String eventName) {
+        if (model == null || model.getAdapterContract() == null || eventName == null) {
+            return false;
+        }
+        JsonNode events = model.getAdapterContract().path("events").path(groupName);
+        for (JsonNode event : iterable(events)) {
+            String configuredName = event.path("name").asText(event.path("eventName").asText(""));
+            if (eventName.equals(configuredName)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private ObjectNode buildOutgoingParameters(DeviceModels model, String commandName, String commandId,
@@ -290,13 +351,16 @@ public class AdapterPayloadMapperService {
                     continue;
                 }
                 if (mapping.path("isFixedValue").asBoolean(false)) {
-                    result.set(commandParamName, mapping.path("fixedValue"));
+                    result.set(commandParamName, validatedValue(
+                            mapping.path("fixedValue"), commandParam, "parameters." + commandParamName));
                 } else {
                     String capabilityParamName = mapping.path("capabilityParamName").asText("");
                     if (!parameters.containsKey(capabilityParamName)) {
                         throw new IllegalArgumentException("缺少操作参数: " + capabilityParamName);
                     }
-                    result.set(commandParamName, JsonNodeSupport.toNode(parameters.get(capabilityParamName)));
+                    result.set(commandParamName, validatedValue(
+                            JsonNodeSupport.toNode(parameters.get(capabilityParamName)), commandParam,
+                            "parameters." + capabilityParamName));
                 }
             }
             return result;
@@ -310,9 +374,38 @@ public class AdapterPayloadMapperService {
             if (!parameters.containsKey(paramName)) {
                 throw new IllegalArgumentException("缺少命令参数: " + paramName);
             }
-            result.set(paramName, JsonNodeSupport.toNode(parameters.get(paramName)));
+            result.set(paramName, validatedValue(
+                    JsonNodeSupport.toNode(parameters.get(paramName)), param, "parameters." + paramName));
         }
         return result;
+    }
+
+    private JsonNode findResolvedAttribute(JsonNode resolvedAttributes, String rawName, String modelName) {
+        for (JsonNode definition : iterable(resolvedAttributes)) {
+            if (rawName.equals(definition.path("rawAttributeName").asText(""))
+                    && modelName.equals(definition.path("modelAttributeName").asText(""))) {
+                return definition;
+            }
+        }
+        return null;
+    }
+
+    private JsonNode validatedValue(JsonNode value, JsonNode definition, String path) {
+        String dataType = adapterManifestService.normalizeDataType(
+                definition.path("dataType").asText("STRING"));
+        boolean valid = value != null && !value.isNull() && switch (dataType) {
+            case "INTEGER" -> value.isIntegralNumber();
+            case "DOUBLE" -> value.isNumber();
+            case "BOOLEAN" -> value.isBoolean();
+            case "STRING" -> value.isTextual();
+            case "JSON" -> value.isObject() || value.isArray();
+            default -> false;
+        };
+        if (!valid) {
+            String actual = value == null || value.isNull() ? "NULL" : value.getNodeType().name();
+            throw new IllegalArgumentException(path + " 类型不匹配，要求 " + dataType + "，实际 " + actual);
+        }
+        return value.deepCopy();
     }
 
     private JsonNode resolveCommandDefinition(DeviceModels model, String commandId) {
@@ -389,7 +482,7 @@ public class AdapterPayloadMapperService {
         }
         DeviceTwinStates created = new DeviceTwinStates();
         created.setInstanceId(instanceId);
-        created.setCurrentOpState("IDLE");
+        created.setCurrentOpState(JsonNodeSupport.objectNode());
         created.setCurrentCmdState("IDLE");
         created.setOnlineStatus("UNKNOWN");
         created.setCurrentAttr(JsonNodeSupport.objectNode());
@@ -423,6 +516,12 @@ public class AdapterPayloadMapperService {
             }
         }
         return route;
+    }
+
+    private void requireUsable(DeviceInstances instance) {
+        if (!DeviceInstanceLifecycle.isUsable(instance)) {
+            throw new IllegalStateException("设备实例已注销，不能下发 Adapter 指令");
+        }
     }
 
     private boolean hasAdapterBinding(DeviceInstances instance) {

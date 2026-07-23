@@ -31,9 +31,9 @@ smartlab:
 
 # MQTT Broker Config
 mqtt:
-  broker: tcp://127.0.0.1:1883
+  broker: tcp://192.168.11.178:1883
   client-id: smartlab_backend_2.0
-  username: lab_system
+  username: plc
   password: 123456
   auto-start: true
   reconnect-delay-ms: 15000

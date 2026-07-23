@@ -1,7 +1,6 @@
 package com.smartlab.management.controller.protocol;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.global.protocol.ProtocolDictionaryService;
 import com.smartlab.management.dto.common.ApiResponse;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -21,10 +20,5 @@ public class ProtocolDictionaryController {
     @GetMapping
     public ApiResponse<JsonNode> dictionary() {
         return ApiResponse.ok(protocolDictionaryService.dictionary());
-    }
-
-    @GetMapping("/frontend-metadata")
-    public ApiResponse<ObjectNode> frontendMetadata() {
-        return ApiResponse.ok(protocolDictionaryService.frontendMetadata());
     }
 }

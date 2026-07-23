@@ -1,8 +1,11 @@
 package com.smartlab.management.controller.workflow;
 
 import com.smartlab.management.dto.common.ApiResponse;
+import com.smartlab.management.dto.workflow.WorkflowDetailResponse;
+import com.smartlab.management.dto.workflow.WorkflowSaveRequest;
 import com.smartlab.management.entity.workflow.FlowModels;
 import com.smartlab.management.service.db.workflow.WorkflowService;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
@@ -10,11 +13,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/workflow")
-/**
- * 实验协同工作流模板设计与发布控制器。管理基于流程图编排生成的协同控制逻辑逻辑模板。
- */
 public class WorkflowController {
-
     private final WorkflowService workflowService;
 
     public WorkflowController(WorkflowService workflowService) {
@@ -27,19 +26,25 @@ public class WorkflowController {
     }
 
     @PostMapping("/save")
-    public ApiResponse<Map<String, String>> save(@RequestBody Map<String, Object> payload) {
+    public ApiResponse<Map<String, Long>> save(@Valid @RequestBody WorkflowSaveRequest request) {
         try {
-            FlowModels model = workflowService.savePayload(payload);
-            return ApiResponse.ok(Map.of("templateId", String.valueOf(model.getId())));
+            WorkflowDetailResponse saved = workflowService.saveDefinition(request);
+            return ApiResponse.ok(Map.of("workflowId", saved.getId()));
         } catch (Exception e) {
             return ApiResponse.fail(e.getMessage());
         }
     }
 
+    @GetMapping("/required-resources/{id}")
+    public ApiResponse<List<com.smartlab.management.entity.workflow.FlowNode>> requiredResources(@PathVariable Long id) {
+        if (workflowService.getDefinition(id) == null) return ApiResponse.fail("流程模型不存在: " + id);
+        return ApiResponse.ok(workflowService.requiredDeviceNodes(id));
+    }
+
     @DeleteMapping("/delete/{id}")
-    public ApiResponse<String> delete(@PathVariable String id) {
+    public ApiResponse<String> delete(@PathVariable Long id) {
         try {
-            workflowService.delete(id);
+            workflowService.deleteDefinition(id);
             return ApiResponse.ok("删除成功");
         } catch (Exception e) {
             return ApiResponse.fail(e.getMessage());
@@ -47,10 +52,8 @@ public class WorkflowController {
     }
 
     @GetMapping({"/export/{id}", "/detail/{id}"})
-    public ApiResponse<FlowModels> detail(@PathVariable String id) {
-        FlowModels template = workflowService.getById(id);
-        return template == null ? ApiResponse.fail("流程模板不存在: " + id) : ApiResponse.ok(template);
+    public ApiResponse<WorkflowDetailResponse> detail(@PathVariable Long id) {
+        WorkflowDetailResponse definition = workflowService.getDefinition(id);
+        return definition == null ? ApiResponse.fail("流程模型不存在: " + id) : ApiResponse.ok(definition);
     }
-
 }
-

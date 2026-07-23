@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -18,8 +19,9 @@ class ProtocolDictionaryServiceTest {
     @Test
     void readsEnumValuesFromProtocolDictionary() {
         assertEquals(List.of("INTEGER", "DOUBLE", "STRING", "BOOLEAN", "JSON"), service.enumValues("DataType"));
-        assertEquals(List.of("START", "END", "BRANCH", "AGGREGATE"),
-                service.enumValues("WorkflowNodeFunctionType"));
+        assertEquals(List.of("MQTT"), service.enumValues("CommunicationProtocol"));
+        assertEquals(List.of(">", "<", ">=", "<=", "=", "!=", "BETWEEN", "IN"),
+                service.enumValues("ConstraintOperator"));
     }
 
     @Test
@@ -61,27 +63,51 @@ class ProtocolDictionaryServiceTest {
     }
 
     @Test
-    void exposesFrontendMetadataFromProtocolDictionary() {
-        ObjectNode metadata = service.frontendMetadata();
+    void validatesStandardJsonSchemaKeywordsInsteadOfOnlyRequiredFields() {
+        ObjectNode command = JsonNodeSupport.objectNode();
+        command.put("messageId", "msg-1");
+        command.put("adapterName", "");
+        command.put("devicePoint", "Reactor1");
+        command.put("commandName", "heat");
+        command.set("parameters", JsonNodeSupport.objectNode());
+        command.put("timestamp", 1719892800L);
 
-        assertTrue(metadata.path("dataTypes").isArray());
-        assertTrue(metadata.path("constraintOperators").isArray());
-        assertTrue(metadata.path("mqttTopics").has("commandTopic"));
-        assertTrue(metadata.path("adapterRegisterFormats").isArray());
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> service.validateDefinition("CommandMessageFormat", command));
+
+        assertTrue(error.getMessage().contains("adapterName"));
     }
 
     @Test
-    void exposesSystemSignalDefinitionsFromProtocolDictionary() {
-        assertEquals(List.of("MQTT", "HTTP"), service.enumValues("CommunicationProtocol"));
-        assertEquals(List.of("Interface_workflow_in", "Interface_status_out", "Interface_control_in",
-                        "Interface_constraint_in", "Interface_adapter_in", "Interface_adapter_out"),
-                service.enumValues("SystemInterfaceName"));
-        assertTrue(service.enumValues("AdapterCommandLifecycleEvent").contains("COMMAND_COMPLETED"));
-        assertTrue(service.enumValues("CommandLifecycleState").contains("RUNNING"));
+    void exposesProtocolSignalDefinitionsOnly() {
+        assertEquals(List.of("WF_EXECUTE_START", "WF_EXECUTE_ABORT"),
+                service.enumValues("WorkflowControlSignal"));
+        assertEquals(List.of("MANUAL_EXECUTE_START", "MANUAL_EXECUTE_ABORT"),
+                service.enumValues("ManualControlSignal"));
+        assertEquals(List.of("CONSTRAINT_ABORT"), service.enumValues("ConstraintControlSignal"));
+        assertEquals(List.of("CMD_START", "CMD_ABORT"), service.enumValues("AdapterOutboundSignal"));
 
-        ObjectNode metadata = service.frontendMetadata();
-        assertTrue(metadata.path("communicationProtocols").isArray());
-        assertTrue(metadata.path("adapterCommandLifecycleEvents").isArray());
-        assertTrue(metadata.path("commandLifecycleStates").isArray());
+        assertThrows(IllegalArgumentException.class, () -> service.definition("AdapterCommandLifecycleEvent"));
+        assertThrows(IllegalArgumentException.class, () -> service.definition("ExecutionLifecycleEvent"));
+        assertThrows(IllegalArgumentException.class, () -> service.definition("AdapterConfigFormat"));
+    }
+
+    @Test
+    void validatesCommandPayloadPolicyFromProtocolSignalContracts() {
+        assertTrue(service.requiresCommandPayload("WF_EXECUTE_START"));
+        assertTrue(service.requiresCommandPayload("MANUAL_EXECUTE_START"));
+        assertTrue(service.requiresCommandPayload("CMD_START"));
+        assertFalse(service.requiresCommandPayload("WF_EXECUTE_ABORT"));
+
+        IllegalArgumentException missing = assertThrows(IllegalArgumentException.class,
+                () -> service.validateSignalExecutionContext("CMD_START", Map.of()));
+        assertTrue(missing.getMessage().contains("commandName"));
+
+        service.validateSignalExecutionContext("CMD_START", Map.of(
+                "commandName", "heat",
+                "parameters", Map.of("temperature", 80)));
+        service.validateSignalExecutionContext("CMD_ABORT", Map.of());
+        assertThrows(IllegalArgumentException.class,
+                () -> service.requiresCommandPayload("UNKNOWN_SIGNAL"));
     }
 }

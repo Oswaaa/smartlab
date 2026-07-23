@@ -9,6 +9,7 @@ import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.common.PageResult;
 import com.smartlab.management.entity.resource.device.DeviceComponents;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
+import com.smartlab.management.entity.resource.device.DeviceInstanceLifecycle;
 import com.smartlab.management.entity.resource.device.DeviceModels;
 import com.smartlab.management.entity.resource.device.DeviceTwinStates;
 import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
@@ -20,9 +21,9 @@ import com.smartlab.management.service.protocol.AdapterPayloadMapperService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.Serializable;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -60,15 +61,23 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
 
     @Override
     public List<DeviceInstances> list() {
-        return mapper.selectList(Wrappers.<DeviceInstances>lambdaQuery().orderByDesc(DeviceInstances::getId));
+        return list(null);
     }
 
-    public PageResult<DeviceInstances> page(long pageNo, long pageSize, String modelId, String keyword, Boolean online) {
+    public List<DeviceInstances> list(String lifecycleStatus) {
+        LambdaQueryWrapper<DeviceInstances> query = Wrappers.lambdaQuery();
+        applyLifecycleFilter(query, lifecycleStatus);
+        return mapper.selectList(query.orderByDesc(DeviceInstances::getId));
+    }
+
+    public PageResult<DeviceInstances> page(long pageNo, long pageSize, String modelId, String keyword,
+                                             Boolean online, String lifecycleStatus) {
         LambdaQueryWrapper<DeviceInstances> query = Wrappers.lambdaQuery();
         Long parsedModelId = parseId(modelId);
         if (parsedModelId != null) {
             query.eq(DeviceInstances::getDeviceModelId, parsedModelId);
         }
+        applyLifecycleFilter(query, lifecycleStatus);
         if (keyword != null && !keyword.isBlank()) {
             query.like(DeviceInstances::getInstanceName, keyword.trim());
         }
@@ -91,17 +100,27 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
         if (parsedModelId != null) {
             query.eq(DeviceInstances::getDeviceModelId, parsedModelId);
         }
-        long total = mapper.selectCount(query);
-        Set<Long> allowedInstanceIds = parsedModelId == null ? null : loadInstanceIds(parsedModelId);
+        List<DeviceInstances> scopedInstances = mapper.selectList(query);
+        long total = scopedInstances.size();
+        Set<Long> activeInstanceIds = scopedInstances.stream()
+                .filter(DeviceInstanceLifecycle::isUsable)
+                .map(DeviceInstances::getId)
+                .collect(java.util.stream.Collectors.toSet());
+        long active = activeInstanceIds.size();
+        long retired = scopedInstances.stream()
+                .filter(instance -> DeviceInstanceLifecycle.RETIRED.equals(instance.getLifecycleStatus()))
+                .count();
         long online = twinStatesMapper.selectList(Wrappers.<DeviceTwinStates>lambdaQuery())
                 .stream()
                 .filter(state -> "ONLINE".equalsIgnoreCase(state.getOnlineStatus()))
-                .filter(state -> allowedInstanceIds == null || allowedInstanceIds.contains(state.getInstanceId()))
+                .filter(state -> activeInstanceIds.contains(state.getInstanceId()))
                 .count();
         Map<String, Long> result = new HashMap<>();
         result.put("total", total);
+        result.put("active", active);
+        result.put("retired", retired);
         result.put("online", online);
-        result.put("offline", Math.max(0, total - online));
+        result.put("offline", Math.max(0, active - online));
         return result;
     }
 
@@ -120,6 +139,17 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
         instance.setBoundAdapterName(stringValue(first(payload, "boundAdapterName", "adapterName")));
         instance.setBoundDevicePoint(stringValue(first(payload, "boundDevicePoint", "devicePoint")));
         instance.setPicture(stringValue(payload.get("picture")));
+
+        if (instance.getId() == null) {
+            instance.setLifecycleStatus(DeviceInstanceLifecycle.IN_USE);
+        } else {
+            DeviceInstances existing = mapper.selectById(instance.getId());
+            if (existing == null) {
+                throw new IllegalArgumentException("设备实例不存在: " + instance.getId());
+            }
+            requireUsable(existing, "设备实例已注销，不能继续修改");
+            instance.setLifecycleStatus(existing.getLifecycleStatus());
+        }
 
         ObjectNode configNode = toObjectNode(first(payload, "instanceConfig", "commConfig"));
         if (instance.getBoundAdapterName() == null || instance.getBoundAdapterName().isBlank()) {
@@ -159,15 +189,51 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
         return instance;
     }
 
-    public void delete(String id) {
+    @Transactional(rollbackFor = Exception.class)
+    public DeviceInstances retire(String id) {
         Long instanceId = parseId(id);
-        long dataSetCount = dataIndexService.countByDeviceInstance(instanceId);
-        if (dataSetCount > 0) {
-            throw new IllegalStateException("该设备实例已绑定 " + dataSetCount + " 个数据集，不能硬删除。请保留历史数据链路，后续可改为停用/归档");
+        if (instanceId == null) {
+            throw new IllegalArgumentException("设备实例ID不能为空");
         }
-        mapper.deleteById(instanceId);
-        twinStatesMapper.delete(Wrappers.<DeviceTwinStates>lambdaQuery().eq(DeviceTwinStates::getInstanceId, instanceId));
+        DeviceInstances instance = mapper.selectById(instanceId);
+        if (instance == null) {
+            throw new IllegalArgumentException("设备实例不存在: " + instanceId);
+        }
+        if (DeviceInstanceLifecycle.RETIRED.equals(instance.getLifecycleStatus())) {
+            return instance;
+        }
+        DeviceTwinStates snapshot = getSnapshot(instanceId);
+        if (snapshot != null && snapshot.getCurrentCmdState() != null
+                && !"IDLE".equals(snapshot.getCurrentCmdState())) {
+            throw new IllegalStateException("设备当前仍有指令在执行，不能注销");
+        }
+        instance.setLifecycleStatus(DeviceInstanceLifecycle.RETIRED);
+        mapper.updateById(instance);
         protocolMapperService.refreshAdapterRouteTable();
+        return instance;
+    }
+
+    @Override
+    public void delete(Serializable id) {
+        throw new IllegalStateException("设备实例不支持物理删除，请使用注销操作");
+    }
+
+    public DeviceInstances requireUsable(Long instanceId) {
+        if (instanceId == null) {
+            throw new IllegalArgumentException("设备实例ID不能为空");
+        }
+        DeviceInstances instance = mapper.selectById(instanceId);
+        if (instance == null) {
+            throw new IllegalArgumentException("设备实例不存在: " + instanceId);
+        }
+        requireUsable(instance, "设备实例已注销，不能执行该操作");
+        return instance;
+    }
+
+    private void requireUsable(DeviceInstances instance, String message) {
+        if (!DeviceInstanceLifecycle.isUsable(instance)) {
+            throw new IllegalStateException(message);
+        }
     }
 
     public List<DeviceTwinStates> listSnapshots() {
@@ -189,7 +255,7 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
         DeviceModels model = modelId == null ? null : deviceModelsMapper.selectById(modelId);
         DeviceTwinStates state = new DeviceTwinStates();
         state.setInstanceId(instanceId);
-        state.setCurrentOpState(initialStateName(model == null ? null : model.getOpState(), "IDLE"));
+        state.setCurrentOpState(initialOperationState(model == null ? null : model.getOpState()));
         state.setCurrentCmdState(initialStateName(model == null ? null : model.getCmdState(), "IDLE"));
         state.setOnlineStatus("OFFLINE");
         state.setCurrentAttr(JsonNodeSupport.objectNode());
@@ -202,6 +268,21 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
             return stateSpace.path("initialStateName").asText();
         }
         return fallback;
+    }
+
+    private ObjectNode initialOperationState(JsonNode stateSpace) {
+        ObjectNode stateVector = JsonNodeSupport.objectNode();
+        if (stateSpace == null || !stateSpace.path("regions").isArray()) {
+            return stateVector;
+        }
+        for (JsonNode region : stateSpace.path("regions")) {
+            String regionName = region.path("regionName").asText("");
+            String initialStateName = region.path("initialStateName").asText("");
+            if (!regionName.isBlank() && !initialStateName.isBlank()) {
+                stateVector.put(regionName, initialStateName);
+            }
+        }
+        return stateVector;
     }
 
     private void createComponentSlotsFromBom(Long instanceId, Long modelId) {
@@ -233,14 +314,17 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
             }
         }
     }
-    private Set<Long> loadInstanceIds(Long modelId) {
-        Set<Long> result = new HashSet<>();
-        mapper.selectList(Wrappers.<DeviceInstances>lambdaQuery()
-                        .select(DeviceInstances::getId)
-                        .eq(DeviceInstances::getDeviceModelId, modelId))
-                .forEach(instance -> result.add(instance.getId()));
-        return result;
+    private void applyLifecycleFilter(LambdaQueryWrapper<DeviceInstances> query, String lifecycleStatus) {
+        if (lifecycleStatus == null || lifecycleStatus.isBlank()) {
+            return;
+        }
+        String normalized = lifecycleStatus.trim();
+        if (!Set.of(DeviceInstanceLifecycle.IN_USE, DeviceInstanceLifecycle.RETIRED).contains(normalized)) {
+            throw new IllegalArgumentException("不支持的设备实例生命周期状态: " + normalized);
+        }
+        query.eq(DeviceInstances::getLifecycleStatus, normalized);
     }
+
 
     private boolean hasAdapterBinding(DeviceInstances instance) {
         return instance != null

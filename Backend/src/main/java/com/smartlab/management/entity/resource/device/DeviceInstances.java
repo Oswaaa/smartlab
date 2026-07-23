@@ -57,6 +57,9 @@ public class DeviceInstances {
     @TableField("bound_device_point")
     private String boundDevicePoint;
 
+    @TableField("lifecycle_status")
+    private String lifecycleStatus;
+
     @TableField("picture")
     private String picture;
 

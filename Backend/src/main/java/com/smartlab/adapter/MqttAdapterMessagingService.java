@@ -221,13 +221,19 @@ public class MqttAdapterMessagingService implements MqttCallback {
 
     @EventListener
     public void handleStateMachineSendAction(StateMachineSendActionEvent event) {
-        if (!"Interface_adapter_out".equals(event.interfaceName())) {
+        if (!"ADAPTER".equals(event.interfaceType())) {
             return;
         }
-        ObjectNode commandMessage = protocolMapperService.buildCommandMessage(
-                String.valueOf(event.instanceId()),
-                event.commandId(),
-                event.parameters());
+        ObjectNode commandMessage;
+        if ("CMD_START".equals(event.signalName())) {
+            commandMessage = protocolMapperService.buildCommandMessage(
+                    String.valueOf(event.instanceId()), event.commandName(), event.messageId(), event.parameters());
+        } else if ("CMD_ABORT".equals(event.signalName())) {
+            commandMessage = protocolMapperService.buildAbortMessage(
+                    String.valueOf(event.instanceId()), event.messageId());
+        } else {
+            throw new IllegalArgumentException("不支持的 Adapter 下行信号: " + event.signalName());
+        }
         publishCommand(commandMessage);
     }
 
@@ -351,12 +357,25 @@ public class MqttAdapterMessagingService implements MqttCallback {
         }
         if ("telemetryTopic".equals(topicMatch.topicName())) {
             protocolDictionaryService.validateDefinition("TelemetryMessageFormat", payload);
+            validatePayloadIdentity(variables, payload);
             protocolMapperService.applyTelemetry(variables.get("adapterName"), variables.get("devicePoint"), payload);
             return;
         }
         if ("eventTopic".equals(topicMatch.topicName())) {
             protocolDictionaryService.validateDefinition("EventMessageFormat", payload);
+            validatePayloadIdentity(variables, payload);
             protocolMapperService.applyAdapterEvent(variables.get("adapterName"), variables.get("devicePoint"), payload);
+        }
+    }
+
+    private void validatePayloadIdentity(Map<String, String> topicVariables, JsonNode payload) {
+        String topicAdapter = topicVariables.getOrDefault("adapterName", "");
+        String topicPoint = topicVariables.getOrDefault("devicePoint", "");
+        String payloadAdapter = payload.path("adapterName").asText("");
+        String payloadPoint = payload.path("devicePoint").asText("");
+        if (!topicAdapter.equals(payloadAdapter) || !topicPoint.equals(payloadPoint)) {
+            throw new IllegalArgumentException("MQTT topic 与 payload 身份不一致: topic="
+                    + topicAdapter + "/" + topicPoint + ", payload=" + payloadAdapter + "/" + payloadPoint);
         }
     }
     private void trySubscribeAdapterHeartbeat(String adapterName) {

@@ -2,10 +2,8 @@
  * SmartLab 2.0 — Industrial Light Theme & Design System
  * ============================================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500;600&display=swap');
-
 :root {
-  font-family: 'Outfit', 'Inter', -apple-system, sans-serif;
+  font-family: Inter, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
 
   /* ── Light Industrial Color Palette ── */
   --bg-primary:    #f0f2f5;
@@ -434,4 +432,153 @@ h1, h2, h3, h4, h5, h6 {
 @media (max-width: 760px) {
   .unified-workflow-drawer .adapter-register-nav { display: none; }
   .unified-workflow-drawer .adapter-register-scroll .el-scrollbar__view { padding: 16px; }
+}
+
+/* SmartLab enterprise console baseline */
+:root {
+  --console-bg: #f5f7fa;
+  --console-surface: #ffffff;
+  --console-surface-subtle: #fafbfc;
+  --console-border: #e5e7eb;
+  --console-border-strong: #d1d5db;
+  --console-text: #111827;
+  --console-text-secondary: #4b5563;
+  --console-text-muted: #9ca3af;
+  --console-primary: #1677ff;
+  --console-primary-soft: #eaf3ff;
+  --console-success: #16a34a;
+  --console-warning: #d97706;
+  --console-danger: #dc2626;
+  --console-sidebar-width: 312px;
+  --console-header-height: 64px;
+  --console-radius: 6px;
+}
+
+body {
+  font-family: Inter, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+  color: var(--console-text);
+  background: var(--console-bg);
+}
+
+.el-button { min-height: 32px; border-radius: var(--console-radius) !important; }
+.el-button + .el-button { margin-left: 8px; }
+.el-button.is-circle { min-width: 32px; }
+.el-card { border-radius: var(--console-radius) !important; box-shadow: none !important; }
+.el-table { font-size: 13px; }
+.el-table th.el-table__cell {
+  height: 40px;
+  color: #374151 !important;
+  font-size: 13px !important;
+  font-weight: 600 !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  background: #f7f8fa !important;
+}
+.el-table td.el-table__cell { padding: 8px 0; }
+.el-table .cell { line-height: 20px; }
+.el-tag { font-weight: 500; }
+.el-tabs__header { margin-bottom: 12px; }
+.el-tabs__item { height: 42px; font-size: 14px; }
+.el-drawer { box-shadow: -8px 0 24px rgba(15, 23, 42, 0.12) !important; }
+.el-drawer__header { min-height: 56px; margin: 0 !important; padding: 0 24px !important; border-bottom: 1px solid var(--console-border); }
+.el-drawer__body { min-height: 0; }
+.el-drawer__footer { margin: 0 !important; padding: 12px 24px !important; border-top: 1px solid var(--console-border); }
+.el-dialog { border-radius: 8px !important; }
+.el-empty { --el-empty-padding: 32px 0; }
+
+.device-model-page,
+.instance-page,
+.adapter-management-page,
+.workflow-designer,
+.task-list-fullscreen,
+.data-workbench,
+.user-page {
+  height: calc(100vh - 52px);
+  min-height: 0;
+  box-sizing: border-box;
+  background: var(--console-bg) !important;
+}
+
+.device-model-page .model-list-panel,
+.instance-page .model-list-panel,
+.adapter-management-page .adapter-sidebar,
+.data-workbench .asset-pane {
+  width: var(--console-sidebar-width) !important;
+  min-width: var(--console-sidebar-width) !important;
+  border-right: 1px solid var(--console-border) !important;
+  background: var(--console-surface) !important;
+}
+
+.device-model-page .global-top-bar,
+.instance-page .main-header,
+.adapter-management-page .detail-header,
+.data-workbench .workspace-toolbar {
+  min-height: var(--console-header-height) !important;
+  padding: 10px 20px !important;
+  border-bottom: 1px solid var(--console-border) !important;
+  background: var(--console-surface) !important;
+  box-shadow: none !important;
+}
+
+.device-model-page h1, .device-model-page h2,
+.instance-page h1, .instance-page h2,
+.adapter-management-page h1, .adapter-management-page h2,
+.data-workbench h1, .data-workbench h2,
+.task-list-fullscreen h1, .task-list-fullscreen h2,
+.user-page h1, .user-page h2 {
+  color: var(--console-text) !important;
+  font-size: 20px !important;
+  line-height: 28px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0 !important;
+}
+
+.device-model-page .detail-panel,
+.instance-page .content,
+.adapter-management-page .adapter-detail,
+.data-workbench .data-workspace {
+  min-width: 0;
+  background: var(--console-bg) !important;
+}
+
+.device-model-page .global-toolbar-title { font-size: 16px !important; font-weight: 600 !important; }
+.adapter-management-page .runtime-table,
+.data-workbench .meta-table {
+  border-color: var(--console-border) !important;
+  background: var(--console-surface) !important;
+}
+.adapter-management-page .runtime-table > div,
+.data-workbench .meta-table > div {
+  background: var(--console-surface) !important;
+  border-color: var(--console-border) !important;
+}
+
+.adapter-management-page .content-block,
+.data-workbench .workspace-section {
+  border: 1px solid var(--console-border) !important;
+  border-radius: var(--console-radius) !important;
+  background: var(--console-surface) !important;
+  box-shadow: none !important;
+}
+
+.adapter-management-page .adapter-list-item {
+  border-radius: 4px !important;
+  border: 1px solid transparent !important;
+  box-shadow: none !important;
+}
+.adapter-management-page .adapter-list-item:hover { background: #f7f8fa !important; }
+.adapter-management-page .adapter-list-item.active {
+  border-color: #b7d7ff !important;
+  background: var(--console-primary-soft) !important;
+  box-shadow: inset 3px 0 0 var(--console-primary) !important;
+}
+
+@media (max-width: 1080px) {
+  :root { --console-sidebar-width: 280px; }
+}
+@media (max-width: 760px) {
+  .device-model-page .model-list-panel,
+  .instance-page .model-list-panel,
+  .adapter-management-page .adapter-sidebar,
+  .data-workbench .asset-pane { width: 240px !important; min-width: 240px !important; }
 }

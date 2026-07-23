@@ -4,15 +4,14 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 
 import java.util.Map;
 
-/**
- * 状态机 SEND 动作产生的接口输出事件。
- */
+/** State-machine SEND output with its declared interface contract. */
 public record StateMachineSendActionEvent(
         Long instanceId,
         String interfaceName,
+        String interfaceType,
         String signalName,
-        String commandId,
+        String commandName,
+        String messageId,
         Map<String, Object> parameters,
         ObjectNode interfaceSignal
-) {
-}
+) {}

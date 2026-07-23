@@ -40,8 +40,8 @@ public class DeviceInstanceController {
     }
 
     @GetMapping("/list")
-    public ApiResponse<List<DeviceInstances>> list() {
-        return ApiResponse.ok(deviceInstanceService.list());
+    public ApiResponse<List<DeviceInstances>> list(@RequestParam(required = false) String lifecycleStatus) {
+        return ApiResponse.ok(deviceInstanceService.list(lifecycleStatus));
     }
 
     @GetMapping("/page")
@@ -49,8 +49,9 @@ public class DeviceInstanceController {
                                                         @RequestParam(defaultValue = "24") long pageSize,
                                                         @RequestParam(required = false) String modelId,
                                                         @RequestParam(required = false) String keyword,
-                                                        @RequestParam(required = false) Boolean online) {
-        return ApiResponse.ok(deviceInstanceService.page(pageNo, pageSize, modelId, keyword, online));
+                                                        @RequestParam(required = false) Boolean online,
+                                                        @RequestParam(required = false) String lifecycleStatus) {
+        return ApiResponse.ok(deviceInstanceService.page(pageNo, pageSize, modelId, keyword, online, lifecycleStatus));
     }
 
     @GetMapping("/summary")
@@ -69,10 +70,10 @@ public class DeviceInstanceController {
         }
     }
 
-    @DeleteMapping("/delete/{id}")
-    public ApiResponse<String> delete(@PathVariable String id) {
+    @PostMapping("/retire/{id}")
+    public ApiResponse<String> retire(@PathVariable String id) {
         try {
-            deviceInstanceService.delete(id);
+            deviceInstanceService.retire(id);
             return ApiResponse.ok("注销成功");
         } catch (Exception e) {
             return ApiResponse.fail(e.getMessage());
@@ -109,8 +110,9 @@ public class DeviceInstanceController {
     @PostMapping("/control/{id}")
     public ApiResponse<ObjectNode> control(@PathVariable String id, @RequestBody Map<String, Object> body) {
         try {
+            deviceInstanceService.requireUsable(Long.valueOf(id));
             String commandId = body == null ? "" : String.valueOf(body.getOrDefault("commandId", ""));
-            String signalName = body == null ? "MANUAL_EXECUTE" : String.valueOf(body.getOrDefault("signalName", "MANUAL_EXECUTE"));
+            String signalName = body == null ? "MANUAL_EXECUTE_START" : String.valueOf(body.getOrDefault("signalName", "MANUAL_EXECUTE_START"));
             Map<String, Object> parameters = new HashMap<>();
             if (body != null && body.get("parameters") instanceof Map<?, ?> raw) {
                 raw.forEach((key, value) -> parameters.put(String.valueOf(key), value));

@@ -4,8 +4,13 @@ import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.smartlab.management.dto.common.PageResult;
+import com.smartlab.global.protocol.ProtocolDictionaryService;
+import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.entity.constraint.ConstraintRule;
+import com.smartlab.management.entity.resource.device.DeviceInstanceLifecycle;
+import com.smartlab.management.entity.resource.device.DeviceInstances;
 import com.smartlab.management.mapper.constraint.ConstraintRuleMapper;
+import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
 
@@ -33,15 +38,18 @@ public class ConstraintRuleService extends ManagementCrudService<ConstraintRule>
             "NODE_LIFECYCLE_STATE"
     );
 
-    private static final Set<String> OPERATORS = Set.of("GT", "LT", "GE", "LE", "EQ", "NE", "BETWEEN", "IN");
-
     private static final Set<String> SYSTEM_ACTIONS = Set.of("HALT", "PAUSE", "ALERT", "LOG_ONLY");
 
     private final ConstraintRuleMapper mapper;
+    private final Set<String> operators;
+    private final DeviceInstancesMapper deviceInstancesMapper;
 
-    public ConstraintRuleService(ConstraintRuleMapper mapper) {
+    public ConstraintRuleService(ConstraintRuleMapper mapper, ProtocolDictionaryService protocolDictionaryService,
+                                 DeviceInstancesMapper deviceInstancesMapper) {
         super(mapper);
         this.mapper = mapper;
+        this.operators = Set.copyOf(protocolDictionaryService.enumValues("ConstraintOperator"));
+        this.deviceInstancesMapper = deviceInstancesMapper;
     }
 
     public List<ConstraintRule> list(String sourceType, String objectEndpoint, Boolean isEnabled) {
@@ -94,7 +102,7 @@ public class ConstraintRuleService extends ManagementCrudService<ConstraintRule>
     public Map<String, Object> options() {
         return Map.of(
                 "sourceTypes", SOURCE_TYPES,
-                "operators", OPERATORS,
+                "operators", operators,
                 "systemViolationActions", SYSTEM_ACTIONS
         );
     }
@@ -130,7 +138,7 @@ public class ConstraintRuleService extends ManagementCrudService<ConstraintRule>
         entity.setSourceType(upperTrim(entity.getSourceType()));
         entity.setObjectEndpoint(trim(entity.getObjectEndpoint()));
         entity.setObjectName(trim(entity.getObjectName()));
-        entity.setOperator(upperTrim(entity.getOperator()));
+        entity.setOperator(normalizeOperator(entity.getOperator()));
         entity.setThreshold(trim(entity.getThreshold()));
         entity.setDescription(trim(entity.getDescription()));
         if (entity.getIsEnabled() == null) {
@@ -149,9 +157,10 @@ public class ConstraintRuleService extends ManagementCrudService<ConstraintRule>
         if (!SOURCE_TYPES.contains(entity.getSourceType())) {
             throw new IllegalArgumentException("来源类型不符合约束模型规范: " + entity.getSourceType());
         }
-        if (!OPERATORS.contains(entity.getOperator())) {
+        if (!operators.contains(entity.getOperator())) {
             throw new IllegalArgumentException("比较符不符合协议字典规范: " + entity.getOperator());
         }
+        validateThresholdOperand(entity.getOperator(), entity.getThreshold());
         validateViolationActions(entity.getViolationActions());
     }
 
@@ -193,6 +202,13 @@ public class ConstraintRuleService extends ManagementCrudService<ConstraintRule>
         if (deviceInstanceId == null || !deviceInstanceId.canConvertToLong()) {
             throw new IllegalArgumentException("设备能力动作第 " + (index + 1) + " 项缺少有效的 deviceInstanceId");
         }
+        DeviceInstances instance = deviceInstancesMapper.selectById(deviceInstanceId.asLong());
+        if (instance == null) {
+            throw new IllegalArgumentException("设备能力动作第 " + (index + 1) + " 项引用的设备实例不存在");
+        }
+        if (!DeviceInstanceLifecycle.isUsable(instance)) {
+            throw new IllegalStateException("设备能力动作第 " + (index + 1) + " 项引用的设备实例已注销");
+        }
         if (!hasText(text(action, "capabilityName"))) {
             throw new IllegalArgumentException("设备能力动作第 " + (index + 1) + " 项缺少 capabilityName");
         }
@@ -221,6 +237,39 @@ public class ConstraintRuleService extends ManagementCrudService<ConstraintRule>
 
     private String trim(String value) {
         return value == null ? null : value.trim();
+    }
+
+    private String normalizeOperator(String value) {
+        return value == null ? null : value.trim();
+    }
+
+    private void validateThresholdOperand(String operator, String threshold) {
+        if (!"BETWEEN".equals(operator) && !"IN".equals(operator)) {
+            return;
+        }
+        final JsonNode operand;
+        try {
+            operand = JsonNodeSupport.MAPPER.readTree(threshold);
+        } catch (Exception e) {
+            throw new IllegalArgumentException(operator + " 的阈值必须是 JSON 数组", e);
+        }
+        if (operand == null || !operand.isArray()) {
+            throw new IllegalArgumentException(operator + " 的阈值必须是 JSON 数组");
+        }
+        if ("IN".equals(operator) && operand.isEmpty()) {
+            throw new IllegalArgumentException("IN 的候选值数组不能为空");
+        }
+        if ("BETWEEN".equals(operator)) {
+            if (operand.size() != 2) {
+                throw new IllegalArgumentException("BETWEEN 的阈值必须恰好包含下界和上界");
+            }
+            JsonNode lower = operand.get(0);
+            JsonNode upper = operand.get(1);
+            if (lower.isNumber() && upper.isNumber()
+                    && lower.decimalValue().compareTo(upper.decimalValue()) > 0) {
+                throw new IllegalArgumentException("BETWEEN 的下界不能大于上界");
+            }
+        }
     }
 
     private String upperTrim(String value) {

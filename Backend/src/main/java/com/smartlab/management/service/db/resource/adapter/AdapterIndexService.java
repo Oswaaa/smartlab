@@ -160,29 +160,20 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
         return categories;
     }
 
-    public ArrayNode listDevicePoints(String adapterName, String templateName) {
-        return listDevicePoints(adapterName, templateName, null);
-    }
-
-    public ArrayNode listDevicePoints(String adapterName, String templateName, String categoryName) {
+    public ArrayNode listDevicePoints(String adapterName, String categoryName) {
         AdapterIndex adapter = requireAdapter(adapterName);
         ArrayNode points = JsonNodeSupport.arrayNode();
-        JsonNode category = manifestService.findCategory(adapter.getParsedConfig(), firstNonBlank(categoryName, templateName));
+        JsonNode category = manifestService.findCategory(adapter.getParsedConfig(), categoryName);
         if (category != null) {
             for (JsonNode point : category.path("devicePoints")) {
                 points.add(point);
             }
-            return points;
         }
         return points;
     }
 
-    public ObjectNode buildAdapterContract(String adapterName, String templateName) {
-        return buildAdapterContract(adapterName, templateName, null);
-    }
-
-    public ObjectNode buildAdapterContract(String adapterName, String templateName, String categoryName) {
-        return manifestService.buildAdapterContract(requireAdapter(adapterName), firstNonBlank(categoryName, templateName));
+    public ObjectNode buildAdapterContract(String adapterName, String categoryName) {
+        return manifestService.buildAdapterContract(requireAdapter(adapterName), categoryName);
     }
     public AdapterIndex requireAdapter(String adapterName) {
         AdapterIndex adapter = getByName(adapterName);
@@ -223,10 +214,5 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
     private String stringValue(Object value) {
         return value == null ? null : String.valueOf(value);
     }
-    private String firstNonBlank(String first, String second) {
-        if (first != null && !first.isBlank()) {
-            return first;
-        }
-        return second;
-    }
+
 }

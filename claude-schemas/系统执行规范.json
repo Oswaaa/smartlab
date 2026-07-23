@@ -1,0 +1,375 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "系统执行规范.json",
+  "title": "SystemExecutionSpec",
+  "description": "系统执行规范，结构化描述状态机引擎、工作流引擎、约束引擎及其交互模型文件描述具体设备、工作流和约束实例；本文件描述所有实例共同遵守的固定接口、状态变化和运行规则",
+  "definitions": {
+    "ConstraintOperator": {
+      "type": "string",
+      "enum": [ ">", "<", ">=", "<=", "=", "!=", "BETWEEN", "IN" ],
+      "description": "标准比较操作符，供设备能力模型intrinsicConstraints与工作流节点触发器使用"
+    },
+    "NodeLifecycleState": {
+      "type": "string",
+      "enum": [ "PENDING", "RUNNING", "SUCCEEDED", "FAILED", "TERMINATING", "TERMINATED" ],
+      "description": "工作流节点生命周期状态，仅对声明lifecycle的DEV_NODE和SUBFLOW_NODE有效"
+    },
+    "TaskLifecycleState": {
+      "type": "string",
+      "enum": [ "PENDING", "RUNNING", "PAUSED", "TERMINATING", "SUCCEEDED", "FAILED", "TERMINATED" ],
+      "description": "任务实例整体生命周期状态，对应数据库TASK_STATUS；工作流模型本身不具有运行生命周期"
+    }
+  },
+  "stateMachineEngine": {
+    "comment": "设备状态机引擎：接收工作流、人工、约束和Adapter事件；维护CMD/OP状态；向Adapter下发能力命令并向系统广播状态",
+    "commandStateNames": [ "IDLE", "SENT", "RUNNING", "COMPLETED", "FAILED", "ABORTING", "ABORTED" ],
+    "standardInterfaces": [
+      { "comment": "工作流指令输入接口：接收工作流节点发起的能力执行或终止请求", "name": "Interface_workflow_in", "direction": "IN", "interfaceType": "WORKFLOW", "allowedSignalsRef": "协议规范.json#/definitions/WorkflowControlSignal" },
+      { "comment": "人工控制输入接口：接收控制台发起的能力执行或终止请求", "name": "Interface_control_in", "direction": "IN", "interfaceType": "CONTROL", "allowedSignalsRef": "协议规范.json#/definitions/ManualControlSignal" },
+      { "comment": "约束输入接口：接收约束引擎针对指定设备发出的能力执行或终止请求", "name": "Interface_constraint_in", "direction": "IN", "interfaceType": "CONSTRAINT", "allowedSignalsRef": "协议规范.json#/definitions/ConstraintControlSignal" },
+      {
+        "comment": "Adapter事件输入接口：只接收adapterContract.events中的eventNametelemetryTopic数据由后端直接映射设备属性并入库，不经过状态机接口",
+        "name": "Interface_adapter_in",
+        "direction": "IN",
+        "interfaceType": "ADAPTER",
+        "allowedSignals": []
+      },
+      { "comment": "Adapter命令输出接口：状态机引擎根据当前执行能力或isAbort为true的终止能力构造CommandMessageFormat后发送给Adapter", "name": "Interface_adapter_out", "direction": "OUT", "interfaceType": "ADAPTER", "allowedSignalsRef": "协议规范.json#/definitions/AdapterOutboundSignal" },
+      { "comment": "状态广播输出接口：广播CMD_STATE和OP_STATECMD_STATE的payload使用CommandStatePayload；OP_STATE的payload使用OperationStatePayload", "name": "Interface_state_out", "direction": "OUT", "interfaceType": "STATE", "allowedSignalsRef": "协议规范.json#/definitions/StatusSignal" }
+    ],
+    "systemTransitions": [
+      {
+        "comment": "工作流请求执行：状态机引擎从工作流上下文取得目标能力adapterCommandName后，构造CommandMessageFormat后发送给Adapter（SEND CMD_START）",
+        "stateSpace": "CMD",
+        "fromStateName": "IDLE",
+        "toStateName": "SENT",
+        "trigger": { "interfaceName": "Interface_workflow_in", "signalName": "WF_EXECUTE_START" },
+        "actions": [
+          {
+            "actionName": "SEND",
+            "payload": { "interfaceName": "Interface_adapter_out", "signalName": "CMD_START" }
+          }
+        ]
+      },
+      {
+        "comment": "人工请求执行：状态机引擎从人工请求上下文取得目标能力adapterCommandName后，构造CommandMessageFormat后发送给Adapter（SEND CMD_START）",
+        "stateSpace": "CMD",
+        "fromStateName": "IDLE",
+        "toStateName": "SENT",
+        "trigger": { "interfaceName": "Interface_control_in", "signalName": "MANUAL_EXECUTE_START" },
+        "actions": [
+          {
+            "actionName": "SEND",
+            "payload": { "interfaceName": "Interface_adapter_out", "signalName": "CMD_START" }
+          }
+        ]
+      },
+      {
+        "comment": "约束能力执行：IDLE→SENT状态机引擎从ConstraintExecutePayload取得capabilityName和parameters，解析adapterCommandName后发送CMD_START",
+        "stateSpace": "CMD",
+        "fromStateName": "IDLE",
+        "toStateName": "SENT",
+        "trigger": { "interfaceName": "Interface_constraint_in", "signalName": "CONSTRAINT_EXECUTE" },
+        "actions": [
+          {
+            "actionName": "SEND",
+            "payload": { "interfaceName": "Interface_adapter_out", "signalName": "CMD_START" }
+          }
+        ]
+      },
+      {
+        "comment": "Adapter开始执行事件：SENT→RUNNING具体signalName由设备能力模型adapterContract.events和设备状态机模型transitions声明",
+        "stateSpace": "CMD",
+        "fromStateName": "SENT",
+        "toStateName": "RUNNING",
+        "trigger": { "interfaceName": "Interface_adapter_in", "signalName": "<设备定义的开始执行事件>" },
+        "actions": []
+      },
+      {
+        "comment": "Adapter完成事件：RUNNING→COMPLETED具体signalName由设备能力模型adapterContract.events和设备状态机模型transitions声明",
+        "stateSpace": "CMD",
+        "fromStateName": "RUNNING",
+        "toStateName": "COMPLETED",
+        "trigger": { "interfaceName": "Interface_adapter_in", "signalName": "<设备定义的完成事件>" },
+        "actions": []
+      },
+      {
+        "comment": "Adapter失败事件：RUNNING→FAILED每个设备在状态机模型中以实际eventName声明对应转移",
+        "stateSpace": "CMD",
+        "fromStateName": "RUNNING",
+        "toStateName": "FAILED",
+        "trigger": { "interfaceName": "Interface_adapter_in", "signalName": "<设备定义的失败事件>" },
+        "actions": []
+      },
+      {
+        "comment": "工作流终止：SENT→ABORTING状态机引擎查找isAbort为true的能力，将其adapterCommandName作为终止命令发送给Adapter",
+        "stateSpace": "CMD",
+        "fromStateName": "SENT",
+        "toStateName": "ABORTING",
+        "trigger": { "interfaceName": "Interface_workflow_in", "signalName": "WF_EXECUTE_ABORT" },
+        "actions": [
+          {
+            "actionName": "SEND",
+            "payload": { "interfaceName": "Interface_adapter_out", "signalName": "CMD_ABORT" }
+          }
+        ]
+      },
+      {
+        "comment": "工作流终止：RUNNING→ABORTING状态机引擎查找isAbort为true的能力，将其adapterCommandName作为终止命令发送给Adapter",
+        "stateSpace": "CMD",
+        "fromStateName": "RUNNING",
+        "toStateName": "ABORTING",
+        "trigger": { "interfaceName": "Interface_workflow_in", "signalName": "WF_EXECUTE_ABORT" },
+        "actions": [
+          {
+            "actionName": "SEND",
+            "payload": { "interfaceName": "Interface_adapter_out", "signalName": "CMD_ABORT" }
+          }
+        ]
+      },
+      {
+        "comment": "人工终止：SENT→ABORTING终止命令解析规则与工作流终止相同",
+        "stateSpace": "CMD",
+        "fromStateName": "SENT",
+        "toStateName": "ABORTING",
+        "trigger": { "interfaceName": "Interface_control_in", "signalName": "MANUAL_EXECUTE_ABORT" },
+        "actions": [
+          {
+            "actionName": "SEND",
+            "payload": { "interfaceName": "Interface_adapter_out", "signalName": "CMD_ABORT" }
+          }
+        ]
+      },
+      {
+        "comment": "人工终止：RUNNING→ABORTING终止命令解析规则与工作流终止相同",
+        "stateSpace": "CMD",
+        "fromStateName": "RUNNING",
+        "toStateName": "ABORTING",
+        "trigger": { "interfaceName": "Interface_control_in", "signalName": "MANUAL_EXECUTE_ABORT" },
+        "actions": [
+          {
+            "actionName": "SEND",
+            "payload": { "interfaceName": "Interface_adapter_out", "signalName": "CMD_ABORT" }
+          }
+        ]
+      },
+      {
+        "comment": "约束终止：SENT→ABORTING终止命令解析规则与工作流终止相同",
+        "stateSpace": "CMD",
+        "fromStateName": "SENT",
+        "toStateName": "ABORTING",
+        "trigger": { "interfaceName": "Interface_constraint_in", "signalName": "CONSTRAINT_ABORT" },
+        "actions": [
+          {
+            "actionName": "SEND",
+            "payload": { "interfaceName": "Interface_adapter_out", "signalName": "CMD_ABORT" }
+          }
+        ]
+      },
+      {
+        "comment": "约束终止：RUNNING→ABORTING终止命令解析规则与工作流终止相同",
+        "stateSpace": "CMD",
+        "fromStateName": "RUNNING",
+        "toStateName": "ABORTING",
+        "trigger": { "interfaceName": "Interface_constraint_in", "signalName": "CONSTRAINT_ABORT" },
+        "actions": [
+          {
+            "actionName": "SEND",
+            "payload": { "interfaceName": "Interface_adapter_out", "signalName": "CMD_ABORT" }
+          }
+        ]
+      },
+      {
+        "comment": "Adapter终止成功事件：ABORTING→ABORTED具体signalName由设备能力模型adapterContract.events和设备状态机模型transitions声明",
+        "stateSpace": "CMD",
+        "fromStateName": "ABORTING",
+        "toStateName": "ABORTED",
+        "trigger": { "interfaceName": "Interface_adapter_in", "signalName": "<设备定义的终止成功事件>" },
+        "actions": []
+      }
+    ]
+  },
+  "workflowEngine": {
+    "comment": "工作流引擎：管理任务和节点运行；在节点间路由WORKFLOW信号和端口数据；通过设备能力节点的STATE接口与设备状态机交互；根据状态机广播和节点动作推进节点及任务生命周期",
+    "standardNodeInterfaces": [
+      {
+        "comment": "所有工作流节点的WORKFLOW输入接口接收上游节点发送的ACTIVE，再由该接口的bindingTriggers.condition判断是否执行绑定动作",
+        "nodeTypes": [ "DEV_NODE", "FUNC_NODE", "SUBFLOW_NODE" ],
+        "name": "Interface_workflow_in",
+        "direction": "IN",
+        "interfaceType": "WORKFLOW",
+        "allowedSignalsRef": "协议规范.json#/definitions/WorkflowNodeSignal"
+      },
+      {
+        "comment": "所有工作流节点的WORKFLOW输出接口EMIT动作通过此接口向下游节点发送ACTIVE",
+        "nodeTypes": [ "DEV_NODE", "FUNC_NODE", "SUBFLOW_NODE" ],
+        "name": "Interface_workflow_out",
+        "direction": "OUT",
+        "interfaceType": "WORKFLOW",
+        "allowedSignalsRef": "协议规范.json#/definitions/WorkflowNodeSignal"
+      },
+      {
+        "comment": "设备能力节点的STATE输出接口EMIT动作通过此接口向设备状态机发送WF_EXECUTE_START或WF_EXECUTE_ABORT",
+        "nodeTypes": [ "DEV_NODE" ],
+        "name": "Interface_state_out",
+        "direction": "OUT",
+        "interfaceType": "STATE",
+        "allowedSignalsRef": "协议规范.json#/definitions/WorkflowControlSignal"
+      },
+      {
+        "comment": "设备能力节点的STATE输入接口接收设备状态机广播的CMD_STATE和OP_STATE，接口触发器可据此EMIT下游ACTIVE或UPDATE节点内部变量",
+        "nodeTypes": [ "DEV_NODE" ],
+        "name": "Interface_state_in",
+        "direction": "IN",
+        "interfaceType": "STATE",
+        "allowedSignalsRef": "协议规范.json#/definitions/StatusSignal"
+      }
+    ],
+    "taskTransitions": [
+      { "comment": "任务开始：任务实例开始执行时，PENDING→RUNNING任务服务写入TASK_STATUS；节点调度由工作流引擎处理", "stateSpace": "TASK", "fromStateName": "PENDING", "toStateName": "RUNNING", "transitionRule": "任务实例开始执行" },
+      { "comment": "任务成功：任务执行结果被判定为成功时，RUNNING→SUCCEEDED任务服务写入TASK_STATUS", "stateSpace": "TASK", "fromStateName": "RUNNING", "toStateName": "SUCCEEDED", "transitionRule": "任务执行结果为成功" },
+      { "comment": "任务失败：任务执行结果被判定为失败时，RUNNING→FAILED任务服务写入TASK_STATUS", "stateSpace": "TASK", "fromStateName": "RUNNING", "toStateName": "FAILED", "transitionRule": "任务执行结果为失败" },
+      { "comment": "任务暂停：约束模型systemViolationAction.action为PAUSE时，任务服务将targetTaskId对应任务置为暂停；RUNNING→PAUSED", "stateSpace": "TASK", "fromStateName": "RUNNING", "toStateName": "PAUSED", "transitionRule": "约束处置动作PAUSE生效" },
+      { "comment": "任务恢复：任务服务恢复已暂停任务时，PAUSED→RUNNING任务服务写入TASK_STATUS", "stateSpace": "TASK", "fromStateName": "PAUSED", "toStateName": "RUNNING", "transitionRule": "任务服务恢复已暂停任务" },
+      { "comment": "任务开始终止：约束模型systemViolationAction.action为ABORT或任务服务请求终止时，RUNNING→TERMINATING", "stateSpace": "TASK", "fromStateName": "RUNNING", "toStateName": "TERMINATING", "transitionRule": "任务终止请求被接受" },
+      { "comment": "暂停任务开始终止：约束模型systemViolationAction.action为ABORT或任务服务请求终止时，PAUSED→TERMINATING", "stateSpace": "TASK", "fromStateName": "PAUSED", "toStateName": "TERMINATING", "transitionRule": "任务终止请求被接受" },
+      { "comment": "任务终止完成：任务终止流程收敛后，TERMINATING→TERMINATED任务服务写入TASK_STATUS", "stateSpace": "TASK", "fromStateName": "TERMINATING", "toStateName": "TERMINATED", "transitionRule": "任务内所有需终止的节点均已收到终止结果" }
+    ],
+    "nodeInterfaceTriggerExecutionRules": [
+      {
+        "comment": "WORKFLOW输入处理：节点收到ACTIVE后，实时计算该输入接口bindingTriggers中的condition；为真则执行actionName引用的动作EMIT按动作定义向目标OUT接口发送信号；UPDATE按动作定义更新内部变量",
+        "nodeTypes": [ "DEV_NODE", "FUNC_NODE", "SUBFLOW_NODE" ],
+        "inputInterfaceType": "WORKFLOW",
+        "inputSignalRef": "协议规范.json#/definitions/WorkflowNodeSignal",
+        "conditionSource": "node.interfaces[].bindingTriggers[].condition",
+        "actionSource": "node.interfaces[].bindingTriggers[].actionName→node.actions[].actionName",
+        "allowedActions": [ "EMIT", "UPDATE" ]
+      },
+      {
+        "comment": "STATE输入处理：DEV_NODE收到CMD_STATE或OP_STATE后，实时计算Interface_state_in上bindingTriggers中的condition；为真则执行actionName引用的EMIT或UPDATE动作节点生命周期由工作流引擎依据任务和设备状态推进，不伪造为节点状态机转移规则",
+        "nodeTypes": [ "DEV_NODE" ],
+        "inputInterfaceType": "STATE",
+        "inputSignalRef": "协议规范.json#/definitions/StatusSignal",
+        "conditionSource": "node.interfaces[].bindingTriggers[].condition",
+        "actionSource": "node.interfaces[].bindingTriggers[].actionName→node.actions[].actionName",
+        "allowedActions": [ "EMIT", "UPDATE" ]
+      }
+    ],
+    "expressionRule": { "comment": "FUNC_NODE.expression与约束表达式使用同一个后端表达式求值器，但不使用约束bindings功能节点只引用本节点internalVariables；约束模型需要跨设备、跨节点数据源，因此才使用bindings", "variableScope": "当前FUNC_NODE的internalVariables", "bindings": "不使用" },
+    "taskTerminationProcess": [
+      { "step": 1, "comment": "约束引擎或任务服务调用任务终止服务，任务服务校验目标任务处于RUNNING或PAUSED后将TASK_STATUS更新为TERMINATING" },
+      { "step": 2, "comment": "工作流引擎读取该任务内仍在运行的DEV_NODE，对每个节点执行已定义的终止逻辑并通过其STATE输出接口发送WF_EXECUTE_ABORT" },
+      { "step": 3, "comment": "设备状态机收到WF_EXECUTE_ABORT后进入ABORTING，查找isAbort为true的设备能力，构造CMD_ABORT并发送给Adapter" },
+      { "step": 4, "comment": "Adapter返回终止成功事件后，设备状态机转移至ABORTED并通过Interface_state_out广播CMD_STATE" },
+      { "step": 5, "comment": "工作流引擎收到相关CMD_STATE=ABORTED后完成节点终止收敛；全部需终止节点收敛后，任务服务将TASK_STATUS更新为TERMINATED" }
+    ]
+  },
+  "constraintEngine": {
+    "comment": "约束引擎是纯逻辑引擎，不声明标准接口，也不套用状态机的trigger+action结构它订阅可观测数据变化，按约束模型的bindings、expression和windowSeconds求值，再执行violationActions",
+    "executionProcess": [
+      {
+        "phase": "OBSERVE_DEVICE_ATTRIBUTE",
+        "comment": "设备遥测由后端订阅telemetryTopic，按设备能力模型attributesMapping映射设备属性并入库，再更新DEVICE_ATTRIBUTE类型observableObjects",
+        "source": { "engine": "DEVICE_DATA_SERVICE", "data": "已映射设备属性" },
+        "output": "更新DEVICE_ATTRIBUTE当前值"
+      },
+      {
+        "phase": "OBSERVE_DEVICE_STATE",
+        "comment": "设备业务状态和指令生命周期状态必须来自状态机Interface_state_out，不直接读取Adapter事件CMD_STATE映射DEVICE_COMMAND_LIFECYCLE；OP_STATE按regionName映射DEVICE_OPERATION_STATE",
+        "source": { "engine": "STATE_MACHINE_ENGINE", "interfaceName": "Interface_state_out", "allowedSignalsRef": "协议规范.json#/definitions/StatusSignal" },
+        "output": "更新DEVICE_COMMAND_LIFECYCLE和DEVICE_OPERATION_STATE当前值"
+      },
+      {
+        "phase": "OBSERVE_WORKFLOW_STATE",
+        "comment": "工作流引擎发布节点生命周期、节点内部变量和任务TASK_STATUS变化，约束引擎据此更新对应observableObjects",
+        "source": {
+          "engine": "WORKFLOW_ENGINE",
+          "data": [ "NODE_LIFECYCLE_STATE", "NODE_INTERNAL_VARIABLE", "TASK_LIFECYCLE_STATE" ]
+        },
+        "output": "更新工作流相关observableObjects当前值"
+      },
+      {
+        "phase": "EVALUATE_EXPRESSION",
+        "comment": "任一可观测对象变化后，找出bindings引用该对象的约束；将bindings解析为表达式变量并执行expression；设置windowSeconds时，仅在表达式连续为true达到该时长后判定违规",
+        "input": [ "constraints[].bindings", "constraints[].expression", "constraints[].windowSeconds" ],
+        "output": "违规或无违规结果"
+      },
+      { "phase": "EXECUTE_SYSTEM_ACTION", "comment": "ABORT读取targetTaskId并调用任务终止服务，任务终止过程由workflowEngine.taskTerminationProcess执行；PAUSE读取targetTaskId并由任务服务更新TASK_STATUS；ALERT调用告警服务三者均为后端内部服务调用，不是协议消息", "input": "systemViolationAction", "output": "任务状态变更、任务终止流程或告警记录" },
+      { "phase": "EXECUTE_DEVICE_CAPABILITY_ACTION", "comment": "DEVICE_CAPABILITY动作不直接访问Adapter约束引擎读取目标设备能力：isAbort为true时向状态机发送CONSTRAINT_ABORT；否则发送CONSTRAINT_EXECUTE及ConstraintExecutePayload，由状态机统一执行CMD生命周期和Adapter命令映射", "input": "deviceCapabilityViolationAction", "output": "通过状态机执行设备能力" }
+    ]
+  },
+  "engineConnections": [
+    {
+      "comment": "工作流设备能力节点通过STATE输出接口向设备状态机发起执行或终止",
+      "connectionType": "WORKFLOW_NODE_TO_STATE_MACHINE",
+      "source": { "engine": "WORKFLOW_ENGINE", "interfaceName": "DEV_NODE.Interface_state_out" },
+      "target": { "engine": "STATE_MACHINE_ENGINE", "interfaceName": "Interface_workflow_in" },
+      "allowedSignalsRef": "协议规范.json#/definitions/WorkflowControlSignal"
+    },
+    {
+      "comment": "设备状态机通过状态广播接口把CMD_STATE和OP_STATE推送给工作流设备能力节点",
+      "connectionType": "STATE_MACHINE_TO_WORKFLOW_NODE",
+      "source": { "engine": "STATE_MACHINE_ENGINE", "interfaceName": "Interface_state_out" },
+      "target": { "engine": "WORKFLOW_ENGINE", "interfaceName": "DEV_NODE.Interface_state_in" },
+      "allowedSignalsRef": "协议规范.json#/definitions/StatusSignal"
+    },
+    {
+      "comment": "约束引擎获得设备状态只能订阅状态机Interface_state_outCMD_STATE映射DEVICE_COMMAND_LIFECYCLE；OP_STATE按regionName映射DEVICE_OPERATION_STATE",
+      "connectionType": "STATE_MACHINE_TO_CONSTRAINT",
+      "source": { "engine": "STATE_MACHINE_ENGINE", "interfaceName": "Interface_state_out" },
+      "target": { "engine": "CONSTRAINT_ENGINE", "targetName": "observableObjects" },
+      "allowedSignalsRef": "协议规范.json#/definitions/StatusSignal",
+      "observableSourceTypes": [ "DEVICE_COMMAND_LIFECYCLE", "DEVICE_OPERATION_STATE" ]
+    },
+    {
+      "comment": "设备遥测由后端映射为设备属性后提供给约束引擎，不经过状态机接口",
+      "connectionType": "DEVICE_DATA_TO_CONSTRAINT",
+      "source": { "engine": "DEVICE_DATA_SERVICE", "data": "设备能力模型attributesMapping后的设备属性" },
+      "target": { "engine": "CONSTRAINT_ENGINE", "targetName": "observableObjects" },
+      "observableSourceTypes": [ "DEVICE_ATTRIBUTE" ]
+    },
+    {
+      "comment": "工作流引擎向约束引擎提供节点和任务可观测状态",
+      "connectionType": "WORKFLOW_TO_CONSTRAINT",
+      "source": {
+        "engine": "WORKFLOW_ENGINE",
+        "data": [ "节点生命周期", "节点内部变量", "TASK_STATUS" ]
+      },
+      "target": { "engine": "CONSTRAINT_ENGINE", "targetName": "observableObjects" },
+      "observableSourceTypes": [ "NODE_LIFECYCLE_STATE", "NODE_INTERNAL_VARIABLE", "TASK_LIFECYCLE_STATE" ]
+    },
+    {
+      "comment": "约束系统动作ABORT或PAUSE调用任务服务，不通过协议接口ABORT由任务服务和工作流引擎执行任务终止流程；PAUSE由任务服务写入TASK_STATUS=PAUSED",
+      "connectionType": "CONSTRAINT_TO_TASK_SERVICE",
+      "source": {
+        "engine": "CONSTRAINT_ENGINE",
+        "actionType": "SYSTEM",
+        "actions": [ "ABORT", "PAUSE" ]
+      },
+      "target": { "engine": "TASK_SERVICE", "operation": "更新目标任务TASK_STATUS或请求任务终止" }
+    },
+    {
+      "comment": "约束设备能力动作通过状态机执行目标能力isAbort为true时发送CONSTRAINT_ABORT；否则发送CONSTRAINT_EXECUTE",
+      "connectionType": "CONSTRAINT_TO_STATE_MACHINE",
+      "source": { "engine": "CONSTRAINT_ENGINE", "actionType": "DEVICE_CAPABILITY" },
+      "target": { "engine": "STATE_MACHINE_ENGINE", "interfaceName": "Interface_constraint_in" },
+      "allowedSignalsRef": "协议规范.json#/definitions/ConstraintControlSignal",
+      "signalMapping": [
+        { "condition": "目标capability.isAbort=true", "signalName": "CONSTRAINT_ABORT" },
+        { "condition": "目标capability.isAbort=false", "signalName": "CONSTRAINT_EXECUTE", "payloadRef": "协议规范.json#/definitions/ConstraintExecutePayload" }
+      ]
+    },
+    {
+      "comment": "Adapter事件进入设备状态机；Adapter遥测由后端直接映射属性、入库后作为DEVICE_ATTRIBUTE数据源提供给约束引擎",
+      "connectionType": "ADAPTER_TO_SYSTEM",
+      "eventRoute": {
+        "source": { "engine": "ADAPTER", "interfaceName": "eventTopic" },
+        "target": { "engine": "STATE_MACHINE_ENGINE", "interfaceName": "Interface_adapter_in" }
+      },
+      "telemetryRoute": {
+        "source": { "engine": "ADAPTER", "interfaceName": "telemetryTopic" },
+        "target": { "engine": "DEVICE_DATA_SERVICE", "targetName": "设备属性存储及约束可观测数据源" }
+      }
+    }
+  ]
+}

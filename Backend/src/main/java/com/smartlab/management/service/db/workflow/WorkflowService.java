@@ -2,103 +2,237 @@ package com.smartlab.management.service.db.workflow;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.smartlab.engine.workflow.WorkflowDefinitionCompiler;
+import com.smartlab.global.util.JsonSchemaValidationService;
 import com.smartlab.global.util.JsonNodeSupport;
+import com.smartlab.management.dto.workflow.WorkflowDetailResponse;
+import com.smartlab.management.dto.workflow.WorkflowSaveRequest;
 import com.smartlab.management.entity.workflow.FlowModels;
+import com.smartlab.management.entity.workflow.FlowNode;
+import com.smartlab.management.entity.workflow.Task;
 import com.smartlab.management.mapper.workflow.FlowModelsMapper;
+import com.smartlab.management.mapper.workflow.FlowNodeMapper;
+import com.smartlab.management.mapper.workflow.TaskMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
+import java.util.Set;
 
-/**
- * 流程模型表服务。
- * 对应 FLOW_MODELS 表，只负责流程模型的基础保存、查询和删除。
- */
+/** Transactional aggregate service for FLOW_MODELS and its FLOW_NODE members. */
 @Service
-/**
- * 工作流模板编排、定义与发布核心服务。
- */
 public class WorkflowService extends ManagementCrudService<FlowModels> {
 
-    private final FlowModelsMapper mapper;
+    private final FlowModelsMapper modelMapper;
+    private final FlowNodeMapper nodeMapper;
+    private final TaskMapper taskMapper;
+    private final WorkflowDefinitionCompiler compiler;
+    private final JsonSchemaValidationService schemaValidationService;
 
-    public WorkflowService(FlowModelsMapper mapper) {
-        super(mapper);
-        this.mapper = mapper;
+    public WorkflowService(FlowModelsMapper modelMapper, FlowNodeMapper nodeMapper,
+                           TaskMapper taskMapper, WorkflowDefinitionCompiler compiler,
+                           JsonSchemaValidationService schemaValidationService) {
+        super(modelMapper);
+        this.modelMapper = modelMapper;
+        this.nodeMapper = nodeMapper;
+        this.taskMapper = taskMapper;
+        this.compiler = compiler;
+        this.schemaValidationService = schemaValidationService;
     }
 
     @Override
     public List<FlowModels> list() {
-        return mapper.selectList(Wrappers.<FlowModels>lambdaQuery().orderByDesc(FlowModels::getId));
+        return modelMapper.selectList(Wrappers.<FlowModels>lambdaQuery().orderByDesc(FlowModels::getId));
     }
 
-    public FlowModels getById(String id) {
-        return mapper.selectById(parseId(id));
+    public WorkflowDetailResponse getDefinition(Long id) {
+        FlowModels model = modelMapper.selectById(id);
+        if (model == null) return null;
+        List<FlowNode> nodes = nodes(id);
+        WorkflowDetailResponse response = new WorkflowDetailResponse();
+        response.setId(model.getId());
+        response.setName(model.getFlowName());
+        response.setDescription(model.getDescription());
+        response.setVersion(model.getVersion());
+        response.setStatus(model.getStatus());
+        response.setNodeIdRefs(model.getNodes());
+        response.setNodesDef(JsonNodeSupport.toNode(nodes.stream().map(this::toDefinition).toList()));
+        response.setInterfaceConnections(model.getInterfaceConnection());
+        response.setPortConnections(model.getPortConnection());
+        response.setCreatorId(model.getCreatorId());
+        response.setCreateTime(model.getCreateTime());
+        return response;
     }
 
-    public FlowModels savePayload(Map<String, Object> payload) {
-        FlowModels model = new FlowModels();
-        Object id = first(payload, "id", "templateId", "workflowId");
-        if (id != null && !String.valueOf(id).isBlank()) {
-            model.setId(Long.valueOf(String.valueOf(id)));
+    public WorkflowDetailResponse getDefinition(String id) {
+        return getDefinition(parseId(id));
+    }
+
+    public WorkflowDefinitionCompiler.CompiledWorkflow compileDefinition(Long id) {
+        WorkflowDetailResponse detail = getDefinition(id);
+        if (detail == null) throw new IllegalArgumentException("流程模型不存在: " + id);
+        WorkflowSaveRequest request = new WorkflowSaveRequest();
+        request.setId(detail.getId());
+        request.setName(detail.getName());
+        request.setDescription(detail.getDescription());
+        request.setVersion(detail.getVersion());
+        request.setStatus(detail.getStatus());
+        request.setNodesDef(detail.getNodesDef());
+        request.setInterfaceConnections(detail.getInterfaceConnections());
+        request.setPortConnections(detail.getPortConnections());
+        return compiler.compile(request);
+    }
+
+    public List<FlowNode> nodes(Long flowModelId) {
+        return nodeMapper.selectList(Wrappers.<FlowNode>lambdaQuery()
+                .eq(FlowNode::getFlowModelId, flowModelId)
+                .orderByAsc(FlowNode::getNodeIdRef));
+    }
+
+    public List<FlowNode> requiredDeviceNodes(Long flowModelId) {
+        List<FlowNode> result = new java.util.ArrayList<>();
+        collectRequiredDeviceNodes(flowModelId, new HashSet<>(), result);
+        return List.copyOf(result);
+    }
+
+    private void collectRequiredDeviceNodes(Long flowModelId, Set<Long> visited, List<FlowNode> result) {
+        if (flowModelId == null || !visited.add(flowModelId)) return;
+        for (FlowNode node : nodes(flowModelId)) {
+            if ("DEVICE_CAPABILITY_NODE".equals(node.getNodeType())) result.add(node);
+            else if ("SUB_FLOW_NODE".equals(node.getNodeType()))
+                collectRequiredDeviceNodes(node.getSubFlowModelId(), visited, result);
         }
-        model.setFlowName(stringValue(first(payload, "flowName", "templateName", "workflowName", "name")));
-        model.setDescription(stringValue(first(payload, "description", "templateDesc")));
-        model.setVersion(intValue(first(payload, "version"), 1));
-        model.setStatus(stringValue(first(payload, "status", "workflowStatus")));
-        if (model.getStatus() == null) {
-            model.setStatus("ACTIVE");
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public WorkflowDetailResponse saveDefinition(WorkflowSaveRequest request) {
+        if (request == null || request.getNodesDef() == null || !request.getNodesDef().isArray()) {
+            throw new IllegalArgumentException("nodesDef 必须是数组");
         }
-        putIfPresent(payload, "nodes", model::setNodes);
-        putIfPresent(payload, "nodesDef", model::setNodes);
-        putIfPresent(payload, "interfaceConnection", model::setInterfaceConnection);
-        putIfPresent(payload, "interfaceConnections", model::setInterfaceConnection);
-        putIfPresent(payload, "portConnection", model::setPortConnection);
-        putIfPresent(payload, "portConnections", model::setPortConnection);
-        Object creatorId = first(payload, "creatorId");
-        if (creatorId != null && !String.valueOf(creatorId).isBlank()) {
-            model.setCreatorId(Long.valueOf(String.valueOf(creatorId)));
+        for (JsonNode node : request.getNodesDef()) {
+            schemaValidationService.validateDefinition(node, "workflow-model.json", "FlowNodeDefinition");
         }
+        WorkflowDefinitionCompiler.CompiledWorkflow compiled = compiler.compile(request);
+        validateSubFlowReferences(request, compiled);
+        FlowModels model = request.getId() == null ? new FlowModels() : modelMapper.selectById(request.getId());
+        if (request.getId() != null && model == null) {
+            throw new IllegalArgumentException("流程模型不存在: " + request.getId());
+        }
+        if (request.getId() != null) {
+            Long existingTasks = taskMapper.selectCount(Wrappers.<Task>lambdaQuery()
+                    .eq(Task::getFlowModelId, request.getId()));
+            if (existingTasks != null && existingTasks > 0)
+                throw new IllegalStateException("流程已有任务实例，不能覆盖节点定义；请新建流程版本");
+        }
+        if (model == null) model = new FlowModels();
+        model.setFlowName(request.getName().trim());
+        if (request.getDescription() != null || model.getId() == null) model.setDescription(request.getDescription());
+        if (request.getVersion() != null) model.setVersion(request.getVersion());
+        else if (model.getVersion() == null) model.setVersion(1);
+        if (request.getStatus() != null && !request.getStatus().isBlank()) model.setStatus(request.getStatus());
+        else if (model.getStatus() == null) model.setStatus("DRAFT");
+        if (request.getCreatorId() != null || model.getId() == null) model.setCreatorId(request.getCreatorId());
+        model.setInterfaceConnection(nonNullArray(request.getInterfaceConnections()));
+        model.setPortConnection(nonNullArray(request.getPortConnections()));
+        ArrayNode refs = JsonNodeSupport.arrayNode();
+        compiled.nodes().keySet().forEach(refs::add);
+        model.setNodes(refs);
         if (model.getId() == null) {
             model.setCreateTime(OffsetDateTime.now());
-            mapper.insert(model);
+            modelMapper.insert(model);
         } else {
-            mapper.updateById(model);
+            modelMapper.updateById(model);
+            nodeMapper.delete(Wrappers.<FlowNode>lambdaQuery().eq(FlowNode::getFlowModelId, model.getId()));
         }
-        return model;
-    }
-
-    public void delete(String id) {
-        mapper.deleteById(parseId(id));
-    }
-
-    private Object first(Map<String, Object> payload, String... keys) {
-        for (String key : keys) {
-            if (payload.containsKey(key)) {
-                return payload.get(key);
-            }
+        for (JsonNode definition : compiled.nodes().values()) {
+            nodeMapper.insert(toEntity(model.getId(), definition));
         }
-        return null;
+        return getDefinition(model.getId());
     }
 
-    private void putIfPresent(Map<String, Object> payload, String key, java.util.function.Consumer<JsonNode> setter) {
-        if (payload.containsKey(key)) {
-            setter.accept(JsonNodeSupport.toNode(payload.get(key)));
+    @Transactional(rollbackFor = Exception.class)
+    public void deleteDefinition(Long id) {
+        Long referenceCount = nodeMapper.selectCount(Wrappers.<FlowNode>lambdaQuery().eq(FlowNode::getSubFlowModelId, id));
+        if (referenceCount != null && referenceCount > 0)
+            throw new IllegalStateException("流程正被 " + referenceCount + " 个子流程节点引用，不能删除");
+        Long taskCount = taskMapper.selectCount(Wrappers.<Task>lambdaQuery().eq(Task::getFlowModelId, id));
+        if (taskCount != null && taskCount > 0) {
+            throw new IllegalStateException("流程已有任务实例，不能删除");
+        }
+        nodeMapper.delete(Wrappers.<FlowNode>lambdaQuery().eq(FlowNode::getFlowModelId, id));
+        modelMapper.deleteById(id);
+    }
+
+    private void validateSubFlowReferences(WorkflowSaveRequest request,
+                                           WorkflowDefinitionCompiler.CompiledWorkflow compiled) {
+        for (JsonNode node : compiled.nodes().values()) {
+            if (!"SUB_FLOW_NODE".equals(node.path("nodeType").asText())) continue;
+            long subFlowId = node.path("subFlowModelId").asLong();
+            if (modelMapper.selectById(subFlowId) == null)
+                throw new IllegalArgumentException("子流程模型不存在: " + subFlowId);
+            if (request.getId() != null && (request.getId() == subFlowId
+                    || referencesFlow(subFlowId, request.getId(), new HashSet<>())))
+                throw new IllegalArgumentException("子流程引用形成递归环: " + request.getId() + " -> " + subFlowId);
         }
     }
 
-    private String stringValue(Object value) {
-        return value == null ? null : String.valueOf(value);
+    private boolean referencesFlow(long flowModelId, long targetFlowModelId, Set<Long> visited) {
+        if (!visited.add(flowModelId)) return false;
+        for (FlowNode node : nodes(flowModelId)) {
+            Long child = node.getSubFlowModelId();
+            if (child == null) continue;
+            if (child == targetFlowModelId || referencesFlow(child, targetFlowModelId, visited)) return true;
+        }
+        return false;
     }
 
-    private Integer intValue(Object value, int defaultValue) {
-        if (value == null || String.valueOf(value).isBlank()) {
-            return defaultValue;
+    private FlowNode toEntity(Long flowModelId, JsonNode node) {
+        FlowNode entity = new FlowNode();
+        entity.setFlowModelId(flowModelId);
+        entity.setNodeIdRef(node.path("nodeIdRef").asLong());
+        entity.setNodeType(node.path("nodeType").asText());
+        if (node.hasNonNull("subFlowModelId")) entity.setSubFlowModelId(node.path("subFlowModelId").asLong());
+        var capability = node.path("capability").deepCopy();
+        if (capability.isObject() && !capability.hasNonNull("displayName")) {
+            ((com.fasterxml.jackson.databind.node.ObjectNode) capability).put("displayName",
+                    node.path("name").asText("node-" + node.path("nodeIdRef").asLong()));
         }
-        return Integer.valueOf(String.valueOf(value));
+        if (capability.hasNonNull("deviceModelRef")) entity.setDeviceModelId(capability.path("deviceModelRef").asLong());
+        entity.setCapability(capability.deepCopy());
+        entity.setInVariables(nonNullArray(node.path("internalVariables")));
+        entity.setLifecycle(nonNullObject(node.path("lifecycle")));
+        entity.setInterfaces(nonNullArray(node.path("interfaces")));
+        entity.setPorts(nonNullArray(node.path("ports")));
+        entity.setActions(nonNullArray(node.path("actions")));
+        entity.setCreateTime(OffsetDateTime.now());
+        return entity;
+    }
+
+    private JsonNode toDefinition(FlowNode node) {
+        var definition = JsonNodeSupport.objectNode();
+        definition.put("nodeIdRef", node.getNodeIdRef());
+        definition.put("name", node.getCapability() == null ? "node-" + node.getNodeIdRef()
+                : node.getCapability().path("displayName").asText("node-" + node.getNodeIdRef()));
+        definition.put("nodeType", node.getNodeType());
+        if (node.getSubFlowModelId() != null) definition.put("subFlowModelId", node.getSubFlowModelId());
+        definition.set("capability", nonNullObject(node.getCapability()));
+        definition.set("internalVariables", nonNullArray(node.getInVariables()));
+        definition.set("lifecycle", nonNullObject(node.getLifecycle()));
+        definition.set("interfaces", nonNullArray(node.getInterfaces()));
+        definition.set("ports", nonNullArray(node.getPorts()));
+        definition.set("actions", nonNullArray(node.getActions()));
+        return definition;
+    }
+
+    private ArrayNode nonNullArray(JsonNode node) {
+        return node != null && node.isArray() ? node.deepCopy() : JsonNodeSupport.arrayNode();
+    }
+
+    private JsonNode nonNullObject(JsonNode node) {
+        return node != null && node.isObject() ? node.deepCopy() : JsonNodeSupport.objectNode();
     }
 }
-
-

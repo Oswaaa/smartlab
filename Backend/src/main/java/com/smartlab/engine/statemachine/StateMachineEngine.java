@@ -2,6 +2,10 @@ package com.smartlab.engine.statemachine;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.smartlab.engine.statemachine.action.StateMachineActionExecutor;
+import com.smartlab.engine.statemachine.action.StateMachineActionRegistry;
+import com.smartlab.global.schema.SchemaMetadataService;
+import com.smartlab.global.protocol.ProtocolDictionaryService;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
 import com.smartlab.management.entity.resource.device.DeviceModels;
@@ -11,6 +15,8 @@ import com.smartlab.management.service.db.resource.device.DeviceModelService;
 import com.smartlab.management.service.db.resource.device.DeviceTwinStateService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -19,6 +25,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -33,32 +40,52 @@ public class StateMachineEngine {
     private final DeviceModelService deviceModelService;
     private final DeviceTwinStateService deviceTwinStateService;
     private final DeviceInstancesMapper deviceInstancesMapper;
-    private final StateMachineDictionary.Registry actionRegistry;
-
+    private final StateMachineActionRegistry actionRegistry;
+    private final ApplicationEventPublisher eventPublisher;
+    private final SchemaMetadataService schemaMetadataService;
+    private final ProtocolDictionaryService protocolDictionaryService;
     private final ConcurrentHashMap<String, ObjectNode> interfaceSignalTable = new ConcurrentHashMap<>();
 
     public StateMachineEngine(DeviceModelService deviceModelService,
                               DeviceTwinStateService deviceTwinStateService,
                               DeviceInstancesMapper deviceInstancesMapper,
-                              StateMachineDictionary.Registry actionRegistry) {
+                              StateMachineActionRegistry actionRegistry,
+                              ApplicationEventPublisher eventPublisher) {
+        this(deviceModelService, deviceTwinStateService, deviceInstancesMapper,
+                actionRegistry, eventPublisher, new SchemaMetadataService(), new ProtocolDictionaryService());
+    }
+
+    @Autowired
+    public StateMachineEngine(DeviceModelService deviceModelService,
+                              DeviceTwinStateService deviceTwinStateService,
+                              DeviceInstancesMapper deviceInstancesMapper,
+                              StateMachineActionRegistry actionRegistry,
+                              ApplicationEventPublisher eventPublisher,
+                              SchemaMetadataService schemaMetadataService,
+                              ProtocolDictionaryService protocolDictionaryService) {
         this.deviceModelService = deviceModelService;
         this.deviceTwinStateService = deviceTwinStateService;
         this.deviceInstancesMapper = deviceInstancesMapper;
         this.actionRegistry = actionRegistry;
+        this.eventPublisher = eventPublisher;
+        this.schemaMetadataService = schemaMetadataService;
+        this.protocolDictionaryService = protocolDictionaryService;
     }
 
     public ObjectNode handleManualControl(Long instanceId, String commandId, Map<String, Object> parameters) {
-        return handleManualControl(instanceId, "MANUAL_EXECUTE", commandId, parameters);
+        return handleManualControl(instanceId, "MANUAL_EXECUTE_START", commandId, parameters);
     }
 
     public ObjectNode handleManualControl(Long instanceId, String signalName, String commandId, Map<String, Object> parameters) {
-        String resolvedSignal = signalName == null || signalName.isBlank() ? "MANUAL_EXECUTE" : signalName;
+        String resolvedSignal = signalName == null || signalName.isBlank() ? "MANUAL_EXECUTE_START" : signalName;
         Map<String, Object> context = new HashMap<>();
-        context.put("commandId", commandId);
+        context.put("commandName", commandId);
         context.put("parameters", parameters == null ? Map.of() : parameters);
+        protocolDictionaryService.validateSignalExecutionContext(resolvedSignal, context);
 
         log.info("手动触发设备 {} 的控制信号 {}，指令 {}", instanceId, resolvedSignal, commandId);
-        List<ObjectNode> emittedSignals = dispatchSignal(instanceId, "Interface_control_in", resolvedSignal, context);
+        String interfaceName = resolveInputInterface(instanceId, "CONTROL", resolvedSignal);
+        List<ObjectNode> emittedSignals = dispatchSignal(instanceId, interfaceName, resolvedSignal, context);
         if (emittedSignals.isEmpty()) {
             DeviceTwinStates twinState = deviceTwinStateService.getByInstanceId(instanceId);
             String currentCmd = twinState == null ? "IDLE" : twinState.getCurrentCmdState();
@@ -67,7 +94,7 @@ public class StateMachineEngine {
 
         ObjectNode result = JsonNodeSupport.objectNode();
         result.put("instanceId", instanceId);
-        result.put("interfaceName", "Interface_control_in");
+        result.put("interfaceName", interfaceName);
         result.put("signalName", resolvedSignal);
         result.put("accepted", true);
         result.set("emittedSignals", JsonNodeSupport.toNode(emittedSignals));
@@ -79,10 +106,40 @@ public class StateMachineEngine {
         Map<String, Object> context = new HashMap<>();
         context.put("payload", message);
         log.info("接收到设备 {} 的 Adapter 事件: {}", instanceId, eventName);
-        dispatchSignal(instanceId, "Interface_adapter_in", eventName, context);
+        dispatchSignalByType(instanceId, "ADAPTER", eventName, context);
     }
 
-    public synchronized List<ObjectNode> dispatchSignal(Long instanceId, String interfaceName, String signalName, Map<String, Object> payloadContext) {
+    public List<ObjectNode> dispatchSignalByType(Long instanceId, String interfaceType, String signalName,
+                                                  Map<String, Object> executionContext) {
+        if (Set.of("WORKFLOW", "CONTROL", "CONSTRAINT").contains(interfaceType))
+            protocolDictionaryService.validateSignalExecutionContext(signalName, executionContext);
+        return dispatchSignal(instanceId, resolveInputInterface(instanceId, interfaceType, signalName), signalName, executionContext);
+    }
+
+    private String resolveInputInterface(Long instanceId, String interfaceType, String signalName) {
+        DeviceInstances instance = deviceInstancesMapper.selectById(instanceId);
+        if (instance == null) throw new IllegalArgumentException("设备实例不存在: " + instanceId);
+        DeviceModels model = deviceModelService.getById(String.valueOf(instance.getDeviceModelId()));
+        if (model == null) throw new IllegalArgumentException("设备模型不存在: " + instance.getDeviceModelId());
+        JsonNode interfaces = model.getStateMachineInterfaces();
+        if (interfaces != null && interfaces.isArray()) {
+            for (JsonNode item : interfaces) {
+                if (interfaceType.equals(item.path("interfaceType").asText())
+                        && "IN".equals(item.path("direction").asText())
+                        && containsText(item.path("allowedSignals"), signalName))
+                    return item.path("name").asText();
+            }
+        }
+        throw new IllegalArgumentException("状态机没有可接收信号的接口: " + interfaceType + "." + signalName);
+    }
+
+    private boolean containsText(JsonNode values, String expected) {
+        if (values != null && values.isArray())
+            for (JsonNode value : values) if (expected.equals(value.asText())) return true;
+        return false;
+    }
+
+    public synchronized List<ObjectNode> dispatchSignal(Long instanceId, String interfaceName, String signalName, Map<String, Object> executionContext) {
         DeviceInstances instance = deviceInstancesMapper.selectById(instanceId);
         if (instance == null) {
             log.warn("设备实例不存在，无法执行状态机: {}", instanceId);
@@ -97,11 +154,13 @@ public class StateMachineEngine {
 
         DeviceTwinStates twinState = deviceTwinStateService.getByInstanceId(instanceId);
         if (twinState == null) {
-            twinState = createDefaultTwinState(instanceId);
+            twinState = createDefaultTwinState(instanceId, model);
         }
 
-        String currentCmd = twinState.getCurrentCmdState() == null ? "IDLE" : twinState.getCurrentCmdState();
-        String currentOp = twinState.getCurrentOpState() == null ? "IDLE" : twinState.getCurrentOpState();
+        String currentCmd = twinState.getCurrentCmdState() == null
+                ? initialState(model.getCmdState(), "CMD") : twinState.getCurrentCmdState();
+        JsonNode currentOp = twinState.getCurrentOpState() == null
+                ? initialOperationState(model.getOpState()) : twinState.getCurrentOpState();
 
         // 1. 将模型转换为引擎需要的领域实体
         StateMachineModels.Definition definition = new StateMachineModels.Definition(model);
@@ -120,93 +179,173 @@ public class StateMachineEngine {
             twinState.setCurrentOpState(result.nextOpState);
         }
 
-        if ("Interface_adapter_in".equals(interfaceName)
-                || "Interface_control_in".equals(interfaceName)
-                || "Interface_workflow_in".equals(interfaceName)) {
-            twinState.setOnlineStatus("ONLINE");
-            twinState.setLastOnlineTime(OffsetDateTime.now());
-        }
         twinState.setUpdateTime(OffsetDateTime.now());
 
         // 3. 构造运行上下文
         StateMachineModels.EventContext eventContext = new StateMachineModels.EventContext(
-                instance, twinState, interfaceName, signalName, payloadContext
+                instance, model, twinState, interfaceName, signalName, executionContext
         );
 
         List<ObjectNode> emittedSignals = new ArrayList<>();
-
-        // 4. 调用动作字典执行具体动作
-        for (StateMachineModels.ActionDefinition action : result.actionsToExecute) {
-            StateMachineDictionary.ActionExecutor executor = actionRegistry.getExecutor(action.actionName());
-            if (executor != null) {
-                ObjectNode emitted = executor.execute(action, eventContext);
-                if (emitted != null) {
-                    emittedSignals.add(emitted);
-                    cacheSignal(instance.getId(), emitted);
-                }
-            } else {
-                log.warn("未找到动作执行器: {}", action.actionName());
-            }
-        }
-
-        // 系统原生内置状态广播逻辑
-        if (result.nextCmdState != null) {
-            ObjectNode cmdBroadcast = createBuiltInSignal(instance, "Interface_status_out", "CMD_STATE", twinState, payloadContext);
-            emittedSignals.add(cmdBroadcast);
-            cacheSignal(instance.getId(), cmdBroadcast);
-        }
-        if (result.nextOpState != null) {
-            ObjectNode opBroadcast = createBuiltInSignal(instance, "Interface_status_out", "OP_STATE", twinState, payloadContext);
-            emittedSignals.add(opBroadcast);
-            cacheSignal(instance.getId(), opBroadcast);
-        }
-
-        // 5. 调用 management db 服务保存新状态
+        List<EmittedSignal> routedSignals = executeActions(
+                result.actionsToExecute, eventContext, emittedSignals);
         deviceTwinStateService.save(twinState);
+        publishRoutedSignals(instanceId, routedSignals, executionContext);
+        if (result.nextCmdState != null && isTerminalCommandState(result.nextCmdState)) {
+            twinState.setCurrentCmdState(initialState(model.getCmdState(), "CMD"));
+            twinState.setUpdateTime(OffsetDateTime.now());
+            deviceTwinStateService.save(twinState);
+            StateMachineModels.EventContext idleContext = new StateMachineModels.EventContext(
+                    instance, model, twinState, interfaceName, signalName, executionContext);
+            List<EmittedSignal> idleSignals = executeActions(
+                    findOnEntryActions(definition, "CMD", twinState.getCurrentCmdState()),
+                    idleContext,
+                    emittedSignals);
+            publishRoutedSignals(instanceId, idleSignals, executionContext);
+        }
         return emittedSignals;
     }
 
+    private List<EmittedSignal> executeActions(
+            List<StateMachineModels.ActionDefinition> actions,
+            StateMachineModels.EventContext context,
+            List<ObjectNode> emittedSignals
+    ) {
+        List<EmittedSignal> routedSignals = new ArrayList<>();
+        for (StateMachineModels.ActionDefinition action : actions) {
+            StateMachineActionExecutor executor = actionRegistry.required(action.actionName());
+            ObjectNode emitted = executor.execute(action, context);
+            if (emitted == null) {
+                continue;
+            }
+            emittedSignals.add(emitted);
+            String outputInterface = action.payload().path("interfaceName").asText("");
+            String outputInterfaceType =
+                    resolveOutputInterfaceType(context.model().getStateMachineInterfaces(), outputInterface);
+            routedSignals.add(new EmittedSignal(outputInterface, outputInterfaceType, emitted));
+            cacheSignal(context.instance().getId(), outputInterface, emitted);
+        }
+        return routedSignals;
+    }
+
+    private void publishRoutedSignals(
+            Long instanceId,
+            List<EmittedSignal> routedSignals,
+            Map<String, Object> executionContext
+    ) {
+        for (EmittedSignal routedSignal : routedSignals) {
+            eventPublisher.publishEvent(new StateMachineInterfaceSignalEvent(
+                    instanceId,
+                    routedSignal.interfaceName(),
+                    routedSignal.interfaceType(),
+                    routedSignal.signal().deepCopy(),
+                    executionContext == null ? Map.of() : Map.copyOf(executionContext)));
+        }
+    }
     private TransitionResult computeNextState(
             StateMachineModels.Definition definition,
             String currentCmd,
-            String currentOp,
+            JsonNode currentOp,
             String interfaceName,
             String signalName
     ) {
         String nextCmdState = null;
-        String nextOpState = null;
+        ObjectNode updatedOpState = null;
         List<StateMachineModels.ActionDefinition> actionsToExecute = new ArrayList<>();
 
-        boolean isCommandSpace = isCommandSignal(signalName)
-                || "Interface_control_in".equals(interfaceName)
-                || "Interface_workflow_in".equals(interfaceName)
-                || "Interface_constraint_in".equals(interfaceName);
+        Set<String> cmdStates = stateNames(definition.getModel().getCmdState());
+        ObjectNode currentOpCopy = currentOp != null && currentOp.isObject() ? currentOp.deepCopy() : JsonNodeSupport.objectNode();
+        boolean opStateChanged = false;
 
         for (StateMachineModels.TransitionRule transition : definition.getTransitions()) {
-            if (!transition.triggerInterface().equals(interfaceName) || !transition.triggerSignal().equals(signalName)) {
+            if (transition.automatic()
+                    || !transition.triggerInterface().equals(interfaceName)
+                    || !transition.triggerSignal().equals(signalName)) {
                 continue;
             }
 
-            if (isCommandSpace && transition.fromState().equals(currentCmd)) {
+            if ("CMD".equals(transition.stateSpace())
+                    && nextCmdState == null
+                    && transition.fromState().equals(currentCmd)
+                    && cmdStates.contains(transition.fromState())
+                    && cmdStates.contains(transition.toState())) {
                 nextCmdState = transition.toState();
                 actionsToExecute.addAll(transition.actions());
-                break;
+                continue;
             }
-            if (!isCommandSpace && transition.fromState().equals(currentOp)) {
-                nextOpState = transition.toState();
-                actionsToExecute.addAll(transition.actions());
-                break;
+            if ("OP".equals(transition.stateSpace())) {
+                String regionName = transition.regionName();
+                if (regionName.isBlank()) {
+                    regionName = firstOpRegionName(definition.getModel().getOpState());
+                }
+                if (regionName.isBlank()) {
+                    continue;
+                }
+                String currentRegionState = currentOpCopy.path(regionName).asText("");
+                Set<String> opRegionStates = regionStateNames(definition.getModel().getOpState(), regionName);
+                if (currentRegionState.equals(transition.fromState())
+                        && opRegionStates.contains(transition.fromState())
+                        && opRegionStates.contains(transition.toState())) {
+                    currentOpCopy.put(regionName, transition.toState());
+                    opStateChanged = true;
+                    actionsToExecute.addAll(transition.actions());
+                    actionsToExecute.addAll(findOpOnEntryActions(definition, regionName, transition.toState()));
+                }
             }
         }
 
         if (nextCmdState != null) {
             actionsToExecute.addAll(findOnEntryActions(definition, "CMD", nextCmdState));
+            Set<String> visitedAutomaticStates = new java.util.HashSet<>();
+            while (nextCmdState != null) {
+                if (!visitedAutomaticStates.add(nextCmdState)) {
+                    throw new IllegalStateException("状态机自动转移形成循环: " + nextCmdState);
+                }
+                StateMachineModels.TransitionRule automaticTransition =
+                        findAutomaticCommandTransition(definition, nextCmdState, cmdStates);
+                if (automaticTransition == null) {
+                    break;
+                }
+                nextCmdState = automaticTransition.toState();
+                actionsToExecute.addAll(automaticTransition.actions());
+                actionsToExecute.addAll(findOnEntryActions(definition, "CMD", nextCmdState));
+            }
         }
-        if (nextOpState != null) {
-            actionsToExecute.addAll(findOnEntryActions(definition, "OP", nextOpState));
+        if (opStateChanged) {
+            updatedOpState = currentOpCopy;
         }
 
-        return new TransitionResult(nextCmdState, nextOpState, actionsToExecute);
+        return new TransitionResult(nextCmdState, updatedOpState, actionsToExecute);
+    }
+
+    private StateMachineModels.TransitionRule findAutomaticCommandTransition(
+            StateMachineModels.Definition definition,
+            String currentState,
+            Set<String> commandStates
+    ) {
+        for (StateMachineModels.TransitionRule transition : definition.getTransitions()) {
+            if (transition.automatic()
+                    && "CMD".equals(transition.stateSpace())
+                    && transition.fromState().equals(currentState)
+                    && commandStates.contains(transition.toState())) {
+                return transition;
+            }
+        }
+        return null;
+    }
+
+    private Set<String> stateNames(JsonNode stateSpace) {
+        if (stateSpace == null || !stateSpace.has("states") || !stateSpace.get("states").isArray()) {
+            return Set.of();
+        }
+        Set<String> names = new java.util.HashSet<>();
+        for (JsonNode state : stateSpace.get("states")) {
+            String name = state.path("stateName").asText("");
+            if (!name.isBlank()) {
+                names.add(name);
+            }
+        }
+        return names;
     }
 
     private List<StateMachineModels.ActionDefinition> findOnEntryActions(StateMachineModels.Definition definition, String spaceType, String stateName) {
@@ -232,49 +371,47 @@ public class StateMachineEngine {
         return result;
     }
 
-    private boolean isCommandSignal(String signalName) {
-        if (signalName == null) {
-            return false;
-        }
-        return switch (signalName) {
-            case "EXECUTE_START", "EXECUTE_PAUSE", "EXECUTE_RESUME", "EXECUTE_CANCEL", "EXECUTE_RESET",
-                 "MANUAL_EXECUTE", "MANUAL_CANCEL", "MANUAL_PAUSE", "MANUAL_RESUME", "MANUAL_RESET",
-                 "CONSTRAINT_CANCEL", "CONSTRAINT_PAUSE", "CONSTRAINT_RESUME", "CONSTRAINT_RESET",
-                 "COMMAND_RECEIVED", "COMMAND_RUNNING", "COMMAND_COMPLETED", "COMMAND_DONE", "COMMAND_FAILED",
-                 "COMMAND_TIMEOUT", "COMMAND_CANCELLED" -> true;
-            default -> false;
-        };
-    }
-
     public Map<String, ObjectNode> interfaceSignalSnapshot() {
         return Map.copyOf(interfaceSignalTable);
     }
 
-    private void cacheSignal(Long instanceId, ObjectNode signal) {
-        String interfaceName = signal.path("interfaceName").asText("");
+    private void cacheSignal(Long instanceId, String interfaceName, ObjectNode signal) {
         String signalName = signal.path("signalName").asText("");
+
         interfaceSignalTable.put(instanceId + "::" + interfaceName + "::" + signalName, signal);
         interfaceSignalTable.put(instanceId + "::" + interfaceName + "::__last__", signal);
     }
 
-    private ObjectNode createBuiltInSignal(DeviceInstances instance, String interfaceName, String signalName, DeviceTwinStates twinState, Map<String, Object> payloadContext) {
-        ObjectNode signal = JsonNodeSupport.objectNode();
-        signal.put("instanceId", instance.getId());
-        signal.put("interfaceName", interfaceName);
-        signal.put("signalName", signalName);
-        signal.put("opState", twinState.getCurrentOpState());
-        signal.put("cmdState", twinState.getCurrentCmdState());
-        signal.set("attributes", twinState.getCurrentAttr() == null ? JsonNodeSupport.objectNode() : twinState.getCurrentAttr());
-        signal.set("context", JsonNodeSupport.toNode(payloadContext == null ? Map.of() : payloadContext));
-        signal.put("timestamp", Instant.now().toEpochMilli());
-        return signal;
+    private boolean isTerminalCommandState(String state) {
+        return containsText(schemaMetadataService.frontendMetadata()
+                .path("stateMachine").path("commandTerminalStates"), state);
     }
 
-    private DeviceTwinStates createDefaultTwinState(Long instanceId) {
+    private String initialState(JsonNode stateSpace, String stateSpaceName) {
+        String initialState = stateSpace == null ? "" : stateSpace.path("initialStateName").asText("");
+        if (initialState.isBlank()) {
+            throw new IllegalStateException(stateSpaceName + " 状态空间缺少 initialStateName");
+        }
+        return initialState;
+    }
+
+    private String resolveOutputInterfaceType(JsonNode interfaces, String interfaceName) {
+        if (interfaces != null && interfaces.isArray()) {
+            for (JsonNode item : interfaces) {
+                if (interfaceName.equals(item.path("name").asText())
+                        && "OUT".equals(item.path("direction").asText())) {
+                    return item.path("interfaceType").asText("");
+                }
+            }
+        }
+        throw new IllegalArgumentException("状态机没有输出接口: " + interfaceName);
+    }
+
+    private DeviceTwinStates createDefaultTwinState(Long instanceId, DeviceModels model) {
         DeviceTwinStates state = new DeviceTwinStates();
         state.setInstanceId(instanceId);
-        state.setCurrentOpState("IDLE");
-        state.setCurrentCmdState("IDLE");
+        state.setCurrentOpState(initialOperationState(model.getOpState()));
+        state.setCurrentCmdState(initialState(model.getCmdState(), "CMD"));
         state.setOnlineStatus("UNKNOWN");
         state.setCurrentAttr(JsonNodeSupport.objectNode());
         state.setUpdateTime(OffsetDateTime.now());
@@ -282,9 +419,82 @@ public class StateMachineEngine {
         return state;
     }
 
+    private JsonNode initialOperationState(JsonNode opStateSpace) {
+        ObjectNode initial = JsonNodeSupport.objectNode();
+        if (opStateSpace != null && opStateSpace.has("regions") && opStateSpace.path("regions").isArray()) {
+            for (JsonNode region : opStateSpace.path("regions")) {
+                String regionName = region.path("regionName").asText("");
+                String initState = region.path("initialStateName").asText("");
+                if (!regionName.isBlank()) {
+                    initial.put(regionName, initState);
+                }
+            }
+        }
+        return initial;
+    }
+
+    private String firstOpRegionName(JsonNode opState) {
+        if (opState != null && opState.has("regions") && opState.path("regions").isArray()) {
+            JsonNode regions = opState.path("regions");
+            if (regions.size() > 0) {
+                return regions.get(0).path("regionName").asText("");
+            }
+        }
+        return "";
+    }
+
+    private Set<String> regionStateNames(JsonNode opState, String regionName) {
+        Set<String> states = new java.util.HashSet<>();
+        if (opState != null && opState.has("regions") && opState.path("regions").isArray()) {
+            for (JsonNode region : opState.path("regions")) {
+                if (regionName.equals(region.path("regionName").asText(""))) {
+                    JsonNode statesNode = region.path("states");
+                    if (statesNode.isArray()) {
+                        for (JsonNode state : statesNode) {
+                            String name = state.path("stateName").asText("");
+                            if (!name.isBlank()) {
+                                states.add(name);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return states;
+    }
+
+    private List<StateMachineModels.ActionDefinition> findOpOnEntryActions(
+            StateMachineModels.Definition definition, String regionName, String stateName) {
+        List<StateMachineModels.ActionDefinition> result = new ArrayList<>();
+        JsonNode opState = definition.getModel().getOpState();
+        if (opState != null && opState.has("regions") && opState.path("regions").isArray()) {
+            for (JsonNode region : opState.path("regions")) {
+                if (regionName.equals(region.path("regionName").asText(""))) {
+                    JsonNode statesNode = region.path("states");
+                    if (statesNode.isArray()) {
+                        for (JsonNode state : statesNode) {
+                            if (stateName.equals(state.path("stateName").asText(""))) {
+                                JsonNode onEntry = state.path("onEntry");
+                                if (onEntry.isArray()) {
+                                    for (JsonNode action : onEntry) {
+                                        result.add(StateMachineModels.ActionDefinition.fromJson(action));
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        return result;
+    }
+
     private record TransitionResult(
             String nextCmdState,
-            String nextOpState,
+            JsonNode nextOpState,
             List<StateMachineModels.ActionDefinition> actionsToExecute
     ) {}
+
+    private record EmittedSignal(String interfaceName, String interfaceType, ObjectNode signal) {}
 }

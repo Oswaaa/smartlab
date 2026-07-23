@@ -5,10 +5,13 @@ import com.smartlab.management.entity.resource.data.DataIndex;
 import com.smartlab.management.entity.resource.data.DataTemplateDetail;
 import com.smartlab.management.entity.resource.data.DataTemplateMain;
 import com.smartlab.management.entity.resource.device.PropertyType;
+import com.smartlab.management.entity.resource.device.DeviceInstances;
+import com.smartlab.management.entity.resource.device.DeviceInstanceLifecycle;
 import com.smartlab.management.mapper.resource.data.DataIndexMapper;
 import com.smartlab.management.mapper.resource.data.DataTemplateDetailMapper;
 import com.smartlab.management.mapper.resource.data.DataTemplateMainMapper;
 import com.smartlab.management.mapper.resource.device.PropertyTypeMapper;
+import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
@@ -43,18 +46,21 @@ public class DataIndexService extends ManagementCrudService<DataIndex> {
     private final DataTemplateDetailMapper templateDetailMapper;
     private final PropertyTypeMapper propertyTypeMapper;
     private final JdbcTemplate jdbcTemplate;
+    private final DeviceInstancesMapper deviceInstancesMapper;
 
     public DataIndexService(DataIndexMapper mapper,
                             DataTemplateMainMapper templateMainMapper,
                             DataTemplateDetailMapper templateDetailMapper,
                             PropertyTypeMapper propertyTypeMapper,
-                            JdbcTemplate jdbcTemplate) {
+                            JdbcTemplate jdbcTemplate,
+                            DeviceInstancesMapper deviceInstancesMapper) {
         super(mapper);
         this.mapper = mapper;
         this.templateMainMapper = templateMainMapper;
         this.templateDetailMapper = templateDetailMapper;
         this.propertyTypeMapper = propertyTypeMapper;
         this.jdbcTemplate = jdbcTemplate;
+        this.deviceInstancesMapper = deviceInstancesMapper;
     }
 
     public List<DataIndex> listByDeviceInstance(Long deviceInstanceId) {
@@ -69,6 +75,7 @@ public class DataIndexService extends ManagementCrudService<DataIndex> {
     }
 
     public List<DataIndex> listByTemplate(Long templateId) {
+
         if (templateId == null) {
             return list();
         }
@@ -90,6 +97,7 @@ public class DataIndexService extends ManagementCrudService<DataIndex> {
     }
 
     public long countByTemplate(Long templateId) {
+
         if (templateId == null) {
             return 0;
         }
@@ -104,6 +112,12 @@ public class DataIndexService extends ManagementCrudService<DataIndex> {
      */
     @Transactional(rollbackFor = Exception.class)
     public DataIndex createDataSet(Long templateId, Long deviceInstanceId, String dataDesc) {
+        if (deviceInstanceId != null) {
+            DeviceInstances instance = deviceInstancesMapper.selectById(deviceInstanceId);
+            if (instance == null) throw new IllegalArgumentException("设备实例不存在: " + deviceInstanceId);
+            if (!DeviceInstanceLifecycle.isUsable(instance))
+                throw new IllegalStateException("设备实例已注销，不能创建新数据集");
+        }
         if (templateId == null) {
             throw new IllegalArgumentException("数据模板ID不能为空");
         }

@@ -187,16 +187,40 @@
               </template>
 
               <template v-else-if="selectedNode.data.kind === 'branch'">
-                <el-form-item label="分支表达式">
+                <el-form-item label="条件出口">
                   <div class="condition-list">
-                    <div v-for="c in selectedNode.data.conditions" :key="c.interfaceId" class="condition-row">
-                      <span class="condition-label">{{ c.label }}</span>
-                      <el-input v-model="c.expression" placeholder="例如 temperature >= 80" />
+                    <div v-for="(c, index) in selectedNode.data.conditions" :key="c.interfaceId" class="condition-row branch-condition-row">
+                      <el-input v-model="c.label" placeholder="出口名称" style="width: 110px" />
+                      <el-input v-model="c.subject" placeholder="变量路径，如 temperature" :disabled="c.isDefault" />
+                      <el-select v-model="c.operator" style="width: 100px" :disabled="c.isDefault">
+                        <el-option v-for="operator in workflowOperators" :key="operator" :label="operator" :value="operator" />
+                      </el-select>
+                      <el-input v-model="c.threshold" placeholder="阈值；数组使用 JSON" :disabled="c.isDefault" />
+                      <el-checkbox v-model="c.isDefault">默认</el-checkbox>
+                      <el-button link type="danger" :disabled="selectedNode.data.conditions.length <= 2" @click="removeBranchCondition(index)">删除</el-button>
                     </div>
+                    <el-button size="small" @click="addBranchCondition">新增出口</el-button>
                   </div>
                 </el-form-item>
               </template>
+
+              <template v-else-if="selectedNode.data.kind === 'subflow'">
+                <el-form-item label="子流程">
+                  <el-select v-model="selectedNode.data.subFlowModelId" style="width: 100%" filterable>
+                    <el-option v-for="wf in workflows" :key="workflowId(wf)" :label="workflowNameText(wf)" :value="Number(workflowId(wf))" />
+                  </el-select>
+                </el-form-item>
+              </template>
             </el-form>
+          </el-tab-pane>
+          <el-tab-pane label="内部动作" name="actions">
+            <WorkflowActionEditor
+              v-model="selectedNode.data.actions"
+              :node-type="selectedNode.data.nodeType"
+              :catalog="workflowActionCatalog"
+              :calculation-operators="workflowCalculationOperators"
+              :workflow-control-signals="workflowControlSignals"
+            />
           </el-tab-pane>
           <el-tab-pane label="端口与变量" name="ports">
             <el-divider content-position="left">内部变量</el-divider>
@@ -273,11 +297,7 @@
               <el-table-column label="信号" width="120">
                 <template #default="{ row }">
                   <el-select v-model="row.signalType" style="width: 100%">
-                    <el-option label="START" value="START" />
-                    <el-option label="DONE" value="DONE" />
-                    <el-option label="ERROR" value="ERROR" />
-                    <el-option label="ALERT" value="ALERT" />
-                    <el-option label="USER_CONFIRM" value="USER_CONFIRM" />
+                    <el-option v-for="signal in workflowSignals" :key="signal" :label="signal" :value="signal" />
                   </el-select>
                 </template>
               </el-table-column>
@@ -313,6 +333,8 @@ import { Controls } from '@vue-flow/controls'
 import { Handle, MarkerType, Position, VueFlow, useVueFlow } from '@vue-flow/core'
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
+import WorkflowActionEditor from './components/WorkflowActionEditor.vue'
+import { defaultActionsForNode, validateAndOrderActions } from './workflowActions.js'
 
 type DeviceModel = {
   modelId: string
@@ -329,13 +351,13 @@ type DeviceModel = {
   }
 }
 
-type FlowNodeKind = 'start' | 'end' | 'branch' | 'join' | 'device'
+type FlowNodeKind = 'start' | 'end' | 'branch' | 'aggregate' | 'subflow' | 'device'
 type NodeVariable = { name: string; dataType: 'string' | 'number' | 'boolean'; mapping: string }
 type NodePort = { portId: string; direction: 'IN' | 'OUT'; dataType: 'string' | 'number' | 'boolean'; variableBinding: string }
 type NodeInterface = {
   interfaceId: string
   direction: 'IN' | 'OUT'
-  signalType: 'START' | 'DONE' | 'ERROR' | 'ALERT' | 'USER_CONFIRM'
+  signalType: string
   triggerMode: 'ALWAYS' | 'SIGNAL' | 'EXPRESSION'
   triggerExpr: string
 }
@@ -343,14 +365,16 @@ type NodeInterface = {
 type WorkflowNodeData = {
   kind: FlowNodeKind
   name: string
-  nodeType: 'DEVICE_CAPABILITY_NODE' | 'FUNCTIONAL_NODE'
+  nodeType: 'DEVICE_CAPABILITY_NODE' | 'FUNCTIONAL_NODE' | 'SUB_FLOW_NODE'
   modelId: string
   functionId: string
   parameters: Record<string, any>
-  conditions: Array<{ label: string; expression: string; interfaceId: string }>
+  subFlowModelId: number | null
+  conditions: Array<{ label: string; subject: string; operator: string; threshold: string; interfaceId: string; isDefault: boolean }>
   interfaces: NodeInterface[]
   ports: NodePort[]
   internalVariables: NodeVariable[]
+  actions: Array<{ actionName: string; payload: Record<string, any> }>
 }
 
 const sidebarTab = ref('palette')
@@ -367,16 +391,28 @@ const flowContainer = ref<HTMLElement | null>(null)
 const nodes = ref<any[]>([])
 const edges = ref<any[]>([])
 const selectedNodeId = ref('')
+let nextNodeIdRef = Date.now() * 1000
+const allocateNodeIdRef = () => String(++nextNodeIdRef)
 const drawerVisible = ref(false)
 
 const { project, addEdges } = useVueFlow()
 
-const logicTemplates = [
-  { kind: 'start', label: '开始', icon: VideoPlay },
-  { kind: 'end', label: '结束', icon: CircleCheck },
-  { kind: 'branch', label: '分支', icon: Share },
-  { kind: 'join', label: '汇聚', icon: Connection }
+const workflowFunctionTypes = ref<string[]>([])
+const workflowSignals = ref<string[]>([])
+const workflowOperators = ref<string[]>([])
+const workflowActionCatalog = ref<any[]>([])
+const workflowCalculationOperators = ref<string[]>([])
+const workflowControlSignals = ref<string[]>([])
+const logicTemplateCatalog = [
+  { functionType: 'START', kind: 'start' as FlowNodeKind, label: '开始', icon: VideoPlay },
+  { functionType: 'END', kind: 'end' as FlowNodeKind, label: '结束', icon: CircleCheck },
+  { functionType: 'BRANCH', kind: 'branch' as FlowNodeKind, label: '分支', icon: Share },
+  { functionType: 'AGGREGATE', kind: 'aggregate' as FlowNodeKind, label: '聚合', icon: Connection }
 ]
+const logicTemplates = computed(() => [
+  ...logicTemplateCatalog.filter(item => workflowFunctionTypes.value.includes(item.functionType)),
+  { functionType: 'SUB_FLOW', kind: 'subflow' as FlowNodeKind, label: '子流程', icon: Connection }
+])
 
 const selectedNode = computed(() => nodes.value.find(n => n.id === selectedNodeId.value) || null)
 const modelMap = computed(() => {
@@ -411,21 +447,23 @@ const selectedCommandId = computed(() => {
 const interfaceEdgeCount = computed(() => edges.value.filter((e: any) => String(e.sourceHandle || '').startsWith('if:')).length)
 const portEdgeCount = computed(() => edges.value.filter((e: any) => String(e.sourceHandle || '').startsWith('port:')).length)
 
-const workflowId = (wf: any) => wf.templateId || wf.id || ''
-const workflowNameText = (wf: any) => wf.templateName || wf.name || '未命名流程'
+const workflowId = (wf: any) => wf.id || ''
+const workflowNameText = (wf: any) => wf.flowName || wf.name || '未命名流程'
 
 const kindLabel = (kind: FlowNodeKind) => {
   if (kind === 'start') return '开始'
   if (kind === 'end') return '结束'
   if (kind === 'branch') return '分支'
-  if (kind === 'join') return '汇聚'
+  if (kind === 'aggregate') return '聚合'
+  if (kind === 'subflow') return '子流程'
   if (kind === 'device') return '设备'
   return '设备'
 }
 
 const nodeSummary = (data: WorkflowNodeData) => {
   if (data.kind === 'device') return `${modelMap.value[data.modelId]?.modelName || '未选模型'} / ${data.functionId || '未选能力'}`
-  if (data.kind === 'branch') return `分支条件 ${data.conditions.length}`
+  if (data.kind === 'branch') return `条件出口 ${data.conditions.length}`
+  if (data.kind === 'subflow') return workflows.value.find(wf => Number(workflowId(wf)) === data.subFlowModelId)?.flowName || '未选择子流程'
   return '流程控制'
 }
 
@@ -443,16 +481,16 @@ const getDataOutPorts = (ports: NodePort[] = []) => ports.filter(p => p.directio
 const calcOffset = (index: number, total: number) => `${(index + 1) * (100 / (total + 1))}%`
 
 const defaultInterfacesByKind = (kind: FlowNodeKind): NodeInterface[] => {
-  if (kind === 'start') return [{ interfaceId: 'flow_out', direction: 'OUT', signalType: 'START', triggerMode: 'ALWAYS', triggerExpr: '' }]
-  if (kind === 'end') return [{ interfaceId: 'flow_in', direction: 'IN', signalType: 'DONE', triggerMode: 'SIGNAL', triggerExpr: '' }]
+  if (kind === 'start') return [{ interfaceId: 'flow_out', direction: 'OUT', signalType: 'STARTED', triggerMode: 'ALWAYS', triggerExpr: '' }]
+  if (kind === 'end') return [{ interfaceId: 'flow_in', direction: 'IN', signalType: 'COMPLETED', triggerMode: 'SIGNAL', triggerExpr: '' }]
   if (kind === 'branch') return [
-    { interfaceId: 'flow_in', direction: 'IN', signalType: 'DONE', triggerMode: 'SIGNAL', triggerExpr: '' },
-    { interfaceId: 'flow_yes', direction: 'OUT', signalType: 'DONE', triggerMode: 'EXPRESSION', triggerExpr: 'result == true' },
-    { interfaceId: 'flow_no', direction: 'OUT', signalType: 'DONE', triggerMode: 'EXPRESSION', triggerExpr: 'result == false' }
+    { interfaceId: 'flow_in', direction: 'IN', signalType: 'COMPLETED', triggerMode: 'SIGNAL', triggerExpr: '' },
+    { interfaceId: 'flow_yes', direction: 'OUT', signalType: 'COMPLETED', triggerMode: 'SIGNAL', triggerExpr: '' },
+    { interfaceId: 'flow_default', direction: 'OUT', signalType: 'COMPLETED', triggerMode: 'ALWAYS', triggerExpr: '' }
   ]
   return [
-    { interfaceId: 'flow_in', direction: 'IN', signalType: 'START', triggerMode: 'SIGNAL', triggerExpr: '' },
-    { interfaceId: 'flow_out', direction: 'OUT', signalType: 'DONE', triggerMode: 'ALWAYS', triggerExpr: '' }
+    { interfaceId: 'flow_in', direction: 'IN', signalType: 'STARTED', triggerMode: 'SIGNAL', triggerExpr: '' },
+    { interfaceId: 'flow_out', direction: 'OUT', signalType: 'COMPLETED', triggerMode: 'ALWAYS', triggerExpr: '' }
   ]
 }
 const defaultPortsByKind = (kind: FlowNodeKind): NodePort[] => kind === 'device'
@@ -462,15 +500,20 @@ const defaultVariablesByKind = (_kind: FlowNodeKind): NodeVariable[] => []
 
 const createNodeData = (kind: FlowNodeKind, model?: DeviceModel): WorkflowNodeData => {
   if (kind === 'device') return {
-    kind, name: `${model?.modelName || '设备'}节点`, nodeType: 'DEVICE_CAPABILITY_NODE', modelId: model?.modelId || '', functionId: '', parameters: {},
-    conditions: [], interfaces: defaultInterfacesByKind(kind), ports: defaultPortsByKind(kind), internalVariables: defaultVariablesByKind(kind)
+    kind, name: `${model?.modelName || '设备'}节点`, nodeType: 'DEVICE_CAPABILITY_NODE', modelId: model?.modelId || '', functionId: '', parameters: {}, subFlowModelId: null,
+    conditions: [], interfaces: defaultInterfacesByKind(kind), ports: defaultPortsByKind(kind), internalVariables: defaultVariablesByKind(kind),
+    actions: defaultActionsForNode('DEVICE_CAPABILITY_NODE', workflowActionCatalog.value, workflowControlSignals.value)
   }
   if (kind === 'branch') return {
-    kind, name: '分支节点', nodeType: 'FUNCTIONAL_NODE', modelId: '', functionId: 'BRANCH_EVAL', parameters: {},
-    conditions: [{ label: '满足条件', expression: 'result == true', interfaceId: 'flow_yes' }, { label: '不满足', expression: 'result == false', interfaceId: 'flow_no' }],
-    interfaces: defaultInterfacesByKind(kind), ports: defaultPortsByKind(kind), internalVariables: defaultVariablesByKind(kind)
+    kind, name: '分支节点', nodeType: 'FUNCTIONAL_NODE', modelId: '', functionId: 'BRANCH', parameters: {}, subFlowModelId: null,
+    conditions: [
+      { label: '满足条件', subject: '', operator: '=', threshold: 'true', interfaceId: 'flow_yes', isDefault: false },
+      { label: '默认出口', subject: '', operator: '=', threshold: '', interfaceId: 'flow_default', isDefault: true }
+    ],
+    interfaces: defaultInterfacesByKind(kind), ports: defaultPortsByKind(kind), internalVariables: defaultVariablesByKind(kind), actions: []
   }
-  return { kind, name: `${kindLabel(kind)}节点`, nodeType: 'FUNCTIONAL_NODE', modelId: '', functionId: kind.toUpperCase(), parameters: {}, conditions: [], interfaces: defaultInterfacesByKind(kind), ports: defaultPortsByKind(kind), internalVariables: defaultVariablesByKind(kind) }
+  if (kind === 'subflow') return { kind, name: '子流程节点', nodeType: 'SUB_FLOW_NODE', modelId: '', functionId: '', parameters: {}, subFlowModelId: null, conditions: [], interfaces: defaultInterfacesByKind(kind), ports: [], internalVariables: [], actions: [] }
+  return { kind, name: `${kindLabel(kind)}节点`, nodeType: 'FUNCTIONAL_NODE', modelId: '', functionId: kind.toUpperCase(), parameters: {}, subFlowModelId: null, conditions: [], interfaces: defaultInterfacesByKind(kind), ports: defaultPortsByKind(kind), internalVariables: defaultVariablesByKind(kind), actions: [] }
 }
 
 const onPaletteDragStart = (event: DragEvent, kind: FlowNodeKind) => {
@@ -498,7 +541,7 @@ const onDrop = (event: DragEvent) => {
   }
 
   nodes.value.push({
-    id: `node_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+    id: allocateNodeIdRef(),
     type: 'custom',
     position,
     data: createNodeData(kind, model)
@@ -572,13 +615,32 @@ const addPort = () => {
   selectedNode.value?.data.ports.push({ portId: `port_${Date.now().toString().slice(-4)}`, direction: 'IN', dataType: 'string', variableBinding: '' })
 }
 const removePort = (index: number) => {
-  selectedNode.value?.data.ports.splice(index, 1)
+  if (!selectedNode.value) return
+  const [removed] = selectedNode.value.data.ports.splice(index, 1)
+  edges.value = edges.value.filter((edge: any) => !(edge.source === selectedNode.value.id && edge.sourceHandle === `port:${removed.portId}`) && !(edge.target === selectedNode.value.id && edge.targetHandle === `port:${removed.portId}`))
 }
 const addInterface = () => {
-  selectedNode.value?.data.interfaces.push({ interfaceId: `flow_${Date.now().toString().slice(-4)}`, direction: 'OUT', signalType: 'DONE', triggerMode: 'ALWAYS', triggerExpr: '' })
+  selectedNode.value?.data.interfaces.push({ interfaceId: `flow_${Date.now().toString().slice(-4)}`, direction: 'OUT', signalType: 'COMPLETED', triggerMode: 'ALWAYS', triggerExpr: '' })
+}
+const addBranchCondition = () => {
+  if (!selectedNode.value) return
+  const suffix = Date.now().toString().slice(-5)
+  selectedNode.value.data.conditions.push({ label: '条件出口', subject: '', operator: '=', threshold: '', interfaceId: `flow_${suffix}`, isDefault: false })
+  selectedNode.value.data.interfaces.push({ interfaceId: `flow_${suffix}`, direction: 'OUT', signalType: 'COMPLETED', triggerMode: 'SIGNAL', triggerExpr: '' })
+}
+const removeBranchCondition = (index: number) => {
+  if (!selectedNode.value || selectedNode.value.data.conditions.length <= 2) return
+  const [removed] = selectedNode.value.data.conditions.splice(index, 1)
+  const interfaceIndex = selectedNode.value.data.interfaces.findIndex((item: NodeInterface) => item.interfaceId === removed.interfaceId)
+  if (interfaceIndex >= 0) selectedNode.value.data.interfaces.splice(interfaceIndex, 1)
+  edges.value = edges.value.filter((edge: any) =>
+    !(edge.source === selectedNode.value.id && edge.sourceHandle === `if:${removed.interfaceId}`)
+    && !(edge.target === selectedNode.value.id && edge.targetHandle === `if:${removed.interfaceId}`))
 }
 const removeInterface = (index: number) => {
-  selectedNode.value?.data.interfaces.splice(index, 1)
+  if (!selectedNode.value) return
+  const [removed] = selectedNode.value.data.interfaces.splice(index, 1)
+  edges.value = edges.value.filter((edge: any) => !(edge.source === selectedNode.value.id && edge.sourceHandle === `if:${removed.interfaceId}`) && !(edge.target === selectedNode.value.id && edge.targetHandle === `if:${removed.interfaceId}`))
 }
 const clearCanvas = () => {
   nodes.value = []
@@ -587,99 +649,97 @@ const clearCanvas = () => {
   selectedNodeId.value = ''
 }
 
+const parseThreshold = (raw: string) => {
+  const value = String(raw ?? '').trim()
+  if (!value) return ''
+  if (value === 'true') return true
+  if (value === 'false') return false
+  if (/^-?\d+(\.\d+)?$/.test(value)) return Number(value)
+  if (value.startsWith('[') || value.startsWith('{')) {
+    try { return JSON.parse(value) } catch { return value }
+  }
+  return value
+}
+
 const buildPayload = () => {
-  const nodesDef = nodes.value.map((n: any, idx: number) => {
-    const interfaces = (n.data.interfaces || []).map((it: NodeInterface) => ({
-      interfaceId: `${n.id}_${it.interfaceId}`,
+  const nodesDef = nodes.value.map((n: any) => {
+    const interfaces = (n.data.interfaces || []).filter((it: NodeInterface) => it.interfaceId).map((it: NodeInterface) => ({
+      name: it.interfaceId,
       direction: it.direction,
-      interfaceType: 'CONTROL_FLOW',
-      allowedSignals: ['START', 'DONE', 'ERROR', 'ALERT', 'USER_CONFIRM'],
-      triggerMode: it.triggerMode,
-      triggerExpr: it.triggerExpr,
-      signalType: it.signalType
+      interfaceType: 'SIGNAL',
+      allowedSignals: [it.signalType]
+    }))
+    const ports = (n.data.ports || []).filter((p: NodePort) => p.portId).map((p: NodePort) => ({
+      name: p.portId,
+      direction: p.direction,
+      dataType: ({ string: 'STRING', number: 'DOUBLE', boolean: 'BOOLEAN' } as Record<string, string>)[p.dataType],
+      internalVariableName: p.variableBinding || ''
+    }))
+    const internalVariables = (n.data.internalVariables || []).filter((v: NodeVariable) => v.name).map((v: NodeVariable) => ({
+      name: v.name,
+      dataType: ({ string: 'STRING', number: 'DOUBLE', boolean: 'BOOLEAN' } as Record<string, string>)[v.dataType],
+      attributesMapping: v.mapping || ''
     }))
 
-    const ports = (n.data.ports || [])
-      .filter((p: NodePort) => p.portId)
-      .map((p: NodePort) => ({
-        portId: `${n.id}_${p.portId}`,
-        direction: p.direction,
-        dataType: p.dataType,
-        internalVariableBinding: p.variableBinding
+    let capability: Record<string, any>
+    if (n.data.kind === 'device') capability = {
+      displayName: n.data.name,
+      deviceModelRef: Number(n.data.modelId),
+      capabilityRef: n.data.functionId,
+      parameters: { ...n.data.parameters },
+      bindingPolicy: 'TASK_RESOURCE_MAP'
+    }
+    else if (n.data.kind === 'branch') capability = {
+      displayName: n.data.name,
+      functionType: 'BRANCH',
+      branches: n.data.conditions.map((condition: WorkflowNodeData['conditions'][number]) => ({
+        interfaceName: condition.interfaceId,
+        ...(condition.isDefault
+          ? { isDefault: true }
+          : { condition: { subject: condition.subject, operator: condition.operator, threshold: parseThreshold(condition.threshold) } })
       }))
-
-    const internalVariables = (n.data.internalVariables || [])
-      .filter((v: NodeVariable) => v.name)
-      .map((v: NodeVariable, vi: number) => ({
-        variableId: `${n.id}_var_${vi}`,
-        name: v.name,
-        dataType: v.dataType,
-        mapping: v.mapping
-      }))
-
-    const capability =
-      n.data.kind === 'device'
-        ? { deviceModelRef: n.data.modelId, capabilityRef: n.data.functionId || 'NOOP', bindingPolicy: 'AUTO_ONLINE' }
-        : { functionType: n.data.kind.toUpperCase(), capabilityRef: n.data.functionId || n.data.kind.toUpperCase() }
-
-    const nodeParameters = n.data.kind === 'device' ? { ...n.data.parameters } : {}
+    }
+    else if (n.data.kind === 'aggregate') capability = { displayName: n.data.name, functionType: 'AGGREGATE', aggregationPolicy: 'ALL' }
+    else if (n.data.kind === 'subflow') capability = { displayName: n.data.name }
+    else capability = { displayName: n.data.name, functionType: n.data.kind.toUpperCase() }
 
     return {
-      nodeId: n.id,
+      nodeIdRef: Number(n.id),
       name: n.data.name,
       nodeType: n.data.nodeType,
+      ...(n.data.kind === 'subflow' ? { subFlowModelId: Number(n.data.subFlowModelId) } : {}),
       capability,
-      parameters: nodeParameters,
       internalVariables,
-      lifecycle: {
-        initialState: 'PENDING',
-        states: [
-          { stateId: 'PENDING', stateName: 'PENDING' },
-          { stateId: 'RUNNING', stateName: 'RUNNING' },
-          { stateId: 'SUCCESS', stateName: 'SUCCESS' },
-          { stateId: 'FAILED', stateName: 'FAILED' }
-        ],
-        transitions: [
-          { transitionId: `${n.id}_t1`, from: 'PENDING', to: 'RUNNING', trigger: { interfaceRef: `${n.id}_flow_in`, signalType: 'START' } },
-          { transitionId: `${n.id}_t2`, from: 'RUNNING', to: 'SUCCESS', trigger: { interfaceRef: `${n.id}_flow_out`, signalType: 'DONE' } }
-        ]
-      },
+      lifecycle: { initialStateName: 'PENDING', states: ['PENDING', 'RUNNING', 'COMPLETED', 'FAILED'] },
       interfaces,
       ports,
-      actions: [
-        {
-          actionId: `${n.id}_action`,
-          actionType: n.data.kind === 'device' ? 'EMIT_SIGNAL' : 'EXECUTE_LOGIC',
-          interfaceRef: n.data.kind === 'device' ? 'if_wf_cmd_in' : `${n.id}_flow_out`,
-          signalType: n.data.kind === 'device' ? n.data.functionId || 'EXEC' : n.data.kind.toUpperCase(),
-          logicExpression: n.data.kind === 'device' ? undefined : n.data.kind.toUpperCase(),
-          payload: n.data.kind === 'device'
-            ? { specVersion: 'smartlab.signal.v1', modelId: n.data.modelId, capabilityRef: n.data.functionId, commandId: n.data.functionId, parameters: n.data.parameters }
-            : { conditions: n.data.conditions || [] }
-        }
-      ],
-      _order: idx
+      actions: validateAndOrderActions(n.data.actions || [], n.data.nodeType, workflowActionCatalog.value)
     }
   })
 
   const interfaceConnections = edges.value
     .filter((e: any) => String(e.sourceHandle || '').startsWith('if:') && String(e.targetHandle || '').startsWith('if:'))
-    .map((e: any, idx: number) => ({
-      connectionId: `conn_if_${idx + 1}`,
+    .map((e: any, index: number) => ({
+      connectionId: `conn_if_${index + 1}`,
       connectionType: 'NODE_TO_NODE',
-      source: { interfaceRef: `${e.source}_${String(e.sourceHandle).replace('if:', '')}` },
-      target: { interfaceRef: `${e.target}_${String(e.targetHandle).replace('if:', '')}` }
+      source: { nodeIdRef: Number(e.source), interfaceName: String(e.sourceHandle).replace('if:', '') },
+      target: { nodeIdRef: Number(e.target), interfaceName: String(e.targetHandle).replace('if:', '') }
     }))
-
   const portConnections = edges.value
     .filter((e: any) => String(e.sourceHandle || '').startsWith('port:') && String(e.targetHandle || '').startsWith('port:'))
-    .map((e: any, idx: number) => ({
-      connectionId: `conn_port_${idx + 1}`,
-      source: { nodeRef: e.source, portRef: `${e.source}_${String(e.sourceHandle).replace('port:', '')}` },
-      target: { nodeRef: e.target, portRef: `${e.target}_${String(e.targetHandle).replace('port:', '')}` }
+    .map((e: any, index: number) => ({
+      connectionId: `conn_port_${index + 1}`,
+      source: { nodeIdRef: Number(e.source), portName: String(e.sourceHandle).replace('port:', '') },
+      target: { nodeIdRef: Number(e.target), portName: String(e.targetHandle).replace('port:', '') }
     }))
 
-  return { templateId: selectedWorkflowId.value || '', templateName: workflowName.value, nodesDef, interfaceConnections, portConnections }
+  return {
+    ...(selectedWorkflowId.value ? { id: Number(selectedWorkflowId.value) } : {}),
+    name: workflowName.value,
+    nodesDef,
+    interfaceConnections,
+    portConnections
+  }
 }
 
 const saveWorkflow = async () => {
@@ -691,6 +751,7 @@ const saveWorkflow = async () => {
     const payload = buildPayload()
     const res = await axios.post('/api/workflow/save', payload)
     if (res.data?.success) {
+      selectedWorkflowId.value = String(res.data.data?.workflowId || selectedWorkflowId.value)
       ElMessage.success('流程保存成功')
       await fetchWorkflows()
     } else {
@@ -703,87 +764,67 @@ const saveWorkflow = async () => {
   }
 }
 
-const decodeRef = (refText: string, nodeIds: string[]) => {
-  const matchedNodeId = nodeIds.find(id => refText.startsWith(`${id}_`))
-  if (!matchedNodeId) return null
-  return { nodeId: matchedNodeId, localRef: refText.replace(`${matchedNodeId}_`, '') }
-}
-
 const loadWorkflow = async (templateId: string) => {
   selectedWorkflowId.value = templateId
   try {
     const res = await axios.get(`/api/workflow/detail/${templateId}`)
     if (!res.data?.success || !res.data?.data) return ElMessage.error(res.data?.message || '加载流程失败')
-
     const tpl = res.data.data
-    if ((tpl.nodesDef || []).some((n: any) => ['LLM_NODE', 'LLM'].includes(String(n.capability?.functionType || '').toUpperCase()))) {
-      return ElMessage.error('该旧流程包含下层 LLM 节点，已禁止加载。请在上层编排中调用确定性 SmartLab 工作流。')
-    }
-    workflowName.value = tpl.templateName || tpl.name || ''
-
-    const loadedNodes = (tpl.nodesDef || []).map((n: any, idx: number) => {
+    workflowName.value = tpl.name || ''
+    const loadedNodes = (tpl.nodesDef || []).map((n: any, index: number) => {
       const capability = n.capability || {}
       const functionType = capability.functionType || ''
-      const kind: FlowNodeKind =
-        n.nodeType === 'DEVICE_CAPABILITY_NODE' ? 'device'
+      const kind: FlowNodeKind = n.nodeType === 'DEVICE_CAPABILITY_NODE' ? 'device'
+        : n.nodeType === 'SUB_FLOW_NODE' ? 'subflow'
         : functionType === 'START' ? 'start'
         : functionType === 'END' ? 'end'
-        : functionType === 'BRANCH' ? 'branch'
-        : 'join'
-
-      const rawInterfaces = (n.interfaces || []).map((it: any) => ({
-        interfaceId: String(it.interfaceId || '').replace(`${n.nodeId}_`, ''),
-        direction: (it.direction || 'IN') as 'IN' | 'OUT',
-        signalType: (it.signalType || 'DONE') as NodeInterface['signalType'],
-        triggerMode: (it.triggerMode || 'ALWAYS') as NodeInterface['triggerMode'],
-        triggerExpr: it.triggerExpr || ''
+        : functionType === 'BRANCH' ? 'branch' : 'aggregate'
+      const rawInterfaces = (n.interfaces || []).map((item: any) => ({
+        interfaceId: item.name || '', direction: item.direction || 'IN',
+        signalType: item.allowedSignals?.[0] || 'COMPLETED', triggerMode: 'SIGNAL', triggerExpr: ''
       }))
-      const rawPorts = (n.ports || []).map((p: any) => ({
-        portId: String(p.portId || '').replace(`${n.nodeId}_`, ''),
-        direction: (p.direction || 'IN') as 'IN' | 'OUT',
-        dataType: (p.dataType || 'string') as NodePort['dataType'],
-        variableBinding: p.internalVariableBinding || ''
+      const rawPorts = (n.ports || []).map((port: any) => ({
+        portId: port.name || '', direction: port.direction || 'IN',
+        dataType: port.dataType === 'BOOLEAN' ? 'boolean' : port.dataType === 'STRING' ? 'string' : 'number',
+        variableBinding: port.internalVariableName || ''
       }))
-      const rawVariables = (n.internalVariables || []).map((v: any) => ({ name: v.name || '', dataType: (v.dataType || 'string') as NodeVariable['dataType'], mapping: v.mapping || '' }))
-
+      const rawVariables = (n.internalVariables || []).map((variable: any) => ({
+        name: variable.name || '', dataType: variable.dataType === 'BOOLEAN' ? 'boolean' : variable.dataType === 'STRING' ? 'string' : 'number',
+        mapping: variable.attributesMapping || ''
+      }))
+      const conditions = kind === 'branch' ? (capability.branches || []).map((branch: any, branchIndex: number) => ({
+        label: branch.isDefault ? '默认出口' : `条件出口 ${branchIndex + 1}`,
+        subject: branch.condition?.subject || '', operator: branch.condition?.operator || '=',
+        threshold: typeof branch.condition?.threshold === 'object' ? JSON.stringify(branch.condition.threshold) : String(branch.condition?.threshold ?? ''),
+        interfaceId: branch.interfaceName, isDefault: Boolean(branch.isDefault)
+      })) : []
       return {
-        id: n.nodeId,
-        type: 'custom',
-        position: { x: 120 + (idx % 4) * 260, y: 80 + Math.floor(idx / 4) * 150 },
+        id: String(n.nodeIdRef), type: 'custom',
+        position: { x: 120 + (index % 4) * 260, y: 80 + Math.floor(index / 4) * 150 },
         data: {
-          kind,
-          name: n.name || kindLabel(kind),
-          nodeType: n.nodeType || (kind === 'device' ? 'DEVICE_CAPABILITY_NODE' : 'FUNCTIONAL_NODE'),
-          modelId: capability.deviceModelRef || '',
-          functionId: capability.capabilityRef || '',
-          parameters: n.actions?.[0]?.payload?.parameters || {},
-          conditions: n.actions?.[0]?.payload?.conditions || [],
+          kind, name: n.name || capability.displayName || kindLabel(kind), nodeType: n.nodeType,
+          modelId: capability.deviceModelRef ? String(capability.deviceModelRef) : '',
+          functionId: capability.capabilityRef || '', parameters: capability.parameters || {},
+          subFlowModelId: n.subFlowModelId || null, conditions,
           interfaces: rawInterfaces.length ? rawInterfaces : defaultInterfacesByKind(kind),
           ports: rawPorts.length ? rawPorts : defaultPortsByKind(kind),
-          internalVariables: rawVariables.length ? rawVariables : defaultVariablesByKind(kind)
+          internalVariables: rawVariables,
+          actions: Array.isArray(n.actions) ? structuredClone(n.actions) : defaultActionsForNode(n.nodeType, workflowActionCatalog.value, workflowControlSignals.value)
         }
       }
     })
-
     nodes.value = loadedNodes
-    const nodeIds = loadedNodes.map((n: any) => n.id)
-
-    const ifEdges = (tpl.interfaceConnections || []).map((conn: any, idx: number) => {
-      const src = decodeRef(conn.source?.interfaceRef || '', nodeIds)
-      const tgt = decodeRef(conn.target?.interfaceRef || '', nodeIds)
-      if (!src || !tgt) return null
-      return { id: `edge_if_${idx}`, source: src.nodeId, sourceHandle: `if:${src.localRef}`, target: tgt.nodeId, targetHandle: `if:${tgt.localRef}`, type: 'smoothstep', animated: true, style: { stroke: '#6b7280', strokeWidth: 2 }, markerEnd: MarkerType.ArrowClosed }
-    }).filter(Boolean)
-
-    const portEdges = (tpl.portConnections || []).map((conn: any, idx: number) => {
-      const sourceRef = conn.source?.portRef || conn.sourcePort || conn.fromPort || ''
-      const targetRef = conn.target?.portRef || conn.targetPort || conn.toPort || ''
-      const src = decodeRef(sourceRef, nodeIds)
-      const tgt = decodeRef(targetRef, nodeIds)
-      if (!src || !tgt) return null
-      return { id: `edge_port_${idx}`, source: src.nodeId, sourceHandle: `port:${src.localRef}`, target: tgt.nodeId, targetHandle: `port:${tgt.localRef}`, type: 'smoothstep', animated: false, style: { stroke: '#8f6d2a', strokeWidth: 2, strokeDasharray: '5,4' }, markerEnd: MarkerType.ArrowClosed }
-    }).filter(Boolean)
-
+    nextNodeIdRef = Math.max(nextNodeIdRef, ...loadedNodes.map((node: any) => Number(node.id) || 0))
+    const ifEdges = (tpl.interfaceConnections || []).map((connection: any, index: number) => ({
+      id: `edge_if_${index}`, source: String(connection.source.nodeIdRef), sourceHandle: `if:${connection.source.interfaceName}`,
+      target: String(connection.target.nodeIdRef), targetHandle: `if:${connection.target.interfaceName}`,
+      type: 'smoothstep', animated: true, style: { stroke: '#6b7280', strokeWidth: 2 }, markerEnd: MarkerType.ArrowClosed
+    }))
+    const portEdges = (tpl.portConnections || []).map((connection: any, index: number) => ({
+      id: `edge_port_${index}`, source: String(connection.source.nodeIdRef), sourceHandle: `port:${connection.source.portName}`,
+      target: String(connection.target.nodeIdRef), targetHandle: `port:${connection.target.portName}`,
+      type: 'smoothstep', animated: false, style: { stroke: '#8f6d2a', strokeWidth: 2, strokeDasharray: '5,4' }, markerEnd: MarkerType.ArrowClosed
+    }))
     edges.value = [...ifEdges, ...portEdges]
     drawerVisible.value = false
     selectedNodeId.value = ''
@@ -795,10 +836,35 @@ const loadWorkflow = async (templateId: string) => {
 const fetchBaseData = async () => {
   loadingBase.value = true
   try {
-    const res = await axios.get('/api/device/model/list')
-    if (res.data?.success) deviceModels.value = res.data.data || []
+    const [modelRes, metadataRes] = await Promise.all([
+      axios.get('/api/device/model/list'),
+      axios.get('/api/schema-metadata/frontend')
+    ])
+    if (modelRes.data?.success) deviceModels.value = modelRes.data.data || []
+    const metadata = metadataRes.data?.data || metadataRes.data || {}
+    const functionTypes = metadata.workflow?.functionTypes
+    const lifecycleEvents = metadata.workflow?.nodeLifecycleEvents
+    const operators = metadata.constraint?.operators
+    const actionCatalog = metadata.workflow?.actionCatalog
+    const calculationOperators = metadata.workflow?.calculationOperators
+    const workflowInterface = (metadata.stateMachine?.standardInterfaces || [])
+      .find((item: any) => item.name === 'Interface_workflow_in')
+    if (!Array.isArray(functionTypes) || functionTypes.length === 0
+      || !Array.isArray(lifecycleEvents) || lifecycleEvents.length === 0
+      || !Array.isArray(operators) || operators.length === 0
+      || !Array.isArray(actionCatalog) || actionCatalog.length === 0
+      || !Array.isArray(calculationOperators) || calculationOperators.length === 0
+      || !Array.isArray(workflowInterface?.allowedSignals) || workflowInterface.allowedSignals.length === 0) {
+      throw new Error('模型规范元数据不完整，无法初始化流程设计器')
+    }
+    workflowFunctionTypes.value = functionTypes
+    workflowSignals.value = lifecycleEvents
+    workflowOperators.value = operators
   } catch (err: any) {
-    ElMessage.error(err?.response?.data?.message || '设备模型加载失败')
+    workflowActionCatalog.value = actionCatalog
+    workflowCalculationOperators.value = calculationOperators
+    workflowControlSignals.value = workflowInterface.allowedSignals
+    ElMessage.error(err?.response?.data?.message || err?.message || '流程设计器初始化失败')
   } finally {
     loadingBase.value = false
   }
@@ -1050,4 +1116,30 @@ onMounted(async () => {
   .name-input { width: 100%; }
   .canvas-wrap { position: relative; }
 }
+
+/* Enterprise workflow studio overrides */
+.workflow-designer {
+  --bg-main: #f5f7fa; --bg-panel: #ffffff; --bg-node: #ffffff; --line: #e5e7eb; --line-strong: #d1d5db; --text-main: #111827; --text-sub: #6b7280; --accent: #1677ff;
+  background: var(--bg-main);
+  font-family: Inter, 'PingFang SC', 'Microsoft YaHei', 'Segoe UI', sans-serif;
+}
+.sidebar { width: 300px; background: #fff; backdrop-filter: none; border-right: 1px solid var(--line); box-shadow: none; }
+.sidebar-scroll { height: calc(100vh - 96px); padding: 12px; }
+.group-title { margin: 10px 0 8px; color: #6b7280; font-size: 12px; letter-spacing: 0; text-transform: none; }
+.logic-grid, .palette-list { gap: 8px; }
+.logic-item, .palette-item, .workflow-item { border-radius: 6px; box-shadow: none; transition: border-color .15s, background-color .15s; }
+.logic-item { padding: 9px 8px; }
+.logic-item:hover, .palette-item:hover, .workflow-item:hover { transform: none; box-shadow: none; border-color: #b7d7ff; background: #f5f9ff; }
+.header { position: relative; inset: auto; min-height: 64px; flex: 0 0 auto; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 8px 16px; background: #fff; backdrop-filter: none; box-shadow: none; }
+.header-left { gap: 4px; }
+.protocol-strip span { padding: 2px 6px; border-color: #e5e7eb; background: #f7f8fa; }
+.canvas-wrap { position: relative; flex: 1; min-height: 0; }
+.node-shell { width: 224px; min-height: 82px; border-radius: 6px; background: #fff; backdrop-filter: none; padding: 12px; box-shadow: 0 1px 2px rgba(15, 23, 42, .06); transition: border-color .15s, box-shadow .15s; }
+.node-shell:hover { transform: none; border-color: #93c5fd; box-shadow: 0 2px 8px rgba(15, 23, 42, .08); }
+.vue-flow__node-custom.selected .node-shell { box-shadow: 0 0 0 2px rgba(22, 119, 255, .18); }
+.node-tag { height: 20px; padding: 0 7px; border-radius: 3px; }
+.node-handle:hover { transform: scale(1.2); box-shadow: none; }
+:deep(.el-drawer) { background: #fff; }
+.drawer-content { padding: 4px 0; }
+@media (max-width: 920px) { .header { position: relative; } }
 </style>

@@ -1,6 +1,6 @@
 package com.smartlab.management.controller.protocol;
 
-import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.smartlab.global.protocol.ProtocolDictionaryService;
 import com.smartlab.management.dto.common.ApiResponse;
 import org.junit.jupiter.api.Test;
@@ -10,13 +10,12 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ProtocolDictionaryControllerTest {
 
     @Test
-    void returnsFrontendProtocolMetadata() {
+    void returnsProtocolDictionary() {
         ProtocolDictionaryController controller = new ProtocolDictionaryController(new ProtocolDictionaryService());
 
-        ApiResponse<ObjectNode> response = controller.frontendMetadata();
+        ApiResponse<JsonNode> response = controller.dictionary();
 
         assertTrue(response.isSuccess());
-        assertTrue(response.getData().path("dataTypes").isArray());
-        assertTrue(response.getData().path("mqttTopics").has("registerTopic"));
+        assertTrue(response.getData().path("definitions").has("MqttTopicConvention"));
     }
 }

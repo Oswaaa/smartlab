@@ -99,42 +99,6 @@ public class DeviceModelController {
         }
     }
 
-    @DeleteMapping("/model/state-machine/delete/{id}")
-    public ApiResponse<String> deleteStateMachine(@PathVariable String id) {
-        try {
-            deviceModelService.deleteStateMachine(id);
-            return ApiResponse.ok("删除成功");
-        } catch (Exception e) {
-            return ApiResponse.fail(e.getMessage());
-        }
-    }
-
-    @GetMapping("/model/constraints/rules")
-    public ApiResponse<List<Map<String, Object>>> listModelConstraintRules() {
-        return ApiResponse.ok(deviceModelService.listModelConstraintRules());
-    }
-
-    @PostMapping("/model/constraints/rule/save")
-    public ApiResponse<String> saveModelConstraintRule(@RequestBody Map<String, Object> payload) {
-        try {
-            deviceModelService.saveModelConstraintRule(payload);
-            return ApiResponse.ok("保存成功");
-        } catch (Exception e) {
-            return ApiResponse.fail(e.getMessage());
-        }
-    }
-
-    @DeleteMapping("/model/constraints/rule/delete")
-    public ApiResponse<String> deleteModelConstraintRule(@RequestParam String modelId,
-                                                         @RequestParam String constraintRuleId) {
-        try {
-            deviceModelService.deleteModelConstraintRule(modelId, constraintRuleId);
-            return ApiResponse.ok("删除成功");
-        } catch (Exception e) {
-            return ApiResponse.fail(e.getMessage());
-        }
-    }
-
     @DeleteMapping("/model/delete/{id}")
     public ApiResponse<String> delete(@PathVariable String id) {
         try {

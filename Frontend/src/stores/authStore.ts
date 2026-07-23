@@ -9,6 +9,16 @@ type MenuItem = {
 
 const AUTH_KEY = 'smartlab_auth'
 
+export async function readJsonResponse(response: Response) {
+    const text = await response.text()
+    if (!text.trim()) return null
+    try {
+        return JSON.parse(text)
+    } catch {
+        return null
+    }
+}
+
 export const useAuthStore = defineStore('auth', () => {
     const isAuthenticated = ref(false)
     const username = ref('')
@@ -103,19 +113,23 @@ export const useAuthStore = defineStore('auth', () => {
 
     const refreshProfile = async () => {
         if (!token.value) return null
-        const res = await fetch('/api/user/profile', {
-            headers: { Authorization: `Bearer ${token.value}` }
-        })
-        if (res.status === 401) {
-            clearAuth()
+        try {
+            const res = await fetch('/api/user/profile', {
+                headers: { Authorization: `Bearer ${token.value}` }
+            })
+            if (res.status === 401) {
+                clearAuth()
+                return null
+            }
+            const body = await readJsonResponse(res)
+            if (res.ok && body?.success && body.data) {
+                setAuth({ ...body.data, token: token.value })
+                return body.data
+            }
+            return null
+        } catch {
             return null
         }
-        const body = await res.json()
-        if (body?.success && body.data) {
-            setAuth({ ...body.data, token: token.value })
-            return body.data
-        }
-        return null
     }
 
     const initAuth = () => {

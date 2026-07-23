@@ -746,4 +746,14 @@ function asArray(value) {
 .node-label { font-size: 13px; }
 .node-meta { flex-shrink: 0; }
 
+
+/* Unified asset navigator */
+.model-tree-panel { background: #fff; border-color: #e5e7eb; }
+.tree-header { padding: 8px 12px; border-color: #e5e7eb; }
+.category-model-tree :deep(.el-tree-node__content) { min-height: 34px; border-radius: 4px; }
+.category-model-tree :deep(.el-tree-node__content:hover) { background: #f7f8fa; }
+.category-model-tree :deep(.el-tree-node.is-current > .el-tree-node__content) { background: #eaf3ff; box-shadow: inset 3px 0 0 #1677ff; }
+.category-model-tree :deep(.el-tree-node.is-current > .el-tree-node__content)::before,
+.category-model-tree :deep(.el-tree-node.is-current > .el-tree-node__content)::after { display: none; }
+.tree-footer { border-color: #e5e7eb; background: #fafbfc; }
 </style>

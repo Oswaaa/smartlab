@@ -17,35 +17,66 @@ class ProtocolDictionaryServiceTest {
     private final ProtocolDictionaryService service = new ProtocolDictionaryService();
 
     @Test
-    void readsEnumValuesFromProtocolDictionary() {
+    void exposesOnlyFinalProtocolEnumerations() {
         assertEquals(List.of("INTEGER", "DOUBLE", "STRING", "BOOLEAN", "JSON"), service.enumValues("DataType"));
         assertEquals(List.of("MQTT"), service.enumValues("CommunicationProtocol"));
-        assertEquals(List.of(">", "<", ">=", "<=", "=", "!=", "BETWEEN", "IN"),
-                service.enumValues("ConstraintOperator"));
+        assertEquals(List.of("CONSTRAINT_EXECUTE", "CONSTRAINT_ABORT"), service.enumValues("ConstraintControlSignal"));
+        assertEquals(List.of("CMD_START", "CMD_ABORT"), service.enumValues("AdapterOutboundSignal"));
+        assertThrows(IllegalArgumentException.class, () -> service.enumValues("ConstraintOperator"));
     }
 
     @Test
-    void resolvesMqttTopicsFromProtocolConvention() {
+    void resolvesAndMatchesFinalMqttTopics() {
         assertEquals("smartlab/adapter/ReactorAdapter/Reactor1/command",
-                service.resolveMqttTopic("commandTopic", Map.of(
-                        "adapterName", "ReactorAdapter",
-                        "devicePoint", "Reactor1")));
+                service.resolveMqttTopic("commandTopic", Map.of("adapterName", "ReactorAdapter", "devicePoint", "Reactor1")));
         assertEquals("smartlab/adapter/ReactorAdapter/heartbeat",
                 service.resolveMqttTopic("heartbeatTopic", Map.of("adapterName", "ReactorAdapter")));
-    }
 
-    @Test
-    void matchesMqttTopicsAgainstProtocolConvention() {
-        ProtocolTopicMatch match = service.matchMqttTopic("smartlab/adapter/ReactorAdapter/Reactor1/telemetry")
-                .orElseThrow();
-
+        ProtocolTopicMatch match = service.matchMqttTopic("smartlab/adapter/ReactorAdapter/Reactor1/telemetry").orElseThrow();
         assertEquals("telemetryTopic", match.topicName());
         assertEquals("ReactorAdapter", match.variables().get("adapterName"));
         assertEquals("Reactor1", match.variables().get("devicePoint"));
     }
 
     @Test
-    void validatesMessageDefinitionRequiredFields() {
+    void acceptsTheFinalCommandMessageAndRejectsTheRemovedOperationField() {
+        ObjectNode command = commandMessage();
+        service.validateDefinition("CommandMessageFormat", command);
+
+        command.put("operation", "ABORT");
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> service.validateDefinition("CommandMessageFormat", command));
+        assertTrue(error.getMessage().contains("operation"));
+    }
+
+    @Test
+    void validatesSignalPayloadPoliciesWithoutSignalContractSchema() {
+        assertTrue(service.requiresCommandPayload("WF_EXECUTE_START"));
+        assertTrue(service.requiresCommandPayload("MANUAL_EXECUTE_START"));
+        assertTrue(service.requiresCommandPayload("CMD_START"));
+        assertFalse(service.requiresCommandPayload("WF_EXECUTE_ABORT"));
+        assertFalse(service.requiresCommandPayload("CONSTRAINT_ABORT"));
+
+        service.validateSignalExecutionContext("CONSTRAINT_EXECUTE", Map.of(
+                "deviceInstanceId", 7,
+                "capabilityName", "cooling",
+                "parameters", Map.of("durationSec", 30)));
+        assertThrows(IllegalArgumentException.class,
+                () -> service.validateSignalExecutionContext("CONSTRAINT_EXECUTE", Map.of("deviceInstanceId", 7)));
+    }
+
+    @Test
+    void allowsOnlyAliveAdapterHeartbeat() {
+        ObjectNode heartbeat = JsonNodeSupport.objectNode();
+        heartbeat.put("status", "ALIVE");
+        heartbeat.put("timestamp", 1719892800L);
+        service.validateDefinition("AdapterHeartbeat", heartbeat);
+
+        heartbeat.put("status", "DEGRADED");
+        assertThrows(IllegalArgumentException.class, () -> service.validateDefinition("AdapterHeartbeat", heartbeat));
+    }
+
+    private ObjectNode commandMessage() {
         ObjectNode command = JsonNodeSupport.objectNode();
         command.put("messageId", "msg-1");
         command.put("adapterName", "adapter1");
@@ -53,61 +84,6 @@ class ProtocolDictionaryServiceTest {
         command.put("commandName", "heat");
         command.set("parameters", JsonNodeSupport.objectNode());
         command.put("timestamp", 1719892800L);
-
-        service.validateDefinition("CommandMessageFormat", command);
-
-        command.remove("commandName");
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> service.validateDefinition("CommandMessageFormat", command));
-        assertTrue(error.getMessage().contains("commandName"));
-    }
-
-    @Test
-    void validatesStandardJsonSchemaKeywordsInsteadOfOnlyRequiredFields() {
-        ObjectNode command = JsonNodeSupport.objectNode();
-        command.put("messageId", "msg-1");
-        command.put("adapterName", "");
-        command.put("devicePoint", "Reactor1");
-        command.put("commandName", "heat");
-        command.set("parameters", JsonNodeSupport.objectNode());
-        command.put("timestamp", 1719892800L);
-
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
-                () -> service.validateDefinition("CommandMessageFormat", command));
-
-        assertTrue(error.getMessage().contains("adapterName"));
-    }
-
-    @Test
-    void exposesProtocolSignalDefinitionsOnly() {
-        assertEquals(List.of("WF_EXECUTE_START", "WF_EXECUTE_ABORT"),
-                service.enumValues("WorkflowControlSignal"));
-        assertEquals(List.of("MANUAL_EXECUTE_START", "MANUAL_EXECUTE_ABORT"),
-                service.enumValues("ManualControlSignal"));
-        assertEquals(List.of("CONSTRAINT_ABORT"), service.enumValues("ConstraintControlSignal"));
-        assertEquals(List.of("CMD_START", "CMD_ABORT"), service.enumValues("AdapterOutboundSignal"));
-
-        assertThrows(IllegalArgumentException.class, () -> service.definition("AdapterCommandLifecycleEvent"));
-        assertThrows(IllegalArgumentException.class, () -> service.definition("ExecutionLifecycleEvent"));
-        assertThrows(IllegalArgumentException.class, () -> service.definition("AdapterConfigFormat"));
-    }
-
-    @Test
-    void validatesCommandPayloadPolicyFromProtocolSignalContracts() {
-        assertTrue(service.requiresCommandPayload("WF_EXECUTE_START"));
-        assertTrue(service.requiresCommandPayload("MANUAL_EXECUTE_START"));
-        assertTrue(service.requiresCommandPayload("CMD_START"));
-        assertFalse(service.requiresCommandPayload("WF_EXECUTE_ABORT"));
-
-        IllegalArgumentException missing = assertThrows(IllegalArgumentException.class,
-                () -> service.validateSignalExecutionContext("CMD_START", Map.of()));
-        assertTrue(missing.getMessage().contains("commandName"));
-
-        service.validateSignalExecutionContext("CMD_START", Map.of(
-                "commandName", "heat",
-                "parameters", Map.of("temperature", 80)));
-        service.validateSignalExecutionContext("CMD_ABORT", Map.of());
-        assertThrows(IllegalArgumentException.class,
-                () -> service.requiresCommandPayload("UNKNOWN_SIGNAL"));
+        return command;
     }
 }

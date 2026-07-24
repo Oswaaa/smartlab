@@ -1,7 +1,5 @@
 package com.smartlab.engine.workflow.action;
 
-import com.smartlab.global.schema.SchemaMetadataService;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
@@ -11,29 +9,18 @@ import java.util.Set;
 
 @Component
 public class WorkflowActionRegistry {
+    private static final Set<String> REQUIRED = Set.of("EMIT", "UPDATE");
     private final Map<String, WorkflowActionExecutor> executors;
 
-    @Autowired
-    public WorkflowActionRegistry(List<WorkflowActionExecutor> executors, SchemaMetadataService metadata) {
-        this(executors, Set.copyOf(metadata.workflowActionNames()));
-    }
-
-    public WorkflowActionRegistry(List<WorkflowActionExecutor> executors, Set<String> declaredNames) {
-        Map<String, WorkflowActionExecutor> registered = new LinkedHashMap<>();
-        for (WorkflowActionExecutor executor : executors) {
-            String name = executor.actionName();
-            if (name == null || name.isBlank()) throw new IllegalStateException("工作流动作执行器缺少名称");
-            if (registered.putIfAbsent(name, executor) != null)
-                throw new IllegalStateException("工作流动作执行器重复: " + name);
+    public WorkflowActionRegistry(List<WorkflowActionExecutor> candidates) {
+        Map<String, WorkflowActionExecutor> result = new LinkedHashMap<>();
+        for (WorkflowActionExecutor candidate : candidates) {
+            if (REQUIRED.contains(candidate.actionName()) && result.putIfAbsent(candidate.actionName(), candidate) != null) {
+                throw new IllegalStateException("工作流动作执行器重复: " + candidate.actionName());
+            }
         }
-        if (!registered.keySet().equals(declaredNames)) {
-            Set<String> missing = new java.util.LinkedHashSet<>(declaredNames);
-            missing.removeAll(registered.keySet());
-            Set<String> extra = new java.util.LinkedHashSet<>(registered.keySet());
-            extra.removeAll(declaredNames);
-            throw new IllegalStateException("工作流动作执行器与 Schema 不一致，缺失=" + missing + "，多余=" + extra);
-        }
-        this.executors = Map.copyOf(registered);
+        if (!result.keySet().equals(REQUIRED)) throw new IllegalStateException("工作流动作执行器必须实现EMIT和UPDATE");
+        this.executors = Map.copyOf(result);
     }
 
     public WorkflowActionExecutor required(String actionName) {

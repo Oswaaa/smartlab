@@ -4,16 +4,22 @@ import com.smartlab.management.dto.common.ApiResponse;
 import com.smartlab.management.dto.common.PageResult;
 import com.smartlab.management.entity.constraint.ConstraintRule;
 import com.smartlab.management.service.db.constraint.ConstraintRuleService;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 import java.util.Map;
 
 @RestController
 @RequestMapping("/api/constraint/rule")
-/**
- * 设备安全与逻辑约束规则管理控制器。用于配置实验室设备间相互制约的联锁保护规则与参数阈值约束。
- */
 public class ConstraintRuleController {
 
     private final ConstraintRuleService service;
@@ -23,17 +29,8 @@ public class ConstraintRuleController {
     }
 
     @GetMapping
-    public ApiResponse<List<ConstraintRule>> getAllRules(@RequestParam(required = false) String sourceType,
-                                                         @RequestParam(required = false) String objectEndpoint,
-                                                         @RequestParam(required = false) Boolean isEnabled) {
-        return ApiResponse.ok(service.list(sourceType, objectEndpoint, isEnabled));
-    }
-
-    @GetMapping("/list")
-    public ApiResponse<List<ConstraintRule>> list(@RequestParam(required = false) String sourceType,
-                                                  @RequestParam(required = false) String objectEndpoint,
-                                                  @RequestParam(required = false) Boolean isEnabled) {
-        return ApiResponse.ok(service.list(sourceType, objectEndpoint, isEnabled));
+    public ApiResponse<List<ConstraintRule>> list(@RequestParam(required = false) Boolean isEnabled) {
+        return ApiResponse.ok(service.list(isEnabled));
     }
 
     @GetMapping("/options")
@@ -43,48 +40,27 @@ public class ConstraintRuleController {
 
     @GetMapping("/page")
     public ApiResponse<PageResult<ConstraintRule>> page(@RequestParam(defaultValue = "1") long pageNo,
-                                                        @RequestParam(defaultValue = "20") long pageSize,
-                                                        @RequestParam(required = false) String keyword,
-                                                        @RequestParam(required = false) String sourceType,
-                                                        @RequestParam(required = false) String objectEndpoint,
-                                                        @RequestParam(required = false) String objectName,
-                                                        @RequestParam(required = false) String operator,
-                                                        @RequestParam(required = false) Boolean isEnabled) {
-        return ApiResponse.ok(service.page(pageNo, pageSize, keyword, sourceType, objectEndpoint, objectName, operator, isEnabled));
+                                                         @RequestParam(defaultValue = "20") long pageSize,
+                                                         @RequestParam(required = false) String keyword,
+                                                         @RequestParam(required = false) Boolean isEnabled) {
+        return ApiResponse.ok(service.page(pageNo, pageSize, keyword, isEnabled));
     }
 
     @GetMapping("/{id}")
     public ApiResponse<ConstraintRule> getById(@PathVariable Long id) {
         ConstraintRule rule = service.getById(id);
-        return rule == null ? ApiResponse.fail("约束规则不存在") : ApiResponse.ok(rule);
+        return rule == null ? ApiResponse.fail("约束模型不存在") : ApiResponse.ok(rule);
     }
 
     @PostMapping
-    public ApiResponse<ConstraintRule> createRule(@RequestBody ConstraintRule rule) {
-        try {
-            return ApiResponse.ok(service.save(rule));
-        } catch (Exception e) {
-            return ApiResponse.fail(e.getMessage());
-        }
-    }
-
-    @PostMapping("/save")
-    public ApiResponse<ConstraintRule> save(@RequestBody ConstraintRule rule) {
-        try {
-            return ApiResponse.ok(service.save(rule));
-        } catch (Exception e) {
-            return ApiResponse.fail(e.getMessage());
-        }
+    public ApiResponse<ConstraintRule> create(@RequestBody ConstraintRule rule) {
+        return save(rule);
     }
 
     @PutMapping("/{id}")
-    public ApiResponse<ConstraintRule> updateRule(@PathVariable Long id, @RequestBody ConstraintRule rule) {
+    public ApiResponse<ConstraintRule> update(@PathVariable Long id, @RequestBody ConstraintRule rule) {
         rule.setId(id);
-        try {
-            return ApiResponse.ok(service.save(rule));
-        } catch (Exception e) {
-            return ApiResponse.fail(e.getMessage());
-        }
+        return save(rule);
     }
 
     @PatchMapping("/{id}/enabled")
@@ -106,8 +82,11 @@ public class ConstraintRuleController {
         }
     }
 
-    @DeleteMapping("/delete/{id}")
-    public ApiResponse<String> deleteByPath(@PathVariable Long id) {
-        return delete(id);
+    private ApiResponse<ConstraintRule> save(ConstraintRule rule) {
+        try {
+            return ApiResponse.ok(service.save(rule));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
     }
 }

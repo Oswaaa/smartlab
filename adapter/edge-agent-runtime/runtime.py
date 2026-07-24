@@ -172,7 +172,7 @@ def validate_agent_config(config: dict[str, Any]) -> None:
         raise RuntimeError(f"agent {agent_id} northbound contract must be an object")
     if not isinstance(southbound, dict):
         raise RuntimeError(f"agent {agent_id} southbound profile must be an object")
-    for topic_name in ("commandTopic", "statusTopic", "eventTopic", "telemetryTopic"):
+    for topic_name in ("commandTopic", "statusTopic", "eventTopic", "telemetryTopic", "heartbeatTopic"):
         require_non_empty_string(northbound.get(topic_name), f"agent {agent_id} northbound.{topic_name}")
 
     commands = northbound.get("commands")
@@ -187,7 +187,11 @@ def validate_agent_config(config: dict[str, Any]) -> None:
             raise RuntimeError(f"agent {agent_id} contains duplicate commandId: {command_id}")
         command_ids.append(command_id)
 
+    require_non_empty_string(config.get("adapterName") or agent.get("adapterName"), f"agent {agent_id} adapterName")
+    require_non_empty_string(config.get("devicePoint") or agent.get("devicePoint"), f"agent {agent_id} devicePoint")
     connector_type = require_non_empty_string(southbound.get("connectorType"), f"agent {agent_id} southbound.connectorType").lower()
+    if connector_type == "simulated" and southbound.get("allowSimulation") is not True:
+        raise RuntimeError(f"agent {agent_id} simulated connector requires southbound.allowSimulation=true")
     mappings = southbound.get("commandMappings") or []
     if not isinstance(mappings, list) or any(not isinstance(mapping, dict) for mapping in mappings):
         raise RuntimeError(f"agent {agent_id} southbound.commandMappings must be an array of objects")
@@ -202,27 +206,19 @@ def validate_agent_config(config: dict[str, Any]) -> None:
 
 
 def validate_command_envelope(envelope: dict[str, Any]) -> str:
+    """Validate the final ProtocolSpec.CommandMessageFormat, not the retired smartlab.adapter.v1 envelope."""
     if not isinstance(envelope, dict):
-        raise RuntimeError("command envelope must be an object")
-    if envelope.get("specVersion") != "smartlab.adapter.v1":
-        raise RuntimeError("command envelope specVersion must be smartlab.adapter.v1")
-    if envelope.get("messageType") != "COMMAND":
-        raise RuntimeError("command envelope messageType must be COMMAND")
-    for field_name in ("messageId", "tenantId", "labId", "timestamp"):
-        require_non_empty_string(envelope.get(field_name), f"command envelope {field_name}")
-    command = envelope.get("command")
-    if not isinstance(command, dict):
-        raise RuntimeError("command envelope command must be an object")
-    command_id = require_non_empty_string(command.get("commandId"), "command envelope command.commandId")
-    require_non_empty_string(command.get("idempotencyKey"), "command envelope command.idempotencyKey")
-    timeout_ms = command.get("timeoutMs")
-    if not isinstance(timeout_ms, int) or isinstance(timeout_ms, bool) or timeout_ms < 1:
-        raise RuntimeError("command envelope command.timeoutMs must be a positive integer")
-    if not isinstance(envelope.get("payload"), dict):
-        raise RuntimeError("command envelope payload must be an object")
-    if not isinstance(envelope.get("context"), dict):
-        raise RuntimeError("command envelope context must be an object")
-    return command_id
+        raise RuntimeError("command message must be an object")
+    require_non_empty_string(envelope.get("messageId"), "command message messageId")
+    require_non_empty_string(envelope.get("adapterName"), "command message adapterName")
+    require_non_empty_string(envelope.get("devicePoint"), "command message devicePoint")
+    command_name = require_non_empty_string(envelope.get("commandName"), "command message commandName")
+    timestamp = envelope.get("timestamp")
+    if not isinstance(timestamp, int) or isinstance(timestamp, bool):
+        raise RuntimeError("command message timestamp must be an integer")
+    if not isinstance(envelope.get("parameters"), dict):
+        raise RuntimeError("command message parameters must be an object")
+    return command_name
 
 
 class SouthboundConnector:
@@ -687,10 +683,12 @@ class UnsupportedProtocolConnector(SouthboundConnector):
 
 
 def build_connector(profile: dict[str, Any], runtime: "EdgeRuntime" | None = None) -> SouthboundConnector:
-    connector_type = str(profile.get("connectorType", "simulated")).lower()
+    connector_type = str(profile.get("connectorType", "")).strip().lower()
+    if not connector_type:
+        raise RuntimeError("southbound.connectorType is required; refusing to fall back to a simulated device")
     if connector_type == "direct-driver":
         next_profile = dict(profile)
-        next_profile["connectorType"] = profile.get("driverType") or "simulated"
+        next_profile["connectorType"] = require_non_empty_string(profile.get("driverType"), "southbound.driverType")
         return build_connector(next_profile, runtime)
     if connector_type in {"proxy-http", "http"}:
         return ProxyHttpConnector(profile)
@@ -731,6 +729,8 @@ class AgentInstance:
         self.agent = self.config.get("agent") or {}
         self.agent_id = str(self.config.get("agentId") or self.agent.get("agentId"))
         self.gateway_id = str(self.config.get("gatewayId") or self.agent.get("gatewayId") or self.runtime.gateway_id)
+        self.adapter_name = require_non_empty_string(self.config.get("adapterName") or self.agent.get("adapterName"), "adapterName")
+        self.device_point = require_non_empty_string(self.config.get("devicePoint") or self.agent.get("devicePoint"), "devicePoint")
         self.northbound = self.config.get("northbound") or self.agent.get("northboundContract") or {}
         self.southbound = self.config.get("southbound") or self.agent.get("southboundProfile") or {}
         self.data_upload = self.config.get("dataUploadContract") or self.northbound.get("dataUploadContract") or {}
@@ -755,35 +755,31 @@ class AgentInstance:
         self.publish_status("STOPPED", {"reason": "agent_unloaded"})
 
     def handle_command(self, topic: str, envelope: dict[str, Any]) -> None:
-        trace_id = str(uuid.uuid4())
-        correlation_id = str(uuid.uuid4())
-        command_id = ""
+        command_name = ""
+        mapping: dict[str, Any] = {}
         try:
-            if isinstance(envelope, dict):
-                trace_id = envelope.get("traceId") or trace_id
-                correlation_id = envelope.get("correlationId") or envelope.get("messageId") or correlation_id
-            command_id = validate_command_envelope(envelope)
-            known_command_ids = {
-                str(command.get("commandId"))
-                for command in self.northbound.get("commands") or []
-                if isinstance(command, dict)
-            }
-            if command_id not in known_command_ids:
-                raise RuntimeError(f"unknown commandId: {command_id}")
-            mapping = find_mapping(self.southbound.get("commandMappings") or [], command_id)
-            if str(self.southbound.get("connectorType") or "").lower() != "simulated" and not mapping:
-                raise RuntimeError(f"southbound command mapping missing: {command_id}")
-            payload = envelope.get("payload") or {}
-            self.publish_event("ack", trace_id, correlation_id, {"commandId": command_id, "topic": topic})
-            self.publish_status("EXECUTING", {"commandId": command_id})
-            result = self.connector.execute(command_id, payload, mapping)
-            event_payload = {"commandId": command_id, "result": result}
-            self.publish_event("completed", trace_id, correlation_id, event_payload)
-            self.publish_status("RUNNING", {"lastCommand": command_id, "lastResult": result})
+            command_name = validate_command_envelope(envelope)
+            mapping = find_mapping(self.southbound.get("commandMappings") or [], command_name)
+            if not mapping:
+                raise RuntimeError(f"southbound command mapping missing: {command_name}")
+            event_names = mapping.get("eventNames")
+            if not isinstance(event_names, dict):
+                raise RuntimeError(f"command mapping eventNames is required: {command_name}")
+            for phase in ("received", "running", "completed", "failed"):
+                require_non_empty_string(event_names.get(phase), f"command mapping eventNames.{phase}")
+            parameters = envelope["parameters"]
+            self.publish_protocol_event(str(event_names["received"]), envelope, {"commandName": command_name, "topic": topic})
+            self.publish_protocol_event(str(event_names["running"]), envelope, {"commandName": command_name})
+            self.publish_status("EXECUTING", {"commandName": command_name, "messageId": envelope["messageId"]})
+            result = self.connector.execute(command_name, parameters, mapping)
+            self.publish_protocol_event(str(event_names["completed"]), envelope, {"commandName": command_name, "result": result})
+            self.publish_status("RUNNING", {"lastCommand": command_name, "messageId": envelope["messageId"]})
         except Exception as exc:
-            error = {"commandId": command_id, "message": str(exc)}
-            self.publish_event("failed", trace_id, correlation_id, error)
-            self.publish_status("ERROR", error)
+            event_names = mapping.get("eventNames") if isinstance(mapping.get("eventNames"), dict) else {}
+            failed_event = str(event_names.get("failed") or "").strip()
+            if failed_event and isinstance(envelope, dict) and envelope.get("messageId"):
+                self.publish_protocol_event(failed_event, envelope, {"commandName": command_name, "message": str(exc)})
+            self.publish_status("ERROR", {"commandName": command_name, "message": str(exc)})
 
     def poll_loop(self) -> None:
         polling = self.southbound.get("polling") or {}
@@ -810,6 +806,16 @@ class AgentInstance:
             "status": {"agentState": state, "operationState": state, "online": self.running},
             "payload": payload,
             "timestamp": utc_now(),
+        }, qos=1)
+
+    def publish_protocol_event(self, event_name: str, command: dict[str, Any], payload: dict[str, Any]) -> None:
+        self.runtime.publish(str(self.northbound["eventTopic"]), {
+            "timestamp": epoch_millis(),
+            "messageId": str(command["messageId"]),
+            "adapterName": str(command["adapterName"]),
+            "devicePoint": str(command["devicePoint"]),
+            "eventName": event_name,
+            "payload": payload,
         }, qos=1)
 
     def publish_event(self, event_id: str, trace_id: str, correlation_id: str, payload: dict[str, Any]) -> None:

@@ -59,6 +59,7 @@
       },
       "southbound": {
         "connectorType": "simulated",
+        "allowSimulation": true,
         "simulateDelayMs": 300,
         "telemetryDefaults": {
           "temperature": 25.0,

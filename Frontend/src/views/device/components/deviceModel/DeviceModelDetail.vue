@@ -65,7 +65,7 @@
                   </div>
                   <div v-if="selectedAttributes.length === 0" class="compact-empty inline-empty">暂无设备属性</div>
                   <div v-else class="attribute-grid">
-                    <article v-for="attr in selectedAttributes" :key="attr.name || attr.displayName" class="attribute-tile">
+                    <article v-for="attr in selectedAttributes" :key="attr.attributeName || attr.displayName" class="attribute-tile">
                       <div class="tile-title">{{ attr.displayName || '-' }}</div>
                       <div class="tile-meta">
                         <span>{{ valueKindLabel(attr.valueKind) }}</span>
@@ -83,7 +83,7 @@
                   </div>
                   <div v-if="selectedCapabilities.length === 0" class="compact-empty inline-empty">暂无设备操作</div>
                   <div v-else class="operation-grid">
-                    <article v-for="(capability, index) in selectedCapabilities" :key="capability.name || index" class="operation-card">
+                    <article v-for="(capability, index) in selectedCapabilities" :key="capability.capabilityName || index" class="operation-card">
                       <div class="operation-head">
                         <span class="item-index">{{ index + 1 }}</span>
                         <div>
@@ -153,10 +153,10 @@
                   </div>
                   <div v-if="selectedAdapterAttributes.length === 0" class="compact-empty inline-empty">暂无 Adapter 属性</div>
                   <div v-else class="attribute-grid adapter-attribute-grid">
-                    <article v-for="attr in selectedAdapterAttributes" :key="attr.name" class="attribute-tile">
-                      <div class="tile-title">{{ attr.description || attr.name || '-' }}</div>
+                    <article v-for="attr in selectedAdapterAttributes" :key="attr.telemetryName" class="attribute-tile">
+                      <div class="tile-title">{{ attr.description || attr.telemetryName || '-' }}</div>
                       <div class="tile-meta">
-                        <span>{{ attr.name || '-' }}</span>
+                        <span>{{ attr.telemetryName || '-' }}</span>
                         <span>{{ attr.dataType || '-' }}</span>
                       </div>
                     </article>
@@ -330,7 +330,7 @@
                   </div>
                   <div v-if="defaultTemplateAttributes.length === 0" class="compact-empty inline-empty">暂无默认数据模板配置</div>
                   <div v-else class="attribute-grid">
-                    <article v-for="attr in defaultTemplateAttributes" :key="attr.name || attr.displayName" class="attribute-tile">
+                    <article v-for="attr in defaultTemplateAttributes" :key="attr.attributeName || attr.displayName" class="attribute-tile">
                       <div class="tile-title">{{ attr.displayName || '-' }}</div>
                       <div class="tile-meta">
                         <span>{{ attr.dataType || '-' }}</span>

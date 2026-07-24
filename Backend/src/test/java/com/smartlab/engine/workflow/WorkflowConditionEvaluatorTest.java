@@ -21,10 +21,10 @@ class WorkflowConditionEvaluatorTest {
         assertFalse(evaluator.evaluate(condition("temperature", "<", JsonNodeSupport.toNode(20)), variables));
     }
 
-    private com.fasterxml.jackson.databind.node.ObjectNode condition(String subject, String operator,
+    private com.fasterxml.jackson.databind.node.ObjectNode condition(String object, String operator,
                                                                       com.fasterxml.jackson.databind.JsonNode threshold) {
         var condition = JsonNodeSupport.objectNode();
-        condition.put("subject", subject);
+        condition.put("object", object);
         condition.put("operator", operator);
         condition.set("threshold", threshold);
         return condition;

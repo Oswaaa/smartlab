@@ -3,8 +3,8 @@ package com.smartlab.management.service.db.workflow;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.engine.workflow.WorkflowDefinitionCompiler;
-import com.smartlab.global.util.JsonSchemaValidationService;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.workflow.WorkflowDetailResponse;
 import com.smartlab.management.dto.workflow.WorkflowSaveRequest;
@@ -31,17 +31,14 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
     private final FlowNodeMapper nodeMapper;
     private final TaskMapper taskMapper;
     private final WorkflowDefinitionCompiler compiler;
-    private final JsonSchemaValidationService schemaValidationService;
 
     public WorkflowService(FlowModelsMapper modelMapper, FlowNodeMapper nodeMapper,
-                           TaskMapper taskMapper, WorkflowDefinitionCompiler compiler,
-                           JsonSchemaValidationService schemaValidationService) {
+                           TaskMapper taskMapper, WorkflowDefinitionCompiler compiler) {
         super(modelMapper);
         this.modelMapper = modelMapper;
         this.nodeMapper = nodeMapper;
         this.taskMapper = taskMapper;
         this.compiler = compiler;
-        this.schemaValidationService = schemaValidationService;
     }
 
     @Override
@@ -60,7 +57,7 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
         response.setVersion(model.getVersion());
         response.setStatus(model.getStatus());
         response.setNodeIdRefs(model.getNodes());
-        response.setNodesDef(JsonNodeSupport.toNode(nodes.stream().map(this::toDefinition).toList()));
+        response.setNodesDef(JsonNodeSupport.toNode(nodes.stream().map(node -> toDefinition(node, nodeNames(model.getNodes()).get(node.getNodeIdRef()))).toList()));
         response.setInterfaceConnections(model.getInterfaceConnection());
         response.setPortConnections(model.getPortConnection());
         response.setCreatorId(model.getCreatorId());
@@ -93,29 +90,12 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
                 .orderByAsc(FlowNode::getNodeIdRef));
     }
 
-    public List<FlowNode> requiredDeviceNodes(Long flowModelId) {
-        List<FlowNode> result = new java.util.ArrayList<>();
-        collectRequiredDeviceNodes(flowModelId, new HashSet<>(), result);
-        return List.copyOf(result);
-    }
-
-    private void collectRequiredDeviceNodes(Long flowModelId, Set<Long> visited, List<FlowNode> result) {
-        if (flowModelId == null || !visited.add(flowModelId)) return;
-        for (FlowNode node : nodes(flowModelId)) {
-            if ("DEVICE_CAPABILITY_NODE".equals(node.getNodeType())) result.add(node);
-            else if ("SUB_FLOW_NODE".equals(node.getNodeType()))
-                collectRequiredDeviceNodes(node.getSubFlowModelId(), visited, result);
-        }
-    }
-
     @Transactional(rollbackFor = Exception.class)
     public WorkflowDetailResponse saveDefinition(WorkflowSaveRequest request) {
         if (request == null || request.getNodesDef() == null || !request.getNodesDef().isArray()) {
             throw new IllegalArgumentException("nodesDef 必须是数组");
         }
-        for (JsonNode node : request.getNodesDef()) {
-            schemaValidationService.validateDefinition(node, "workflow-model.json", "FlowNodeDefinition");
-        }
+
         WorkflowDefinitionCompiler.CompiledWorkflow compiled = compiler.compile(request);
         validateSubFlowReferences(request, compiled);
         FlowModels model = request.getId() == null ? new FlowModels() : modelMapper.selectById(request.getId());
@@ -139,7 +119,7 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
         model.setInterfaceConnection(nonNullArray(request.getInterfaceConnections()));
         model.setPortConnection(nonNullArray(request.getPortConnections()));
         ArrayNode refs = JsonNodeSupport.arrayNode();
-        compiled.nodes().keySet().forEach(refs::add);
+        compiled.nodes().forEach((ref, node) -> refs.addObject().put("nodeIdRef", ref).put("nodeName", node.path("name").asText()));
         model.setNodes(refs);
         if (model.getId() == null) {
             model.setCreateTime(OffsetDateTime.now());
@@ -170,7 +150,7 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
     private void validateSubFlowReferences(WorkflowSaveRequest request,
                                            WorkflowDefinitionCompiler.CompiledWorkflow compiled) {
         for (JsonNode node : compiled.nodes().values()) {
-            if (!"SUB_FLOW_NODE".equals(node.path("nodeType").asText())) continue;
+            if (!"SUBFLOW_NODE".equals(node.path("nodeType").asText())) continue;
             long subFlowId = node.path("subFlowModelId").asLong();
             if (modelMapper.selectById(subFlowId) == null)
                 throw new IllegalArgumentException("子流程模型不存在: " + subFlowId);
@@ -194,15 +174,18 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
         FlowNode entity = new FlowNode();
         entity.setFlowModelId(flowModelId);
         entity.setNodeIdRef(node.path("nodeIdRef").asLong());
-        entity.setNodeType(node.path("nodeType").asText());
+        String nodeType = node.path("nodeType").asText();
+        entity.setNodeType(nodeType);
         if (node.hasNonNull("subFlowModelId")) entity.setSubFlowModelId(node.path("subFlowModelId").asLong());
-        var capability = node.path("capability").deepCopy();
-        if (capability.isObject() && !capability.hasNonNull("displayName")) {
-            ((com.fasterxml.jackson.databind.node.ObjectNode) capability).put("displayName",
-                    node.path("name").asText("node-" + node.path("nodeIdRef").asLong()));
+        ObjectNode capability = JsonNodeSupport.objectNode();
+        if ("DEV_NODE".equals(nodeType)) {
+            entity.setDeviceModelId(node.path("deviceModelId").asLong());
+            capability.setAll((ObjectNode) nonNullObject(node.path("capability")));
+        } else if ("FUNC_NODE".equals(nodeType)) {
+            capability.put("functionType", node.path("functionType").asText());
+            if (node.has("expression")) capability.put("expression", node.path("expression").asText());
         }
-        if (capability.hasNonNull("deviceModelRef")) entity.setDeviceModelId(capability.path("deviceModelRef").asLong());
-        entity.setCapability(capability.deepCopy());
+        entity.setCapability(capability);
         entity.setInVariables(nonNullArray(node.path("internalVariables")));
         entity.setLifecycle(nonNullObject(node.path("lifecycle")));
         entity.setInterfaces(nonNullArray(node.path("interfaces")));
@@ -212,14 +195,19 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
         return entity;
     }
 
-    private JsonNode toDefinition(FlowNode node) {
-        var definition = JsonNodeSupport.objectNode();
-        definition.put("nodeIdRef", node.getNodeIdRef());
-        definition.put("name", node.getCapability() == null ? "node-" + node.getNodeIdRef()
-                : node.getCapability().path("displayName").asText("node-" + node.getNodeIdRef()));
+    private JsonNode toDefinition(FlowNode node, String nodeName) {
+        ObjectNode definition = JsonNodeSupport.objectNode();
+        definition.put("name", nodeName == null || nodeName.isBlank() ? "node-" + node.getNodeIdRef() : nodeName);
         definition.put("nodeType", node.getNodeType());
-        if (node.getSubFlowModelId() != null) definition.put("subFlowModelId", node.getSubFlowModelId());
-        definition.set("capability", nonNullObject(node.getCapability()));
+        if ("DEV_NODE".equals(node.getNodeType())) {
+            definition.put("deviceModelId", node.getDeviceModelId());
+            definition.set("capability", nonNullObject(node.getCapability()));
+        } else if ("FUNC_NODE".equals(node.getNodeType())) {
+            definition.put("functionType", node.getCapability().path("functionType").asText());
+            if (node.getCapability().has("expression")) definition.put("expression", node.getCapability().path("expression").asText());
+        } else if ("SUBFLOW_NODE".equals(node.getNodeType())) {
+            definition.put("subFlowModelId", node.getSubFlowModelId());
+        }
         definition.set("internalVariables", nonNullArray(node.getInVariables()));
         definition.set("lifecycle", nonNullObject(node.getLifecycle()));
         definition.set("interfaces", nonNullArray(node.getInterfaces()));
@@ -228,6 +216,17 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
         return definition;
     }
 
+    private java.util.Map<Long, String> nodeNames(JsonNode refs) {
+        java.util.Map<Long, String> result = new java.util.HashMap<>();
+        if (refs != null && refs.isArray()) {
+            for (JsonNode item : refs) {
+                if (item.isObject() && item.path("nodeIdRef").canConvertToLong()) {
+                    result.put(item.path("nodeIdRef").asLong(), item.path("nodeName").asText());
+                }
+            }
+        }
+        return result;
+    }
     private ArrayNode nonNullArray(JsonNode node) {
         return node != null && node.isArray() ? node.deepCopy() : JsonNodeSupport.arrayNode();
     }

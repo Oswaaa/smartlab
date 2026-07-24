@@ -1,33 +1,49 @@
 package com.smartlab.engine.workflow.action;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.stereotype.Component;
 
 @Component
 public class EmitSignalWorkflowActionExecutor implements WorkflowActionExecutor {
-    public String actionName() { return "EMIT_SIGNAL"; }
+    @Override
+    public String actionName() { return "EMIT"; }
 
+    @Override
     public WorkflowActionResult execute(WorkflowActionDefinition action, WorkflowActionContext context) {
-        if (!"DEVICE_CAPABILITY_NODE".equals(context.node().getNodeType()))
-            throw new IllegalArgumentException("EMIT_SIGNAL 只能用于设备能力节点");
-        if (context.operations() == null) throw new IllegalStateException("EMIT_SIGNAL 缺少执行操作边界");
-        String interfaceType = action.payload().path("interfaceType").asText("");
+        String targetInterface = action.payload().path("targetInterfaceName").asText("");
         String signalName = action.payload().path("signalName").asText("");
-        if (!"WORKFLOW".equals(interfaceType) || signalName.isBlank())
-            throw new IllegalArgumentException("EMIT_SIGNAL 必须声明 WORKFLOW 接口类型和 signalName");
-        String capabilityRef = context.node().getCapability().path("capabilityRef").asText("");
-        if (capabilityRef.isBlank()) throw new IllegalArgumentException("设备能力节点缺少 capabilityRef");
-
-        String existing = context.step().getInterfaceInSnapshot() == null ? ""
-                : context.step().getInterfaceInSnapshot().path("messageId").asText("");
-        long instanceId = context.operations().resolveDeviceInstance(context.task(), context.node());
-        String messageId = existing.isBlank()
-                ? context.operations().ensureMessageId(context.step(), instanceId, capabilityRef)
-                : existing;
-        if (existing.isBlank()) {
-            context.operations().dispatchDeviceSignal(
-                    context.task(), context.step(), context.node(), instanceId, messageId,
-                    interfaceType, signalName, context.node().getCapability().path("parameters"));
+        JsonNode target = interfaceByName(context.node().getInterfaces(), targetInterface);
+        if (target == null || !"OUT".equals(target.path("direction").asText())) {
+            throw new IllegalArgumentException("EMIT目标接口不存在或不是OUT: " + targetInterface);
         }
-        return WorkflowActionResult.awaitExternalSignal(messageId);
+        if (!allows(target, signalName)) {
+            throw new IllegalArgumentException("EMIT信号不在目标接口allowedSignals中: " + targetInterface + "." + signalName);
+        }
+        if ("STATE".equals(target.path("interfaceType").asText())) {
+            long instanceId = context.operations().resolveDeviceInstance(context.task(), context.node());
+            String capabilityName = context.node().getCapability().path("capabilityName").asText("");
+            String messageId = context.operations().ensureMessageId(context.step(), instanceId, capabilityName);
+            context.operations().dispatchDeviceSignal(context.task(), context.step(), context.node(), instanceId,
+                    messageId, targetInterface, signalName, context.node().getCapability().path("capabilityParameters"));
+            return WorkflowActionResult.awaitExternalSignal(messageId);
+        }
+        if ("WORKFLOW".equals(target.path("interfaceType").asText())) {
+            return WorkflowActionResult.emitWorkflowSignal(targetInterface, signalName);
+        }
+        throw new IllegalArgumentException("EMIT不支持的接口类型: " + target.path("interfaceType").asText());
+    }
+
+    private JsonNode interfaceByName(JsonNode interfaces, String name) {
+        if (interfaces != null && interfaces.isArray()) {
+            for (JsonNode item : interfaces) if (name.equals(item.path("name").asText())) return item;
+        }
+        return null;
+    }
+
+    private boolean allows(JsonNode target, String signalName) {
+        JsonNode allowed = target.path("allowedSignals");
+        if (!allowed.isArray()) return false;
+        for (JsonNode item : allowed) if (signalName.equals(item.asText())) return true;
+        return false;
     }
 }

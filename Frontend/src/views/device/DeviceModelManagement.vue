@@ -247,17 +247,13 @@ const confirmMigration = async () => {
       }
     }
 
-    const drawer = editorDrawerRef.value
-    const propertyTypes = await drawer.loadPropertyTypesForTemplate()
     for (const assignment of migrationState.modelAssignments) {
       const targetCatId = newCatIds[assignment.targetCategoryIndex]
       const modelData = models.value.find(m => m.modelId === assignment.modelId)
       if (modelData) {
-        await loadDefaultTemplateForModel(modelData.modelId, modelData.attributes || [])
-        const draft = drawer.fromModelToDraft(modelData)
-        draft.basic.categoryValue = String(targetCatId)
-        drawer.replaceDraft(draft)
-        const payload = drawer.buildSavePayload(true, propertyTypes)
+        const payload = JSON.parse(JSON.stringify(modelData))
+        payload.modelId = modelData.modelId
+        payload.categoryId = Number(targetCatId)
         await saveDeviceModel(payload)
       }
     }

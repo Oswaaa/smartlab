@@ -227,7 +227,7 @@ public class MqttAdapterMessagingService implements MqttCallback {
         ObjectNode commandMessage;
         if ("CMD_START".equals(event.signalName())) {
             commandMessage = protocolMapperService.buildCommandMessage(
-                    String.valueOf(event.instanceId()), event.commandName(), event.messageId(), event.parameters());
+                    String.valueOf(event.instanceId()), event.capabilityName(), event.messageId(), event.parameters());
         } else if ("CMD_ABORT".equals(event.signalName())) {
             commandMessage = protocolMapperService.buildAbortMessage(
                     String.valueOf(event.instanceId()), event.messageId());
@@ -392,18 +392,24 @@ public class MqttAdapterMessagingService implements MqttCallback {
     private void subscribeKnownDevicePointTopics() {
         Map<String, AdapterRouteDTO> routes = protocolMapperService.refreshAdapterRouteTable();
         List<String> topics = new ArrayList<>();
+        Set<String> adapterNames = new java.util.LinkedHashSet<>();
+        for (AdapterIndex adapter : adapterIndexService.list()) {
+            if (adapter.getParsedConfig() != null && adapter.getAdapterName() != null && !adapter.getAdapterName().isBlank()) {
+                adapterNames.add(adapter.getAdapterName());
+            }
+        }
         for (AdapterRouteDTO route : routes.values()) {
             String adapterName = route.getBoundAdapterName();
             String devicePoint = route.getBoundDevicePoint();
-            if (adapterName == null || adapterName.isBlank() || devicePoint == null || devicePoint.isBlank()) {
-                continue;
-            }
+            if (adapterName == null || adapterName.isBlank() || devicePoint == null || devicePoint.isBlank()) continue;
+            adapterNames.add(adapterName);
             topics.add(protocolDictionaryService.resolveMqttTopic("telemetryTopic", Map.of(
-                    "adapterName", adapterName,
-                    "devicePoint", devicePoint)));
+                    "adapterName", adapterName, "devicePoint", devicePoint)));
             topics.add(protocolDictionaryService.resolveMqttTopic("eventTopic", Map.of(
-                    "adapterName", adapterName,
-                    "devicePoint", devicePoint)));
+                    "adapterName", adapterName, "devicePoint", devicePoint)));
+        }
+        for (String adapterName : adapterNames) {
+            topics.add(protocolDictionaryService.resolveMqttTopic("heartbeatTopic", Map.of("adapterName", adapterName)));
         }
         subscribeTopics(topics.toArray(String[]::new));
     }

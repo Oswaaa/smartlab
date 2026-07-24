@@ -119,7 +119,7 @@
           <div v-for="(field, idx) in templateDrawer.details" :key="field._key" class="field-row">
             <el-input v-model="field.columnName" />
             <el-input v-model="field.columnDesc" />
-            <el-select v-model="field.deviceAttrKey" clearable placeholder="可为空"><el-option v-for="attr in selectedTemplateModelAttrs" :key="attr.name" :label="attr.displayName || attr.name" :value="attr.name" /></el-select>
+            <el-select v-model="field.deviceAttrKey" clearable placeholder="可为空"><el-option v-for="attr in selectedTemplateModelAttrs" :key="attr.attributeName" :label="attr.displayName || attr.attributeName" :value="attr.attributeName" /></el-select>
             <el-input v-model="field.defaultValue" placeholder="无默认值" />
             <el-button text type="danger" @click="templateDrawer.details.splice(idx, 1)">删除</el-button>
           </div>
@@ -352,8 +352,8 @@ function generateFieldsFromModel() {
   const model = modelMap.value[String(templateDrawer.deviceModelId)]
   const attrs = asArray(model?.attributes)
   templateDrawer.details = attrs.flatMap(attr => {
-    const name = attr.name || attr.displayName
-    const desc = attr.displayName || attr.name
+    const name = attr.attributeName || attr.displayName
+    const desc = attr.displayName || attr.attributeName
     const rows = [{ _key: uid(), columnName: name, columnDesc: desc, propertyTypeId: propertyTypeId(attr.dataType), columnLength: 255, deviceAttrKey: name, defaultValue: '' }]
     if (attr.unit) rows.push({ _key: uid(), columnName: `${name}_unit`, columnDesc: `${desc}单位`, propertyTypeId: 6, columnLength: 50, deviceAttrKey: '', defaultValue: attr.unit })
     return rows

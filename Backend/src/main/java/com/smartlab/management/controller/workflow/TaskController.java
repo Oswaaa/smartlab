@@ -58,9 +58,21 @@ public class TaskController {
         catch (Exception e) { return ApiResponse.fail(e.getMessage()); }
     }
 
-    @PostMapping("/abort/{id}")
-    public ApiResponse<Task> abort(@PathVariable Long id) {
-        try { return ApiResponse.ok(taskControlService.abort(id)); }
+    @PostMapping("/pause/{id}")
+    public ApiResponse<Task> pause(@PathVariable Long id) {
+        try { return ApiResponse.ok(taskControlService.pause(id)); }
+        catch (Exception e) { return ApiResponse.fail(e.getMessage()); }
+    }
+
+    @PostMapping("/resume/{id}")
+    public ApiResponse<Task> resume(@PathVariable Long id) {
+        try { return ApiResponse.ok(taskControlService.resume(id)); }
+        catch (Exception e) { return ApiResponse.fail(e.getMessage()); }
+    }
+
+    @PostMapping("/terminate/{id}")
+    public ApiResponse<Task> terminate(@PathVariable Long id) {
+        try { return ApiResponse.ok(taskControlService.terminate(id)); }
         catch (Exception e) { return ApiResponse.fail(e.getMessage()); }
     }
 

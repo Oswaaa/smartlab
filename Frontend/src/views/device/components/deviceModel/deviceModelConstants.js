@@ -48,8 +48,8 @@ export function applyProtocolMetadata(metadata = {}) {
   replaceArray(operators, constraint.operators)
   replaceArray(communicationProtocols, protocol.communicationProtocols)
   replaceArray(adapterRegisterFormats, protocol.adapterRegisterFormats)
-  replaceArray(stateActionNames, protocol.stateMachineActionNames)
-  replaceArray(interfaceTypes, stateMachine.interfaceTypes)
+  replaceArray(stateActionNames, stateMachine.actionTypes)
+  replaceArray(interfaceTypes, [...new Set(interfaces.map(item => item.interfaceType).filter(Boolean))])
   replaceArray(adapterOutSignals, signalsOf('OUT', 'ADAPTER'))
   const cmdStates = Array.isArray(stateMachine.commandStateNames) ? stateMachine.commandStateNames : []
   const normCmdStates = cmdStates.includes('ABORTING') ? cmdStates : [...cmdStates.filter(s => s !== 'ABORTED'), 'ABORTING', 'ABORTED']
@@ -57,7 +57,7 @@ export function applyProtocolMetadata(metadata = {}) {
   replaceArray(workflowControlSignals, signalsOf('IN', 'WORKFLOW'))
   replaceArray(manualControlSignals, signalsOf('IN', 'CONTROL'))
   replaceArray(constraintControlSignals, signalsOf('IN', 'CONSTRAINT'))
-  replaceArray(statusSignals, signalsOf('OUT', 'STAT'))
+  replaceArray(statusSignals, signalsOf('OUT', 'STATE'))
   replaceArray(standardInterfaces, interfaces)
   replaceArray(executionLifecycleMainPath, stateMachine.executionLifecycleMainPath)
   replaceArray(systemTransitions, stateMachine.systemTransitions)
@@ -75,9 +75,7 @@ export async function loadProtocolMetadata() {
 let protocolMetadataLoading = null
 
 export async function ensureProtocolMetadataLoaded(loader = loadProtocolMetadata) {
-  const metadataReady = () => executionLifecycleMainPath.length > 0
-    && systemTransitions.length > 0
-    && communicationProtocols.length > 0
+  const metadataReady = () => communicationProtocols.length > 0
     && adapterDataTypes.length > 0
     && standardInterfaces.length > 0
   if (metadataReady()) return
@@ -214,7 +212,7 @@ export function defaultStateEntryActions(type, stateName) {
   return [{
     actionName: 'SEND',
     payload: {
-      interfaceName: standardInterfaceName('OUT', 'STAT'),
+      interfaceName: standardInterfaceName('OUT', 'STATE'),
       signalName: type === 'CMD' ? 'CMD_STATE' : 'OP_STATE',
       stateName
     }
@@ -326,7 +324,7 @@ export function buildAdapterContractFromManifestCategory(parsed, category) {
   }))
 
   const adapterAttributes = asArray(template.attributes).map(attr => ({
-    name: stringValue(attr.name),
+    telemetryName: stringValue(attr.telemetryName || attr.name),
     dataType: normalizeDataType(attr.dataType, 'DOUBLE', adapterDataTypes),
     description: stringValue(attr.description)
   }))

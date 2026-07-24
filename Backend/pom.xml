@@ -108,13 +108,6 @@
             <artifactId>reactor-core</artifactId>
         </dependency>
 
-        <!-- JSON Schema Validator -->
-        <dependency>
-            <groupId>com.networknt</groupId>
-            <artifactId>json-schema-validator</artifactId>
-            <version>1.4.0</version>
-        </dependency>
-
         <!-- WebSocket -->
         <dependency>
             <groupId>org.springframework.boot</groupId>

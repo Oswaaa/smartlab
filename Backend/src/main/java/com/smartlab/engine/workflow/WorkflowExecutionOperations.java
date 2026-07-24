@@ -9,5 +9,6 @@ public interface WorkflowExecutionOperations {
     long resolveDeviceInstance(Task task, FlowNode node);
     String ensureMessageId(TaskStep step, long deviceInstanceId, String capabilityRef);
     void dispatchDeviceSignal(Task task, TaskStep step, FlowNode node, long deviceInstanceId,
-                              String messageId, String interfaceType, String signalName, JsonNode parameters);
+                              String messageId, String nodeOutputInterfaceName, String signalName, JsonNode parameters);
+    void dispatchDeviceAbort(Task task, TaskStep step, FlowNode node, long deviceInstanceId, String messageId);
 }

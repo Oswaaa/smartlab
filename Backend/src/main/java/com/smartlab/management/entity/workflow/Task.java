@@ -1,6 +1,7 @@
 package com.smartlab.management.entity.workflow;
 
 import com.baomidou.mybatisplus.annotation.IdType;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
@@ -25,12 +26,14 @@ public class Task {
     private Long parentTaskId;
     @TableField("task_status")
     private String taskStatus;
+    @JsonIgnore
     @TableField(value = "task_constraints", typeHandler = PostgresJsonbTypeHandler.class)
     private JsonNode taskConstraints;
     @TableField("current_flow_node_id")
     private Long currentFlowNodeId;
     @TableField("current_node_id_ref")
     private Long currentNodeIdRef;
+    @JsonIgnore
     @TableField(value = "resource_map", typeHandler = PostgresJsonbTypeHandler.class)
     private JsonNode resourceMap;
     @TableField(value = "task_variables", typeHandler = PostgresJsonbTypeHandler.class)

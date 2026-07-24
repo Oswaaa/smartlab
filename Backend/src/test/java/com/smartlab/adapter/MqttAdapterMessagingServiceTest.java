@@ -33,10 +33,10 @@ class MqttAdapterMessagingServiceTest {
 
         service.handleStateMachineSendAction(new StateMachineSendActionEvent(
                 7L, "Interface_adapter_out", "ADAPTER", "CMD_START",
-                "heat", "msg-1", Map.of("target", 80), JsonNodeSupport.objectNode()));
+                "heat", "heat_cmd", "msg-1", Map.of("target", 80), JsonNodeSupport.objectNode()));
         service.handleStateMachineSendAction(new StateMachineSendActionEvent(
                 7L, "Interface_adapter_out", "ADAPTER", "CMD_ABORT",
-                null, "msg-1", Map.of(), JsonNodeSupport.objectNode()));
+                null, null, "msg-1", Map.of(), JsonNodeSupport.objectNode()));
 
         verify(mapper).buildCommandMessage("7", "heat", "msg-1", Map.of("target", 80));
         verify(mapper).buildAbortMessage("7", "msg-1");
@@ -52,7 +52,7 @@ class MqttAdapterMessagingServiceTest {
         payload.put("timestamp", 1719892800L);
         payload.put("adapterName", "adapter-B");
         payload.put("devicePoint", "point-1");
-        payload.putObject("data").put("temperature", 25.0);
+        payload.putObject("telemetryData").put("temperature", 25.0);
         MqttMessage message;
         try {
             message = new MqttMessage(JsonNodeSupport.MAPPER.writeValueAsBytes(payload));

@@ -676,8 +676,8 @@
                   <div class="preview-section">
                     <span class="preview-label">继承的数据属性 (Attributes)</span>
                     <div class="preview-tags" v-if="wizardPreviewAttributes.length">
-                      <el-tag v-for="attr in wizardPreviewAttributes" :key="attr.name" size="small" effect="plain" type="info">
-                        {{ attr.displayName || attr.name }} ({{ attr.dataType }}{{ attr.unit ? ', ' + attr.unit : '' }})
+                      <el-tag v-for="attr in wizardPreviewAttributes" :key="attr.attributeName" size="small" effect="plain" type="info">
+                        {{ attr.displayName || attr.attributeName }} ({{ attr.dataType }}{{ attr.unit ? ', ' + attr.unit : '' }})
                       </el-tag>
                     </div>
                     <div v-else class="preview-empty">无属性定义</div>
@@ -918,11 +918,11 @@ const kpiAttributes = computed(() => {
   const snapshotMap = snapshotAttributes.value
   
   const mapped = attrs.map((attr: any) => {
-    const candidates = [attr.name, attr.identifier, attr.displayName].filter(Boolean).map(String)
+    const candidates = [attr.attributeName, attr.identifier, attr.displayName].filter(Boolean).map(String)
     const matchedKey = candidates.find(key => Object.prototype.hasOwnProperty.call(snapshotMap, key)) || candidates[0] || ''
     return {
-      key: attr.name || attr.identifier || attr.displayName || '-',
-      label: attr.displayName || attr.name || attr.identifier || '-',
+      key: attr.attributeName || attr.identifier || attr.displayName || '-',
+      label: attr.displayName || attr.attributeName || attr.identifier || '-',
       dataType: attr.dataType || '-',
       unit: attr.unit || '',
       value: matchedKey ? snapshotMap[matchedKey] : undefined,
@@ -942,12 +942,12 @@ const snapshotAttributeRows = computed(() => {
   const snapshotMap = snapshotAttributes.value
   const used = new Set<string>()
   const rows = attrs.map((attr: any) => {
-    const candidates = [attr.name, attr.identifier, attr.displayName].filter(Boolean).map(String)
+    const candidates = [attr.attributeName, attr.identifier, attr.displayName].filter(Boolean).map(String)
     const matchedKey = candidates.find(key => Object.prototype.hasOwnProperty.call(snapshotMap, key)) || candidates[0] || ''
     if (matchedKey) used.add(matchedKey)
     return {
-      key: attr.name || attr.identifier || attr.displayName || '-',
-      label: attr.displayName || attr.name || attr.identifier || '-',
+      key: attr.attributeName || attr.identifier || attr.displayName || '-',
+      label: attr.displayName || attr.attributeName || attr.identifier || '-',
       dataType: attr.dataType || '-',
       unit: attr.unit || '-',
       value: matchedKey ? snapshotMap[matchedKey] : undefined

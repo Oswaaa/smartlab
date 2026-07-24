@@ -1,0 +1,6 @@
+package com.smartlab.global.contract;
+
+public enum ObservableObjectType {
+    DEVICE_ATTRIBUTE, DEVICE_OPERATION_STATE, DEVICE_COMMAND_LIFECYCLE,
+    NODE_LIFECYCLE_STATE, NODE_INTERNAL_VARIABLE, TASK_LIFECYCLE_STATE
+}

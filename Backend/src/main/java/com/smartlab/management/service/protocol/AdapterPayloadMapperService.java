@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.engine.statemachine.StateMachineEngine;
+import com.smartlab.global.event.DeviceTelemetryUpdatedEvent;
 import com.smartlab.global.protocol.ProtocolDictionaryService;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.adapter.AdapterManifestService;
@@ -21,6 +22,7 @@ import com.smartlab.management.service.db.resource.adapter.AdapterIndexService;
 import com.smartlab.management.service.db.resource.data.DataIndexService;
 import com.smartlab.management.service.db.resource.data.DataRecordService;
 import com.smartlab.management.entity.resource.data.DataIndex;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Lazy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -52,6 +54,7 @@ public class AdapterPayloadMapperService {
     private final StateMachineEngine stateMachineEngine;
     private final DataIndexService dataIndexService;
     private final DataRecordService dataRecordService;
+    private final ApplicationEventPublisher eventPublisher;
     private final ConcurrentHashMap<String, AdapterRouteDTO> adapterRouteTable = new ConcurrentHashMap<>();
 
     public AdapterPayloadMapperService(DeviceInstancesMapper deviceInstancesMapper,
@@ -62,6 +65,7 @@ public class AdapterPayloadMapperService {
             ProtocolDictionaryService protocolDictionaryService,
             DataIndexService dataIndexService,
             DataRecordService dataRecordService,
+            ApplicationEventPublisher eventPublisher,
             @Lazy StateMachineEngine stateMachineEngine) {
         this.deviceInstancesMapper = deviceInstancesMapper;
         this.deviceModelsMapper = deviceModelsMapper;
@@ -71,6 +75,7 @@ public class AdapterPayloadMapperService {
         this.protocolDictionaryService = protocolDictionaryService;
         this.dataIndexService = dataIndexService;
         this.dataRecordService = dataRecordService;
+        this.eventPublisher = eventPublisher;
         this.stateMachineEngine = stateMachineEngine;
     }
 
@@ -142,29 +147,26 @@ public class AdapterPayloadMapperService {
 
     public ObjectNode buildAbortMessage(String id, String messageId) {
         if (messageId == null || messageId.isBlank()) {
-            throw new IllegalArgumentException("中止指令缺少 messageId");
+            throw new IllegalArgumentException("中止指令缺少messageId");
         }
         DeviceInstances instance = deviceInstancesMapper.selectById(parseId(id));
         if (instance == null) {
             throw new IllegalArgumentException("设备实例不存在");
         }
         requireUsable(instance);
-        if (!hasAdapterBinding(instance)) {
-            throw new IllegalStateException("设备实例未绑定 Adapter 设备点");
+        DeviceModels model = deviceModelsMapper.selectById(instance.getDeviceModelId());
+        if (model == null) {
+            throw new IllegalArgumentException("设备模型不存在");
         }
-
-        ObjectNode payload = JsonNodeSupport.objectNode();
-        payload.put("messageId", messageId);
-        payload.put("adapterName", instance.getBoundAdapterName());
-        payload.put("devicePoint", instance.getBoundDevicePoint());
-        payload.put("operation", "ABORT");
-        payload.put("timestamp", Instant.now().toEpochMilli());
-        protocolDictionaryService.validateDefinition("CommandAbortMessageFormat", payload);
-
-        ObjectNode result = JsonNodeSupport.objectNode();
-        result.put("topic", commandTopic(instance.getBoundAdapterName(), instance.getBoundDevicePoint()));
-        result.set("payload", payload);
-        return result;
+        JsonNode abortCapability = findAbortCapability(model.getCapabilities());
+        if (abortCapability == null) {
+            throw new IllegalStateException("设备模型没有声明isAbort=true的终止能力");
+        }
+        String capabilityName = abortCapability.path("capabilityName").asText("");
+        if (capabilityName.isBlank()) {
+            throw new IllegalStateException("终止能力缺少capabilityName");
+        }
+        return buildCommandMessage(id, capabilityName, messageId, Map.of());
     }
     public ObjectNode buildAdapterBinding(Long modelId, String adapterName, String devicePoint) {
         if (modelId == null) {
@@ -241,7 +243,7 @@ public class AdapterPayloadMapperService {
         if (route == null) {
             return;
         }
-        JsonNode data = message == null ? null : message.path("data");
+        JsonNode data = message == null ? null : message.path("telemetryData");
         if (data == null || !data.isObject()) {
             return;
         }
@@ -272,6 +274,7 @@ public class AdapterPayloadMapperService {
         state.setLastOnlineTime(OffsetDateTime.now());
         state.setUpdateTime(OffsetDateTime.now());
         twinStatesMapper.updateById(state);
+        eventPublisher.publishEvent(new DeviceTelemetryUpdatedEvent(instanceId, route.getDeviceModelId(), mappedValues.deepCopy(), Instant.now()));
 
         try {
             Map<String, Object> recordMap = new HashMap<>();
@@ -324,7 +327,7 @@ public class AdapterPayloadMapperService {
         }
         JsonNode events = model.getAdapterContract().path("events").path(groupName);
         for (JsonNode event : iterable(events)) {
-            String configuredName = event.path("name").asText(event.path("eventName").asText(""));
+            String configuredName = event.path("eventName").asText("");
             if (eventName.equals(configuredName)) {
                 return true;
             }
@@ -418,12 +421,21 @@ public class AdapterPayloadMapperService {
         return command;
     }
 
-    private JsonNode findCapability(JsonNode capabilities, String id) {
-        if (id == null) {
+    private JsonNode findCapability(JsonNode capabilities, String capabilityName) {
+        if (capabilityName == null || capabilityName.isBlank()) {
             return null;
         }
         for (JsonNode capability : iterable(capabilities)) {
-            if (id.equals(capability.path("name").asText()) || id.equals(capability.path("capabilityId").asText())) {
+            if (capabilityName.equals(capability.path("capabilityName").asText())) {
+                return capability;
+            }
+        }
+        return null;
+    }
+
+    private JsonNode findAbortCapability(JsonNode capabilities) {
+        for (JsonNode capability : iterable(capabilities)) {
+            if (capability.path("isAbort").asBoolean(false)) {
                 return capability;
             }
         }
@@ -455,9 +467,9 @@ public class AdapterPayloadMapperService {
     private Map<String, String> modelAttributeTypes(JsonNode attributes) {
         Map<String, String> result = new HashMap<>();
         for (JsonNode attr : iterable(attributes)) {
-            String name = attr.path("name").asText("");
-            if (!name.isBlank()) {
-                result.put(name, adapterManifestService.normalizeDataType(attr.path("dataType").asText("STRING")));
+            String attributeName = attr.path("attributeName").asText("");
+            if (!attributeName.isBlank()) {
+                result.put(attributeName, adapterManifestService.normalizeDataType(attr.path("dataType").asText("STRING")));
             }
         }
         return result;
@@ -466,9 +478,9 @@ public class AdapterPayloadMapperService {
     private Map<String, String> adapterAttributeTypes(JsonNode contract) {
         Map<String, String> result = new HashMap<>();
         for (JsonNode attr : iterable(contract == null ? null : contract.path("telemetry").path("adapterAttributes"))) {
-            String name = attr.path("name").asText("");
-            if (!name.isBlank()) {
-                result.put(name, adapterManifestService.normalizeDataType(attr.path("dataType").asText("STRING")));
+            String telemetryName = attr.path("telemetryName").asText("");
+            if (!telemetryName.isBlank()) {
+                result.put(telemetryName, adapterManifestService.normalizeDataType(attr.path("dataType").asText("STRING")));
             }
         }
         return result;

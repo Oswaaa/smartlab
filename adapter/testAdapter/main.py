@@ -622,7 +622,7 @@ class AdapterRouter:
                 raise ValueError(f"devicePoint does not match topic: {device_point} != {topic_point}")
 
             if message.get("operation") is not None:
-                return self._abort(message_id, device_point, timestamp, message.get("operation"))
+                raise ValueError("operation不属于最终CommandMessageFormat；终止必须声明为isAbort=true的具体commandName")
 
             command_name = require_string(message.get("commandName"), "commandName")
             parameters = require_object(message.get("parameters"), "parameters")
@@ -812,7 +812,7 @@ class AdapterRouter:
                 "timestamp": snapshot.received_at_ms,
                 "adapterName": self.adapter.adapter_name,
                 "devicePoint": device_point,
-                "data": model_data,
+                "telemetryData": model_data,
             },
             qos=self.runtime.broker.qos,
         )]

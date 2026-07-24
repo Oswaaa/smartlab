@@ -73,7 +73,7 @@ export async function fetchDefaultTemplateAttributes(modelId, attributes = []) {
   const detailRes = await axios.get('/api/data/template/' + defaultTpl.id + '/details')
   const keys = asArray(okData(detailRes)).map(d => d.deviceAttrKey).filter(Boolean)
   if (keys.length === 0) return []
-  return asArray(attributes).filter(attr => keys.includes(attr.name))
+  return asArray(attributes).filter(attr => keys.includes(attr.attributeName))
 }
 
 export async function listRegisteredAdapters() {

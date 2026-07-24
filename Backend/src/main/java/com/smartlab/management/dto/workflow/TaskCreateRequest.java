@@ -13,8 +13,6 @@ public class TaskCreateRequest {
     @NotNull
     private Long flowModelId;
     private Long parentTaskId;
-    private JsonNode taskConstraints;
-    private JsonNode resourceMap;
     private JsonNode taskVariables;
     private Long creatorId;
 }

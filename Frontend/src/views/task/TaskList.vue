@@ -27,7 +27,7 @@
         @row-click="handleRowClick"
         class="custom-table"
       >
-        <el-table-column prop="taskId" label="ID" width="72" align="center" />
+        <el-table-column prop="id" label="ID" width="72" align="center" />
         <el-table-column prop="taskName" label="任务名称" min-width="160">
           <template #default="{ row }">
             <div style="font-weight: 600; color: #0f172a;">{{ row.taskName }}</div>
@@ -65,13 +65,12 @@
             </div>
           </template>
         </el-table-column>
-        <el-table-column label="资源绑定" width="100" align="center">
+        <el-table-column label="设备路由" width="100" align="center">
           <template #default="{ row }">
-            <el-tag v-if="row.resourceMap && Object.keys(row.resourceMap || {}).length > 0"
-              type="success" size="small" effect="plain">
-              {{ Object.keys(row.resourceMap).length }} 个设备
+            <el-tag v-if="workflowDeviceRoutes[String(row.flowModelId)]?.length" type="success" size="small" effect="plain">
+              {{ workflowDeviceRoutes[String(row.flowModelId)].length }} 条
             </el-tag>
-            <span v-else style="color: #94a3b8; font-size: 12px;">无</span>
+            <span v-else style="color: #94a3b8; font-size: 12px;">待加载</span>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="200" fixed="right" align="center">
@@ -90,7 +89,7 @@
                 type="warning"
                 size="small"
                 plain
-                :disabled="!['PENDING', 'RUNNING'].includes(row.taskStatus)"
+                :disabled="!['RUNNING', 'PAUSED'].includes(row.taskStatus)"
                 @click="abortTask(row.id)"
               >
                 终止
@@ -159,156 +158,23 @@
             </section>
           </div>
 
-          <div class="anchor-section industrial-section" v-if="requiredModels.length > 0">
-            <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px; margin-top: 24px;">设备资源绑定</h2>
+          <div class="anchor-section industrial-section" v-if="selectedDeviceRoutes.length">
+            <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px; margin-top: 24px;">设备路由</h2>
             <section class="drawer-section">
-              <div class="schema-info-bar" style="margin-bottom: 12px; padding: 8px; background: #f8fafc; border-radius: 4px; font-size: 12px; color: #64748b;">
-                <span>请为以下所需设备分配真实的物理实例：</span>
-              </div>
-              <div v-for="model in requiredModels" :key="model.nodeId" style="width: 100%; margin-bottom: 16px;">
-                <div style="font-size: 13px; margin-bottom: 6px; font-weight: 600; color: #334155;">{{ model.nodeType }} (节点: {{ model.nodeIdRef }}):</div>
-                <el-select v-model="createForm.resourceMap[model.nodeId]" placeholder="请选择设备实例" style="width: 100%">
-                  <el-option
-                    v-for="inst in availableInstances[model.deviceModelId] || []"
-                    :key="inst.id"
-                    :label="inst.deviceName || inst.id"
-                    :value="inst.id"
-                  />
-                </el-select>
+              <el-alert type="info" :closable="false" title="设备实例由工作流模型的NODE_TO_DEVICE和DEVICE_TO_NODE连接固定声明，创建任务时不能二次替换" style="margin-bottom: 12px;" />
+              <div v-for="route in selectedDeviceRoutes" :key="route.nodeName" class="resource-map-row">
+                <div class="resource-node-label">{{ route.nodeName }}</div>
+                <el-icon style="color: #2563eb;"><ArrowRight /></el-icon>
+                <div class="resource-instance-label">{{ getInstanceName(route.deviceInstanceId) }}<span style="font-size: 11px; color: #94a3b8; margin-left: 6px;">(ID: {{ route.deviceInstanceId }})</span><div style="font-size: 11px; color: #64748b; margin-top: 3px;">状态机输入: {{ route.deviceInputInterfaceName }}，状态机输出: {{ route.deviceOutputInterfaceName }}</div></div>
               </div>
             </section>
           </div>
-
+          <div class="anchor-section industrial-section" v-else-if="createForm.flowModelId && workflowHasDeviceNodes[String(createForm.flowModelId)]">
+            <el-alert type="warning" :closable="false" title="该工作流未声明设备接口连接，后端会拒绝启动包含DEV_NODE的任务" />
+          </div>
           <div class="anchor-section industrial-section">
-            <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px; margin-top: 24px;">任务补充约束</h2>
-            
-            <section class="drawer-section">
-              <div class="section-title">
-                <h3 style="font-size: 14px;">可观测对象 (Observable Objects)</h3>
-              </div>
-              <el-table :data="createForm.constraintsForm.observableObjects" size="small" border>
-                <el-table-column prop="name" label="对象名称(标识)" width="150">
-                  <template #default="{ row }">
-                    <el-input v-model="row.name" placeholder="唯一名称" size="small" />
-                  </template>
-                </el-table-column>
-                <el-table-column prop="sourceType" label="来源类型" width="180">
-                  <template #default="{ row }">
-                    <el-select v-model="row.sourceType" size="small">
-                      <el-option label="设备属性" value="DEVICE_ATTRIBUTE" />
-                      <el-option label="设备操作状态" value="DEVICE_OPERATION_STATE" />
-                      <el-option label="设备指令生命周期" value="DEVICE_COMMAND_LIFECYCLE" />
-                      <el-option label="节点生命周期状态" value="NODE_LIFECYCLE_STATE" />
-                    </el-select>
-                  </template>
-                </el-table-column>
-                <el-table-column prop="dataType" label="数据类型" width="120">
-                  <template #default="{ row }">
-                    <el-select v-model="row.dataType" size="small">
-                      <el-option label="FLOAT" value="FLOAT" />
-                      <el-option label="INT" value="INT" />
-                      <el-option label="BOOL" value="BOOL" />
-                      <el-option label="STRING" value="STRING" />
-                    </el-select>
-                  </template>
-                </el-table-column>
-                <el-table-column label="详情配置" min-width="300">
-                  <template #default="{ row }">
-                    <div v-if="row.sourceType === 'DEVICE_ATTRIBUTE'" style="display: flex; gap: 8px;">
-                      <el-select v-model="row.deviceModelId" placeholder="选择模型" size="small" @change="fetchModelAttributes(row)" style="width: 120px;">
-                        <el-option v-for="m in allModels" :key="m.id" :label="m.modelName" :value="m.id" />
-                      </el-select>
-                      <el-select v-model="row.deviceInstanceId" placeholder="选择实例(可选)" size="small" clearable style="width: 120px;">
-                        <el-option v-for="inst in availableInstances[row.deviceModelId] || []" :key="inst.id" :label="inst.deviceName || inst.id" :value="inst.id" />
-                      </el-select>
-                      <el-select v-model="row.targetName" placeholder="属性名" size="small" style="width: 120px;">
-                        <el-option v-for="attr in modelAttributes[row.deviceModelId] || []" :key="attr" :label="attr" :value="attr" />
-                      </el-select>
-                    </div>
-                    <div v-else-if="row.sourceType === 'DEVICE_OPERATION_STATE' || row.sourceType === 'DEVICE_COMMAND_LIFECYCLE'" style="display: flex; gap: 8px;">
-                      <el-select v-model="row.deviceModelId" placeholder="选择模型" size="small" @change="fetchModelAttributes(row)" style="width: 120px;">
-                        <el-option v-for="m in allModels" :key="m.id" :label="m.modelName" :value="m.id" />
-                      </el-select>
-                      <el-select v-model="row.deviceInstanceId" placeholder="选择实例(可选)" size="small" clearable style="width: 120px;">
-                        <el-option v-for="inst in availableInstances[row.deviceModelId] || []" :key="inst.id" :label="inst.deviceName || inst.id" :value="inst.id" />
-                      </el-select>
-                    </div>
-                    <div v-else-if="row.sourceType === 'NODE_LIFECYCLE_STATE'" style="display: flex; gap: 8px;">
-                      <el-select v-model="row.workflowTemplateId" placeholder="流程模板(可选)" size="small" clearable style="width: 150px;">
-                        <el-option v-for="tpl in processTemplates" :key="tpl.id" :label="tpl.flowName" :value="tpl.id" />
-                      </el-select>
-                      <el-input v-model="row.nodeName" placeholder="节点名(nodeIdRef)" size="small" style="width: 120px;" />
-                    </div>
-                  </template>
-                </el-table-column>
-                <el-table-column label="操作" width="60" align="center">
-                  <template #default="{ $index }">
-                    <el-button type="danger" :icon="Delete" circle plain size="small" @click="createForm.constraintsForm.observableObjects.splice($index, 1)" />
-                  </template>
-                </el-table-column>
-              </el-table>
-              <el-button type="primary" plain size="small" style="margin-top: 8px;" @click="addObservableObject">+ 添加可观测对象</el-button>
-            </section>
-
-            <section class="drawer-section">
-              <div class="section-title">
-                <h3 style="font-size: 14px;">约束规则 (Constraints)</h3>
-              </div>
-              <el-table :data="createForm.constraintsForm.constraints" size="small" border>
-                <el-table-column prop="name" label="规则名称" width="120">
-                  <template #default="{ row }">
-                    <el-input v-model="row.name" placeholder="规则名" size="small" />
-                  </template>
-                </el-table-column>
-                <el-table-column prop="observedObjectName" label="观测对象" width="150">
-                  <template #default="{ row }">
-                    <el-select v-model="row.observedObjectName" size="small" placeholder="请选择">
-                      <el-option v-for="obj in createForm.constraintsForm.observableObjects" :key="obj.name" :label="obj.name" :value="obj.name" />
-                    </el-select>
-                  </template>
-                </el-table-column>
-                <el-table-column prop="operator" label="运算符" width="120">
-                  <template #default="{ row }">
-                    <el-select v-model="row.operator" size="small">
-                      <el-option v-for="op in constraintOperators" :key="op" :label="op" :value="op" />
-                    </el-select>
-                  </template>
-                </el-table-column>
-                <el-table-column prop="threshold" label="阈值" width="120">
-                  <template #default="{ row }">
-                    <el-input v-model="row.threshold" placeholder="阈值" size="small" />
-                  </template>
-                </el-table-column>
-                <el-table-column label="违规动作" min-width="250">
-                  <template #default="{ row }">
-                    <div v-for="(act, aIndex) in row.violationActions" :key="aIndex" style="display: flex; gap: 4px; margin-bottom: 4px;">
-                      <el-select v-model="act.actionType" size="small" style="width: 100px;">
-                        <el-option label="系统动作" value="SYSTEM" />
-                        <el-option label="设备动作" value="DEVICE_CAPABILITY" />
-                      </el-select>
-                      <template v-if="act.actionType === 'SYSTEM'">
-                        <el-select v-model="act.action" size="small" style="flex: 1;">
-                          <el-option label="终止任务" value="ABORT_TASK" />
-                          <el-option label="告警" value="ALERT" />
-                        </el-select>
-                      </template>
-                      <template v-else-if="act.actionType === 'DEVICE_CAPABILITY'">
-                         <el-input v-model="act.deviceInstanceId" placeholder="实例ID" size="small" style="width: 80px;" />
-                         <el-input v-model="act.capabilityName" placeholder="指令名" size="small" style="flex: 1;" />
-                      </template>
-                      <el-button type="danger" icon="Delete" circle plain size="small" @click="row.violationActions.splice(aIndex, 1)" />
-                    </div>
-                    <el-button type="primary" plain size="small" @click="row.violationActions.push({ actionType: 'SYSTEM', action: 'ALERT' })">+ 添加动作</el-button>
-                  </template>
-                </el-table-column>
-                <el-table-column label="操作" width="60" align="center">
-                  <template #default="{ $index }">
-                    <el-button type="danger" :icon="Delete" circle plain size="small" @click="createForm.constraintsForm.constraints.splice($index, 1)" />
-                  </template>
-                </el-table-column>
-              </el-table>
-              <el-button type="primary" plain size="small" style="margin-top: 8px;" @click="addConstraintRule">+ 添加约束规则</el-button>
-            </section>
+            <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px; margin-top: 24px;">约束配置</h2>
+            <section class="drawer-section"><el-alert type="info" :closable="false" title="约束规则在约束管理页面独立配置并由约束引擎持续执行，任务只负责执行工作流模型声明的节点与设备路由" /></section>
           </div>
           </el-form>
       </div>
@@ -330,7 +196,7 @@
           <div class="monitor-header-left">
             <div class="monitor-task-name">{{ activeTask.taskName }}</div>
             <div class="monitor-task-meta">
-              <span>ID: {{ activeTask.taskId }}</span>
+              <span>ID: {{ activeTask.id }}</span>
               <span>·</span>
               <span>流程: {{ getWorkflowName(activeTask.flowModelId) }}</span>
             </div>
@@ -342,11 +208,9 @@
           </div>
         </div>
         <el-descriptions border :column="2" size="small" class="mb-4" style="margin-top: 12px;">
-          <el-descriptions-item label="资源绑定数">
-            <el-tag type="success" size="small" v-if="activeTask.resourceMap && Object.keys(activeTask.resourceMap || {}).length > 0">
-              {{ Object.keys(activeTask.resourceMap || {}).length }} 个设备
-            </el-tag>
-            <span v-else style="color: #94a3b8;">未绑定</span>
+          <el-descriptions-item label="设备路由">
+            <el-tag type="success" size="small" v-if="activeDeviceRoutes.length">{{ activeDeviceRoutes.length }} 条固定路由</el-tag>
+            <span v-else style="color: #94a3b8;">未声明</span>
           </el-descriptions-item>
           <el-descriptions-item label="当前节点">
             <el-tag type="info" size="small" v-if="activeTask.currentNodeIdRef != null">#{{ activeTask.currentNodeIdRef }}</el-tag>
@@ -429,39 +293,21 @@
               </div>
             </div>
           </el-tab-pane>
-
-          <!-- Tab 3: Resource Map -->
-          <el-tab-pane label="资源映射" name="resources">
+          <!-- Tab 3: Fixed device routes declared by the workflow model -->
+          <el-tab-pane label="设备路由" name="resources">
             <div class="constraints-section">
-              <div v-if="activeTask.resourceMap && Object.keys(activeTask.resourceMap || {}).length > 0">
-                <div v-for="(instanceId, nodeRef) in activeTask.resourceMap" :key="nodeRef" class="resource-map-row">
-                  <div class="resource-node-label">节点 #{{ nodeRef }}</div>
+              <div v-if="activeDeviceRoutes.length">
+                <div v-for="route in activeDeviceRoutes" :key="route.nodeName" class="resource-map-row">
+                  <div class="resource-node-label">{{ route.nodeName }}</div>
                   <el-icon style="color: #2563eb;"><ArrowRight /></el-icon>
-                  <div class="resource-instance-label">
-                    {{ getInstanceName(instanceId) }}
-                    <span style="font-size: 11px; color: #94a3b8; margin-left: 6px;">(ID: {{ instanceId }})</span>
-                  </div>
+                  <div class="resource-instance-label">{{ getInstanceName(route.deviceInstanceId) }}<span style="font-size: 11px; color: #94a3b8; margin-left: 6px;">(ID: {{ route.deviceInstanceId }})</span><div style="font-size: 11px; color: #64748b; margin-top: 3px;">状态机输入: {{ route.deviceInputInterfaceName }}，状态机输出: {{ route.deviceOutputInterfaceName }}</div></div>
                 </div>
               </div>
-              <el-empty v-else description="未配置设备资源" />
+              <el-empty v-else description="工作流未声明设备接口连接" />
             </div>
           </el-tab-pane>
 
-          <!-- Tab 4: Supplemental constraints mapping -->
-          <el-tab-pane label="任务约束" name="constraints">
-            <div class="constraints-section" v-if="activeTask.taskConstraints">
-              <div v-if="activeTask.taskConstraints.observableObjects?.length" class="constraint-group">
-                <div class="constraint-group-title">可观测对象</div>
-                <el-tag v-for="item in activeTask.taskConstraints.observableObjects" :key="item.name" type="info" size="small" style="margin: 2px;">{{ item.name }}</el-tag>
-              </div>
-              <div v-if="activeTask.taskConstraints.constraints?.length" class="constraint-group">
-                <div class="constraint-group-title">约束规则</div>
-                <el-tag v-for="rule in activeTask.taskConstraints.constraints" :key="rule.name" type="warning" size="small" style="margin: 2px;">{{ rule.name }}：{{ rule.observedObjectName }} {{ rule.operator }} {{ rule.threshold }}</el-tag>
-              </div>
-              <el-empty v-if="!hasAnyConstraint(activeTask.taskConstraints)" description="未配置任务约束" />
-            </div>
-            <el-empty v-else description="未配置任务约束" />
-          </el-tab-pane>
+
         </el-tabs>
       </div>
     </el-drawer>
@@ -479,14 +325,19 @@ interface TaskInstance {
   taskName: string
   taskDesc?: string
   flowModelId: number
-  taskConstraints: Record<string, any>
-  resourceMap?: Record<string, any>
   taskVariables?: Record<string, any>
   taskStatus: string
   currentNodeIdRef?: number
   currentFlowNodeId?: number
   startTime?: string
   endTime?: string
+}
+
+interface DeviceRoute {
+  nodeName: string
+  deviceInstanceId: number
+  deviceInputInterfaceName: string
+  deviceOutputInterfaceName: string
 }
 
 interface TaskStep {
@@ -533,9 +384,9 @@ const taskSummary = ref({
   total: 0,
   pending: 0,
   running: 0,
-  completed: 0,
+  succeeded: 0,
   failed: 0,
-  aborted: 0
+  terminated: 0
 })
 const processTemplates = ref<WorkflowTemplate[]>([])
 const loadingWorkflows = ref(false)
@@ -545,135 +396,17 @@ const createDrawerVisible = ref(false)
 const createFormRef = ref<FormInstance>()
 const createForm = ref({
   taskName: '',
-  flowModelId: null,
-  resourceMap: {} as Record<string, string>,
-  constraintsForm: {
-    observableObjects: [] as any[],
-    constraints: [] as any[]
-  }
+  flowModelId: null as number | null
 })
 const creating = ref(false)
-const allModels = ref<any[]>([])
-const constraintDataTypes = ref<string[]>(['INTEGER', 'DOUBLE', 'STRING', 'BOOLEAN', 'JSON'])
-const constraintOperators = ref<string[]>(['>', '<', '>=', '<=', '=', '!=', 'BETWEEN', 'IN'])
-const systemViolationActions = ref<string[]>(['HALT', 'PAUSE', 'ALERT', 'LOG_ONLY'])
-const modelAttributes = ref<Record<string, string[]>>({})
+const workflowDeviceRoutes = ref<Record<string, DeviceRoute[]>>({})
+const workflowHasDeviceNodes = ref<Record<string, boolean>>({})
+const selectedDeviceRoutes = computed(() => createForm.value.flowModelId == null ? [] : workflowDeviceRoutes.value[String(createForm.value.flowModelId)] || [])
+const activeDeviceRoutes = computed(() => activeTask.value == null ? [] : workflowDeviceRoutes.value[String(activeTask.value.flowModelId)] || [])
 
-const addObservableObject = () => {
-  createForm.value.constraintsForm.observableObjects.push({
-    name: '',
-    sourceType: 'DEVICE_ATTRIBUTE',
-    dataType: 'DOUBLE',
-    deviceModelId: undefined,
-    deviceInstanceId: undefined,
-    targetName: ''
-  })
+const handleTemplateChange = async (value: number | null) => {
+  if (value != null) await loadWorkflowRoutes(value)
 }
-
-const addConstraintRule = () => {
-  createForm.value.constraintsForm.constraints.push({
-    name: '',
-    observedObjectName: '',
-    operator: '=',
-    threshold: '',
-    violationActions: []
-  })
-}
-
-const fetchModelAttributes = async (row: any) => {
-  if (!row.deviceModelId) return
-  if (!modelAttributes.value[row.deviceModelId]) {
-    try {
-      const res = await axios.get(`/api/device/model/${row.deviceModelId}`)
-      if (res.data?.success && res.data.data?.modelDef?.attributes) {
-        modelAttributes.value[row.deviceModelId] = res.data.data.modelDef.attributes.map((a: any) => a.attributeName)
-      } else {
-        modelAttributes.value[row.deviceModelId] = []
-      }
-      
-      if (!availableInstances.value[row.deviceModelId]) {
-        const listRes = await axios.get(`/api/device/instance/page?modelId=${row.deviceModelId}&pageSize=100&lifecycleStatus=${encodeURIComponent('使用中')}`)
-        if (listRes.data?.success) {
-          availableInstances.value[row.deviceModelId] = listRes.data.data.records || []
-        } else {
-          availableInstances.value[row.deviceModelId] = []
-        }
-      }
-    } catch (e) {
-      modelAttributes.value[row.deviceModelId] = []
-    }
-  }
-}
-
-const fetchConstraintMetadata = async () => {
-  try {
-    const res = await axios.get('/api/schema-metadata/frontend')
-    const metadata = res.data?.data || res.data || {}
-    constraintDataTypes.value = metadata.constraint?.dataTypes || constraintDataTypes.value
-    constraintOperators.value = metadata.constraint?.operators || constraintOperators.value
-    systemViolationActions.value = metadata.constraint?.violationActions || systemViolationActions.value
-  } catch { ElMessage.error('加载约束协议元数据失败') }
-}
-
-const fetchAllModels = async () => {
-  try {
-    const res = await axios.get('/api/device/model/list')
-    if (res.data?.success) {
-      allModels.value = res.data.data || []
-    }
-  } catch (e) {}
-}
-
-interface RequiredModel {
-  nodeId: number
-  nodeIdRef: number
-  nodeType: string
-  deviceModelId: string
-}
-const requiredModels = ref<RequiredModel[]>([])
-const availableInstances = ref<Record<string, any[]>>({})
-
-const handleTemplateChange = async (val: string) => {
-  requiredModels.value = []
-  createForm.value.resourceMap = {}
-  
-  if (!val) return
-  try {
-    const res = await axios.get(`/api/workflow/required-resources/${val}`)
-    if (res.data?.success && res.data.data) {
-      const nodes = res.data.data || []
-      const reqModels: RequiredModel[] = []
-      
-      for (const n of nodes) {
-        if (n.deviceModelId) {
-          reqModels.push({
-            nodeId: n.id,
-            nodeIdRef: n.nodeIdRef,
-            nodeType: n.nodeType,
-            deviceModelId: n.deviceModelId
-          })
-          
-          if (!availableInstances.value[n.deviceModelId]) {
-            try {
-              const listRes = await axios.get(`/api/device/instance/page?modelId=${n.deviceModelId}&pageSize=100&lifecycleStatus=${encodeURIComponent('使用中')}`)
-              if (listRes.data?.success) {
-                availableInstances.value[n.deviceModelId] = listRes.data.data.records || []
-              } else {
-                availableInstances.value[n.deviceModelId] = []
-              }
-            } catch (e) {
-              availableInstances.value[n.deviceModelId] = []
-            }
-          }
-        }
-      }
-      requiredModels.value = reqModels
-    }
-  } catch (error) {
-    ElMessage.error('加载流程节点失败')
-  }
-}
-
 
 // Monitor Drawer
 const monitorDrawerVisible = ref(false)
@@ -702,8 +435,8 @@ const stats = computed(() => {
   return {
     total: taskSummary.value.total,
     running: taskSummary.value.running,
-    completed: taskSummary.value.completed,
-    failed: taskSummary.value.failed + taskSummary.value.aborted
+    completed: taskSummary.value.succeeded,
+    failed: taskSummary.value.failed + taskSummary.value.terminated
   }
 })
 
@@ -721,6 +454,7 @@ const fetchTasks = async () => {
       const pageData = res.data.data || {}
       tasks.value = pageData.records || []
       taskTotal.value = pageData.total || 0
+      await Promise.all([...new Set(tasks.value.map(task => task.flowModelId).filter(Boolean))].map(loadWorkflowRoutes))
     } else {
       ElMessage.error(res.data?.message || '加载任务列表失败')
     }
@@ -750,6 +484,29 @@ const getInstanceName = (instanceId: any) => {
   return allInstances.value[String(instanceId)] || String(instanceId)
 }
 
+const loadWorkflowRoutes = async (flowModelId: number) => {
+  const key = String(flowModelId)
+  if (Object.prototype.hasOwnProperty.call(workflowDeviceRoutes.value, key)) return
+  const res = await axios.get(`/api/workflow/detail/${flowModelId}`)
+  if (!res.data?.success || !res.data.data) throw new Error(res.data?.message || '加载工作流详情失败')
+  const definition = res.data.data
+  workflowHasDeviceNodes.value[key] = (definition.nodesDef || []).some((node: any) => node.nodeType === 'DEV_NODE')
+  const inbound = new Map<string, any>()
+  for (const connection of definition.interfaceConnections || []) {
+    if (connection.connectionType === 'DEVICE_TO_NODE') inbound.set(connection.target?.nodeName, connection)
+  }
+  workflowDeviceRoutes.value[key] = (definition.interfaceConnections || []).flatMap((connection: any) => {
+    if (connection.connectionType !== 'NODE_TO_DEVICE') return []
+    const reverse = inbound.get(connection.source?.nodeName)
+    const deviceInstanceId = Number(connection.target?.deviceInstanceId)
+    if (!reverse || !Number.isInteger(deviceInstanceId) || deviceInstanceId <= 0 || Number(reverse.source?.deviceInstanceId) !== deviceInstanceId) return []
+    const deviceInputInterfaceName = connection.target?.interfaceName
+    const deviceOutputInterfaceName = reverse.source?.interfaceName
+    if (!connection.source?.nodeName || !deviceInputInterfaceName || !deviceOutputInterfaceName) return []
+    return [{ nodeName: connection.source.nodeName, deviceInstanceId, deviceInputInterfaceName, deviceOutputInterfaceName }]
+  })
+}
+
 const fetchTaskSummary = async () => {
   try {
     const res = await axios.get('/api/task/summary')
@@ -758,9 +515,9 @@ const fetchTaskSummary = async () => {
         total: res.data.data?.total || 0,
         pending: res.data.data?.pending || 0,
         running: res.data.data?.running || 0,
-        completed: res.data.data?.completed || 0,
+        succeeded: res.data.data?.succeeded || 0,
         failed: res.data.data?.failed || 0,
-        aborted: res.data.data?.aborted || 0
+        terminated: res.data.data?.terminated || 0
       }
     }
   } catch (error) {
@@ -809,9 +566,10 @@ const getStatusType = (status: string) => {
   switch (status) {
     case 'PENDING': return 'info'
     case 'RUNNING': return 'primary'
-    case 'COMPLETED': return 'success'
+    case 'SUCCEEDED': return 'success'
     case 'FAILED': return 'danger'
-    case 'ABORTED': return 'warning'
+    case 'TERMINATING': return 'warning'
+    case 'TERMINATED': return 'warning'
     default: return 'info'
   }
 }
@@ -820,9 +578,11 @@ const getStatusLabel = (status: string) => {
   switch (status) {
     case 'PENDING': return '排队中'
     case 'RUNNING': return '运行中'
-    case 'COMPLETED': return '完成'
+    case 'SUCCEEDED': return '成功'
     case 'FAILED': return '终止'
-    case 'ABORTED': return '已终止'
+    case 'PAUSED': return '已暂停'
+    case 'TERMINATING': return '终止中'
+    case 'TERMINATED': return '已终止'
     default: return status
   }
 }
@@ -831,9 +591,10 @@ const getNodeStateType = (state: string) => {
   switch (state) {
     case 'PENDING': return 'info'
     case 'RUNNING': return 'warning'
-    case 'COMPLETED': return 'success'
+    case 'SUCCEEDED': return 'success'
     case 'FAILED': return 'danger'
-    case 'ABORTED': return 'warning'
+    case 'TERMINATING': return 'warning'
+    case 'TERMINATED': return 'warning'
     default: return 'info'
   }
 }
@@ -922,7 +683,7 @@ const fetchLogsAndSnapshots = async (silent = false) => {
       activeTask.value.endTime = updated.endTime
       
       // Find matching item in main list and sync
-      const mainMatch = tasks.value.find(t => t.taskId === taskId)
+      const mainMatch = tasks.value.find(t => t.id === taskId)
       if (mainMatch) {
         mainMatch.taskStatus = updated.taskStatus
         mainMatch.startTime = updated.startTime
@@ -966,11 +727,11 @@ const abortTask = async (taskId: number) => {
       cancelButtonText: '取消',
       type: 'warning'
     })
-    const res = await axios.post(`/api/task/abort/${taskId}`)
+    const res = await axios.post(`/api/task/terminate/${taskId}`)
     if (res.data?.success) {
-      ElMessage.success('任务已终止')
+      ElMessage.success('任务已进入终止流程')
       await refreshTaskList()
-      if (activeTask.value?.taskId === taskId) {
+      if (activeTask.value?.id === taskId) {
         await fetchLogsAndSnapshots()
       }
     } else {
@@ -993,7 +754,7 @@ const confirmDeleteTask = async (taskId: number) => {
     const res = await axios.delete(`/api/task/delete/${taskId}`)
     if (res.data?.success) {
       ElMessage.success('任务已删除')
-      if (activeTask.value?.taskId === taskId) {
+      if (activeTask.value?.id === taskId) {
         monitorDrawerVisible.value = false
       }
       refreshTaskList()
@@ -1006,16 +767,7 @@ const confirmDeleteTask = async (taskId: number) => {
 }
 
 const openCreateDrawer = () => {
-  createForm.value = {
-    taskName: '',
-    flowModelId: null,
-    resourceMap: {},
-    constraintsForm: {
-      observableObjects: [],
-      constraints: []
-    }
-  } as any
-  requiredModels.value = []
+  createForm.value = { taskName: '', flowModelId: null }
   createDrawerVisible.value = true
   nextTick(() => {
     createFormRef.value?.clearValidate()
@@ -1031,9 +783,7 @@ const submitCreateTask = async () => {
       try {
         const payload = {
           taskName: createForm.value.taskName,
-          flowModelId: createForm.value.flowModelId,
-          taskConstraints: createForm.value.constraintsForm,
-          resourceMap: createForm.value.resourceMap
+          flowModelId: createForm.value.flowModelId
         }
         
         const res = await axios.post('/api/task/save', payload)
@@ -1105,14 +855,11 @@ const stopMainListPolling = () => {
   }
 }
 
-const hasAnyConstraint = (constraints: any) =>
-  Boolean(constraints?.observableObjects?.length || constraints?.constraints?.length)
 
 onMounted(() => {
   refreshTaskList()
   fetchWorkflows()
   fetchAllInstances()
-  fetchAllModels()
   startMainListPolling()
 })
 

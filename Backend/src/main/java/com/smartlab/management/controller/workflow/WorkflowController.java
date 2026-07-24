@@ -35,12 +35,6 @@ public class WorkflowController {
         }
     }
 
-    @GetMapping("/required-resources/{id}")
-    public ApiResponse<List<com.smartlab.management.entity.workflow.FlowNode>> requiredResources(@PathVariable Long id) {
-        if (workflowService.getDefinition(id) == null) return ApiResponse.fail("流程模型不存在: " + id);
-        return ApiResponse.ok(workflowService.requiredDeviceNodes(id));
-    }
-
     @DeleteMapping("/delete/{id}")
     public ApiResponse<String> delete(@PathVariable Long id) {
         try {

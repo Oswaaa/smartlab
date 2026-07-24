@@ -12,16 +12,16 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class StateMachineActionRegistryTest {
     @Test
-    void requiresExactUniqueSchemaCoverage() {
+    void requiresExactlyOneSendExecutor() {
         StateMachineActionExecutor send = executor("SEND");
-        StateMachineActionRegistry registry = new StateMachineActionRegistry(List.of(send), Set.of("SEND"));
+        StateMachineActionRegistry registry = new StateMachineActionRegistry(List.of(send));
         assertSame(send, registry.required("SEND"));
         assertThrows(IllegalStateException.class,
-                () -> new StateMachineActionRegistry(List.of(), Set.of("SEND")));
+                () -> new StateMachineActionRegistry(List.of()));
         assertThrows(IllegalStateException.class,
-                () -> new StateMachineActionRegistry(List.of(send, send), Set.of("SEND")));
+                () -> new StateMachineActionRegistry(List.of(send, send)));
         assertThrows(IllegalStateException.class,
-                () -> new StateMachineActionRegistry(List.of(send, executor("OTHER")), Set.of("SEND")));
+                () -> new StateMachineActionRegistry(List.of(send, executor("OTHER"))));
     }
 
     private StateMachineActionExecutor executor(String name) {

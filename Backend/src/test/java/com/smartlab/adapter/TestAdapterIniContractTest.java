@@ -19,9 +19,9 @@ class TestAdapterIniContractTest {
         String rawConfig = Files.readString(configPath, StandardCharsets.UTF_8);
 
         ObjectNode parsed = new AdapterManifestService().parseRawConfig(
-                "SmartLabPLCAdapter-01", "INI", rawConfig, 1719892800000L);
+                "PLCAdapter", "INI", rawConfig, 1719892800000L);
 
-        assertEquals("SmartLabPLCAdapter-01", parsed.path("adapterName").asText());
+        assertEquals("PLCAdapter", parsed.path("adapterName").asText());
         assertEquals("PLCThermalUnit",
                 parsed.path("deviceCategories").get(0).path("categoryName").asText());
         assertEquals(1, parsed.path("deviceCategories").get(0).path("devicePoints").size());

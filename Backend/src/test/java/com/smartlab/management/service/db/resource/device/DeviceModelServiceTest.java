@@ -5,10 +5,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.adapter.AdapterManifestService;
 import com.smartlab.global.protocol.ProtocolDictionaryService;
-import com.smartlab.global.schema.SchemaMetadataService;
-import com.smartlab.global.schema.StateMachineInterfacePolicyService;
 import com.smartlab.global.util.JsonNodeSupport;
-import com.smartlab.global.util.JsonSchemaValidationService;
 import com.smartlab.management.dto.resource.device.DeviceModelSaveDTO;
 import com.smartlab.management.entity.resource.device.DeviceModels;
 import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
@@ -41,17 +38,13 @@ class DeviceModelServiceTest {
         modelMapper = mock(DeviceModelsMapper.class);
         adapterIndexService = mock(AdapterIndexService.class);
         ProtocolDictionaryService protocol = new ProtocolDictionaryService();
-        SchemaMetadataService metadata = new SchemaMetadataService(protocol);
         service = new DeviceModelService(
                 modelMapper,
                 mock(DeviceInstancesMapper.class),
                 mock(DeviceCategoryService.class),
                 mock(AdapterManifestService.class),
                 protocol,
-                metadata,
-                new StateMachineInterfacePolicyService(metadata),
                 mock(DataTemplateService.class),
-                new JsonSchemaValidationService(),
                 adapterIndexService);
     }
 
@@ -96,7 +89,7 @@ class DeviceModelServiceTest {
     void previewRejectsCapabilityModelThatViolatesItsSchema() {
         DeviceModelSaveDTO payload = minimalPayload();
         ((ArrayNode) payload.getAttributes()).addObject()
-                .put("name", "temperature")
+                .put("attributeName", "temperature")
                 .put("valueKind", "CONTINUOUS")
                 .put("dataType", "UNSUPPORTED");
 
@@ -105,7 +98,13 @@ class DeviceModelServiceTest {
 
     @Test
     void previewBuildsUniqueCurrentStateMachineContract() {
-        ObjectNode bundle = service.previewModel(minimalPayload());
+        DeviceModelSaveDTO payload = minimalPayload();
+        ObjectNode config = (ObjectNode) payload.getAdapterContract().path("config");
+        config.put("adapterName", "adapter-1");
+        config.put("categoryName", "Reactor");
+        when(adapterIndexService.buildAdapterContract("adapter-1", "Reactor"))
+                .thenReturn(registeredContract("adapter-1", "Reactor", "heat"));
+        ObjectNode bundle = service.previewModel(payload);
         JsonNode stateMachine = bundle.path("stateMachineModel");
         JsonNode interfaces = stateMachine.path("interfaces");
 
@@ -116,10 +115,10 @@ class DeviceModelServiceTest {
         assertEquals(Set.of("WF_EXECUTE_START", "WF_EXECUTE_ABORT"),
                 interfaceSignals(interfaces, "Interface_workflow_in"));
         assertEquals(Set.of(), interfaceSignals(interfaces, "Interface_adapter_in"));
-        assertFalse(hasTransition(stateMachine.path("transitions"), "SENT", "RECEIVED", "COMMAND_RECEIVED"));
-        assertTrue(hasTransition(stateMachine.path("transitions"), "RUNNING", "RUNNING", "WF_EXECUTE_ABORT"));
-        stateMachine.path("transitions").forEach(transition ->
-                assertEquals("CMD", transition.path("stateSpace").asText()));
+        assertEquals(Set.of("CMD_STATE", "OP_STATE"), interfaceSignals(interfaces, "Interface_state_out"));
+        assertTrue(stateMachine.path("transitions").isEmpty());
+        assertEquals(Set.of("IDLE", "SENT", "RUNNING", "COMPLETED", "FAILED", "ABORTING", "ABORTED"),
+                stateNames(stateMachine.path("cmdLifecycleSpace").path("states")));
 
     }
 
@@ -156,7 +155,7 @@ class DeviceModelServiceTest {
 
 
     @Test
-    void previewKeepsAutomaticExecutionLifecycleTransition() {
+    void rejectsAutomaticExecutionLifecycleTransition() {
         DeviceModelSaveDTO payload = minimalPayload();
         ObjectNode transition = ((ArrayNode) payload.getStateTransitions()).addObject();
         transition.put("stateSpace", "CMD");
@@ -165,10 +164,7 @@ class DeviceModelServiceTest {
         transition.putNull("trigger");
         transition.putArray("actions");
 
-        ObjectNode bundle = service.previewModel(payload);
-
-        assertTrue(hasAutomaticTransition(
-                bundle.path("stateMachineModel").path("transitions"), "SENT", "RECEIVED"));
+        assertThrows(IllegalArgumentException.class, () -> service.previewModel(payload));
     }
 
     @Test
@@ -264,7 +260,8 @@ class DeviceModelServiceTest {
     }
     private DeviceModelSaveDTO minimalPayload() {
         DeviceModelSaveDTO payload = new DeviceModelSaveDTO();
-        payload.setModelName("");
+        payload.setModelName("ReactorModel");
+        payload.setCategoryId(7L);
         payload.setAttributes(JsonNodeSupport.arrayNode());
         payload.setCapabilities(JsonNodeSupport.arrayNode());
         ObjectNode contract = JsonNodeSupport.objectNode();
@@ -294,5 +291,10 @@ class DeviceModelServiceTest {
         payload.setOpState(opState);
         payload.setStateTransitions(JsonNodeSupport.arrayNode());
         return payload;
+    }
+    private Set<String> stateNames(JsonNode states) {
+        Set<String> names = new HashSet<>();
+        states.forEach(state -> names.add(state.path("stateName").asText()));
+        return names;
     }
 }

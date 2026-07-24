@@ -1,42 +1,36 @@
 package com.smartlab.engine.statemachine.action;
 
-import com.smartlab.global.schema.SchemaMetadataService;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 
+/** 定稿状态机模型仅声明SEND动作，注册器只负责保证该动作有唯一执行器 */
 @Component
 public class StateMachineActionRegistry {
+
+    private static final String SEND = "SEND";
     private final Map<String, StateMachineActionExecutor> executors;
 
-    @Autowired
-    public StateMachineActionRegistry(List<StateMachineActionExecutor> executors, SchemaMetadataService metadata) {
-        this(executors, Set.copyOf(metadata.stateMachineActionNames()));
-    }
-
-    public StateMachineActionRegistry(List<StateMachineActionExecutor> executors, Set<String> declaredNames) {
+    public StateMachineActionRegistry(List<StateMachineActionExecutor> executors) {
         Map<String, StateMachineActionExecutor> registered = new LinkedHashMap<>();
         for (StateMachineActionExecutor executor : executors) {
-            if (registered.putIfAbsent(executor.actionName(), executor) != null)
+            if (registered.putIfAbsent(executor.actionName(), executor) != null) {
                 throw new IllegalStateException("状态机动作执行器重复: " + executor.actionName());
+            }
         }
-        if (!registered.keySet().equals(declaredNames)) {
-            Set<String> missing = new java.util.LinkedHashSet<>(declaredNames);
-            missing.removeAll(registered.keySet());
-            Set<String> extra = new java.util.LinkedHashSet<>(registered.keySet());
-            extra.removeAll(declaredNames);
-            throw new IllegalStateException("状态机动作执行器与 Schema 不一致，缺失=" + missing + "，多余=" + extra);
+        if (!registered.keySet().equals(java.util.Set.of(SEND))) {
+            throw new IllegalStateException("状态机动作执行器必须且只能实现SEND，实际=" + registered.keySet());
         }
         this.executors = Map.copyOf(registered);
     }
 
     public StateMachineActionExecutor required(String actionName) {
         StateMachineActionExecutor executor = executors.get(actionName);
-        if (executor == null) throw new IllegalArgumentException("状态机动作没有执行器: " + actionName);
+        if (executor == null) {
+            throw new IllegalArgumentException("状态机动作没有执行器: " + actionName);
+        }
         return executor;
     }
 }

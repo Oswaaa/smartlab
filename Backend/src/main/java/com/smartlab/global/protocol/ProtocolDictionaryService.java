@@ -1,82 +1,78 @@
 package com.smartlab.global.protocol;
 
 import com.fasterxml.jackson.databind.JsonNode;
-import com.networknt.schema.JsonSchema;
-import com.networknt.schema.JsonSchemaFactory;
-import com.networknt.schema.SpecVersion;
-import com.networknt.schema.ValidationMessage;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.smartlab.global.contract.ProtocolContract;
+import com.smartlab.global.contract.SignalPayloadPolicy;
 import com.smartlab.global.util.JsonNodeSupport;
-import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
-import java.io.InputStream;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+/**
+ * 协议契约访问入口。协议规范已经定稿，运行时直接使用固定Java契约，不再读取或解释JSONSchema文件
+ */
 @Service
 public class ProtocolDictionaryService {
 
-    private static final String PROTOCOL_DICT_RESOURCE = "schemas/protocol-dict.json";
-    private volatile JsonNode dictionary;
-    private final JsonSchemaFactory schemaFactory = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V7);
-    private final ConcurrentHashMap<String, JsonSchema> definitionSchemas = new ConcurrentHashMap<>();
-
     public JsonNode dictionary() {
-        JsonNode cached = dictionary;
-        if (cached != null) {
-            return cached;
+        ObjectNode root = JsonNodeSupport.objectNode();
+        ObjectNode definitions = root.putObject("definitions");
+        for (String definitionName : protocolDefinitionNames()) {
+            definitions.set(definitionName, definition(definitionName));
         }
-        synchronized (this) {
-            if (dictionary == null) {
-                dictionary = loadDictionary();
-            }
-            return dictionary;
-        }
+        return root;
     }
 
     public JsonNode definition(String definitionName) {
-        JsonNode definition = dictionary().path("definitions").path(definitionName);
-        if (definition.isMissingNode() || definition.isNull()) {
-            throw new IllegalArgumentException("Protocol definition 不存在: " + definitionName);
+        if (ProtocolContract.hasEnumeration(definitionName)) {
+            ObjectNode definition = JsonNodeSupport.objectNode();
+            definition.put("type", "string");
+            ArrayNode values = definition.putArray("enum");
+            enumValues(definitionName).forEach(values::add);
+            return definition;
         }
-        return definition;
+        return switch (definitionName) {
+            case "MqttTopicConvention" -> mqttTopicDefinition();
+            case "AdapterRegisterRequest" -> objectDefinition(Map.of(
+                    "adapterName", "string", "rawConfigFormat", "string", "rawConfigContent", "string", "timestamp", "integer"));
+            case "CommandMessageFormat" -> objectDefinition(Map.of(
+                    "messageId", "string", "adapterName", "string", "devicePoint", "string", "commandName", "string", "parameters", "object", "timestamp", "integer"));
+            case "TelemetryMessageFormat" -> objectDefinition(Map.of(
+                    "timestamp", "integer", "adapterName", "string", "devicePoint", "string", "telemetryData", "object"));
+            case "EventMessageFormat" -> objectDefinition(Map.of(
+                    "timestamp", "integer", "adapterName", "string", "devicePoint", "string", "eventName", "string", "payload", "object"));
+            case "AdapterHeartbeat" -> objectDefinition(Map.of("status", "string", "timestamp", "integer"));
+            case "ConstraintExecutePayload" -> objectDefinition(Map.of(
+                    "deviceInstanceId", "integer", "capabilityName", "string", "parameters", "object"));
+            case "CommandStatePayload" -> objectDefinition(Map.of(
+                    "deviceModelId", "integer", "deviceInstanceId", "integer", "messageId", "string", "stateName", "string", "timestamp", "integer"));
+            case "OperationStatePayload" -> objectDefinition(Map.of(
+                    "deviceModelId", "integer", "deviceInstanceId", "integer", "regionName", "string", "stateName", "string", "timestamp", "integer"));
+            case "SystemSignalFormat" -> objectDefinition(Map.of("signalName", "string", "payload", "object"));
+            default -> throw new IllegalArgumentException("协议定义不存在: " + definitionName);
+        };
     }
 
     public List<String> enumValues(String definitionName) {
-        JsonNode values = definition(definitionName).path("enum");
-        if (!values.isArray()) {
-            return List.of();
-        }
-        List<String> result = new ArrayList<>();
-        for (JsonNode value : values) {
-            result.add(value.asText());
-        }
-        return List.copyOf(result);
+        return ProtocolContract.enumValues(definitionName);
     }
 
     public Map<String, String> mqttTopicConvention() {
-        JsonNode properties = definition("MqttTopicConvention").path("properties");
-        Map<String, String> result = new LinkedHashMap<>();
-        properties.fields().forEachRemaining(entry -> {
-            String value = entry.getValue().path("const").asText("");
-            if (!value.isBlank()) {
-                result.put(entry.getKey(), value);
-            }
-        });
-        return Map.copyOf(result);
+        return ProtocolContract.mqttTopics();
     }
 
     public String resolveMqttTopic(String topicName, Map<String, ?> variables) {
         String pattern = mqttTopicConvention().get(topicName);
-        if (pattern == null || pattern.isBlank()) {
-            throw new IllegalArgumentException("MQTT topic 约定不存在: " + topicName);
+        if (pattern == null) {
+            throw new IllegalArgumentException("MQTT主题约定不存在: " + topicName);
         }
         return resolvePattern(pattern, variables == null ? Map.of() : variables);
     }
@@ -95,70 +91,216 @@ public class ProtocolDictionaryService {
     }
 
     public JsonNode signalContract(String signalName) {
-        if (signalName == null || signalName.isBlank()) throw new IllegalArgumentException("信号名不能为空");
-        JsonNode contract = dictionary().path("x-signalContracts").path(signalName);
-        if (!contract.isObject()) throw new IllegalArgumentException("Protocol 未声明系统信号: " + signalName);
-        return contract.deepCopy();
+        SignalPayloadPolicy policy = ProtocolContract.payloadPolicy(signalName);
+        ObjectNode contract = JsonNodeSupport.objectNode();
+        contract.put("signalName", signalName);
+        contract.put("payloadPolicy", policy.name());
+        return contract;
     }
 
     public boolean isSystemSignal(String signalName) {
-        return signalName != null && !signalName.isBlank()
-                && dictionary().path("x-signalContracts").path(signalName).isObject();
+        return ProtocolContract.isSystemSignal(signalName);
     }
+
     public boolean requiresCommandPayload(String signalName) {
-        return "COMMAND".equals(signalContract(signalName).path("payloadPolicy").asText());
+        return ProtocolContract.payloadPolicy(signalName) == SignalPayloadPolicy.COMMAND;
     }
 
     public void validateSignalExecutionContext(String signalName, Map<String, Object> context) {
-        if (!requiresCommandPayload(signalName)) return;
-        if (context == null) throw new IllegalArgumentException(signalName + " 必须携带 commandName 和 parameters");
-        Object commandName = context.get("commandName");
-        if (commandName == null || String.valueOf(commandName).isBlank()) {
-            throw new IllegalArgumentException(signalName + " 缺少 commandName");
+        SignalPayloadPolicy policy = ProtocolContract.payloadPolicy(signalName);
+        if (policy == SignalPayloadPolicy.NONE) {
+            return;
         }
-        Object parameters = context.get("parameters");
-        if (!(parameters instanceof Map<?, ?>)
-                && !(parameters instanceof JsonNode node && node.isObject())) {
-            throw new IllegalArgumentException(signalName + " 的 parameters 必须是对象");
+        if (context == null) {
+            throw new IllegalArgumentException(signalName + " 缺少执行上下文");
+        }
+        switch (policy) {
+            case COMMAND -> requireCommandContext(signalName, context);
+            case CONSTRAINT_EXECUTE -> requireConstraintExecuteContext(context);
+            case COMMAND_STATE, OPERATION_STATE -> throw new IllegalArgumentException(signalName + " 只能由状态机广播");
+            case NONE -> {
+            }
         }
     }
 
     public void validateDefinition(String definitionName, JsonNode payload) {
-        if (payload == null || payload.isNull() || payload.isMissingNode()) {
-            throw new IllegalArgumentException(definitionName + " 不能为空");
-        }
-        JsonSchema schema = definitionSchemas.computeIfAbsent(definitionName,
-                name -> schemaFactory.getSchema(definition(name)));
-        Set<ValidationMessage> messages = schema.validate(payload);
-        if (!messages.isEmpty()) {
-            StringBuilder error = new StringBuilder("Protocol 校验失败: ").append(definitionName);
-            messages.stream().map(ValidationMessage::getMessage).sorted()
-                    .forEach(message -> error.append("\n- ").append(message));
-            throw new IllegalArgumentException(error.toString());
+        requireObject(definitionName, payload);
+        switch (definitionName) {
+            case "SystemSignalFormat" -> validateSystemSignal(payload);
+            case "AdapterRegisterRequest" -> {
+                requireText(payload, "adapterName");
+                requireEnum(payload, "rawConfigFormat", enumValues("AdapterRegisterRawConfigFormat"));
+                requireText(payload, "rawConfigContent");
+                requireInteger(payload, "timestamp");
+            }
+            case "CommandMessageFormat" -> {
+                requireText(payload, "messageId");
+                requireText(payload, "adapterName");
+                requireText(payload, "devicePoint");
+                requireText(payload, "commandName");
+                requireObjectField(payload, "parameters");
+                requireInteger(payload, "timestamp");
+                rejectField(payload, "operation");
+            }
+            case "TelemetryMessageFormat" -> {
+                requireInteger(payload, "timestamp");
+                requireText(payload, "adapterName");
+                requireText(payload, "devicePoint");
+                requireObjectField(payload, "telemetryData");
+            }
+            case "EventMessageFormat" -> {
+                requireInteger(payload, "timestamp");
+                requireText(payload, "adapterName");
+                requireText(payload, "devicePoint");
+                requireText(payload, "eventName");
+                if (payload.has("payload")) {
+                    requireObjectField(payload, "payload");
+                }
+            }
+            case "AdapterHeartbeat" -> {
+                requireEnum(payload, "status", List.of("ALIVE"));
+                requireInteger(payload, "timestamp");
+            }
+            case "ConstraintExecutePayload" -> {
+                requireInteger(payload, "deviceInstanceId");
+                requireText(payload, "capabilityName");
+                requireObjectField(payload, "parameters");
+            }
+            case "CommandStatePayload" -> {
+                requireInteger(payload, "deviceModelId");
+                requireInteger(payload, "deviceInstanceId");
+                requireNullableText(payload, "messageId");
+                requireText(payload, "stateName");
+                requireInteger(payload, "timestamp");
+            }
+            case "OperationStatePayload" -> {
+                requireInteger(payload, "deviceModelId");
+                requireInteger(payload, "deviceInstanceId");
+                requireText(payload, "regionName");
+                requireText(payload, "stateName");
+                requireInteger(payload, "timestamp");
+            }
+            default -> throw new IllegalArgumentException("不支持的协议报文定义: " + definitionName);
         }
     }
-
 
     public List<String> enumValuesFromProperty(String definitionName, String propertyName) {
-        JsonNode values = definition(definitionName).path("properties").path(propertyName).path("enum");
-        if (!values.isArray()) {
-            return List.of();
+        if ("AdapterRegisterRequest".equals(definitionName) && "rawConfigFormat".equals(propertyName)) {
+            return enumValues("AdapterRegisterRawConfigFormat");
         }
-        List<String> result = new ArrayList<>();
-        for (JsonNode value : values) {
-            result.add(value.asText());
-        }
-        return List.copyOf(result);
+        return List.of();
     }
 
-    private JsonNode loadDictionary() {
-        try {
-            ClassPathResource resource = new ClassPathResource(PROTOCOL_DICT_RESOURCE);
-            try (InputStream inputStream = resource.getInputStream()) {
-                return JsonNodeSupport.MAPPER.readTree(inputStream);
+    private List<String> protocolDefinitionNames() {
+        return List.of(
+                "DataType", "CommunicationProtocol", "WorkflowNodeSignal", "WorkflowControlSignal", "ManualControlSignal",
+                "ConstraintControlSignal", "AdapterOutboundSignal", "StatusSignal", "MqttTopicConvention", "AdapterRegisterRequest",
+                "CommandMessageFormat", "TelemetryMessageFormat", "EventMessageFormat", "AdapterHeartbeat", "ConstraintExecutePayload",
+                "CommandStatePayload", "OperationStatePayload", "SystemSignalFormat");
+    }
+
+    private ObjectNode mqttTopicDefinition() {
+        ObjectNode definition = JsonNodeSupport.objectNode();
+        definition.put("type", "object");
+        ObjectNode properties = definition.putObject("properties");
+        mqttTopicConvention().forEach((name, pattern) -> properties.putObject(name).put("const", pattern));
+        return definition;
+    }
+
+    private ObjectNode objectDefinition(Map<String, String> propertyTypes) {
+        ObjectNode definition = JsonNodeSupport.objectNode();
+        definition.put("type", "object");
+        ObjectNode properties = definition.putObject("properties");
+        propertyTypes.forEach((name, type) -> properties.putObject(name).put("type", type));
+        return definition;
+    }
+
+    private void validateSystemSignal(JsonNode payload) {
+        String signalName = requireText(payload, "signalName");
+        if (!isSystemSignal(signalName)) {
+            throw new IllegalArgumentException("协议未声明系统信号: " + signalName);
+        }
+        JsonNode signalPayload = payload.get("payload");
+        if (signalPayload != null && !signalPayload.isNull() && !signalPayload.isObject()) {
+            throw new IllegalArgumentException("payload 必须是对象");
+        }
+        SignalPayloadPolicy policy = ProtocolContract.payloadPolicy(signalName);
+        if (policy == SignalPayloadPolicy.NONE) {
+            return;
+        }
+        if (signalPayload == null || !signalPayload.isObject()) {
+            throw new IllegalArgumentException(signalName + " 缺少payload");
+        }
+        switch (policy) {
+            case COMMAND -> requireCommandContext(signalName, JsonNodeSupport.MAPPER.convertValue(signalPayload, Map.class));
+            case CONSTRAINT_EXECUTE -> validateDefinition("ConstraintExecutePayload", signalPayload);
+            case COMMAND_STATE -> validateDefinition("CommandStatePayload", signalPayload);
+            case OPERATION_STATE -> validateDefinition("OperationStatePayload", signalPayload);
+            case NONE -> {
             }
-        } catch (Exception e) {
-            throw new IllegalStateException("加载 protocol-dict.json 失败", e);
+        }
+    }
+
+    private void requireCommandContext(String signalName, Map<String, Object> context) {
+        Object commandName = context.get("commandName");
+        if (commandName == null || String.valueOf(commandName).isBlank()) {
+            throw new IllegalArgumentException(signalName + " 缺少commandName");
+        }
+        Object parameters = context.get("parameters");
+        if (!(parameters instanceof Map<?, ?>) && !(parameters instanceof JsonNode node && node.isObject())) {
+            throw new IllegalArgumentException(signalName + " 的parameters必须是对象");
+        }
+    }
+
+    private void requireConstraintExecuteContext(Map<String, Object> context) {
+        validateDefinition("ConstraintExecutePayload", JsonNodeSupport.toNode(context));
+    }
+
+    private void requireObject(String definitionName, JsonNode payload) {
+        if (payload == null || payload.isNull() || !payload.isObject()) {
+            throw new IllegalArgumentException(definitionName + " 必须是对象");
+        }
+    }
+
+    private String requireText(JsonNode payload, String name) {
+        JsonNode value = payload.get(name);
+        if (value == null || !value.isTextual() || value.asText().isBlank()) {
+            throw new IllegalArgumentException(name + " 必须是非空字符串");
+        }
+        return value.asText();
+    }
+
+    private void requireNullableText(JsonNode payload, String name) {
+        JsonNode value = payload.get(name);
+        if (value == null || (!value.isNull() && (!value.isTextual() || value.asText().isBlank()))) {
+            throw new IllegalArgumentException(name + " 必须是字符串或null");
+        }
+    }
+
+    private void requireInteger(JsonNode payload, String name) {
+        JsonNode value = payload.get(name);
+        if (value == null || !value.isIntegralNumber()) {
+            throw new IllegalArgumentException(name + " 必须是整数");
+        }
+    }
+
+    private void requireObjectField(JsonNode payload, String name) {
+        JsonNode value = payload.get(name);
+        if (value == null || !value.isObject()) {
+            throw new IllegalArgumentException(name + " 必须是对象");
+        }
+    }
+
+    private void requireEnum(JsonNode payload, String name, List<String> acceptedValues) {
+        String value = requireText(payload, name);
+        if (!acceptedValues.contains(value)) {
+            throw new IllegalArgumentException(name + " 取值不合法: " + value);
+        }
+    }
+
+    private void rejectField(JsonNode payload, String name) {
+        if (payload.has(name)) {
+            throw new IllegalArgumentException("定稿协议不允许字段: " + name);
         }
     }
 
@@ -169,7 +311,7 @@ public class ProtocolDictionaryService {
             String name = matcher.group(1);
             Object value = variables.get(name);
             if (value == null || String.valueOf(value).isBlank()) {
-                throw new IllegalArgumentException("MQTT topic 缺少变量: " + name);
+                throw new IllegalArgumentException("MQTT主题缺少变量: " + name);
             }
             matcher.appendReplacement(result, Matcher.quoteReplacement(String.valueOf(value).trim()));
         }
@@ -189,7 +331,6 @@ public class ProtocolDictionaryService {
             last = placeholders.end();
         }
         regex.append(Pattern.quote(pattern.substring(last))).append("$");
-
         Matcher matcher = Pattern.compile(regex.toString()).matcher(topic);
         if (!matcher.matches()) {
             return Optional.empty();

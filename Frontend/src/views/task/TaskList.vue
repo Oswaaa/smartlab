@@ -16,6 +16,8 @@
         </div>
       </template>
 
+      <div class="task-filter-bar"><el-input v-model="taskKeyword" clearable placeholder="搜索任务名称或说明" @keyup.enter="applyTaskFilters"/><el-select v-model="taskStatusFilter" clearable placeholder="任务状态" @change="applyTaskFilters"><el-option label="待执行" value="PENDING"/><el-option label="运行中" value="RUNNING"/><el-option label="成功" value="SUCCEEDED"/><el-option label="失败" value="FAILED"/><el-option label="已终止" value="TERMINATED"/></el-select><el-button type="primary" @click="applyTaskFilters">查询</el-button></div>
+
       <el-table
         :data="tasks"
         v-loading="loading"
@@ -380,6 +382,8 @@ const loading = ref(false)
 const taskTotal = ref(0)
 const taskPageNo = ref(1)
 const taskPageSize = ref(20)
+const taskKeyword = ref('')
+const taskStatusFilter = ref('')
 const taskSummary = ref({
   total: 0,
   pending: 0,
@@ -403,6 +407,8 @@ const workflowDeviceRoutes = ref<Record<string, DeviceRoute[]>>({})
 const workflowHasDeviceNodes = ref<Record<string, boolean>>({})
 const selectedDeviceRoutes = computed(() => createForm.value.flowModelId == null ? [] : workflowDeviceRoutes.value[String(createForm.value.flowModelId)] || [])
 const activeDeviceRoutes = computed(() => activeTask.value == null ? [] : workflowDeviceRoutes.value[String(activeTask.value.flowModelId)] || [])
+
+const applyTaskFilters = () => { taskPageNo.value = 1; fetchTasks() }
 
 const handleTemplateChange = async (value: number | null) => {
   if (value != null) await loadWorkflowRoutes(value)
@@ -1414,6 +1420,8 @@ onUnmounted(() => {
 
 
 /* Enterprise task console overrides */
+.task-filter-bar { display:flex; gap:10px; margin-bottom:12px; }.task-filter-bar .el-input { width:280px; }.task-filter-bar .el-select { width:150px; }
+
 .task-list-fullscreen { padding: 16px 20px 20px; overflow: hidden; }
 .table-card-fullscreen { height: 100%; display: flex; flex-direction: column; border: 1px solid #e5e7eb !important; border-radius: 6px !important; }
 .table-card-fullscreen :deep(.el-card__header) { min-height: 58px; padding: 10px 16px; border-bottom: 1px solid #e5e7eb; }
@@ -1439,5 +1447,7 @@ onUnmounted(() => {
 .node-snapshot-card { border-radius: 6px; box-shadow: none; transform: none; }
 .log-container { border-radius: 6px; box-shadow: none; }
 .model-drawer .drawer-body { padding: 0 24px !important; }
-@media (max-width: 800px) { .task-list-fullscreen { padding: 12px; } .task-summary-strip { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 800px) { .task-filter-bar { display:flex; gap:10px; margin-bottom:12px; }.task-filter-bar .el-input { width:280px; }.task-filter-bar .el-select { width:150px; }
+
+.task-list-fullscreen { padding: 12px; } .task-summary-strip { grid-template-columns: repeat(2, 1fr); } }
 </style>

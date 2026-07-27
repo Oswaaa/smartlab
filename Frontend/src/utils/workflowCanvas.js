@@ -19,7 +19,9 @@ export function buildFlowNodes(nodes = [], layout = {}) {
       data: {
         nodeName: node.name,
         nodeType: node.nodeType,
-        functionType: node.functionType
+        functionType: node.functionType,
+        interfaces: node.interfaces || [],
+        ports: node.ports || []
       }
     }
   })

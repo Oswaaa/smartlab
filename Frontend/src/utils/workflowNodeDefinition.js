@@ -1,23 +1,23 @@
 const system = (systemKey, value) => ({ ...value, _system: true, _systemKey: systemKey })
 
-const workflowInterface = (name, direction, bindingTriggers = []) => ({ name, direction, bindingTriggers })
+const workflowInterface = (name, direction, bindingTriggers = [], interfaceType = 'WORKFLOW', allowedSignals = ['ACTIVE']) => ({ name, direction, interfaceType, allowedSignals, bindingTriggers })
 
-const trigger = (systemKey, object, operator, threshold, actionName) => system(systemKey, {
-  actionName,
+const trigger = (systemKey, object, operator, threshold, action) => system(systemKey, {
+  action,
   condition: { object, operator, threshold }
 })
 
 const lockedLifecycle = () => system('lifecycle', {
-  initialState: 'IDLE',
-  states: [
-    system('lifecycle.idle', { name: 'IDLE' }),
-    system('lifecycle.running', { name: 'RUNNING' }),
-    system('lifecycle.completed', { name: 'COMPLETED' })
-  ]
+  initialStateName: 'PENDING',
+  states: ['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'TERMINATING', 'TERMINATED'].map(name => system(`lifecycle.${name.toLowerCase()}`, { name })),
+  transitions: [
+    ['PENDING', 'RUNNING'], ['PENDING', 'TERMINATED'], ['RUNNING', 'SUCCEEDED'], ['RUNNING', 'FAILED'],
+    ['RUNNING', 'TERMINATING'], ['TERMINATING', 'TERMINATED'], ['TERMINATING', 'FAILED']
+  ].map(([fromStateName, toStateName]) => system(`lifecycle.${fromStateName.toLowerCase()}.${toStateName.toLowerCase()}`, { fromStateName, toStateName }))
 })
 
-const systemWorkflowInterface = (systemKey, name, direction, bindingTriggers = []) =>
-  system(systemKey, workflowInterface(name, direction, bindingTriggers))
+const systemWorkflowInterface = (systemKey, name, direction, bindingTriggers = [], interfaceType = 'WORKFLOW', allowedSignals = ['ACTIVE']) =>
+  system(systemKey, workflowInterface(name, direction, bindingTriggers, interfaceType, allowedSignals))
 
 const emitAction = (systemKey, actionName, targetInterfaceName, signalName) => system(systemKey, {
   actionName,
@@ -48,8 +48,8 @@ function createBranchNode(name) {
   return {
     ...functionNode(name, 'BRANCH', [
       systemWorkflowInterface('branch.workflowIn', 'Interface_workflow_in', 'IN', [
-        trigger('branch.true', 'expression', 'EQUALS', true, 'emitTrue'),
-        trigger('branch.false', 'expression', 'EQUALS', false, 'emitFalse')
+        trigger('branch.true', 'expression', '=', true, 'emitTrue'),
+        trigger('branch.false', 'expression', '=', false, 'emitFalse')
       ]),
       systemWorkflowInterface('branch.trueOut', 'Interface_true_out', 'OUT'),
       systemWorkflowInterface('branch.falseOut', 'Interface_false_out', 'OUT')
@@ -74,7 +74,7 @@ function createAggregateNode(name) {
   const emitActive = emitAction('aggregate.emitActive', 'emitActive', 'Interface_workflow_out', 'ACTIVE')
   return functionNode(name, 'AGGREGATE', [
     systemWorkflowInterface('aggregate.workflowIn', 'Interface_workflow_in', 'IN', [
-      trigger('aggregate.active', 'inputSignalName', 'EQUALS', 'ACTIVE', 'emitActive')
+      trigger('aggregate.active', 'inputSignalName', '=', 'ACTIVE', 'emitActive')
     ]),
     systemWorkflowInterface('aggregate.workflowOut', 'Interface_workflow_out', 'OUT')
   ], [emitActive])
@@ -102,12 +102,12 @@ export function createDeviceNode(model, name) {
     lifecycle: lockedLifecycle(),
     interfaces: [
       systemWorkflowInterface('device.workflowIn', 'Interface_workflow_in', 'IN', [
-        trigger('device.workflowStart', 'inputSignalName', 'EQUALS', 'ACTIVE', 'startDevice')
+        trigger('device.workflowStart', 'inputSignalName', '=', 'ACTIVE', 'startDevice')
       ]),
-      systemWorkflowInterface('device.stateOut', 'Interface_state_out', 'OUT'),
+      systemWorkflowInterface('device.stateOut', 'Interface_state_out', 'OUT', [], 'STATE', ['WF_EXECUTE_START']),
       systemWorkflowInterface('device.stateIn', 'Interface_state_in', 'IN', [
-        trigger('device.stateCompleted', 'inputPayload.stateName', 'EQUALS', 'COMPLETED', 'completeNode')
-      ]),
+        trigger('device.stateCompleted', 'inputPayload.stateName', '=', 'COMPLETED', 'completeNode')
+      ], 'STATE', ['CMD_STATE', 'OP_STATE']),
       systemWorkflowInterface('device.workflowOut', 'Interface_workflow_out', 'OUT')
     ],
     ports: [],
@@ -131,12 +131,13 @@ export function createSubflowNode(workflow, name) {
   }
 }
 
-export function replaceCapability(node, capability) {
+export function replaceCapability(node, capability, previousCapability) {
   const oldValues = node.capability?.capabilityParameters ?? {}
-  const oldTypes = node._capabilityParameterTypes ?? {}
+  const oldTypes = Object.fromEntries((previousCapability?.parameters ?? []).map(parameter => [parameter.parameterName, parameter.dataType]))
+  const resolvedOldTypes = Object.keys(oldTypes).length ? oldTypes : (node._capabilityParameterTypes ?? {})
   const nextTypes = Object.fromEntries((capability.parameters ?? []).map(parameter => [parameter.parameterName, parameter.dataType]))
   const capabilityParameters = Object.fromEntries(Object.entries(nextTypes)
-    .filter(([name, type]) => oldTypes[name] === type && Object.hasOwn(oldValues, name))
+    .filter(([name, type]) => resolvedOldTypes[name] === type && Object.hasOwn(oldValues, name))
     .map(([name]) => [name, oldValues[name]]))
   return {
     ...node,
@@ -158,7 +159,7 @@ export function removePort(node, portName, portConnections) {
   return {
     node: { ...node, ports: (node.ports ?? []).filter(item => item.name !== portName) },
     portConnections: (portConnections ?? []).filter(connection =>
-      connection.portName !== portName && connection.sourcePortName !== portName && connection.targetPortName !== portName)
+      connection.portName !== portName && connection.sourcePortName !== portName && connection.targetPortName !== portName && !(connection.source?.nodeName === node.name && connection.source?.portName === portName) && !(connection.target?.nodeName === node.name && connection.target?.portName === portName))
   }
 }
 
@@ -192,7 +193,7 @@ function uniqueErrors(errors, items = [], field, path) {
 }
 
 function validateVariables(node, errors) {
-  const allowed = new Set(['INTEGER', 'DOUBLE', 'BOOLEAN', 'STRING'])
+  const allowed = new Set(['INTEGER', 'DOUBLE', 'BOOLEAN', 'STRING', 'JSON'])
   ;(node.internalVariables ?? []).forEach((variable, index) => {
     if (!allowed.has(variable.dataType)) errors.push({ path: `internalVariables[${index}].dataType`, message: '变量类型无效' })
   })
@@ -225,13 +226,18 @@ function validateSystemCollection(actual = [], expected = [], path, errors) {
 }
 
 function validateSystemValue(actual, expected, path, errors) {
-  if (!actual || !isSystemItem(actual) || !sameStructure(actual, expected)) {
+  if (!actual || !isSystemItem(actual) || !sameSystemValue(actual, expected, path)) {
     errors.push({ path, message: `系统项${expected._systemKey}缺失或已篡改` })
   }
 }
 
-function sameStructure(actual, expected) {
-  return JSON.stringify(actual) === JSON.stringify(expected)
+function sameSystemValue(actual, expected, path) {
+  if (path !== 'interfaces') return JSON.stringify(actual) === JSON.stringify(expected)
+  const { bindingTriggers: actualTriggers = [], ...actualInterface } = actual
+  const { bindingTriggers: expectedTriggers = [], ...expectedInterface } = expected
+  if (JSON.stringify(actualInterface) !== JSON.stringify(expectedInterface)) return false
+  const expectedByKey = new Map(expectedTriggers.filter(isSystemItem).map(item => [item._systemKey, item]))
+  return [...expectedByKey].every(([key, trigger]) => JSON.stringify(actualTriggers.find(item => item?._systemKey === key)) === JSON.stringify(trigger))
 }
 
 function validatePorts(node, errors) {
@@ -242,10 +248,17 @@ function validatePorts(node, errors) {
 }
 
 function validateActions(node, errors) {
-  const interfaces = new Set((node.interfaces ?? []).map(item => item.name))
+  const interfaces = new Map((node.interfaces ?? []).map(item => [item.name, item]))
+  const variables = new Set((node.internalVariables ?? []).map(item => item.name))
   ;(node.actions ?? []).forEach((action, index) => {
-    if ((action.actionType === 'EMIT' || action.actionType === 'UPDATE') && !interfaces.has(action.targetInterfaceName)) {
-      errors.push({ path: `actions[${index}].targetInterfaceName`, message: `${action.actionType}目标接口不存在` })
+    if (action.actionType === 'EMIT') {
+      const target = interfaces.get(action.targetInterfaceName)
+      if (!target || target.direction !== 'OUT' || !target.allowedSignals?.includes(action.signalName)) {
+        errors.push({ path: `actions[${index}].targetInterfaceName`, message: 'EMIT目标必须是允许该信号的OUT接口' })
+      }
+    }
+    if (action.actionType === 'UPDATE' && (!variables.has(action.targetVariableName) || !action.valueExpression?.trim())) {
+      errors.push({ path: `actions[${index}]`, message: 'UPDATE必须引用内部变量且具有valueExpression' })
     }
   })
 }
@@ -253,9 +266,9 @@ function validateActions(node, errors) {
 function validateTriggers(node, errors) {
   const actionNames = new Set((node.actions ?? []).map(item => item.actionName))
   ;(node.interfaces ?? []).forEach((item, interfaceIndex) => (item.bindingTriggers ?? []).forEach((bindingTrigger, triggerIndex) => {
-    if (!actionNames.has(bindingTrigger.actionName)) {
-      errors.push({ path: `interfaces[${interfaceIndex}].bindingTriggers[${triggerIndex}].actionName`, message: '触发器引用的动作不存在' })
-    }
+    const path = `interfaces[${interfaceIndex}].bindingTriggers[${triggerIndex}]`
+    if (item.direction !== 'IN') errors.push({ path, message: '触发器只能定义在IN接口' })
+    if (!actionNames.has(bindingTrigger.action)) errors.push({ path: `${path}.action`, message: '触发器引用的动作不存在' })
   }))
 }
 

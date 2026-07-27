@@ -236,13 +236,18 @@ test('UPDATE拒绝不存在的internalVariableName', () => {
   assert.ok(validateNodeDefinition(node).some(error => error.path === 'actions[1]' && /UPDATE/.test(error.message)))
 })
 
-test('UPDATE拒绝空或缺失的valueExpression', () => {
-  for (const [actionName, valueExpression] of [['setEmpty', '   '], ['setMissing', undefined]]) {
-    const node = createFunctionNode('AGGREGATE', 'aggregate')
-    node.internalVariables.push({ name: 'payload', dataType: 'JSON' })
-    node.actions.push({ actionName, actionType: 'UPDATE', internalVariableName: 'payload', valueExpression })
-    assert.ok(validateNodeDefinition(node).some(error => error.path === 'actions[1]' && /valueExpression/.test(error.message)))
-  }
+test('UPDATE拒绝空白的valueExpression', () => {
+  const node = createFunctionNode('AGGREGATE', 'aggregate')
+  node.internalVariables.push({ name: 'payload', dataType: 'JSON' })
+  node.actions.push({ actionName: 'setEmpty', actionType: 'UPDATE', internalVariableName: 'payload', valueExpression: '   ' })
+  assert.ok(validateNodeDefinition(node).some(error => error.path === 'actions[1]' && /valueExpression/.test(error.message)))
+})
+
+test('UPDATE拒绝缺失的valueExpression', () => {
+  const node = createFunctionNode('AGGREGATE', 'aggregate')
+  node.internalVariables.push({ name: 'payload', dataType: 'JSON' })
+  node.actions.push({ actionName: 'setMissing', actionType: 'UPDATE', internalVariableName: 'payload' })
+  assert.ok(validateNodeDefinition(node).some(error => error.path === 'actions[1]' && /valueExpression/.test(error.message)))
 })
 
 test('DEV状态接口明确声明STATE类型和各自允许信号', () => {

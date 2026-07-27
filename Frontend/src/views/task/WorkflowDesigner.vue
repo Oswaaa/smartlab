@@ -365,6 +365,7 @@ function openNodeDrawer(nodeName:string) {
 }
 
 function closeNodeDrawer() {
+  nodeDrawerVisible.value = false
   selectedNodeName.value = ''
 }
 

@@ -271,22 +271,22 @@ function validateActions(node, errors) {
   ;(node.actions ?? []).forEach((action, index) => {
     if (action.actionType === 'EMIT') {
       const target = interfaces.get(action.targetInterfaceName)
-      if (!target || target.direction !== 'OUT' || !target.allowedSignals?.includes(action.signalName)) {
-        errors.push({ path: `actions[${index}].targetInterfaceName`, message: 'EMIT目标必须是允许该信号的OUT接口' })
-      }
+      if (!target) errors.push({ path: `actions[${index}].targetInterfaceName`, message: `EMIT动作${action.actionName}引用的输出接口${action.targetInterfaceName}不存在` })
+      else if (target.direction !== 'OUT') errors.push({ path: `actions[${index}].targetInterfaceName`, message: `EMIT动作${action.actionName}引用的接口${action.targetInterfaceName}必须是OUT接口` })
+      else if (!target.allowedSignals?.includes(action.signalName)) errors.push({ path: `actions[${index}].signalName`, message: `EMIT动作${action.actionName}的信号${action.signalName}不被接口${action.targetInterfaceName}允许` })
     }
-    if (action.actionType === 'UPDATE' && (!variables.has(action.internalVariableName) || !action.valueExpression?.trim())) {
-      errors.push({ path: `actions[${index}]`, message: 'UPDATE必须引用内部变量且具有valueExpression' })
+    if (action.actionType === 'UPDATE') {
+      if (!variables.has(action.internalVariableName)) errors.push({ path: `actions[${index}].internalVariableName`, message: `UPDATE动作${action.actionName}引用的内部变量${action.internalVariableName}不存在` })
+      if (!action.valueExpression?.trim()) errors.push({ path: `actions[${index}].valueExpression`, message: `UPDATE动作${action.actionName}的valueExpression不能为空` })
     }
   })
 }
-
 function validateTriggers(node, errors) {
   const actionNames = new Set((node.actions ?? []).map(item => item.actionName))
   ;(node.interfaces ?? []).forEach((item, interfaceIndex) => (item.bindingTriggers ?? []).forEach((bindingTrigger, triggerIndex) => {
     const path = `interfaces[${interfaceIndex}].bindingTriggers[${triggerIndex}]`
-    if (item.direction !== 'IN') errors.push({ path, message: '触发器只能定义在IN接口' })
-    if (!actionNames.has(bindingTrigger.action)) errors.push({ path: `${path}.action`, message: '触发器引用的动作不存在' })
+    if (item.direction !== 'IN') errors.push({ path, message: `${item.direction}接口不能声明bindingTriggers` })
+    if (!actionNames.has(bindingTrigger.action)) errors.push({ path: `${path}.action`, message: `触发器引用的动作${bindingTrigger.action}不存在` })
   }))
 }
 

@@ -268,3 +268,25 @@ test('DEV状态接口明确声明STATE类型和各自允许信号', () => {
   assert.equal(stateIn.interfaceType, 'STATE')
   assert.deepEqual(stateIn.allowedSignals, ['CMD_STATE', 'OP_STATE'])
 })
+test('EMIT必须指向本节点OUT接口且信号在allowedSignals中', () => {
+  const node = createFunctionNode('START', 'start')
+  node.actions.push({ actionName: 'badEmit', actionType: 'EMIT', targetInterfaceName: 'missing', signalName: 'UNKNOWN' })
+  const messages = validateNodeDefinition(node).map(item => item.message)
+  assert.ok(messages.includes('EMIT动作badEmit引用的输出接口missing不存在'))
+})
+
+test('UPDATE必须引用真实内部变量且表达式非空', () => {
+  const node = createFunctionNode('AGGREGATE', 'join')
+  node.actions.push({ actionName: 'updateCount', actionType: 'UPDATE', internalVariableName: 'count', valueExpression: '' })
+  const messages = validateNodeDefinition(node).map(item => item.message)
+  assert.ok(messages.includes('UPDATE动作updateCount引用的内部变量count不存在'))
+  assert.ok(messages.includes('UPDATE动作updateCount的valueExpression不能为空'))
+})
+
+test('触发器只能挂在IN接口且动作引用必须存在', () => {
+  const node = createFunctionNode('START', 'start')
+  node.interfaces[0].bindingTriggers = [{ condition: { object: 'inputSignalName', operator: 'EQUALS', threshold: 'ACTIVE' }, action: 'missingAction' }]
+  const messages = validateNodeDefinition(node).map(item => item.message)
+  assert.ok(messages.some(message => message.includes('OUT接口不能声明bindingTriggers')))
+  assert.ok(messages.some(message => message.includes('missingAction不存在')))
+})

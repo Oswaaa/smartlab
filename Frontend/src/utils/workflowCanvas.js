@@ -138,6 +138,13 @@ function namedPort(node, name, direction) {
   return item
 }
 
+function portVariable(node, port) {
+  if (!port.internalVariableName) throw new Error(`端口${port.name}未绑定内部变量`)
+  const variable = (node?.internalVariables || []).find(item => item.name === port.internalVariableName)
+  if (!variable) throw new Error(`内部变量不存在:${port.internalVariableName}`)
+  return variable
+}
+
 function canvasNodes(args) {
   const sourceNode = (args.nodes || []).find(node => node.name === args.sourceNodeName)
   const targetNode = (args.nodes || []).find(node => node.name === args.targetNodeName)
@@ -164,7 +171,9 @@ function createPortConnection(args, sourceName, targetName) {
   const { sourceNode, targetNode } = canvasNodes(args)
   const sourcePort = namedPort(sourceNode, sourceName, 'OUT')
   const targetPort = namedPort(targetNode, targetName, 'IN')
-  if (sourcePort.dataType !== targetPort.dataType) throw new Error('端口数据类型不一致')
+  const sourceVariable = portVariable(sourceNode, sourcePort)
+  const targetVariable = portVariable(targetNode, targetPort)
+  if (sourceVariable.dataType !== targetVariable.dataType) throw new Error('端口数据类型不一致')
   const value = {
     source: { nodeName: args.sourceNodeName, portName: sourceName },
     target: { nodeName: args.targetNodeName, portName: targetName }

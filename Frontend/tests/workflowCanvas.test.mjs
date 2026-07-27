@@ -35,12 +35,14 @@ const canvasNodes = [
   {
     name: 'a',
     interfaces: [{ name: 'Interface_workflow_out', direction: 'OUT', interfaceType: 'WORKFLOW' }],
-    ports: [{ name: 'valueOut', direction: 'OUT', dataType: 'NUMBER' }]
+    ports: [{ name: 'valueOut', direction: 'OUT', internalVariableName: 'temperature' }],
+    internalVariables: [{ name: 'temperature', dataType: 'DOUBLE' }]
   },
   {
     name: 'b',
     interfaces: [{ name: 'Interface_workflow_in', direction: 'IN', interfaceType: 'WORKFLOW' }],
-    ports: [{ name: 'valueIn', direction: 'IN', dataType: 'NUMBER' }]
+    ports: [{ name: 'valueIn', direction: 'IN', internalVariableName: 'targetTemperature' }],
+    internalVariables: [{ name: 'targetTemperature', dataType: 'DOUBLE' }]
   }
 ]
 
@@ -129,6 +131,24 @@ test('数据端口必须连接同类型的OUT到IN', () => {
   }), /端口不存在/)
 })
 
+
+test('数据端口引用缺失内部变量时拒绝连接', () => {
+  const nodes = [canvasNodes[0], { ...canvasNodes[1], internalVariables: [] }]
+  assert.throws(() => createCanvasConnection({
+    sourceNodeName: 'a', sourceHandle: portHandleId('valueOut'),
+    targetNodeName: 'b', targetHandle: portHandleId('valueIn'), nodes
+  }), /内部变量不存在/)
+})
+
+test('数据端口引用异类型内部变量时拒绝连接', () => {
+  const nodes = [canvasNodes[0], {
+    ...canvasNodes[1], internalVariables: [{ name: 'targetTemperature', dataType: 'STRING' }]
+  }]
+  assert.throws(() => createCanvasConnection({
+    sourceNodeName: 'a', sourceHandle: portHandleId('valueOut'),
+    targetNodeName: 'b', targetHandle: portHandleId('valueIn'), nodes
+  }), /端口数据类型不一致/)
+})
 test('creates a valid workflow interface connection and rejects invalid connections', () => {
   const connections = []
   const created = createNodeConnection({

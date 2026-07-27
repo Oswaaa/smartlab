@@ -171,7 +171,7 @@ test('DEV与SUBFLOW使用后端所需完整生命周期', () => {
   const expectedStates = ['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'TERMINATING', 'TERMINATED']
   for (const node of [createDeviceNode({ id: 1, capabilities: [] }, 'dev'), createSubflowNode({ id: 2 }, 'sub')]) {
     assert.equal(node.lifecycle.initialStateName, 'PENDING')
-    assert.deepEqual(node.lifecycle.states.map(item => item.name), expectedStates)
+    assert.deepEqual(node.lifecycle.states, expectedStates)
     assert.equal(node.lifecycle.transitions.length, 7)
   }
 })
@@ -186,7 +186,7 @@ test('系统IN接口允许业务触发器且系统动作允许业务动作', () 
 test('节点校验接受合法UPDATE并拒绝非法EMIT目标', () => {
   const node = createFunctionNode('AGGREGATE', 'aggregate')
   node.internalVariables.push({ name: 'payload', dataType: 'JSON' })
-  node.actions.push({ actionName: 'setPayload', actionType: 'UPDATE', targetVariableName: 'payload', valueExpression: '{}' })
+  node.actions.push({ actionName: 'setPayload', actionType: 'UPDATE', internalVariableName: 'payload', valueExpression: '{}' })
   assert.deepEqual(validateNodeDefinition(node), [])
   node.actions[1] = { actionName: 'badEmit', actionType: 'EMIT', targetInterfaceName: 'Interface_workflow_in', signalName: 'ACTIVE' }
   assert.ok(validateNodeDefinition(node).some(error => error.path === 'actions[1].targetInterfaceName'))
@@ -206,4 +206,26 @@ test('removePort删除真实嵌套连接格式中的关联连接', () => {
     { source: { nodeName: 'x', portName: 'out' }, target: { nodeName: 'n', portName: 'other' } }
   ])
   assert.equal(result.portConnections.length, 1)
+})
+test('DEV和SUBFLOW生命周期状态使用编译器所需的纯字符串数组', () => {
+  const expected = ['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'TERMINATING', 'TERMINATED']
+  assert.deepEqual(createDeviceNode({ id: 1, capabilities: [] }, 'dev').lifecycle.states, expected)
+  assert.deepEqual(createSubflowNode({ id: 2 }, 'sub').lifecycle.states, expected)
+})
+
+test('UPDATE使用internalVariableName字段定位内部变量', () => {
+  const node = createFunctionNode('AGGREGATE', 'aggregate')
+  node.internalVariables.push({ name: 'payload', dataType: 'JSON' })
+  node.actions.push({ actionName: 'setPayload', actionType: 'UPDATE', internalVariableName: 'payload', valueExpression: '{}' })
+  assert.deepEqual(validateNodeDefinition(node), [])
+})
+
+test('DEV状态接口明确声明STATE类型和各自允许信号', () => {
+  const node = createDeviceNode({ id: 1, capabilities: [] }, 'dev')
+  const stateOut = node.interfaces.find(item => item.name === 'Interface_state_out')
+  const stateIn = node.interfaces.find(item => item.name === 'Interface_state_in')
+  assert.equal(stateOut.interfaceType, 'STATE')
+  assert.deepEqual(stateOut.allowedSignals, ['WF_EXECUTE_START'])
+  assert.equal(stateIn.interfaceType, 'STATE')
+  assert.deepEqual(stateIn.allowedSignals, ['CMD_STATE', 'OP_STATE'])
 })

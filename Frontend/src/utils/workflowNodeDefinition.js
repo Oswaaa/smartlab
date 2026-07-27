@@ -9,7 +9,7 @@ const trigger = (systemKey, object, operator, threshold, action) => system(syste
 
 const lockedLifecycle = () => system('lifecycle', {
   initialStateName: 'PENDING',
-  states: ['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'TERMINATING', 'TERMINATED'].map(name => system(`lifecycle.${name.toLowerCase()}`, { name })),
+  states: ['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'TERMINATING', 'TERMINATED'],
   transitions: [
     ['PENDING', 'RUNNING'], ['PENDING', 'TERMINATED'], ['RUNNING', 'SUCCEEDED'], ['RUNNING', 'FAILED'],
     ['RUNNING', 'TERMINATING'], ['TERMINATING', 'TERMINATED'], ['TERMINATING', 'FAILED']
@@ -257,7 +257,7 @@ function validateActions(node, errors) {
         errors.push({ path: `actions[${index}].targetInterfaceName`, message: 'EMIT目标必须是允许该信号的OUT接口' })
       }
     }
-    if (action.actionType === 'UPDATE' && (!variables.has(action.targetVariableName) || !action.valueExpression?.trim())) {
+    if (action.actionType === 'UPDATE' && (!variables.has(action.internalVariableName) || !action.valueExpression?.trim())) {
       errors.push({ path: `actions[${index}]`, message: 'UPDATE必须引用内部变量且具有valueExpression' })
     }
   })

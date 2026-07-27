@@ -54,7 +54,7 @@ test('SUBFLOW_NODE没有允许绕过子流程的系统EMIT动作', () => {
 })
 
 test('切换能力只保留同名同类型参数', () => {
-  const node = { capability: { capabilityName: 'old', capabilityParameters: { speed: 3, mode: 'AUTO', obsolete: true } } }
+  const node = { capability: { capabilityName: 'old', capabilityParameters: { speed: 3, mode: 'AUTO', obsolete: true } }, _capabilityParameterTypes: { speed: 'INTEGER', mode: 'STRING', obsolete: 'BOOLEAN' } }
   const next = replaceCapability(node, { capabilityName: 'new', parameters: [
     { parameterName: 'speed', dataType: 'INTEGER' }, { parameterName: 'mode', dataType: 'BOOLEAN' }
   ] })
@@ -88,4 +88,70 @@ test('节点校验拒绝缺失的BRANCH系统动作', () => {
   assert.deepEqual(validateNodeDefinition(node).map(error => error.path), [
     'actions', 'interfaces[0].bindingTriggers[1].actionName'
   ])
+})
+test('START仅生成工作流出口及ACTIVE系统动作', () => {
+  const node = createFunctionNode('START', 'start')
+  assert.deepEqual(node.interfaces.map(item => item.name), ['Interface_workflow_out'])
+  assert.equal(node.interfaces[0].bindingTriggers.length, 0)
+  assert.deepEqual(node.actions.map(({ actionName, actionType, targetInterfaceName, signalName }) => ({ actionName, actionType, targetInterfaceName, signalName })), [
+    { actionName: 'emitActive', actionType: 'EMIT', targetInterfaceName: 'Interface_workflow_out', signalName: 'ACTIVE' }
+  ])
+})
+
+test('END仅生成工作流入口且没有输出动作', () => {
+  const node = createFunctionNode('END', 'end')
+  assert.deepEqual(node.interfaces.map(item => item.name), ['Interface_workflow_in'])
+  assert.equal(node.interfaces[0].bindingTriggers.length, 0)
+  assert.deepEqual(node.actions, [])
+})
+
+test('AGGREGATE生成ACTIVE触发器和工作流回传', () => {
+  const node = createFunctionNode('AGGREGATE', 'aggregate')
+  assert.deepEqual(node.interfaces.map(item => item.name), ['Interface_workflow_in', 'Interface_workflow_out'])
+  assert.deepEqual(node.actions.map(item => [item.actionName, item.actionType, item.targetInterfaceName, item.signalName]), [
+    ['emitActive', 'EMIT', 'Interface_workflow_out', 'ACTIVE']
+  ])
+  assert.deepEqual(node.interfaces[0].bindingTriggers.map(item => [item.condition.object, item.condition.operator, item.condition.threshold, item.actionName]), [
+    ['inputSignalName', 'EQUALS', 'ACTIVE', 'emitActive']
+  ])
+})
+
+test('DEV_NODE生成工作流和状态机之间的两个系统触发器', () => {
+  const node = createDeviceNode({ id: 7, capabilities: [] }, 'device')
+  assert.deepEqual(node.actions.map(item => [item.actionName, item.actionType, item.targetInterfaceName, item.signalName]), [
+    ['startDevice', 'EMIT', 'Interface_state_out', 'WF_EXECUTE_START'],
+    ['completeNode', 'EMIT', 'Interface_workflow_out', 'ACTIVE']
+  ])
+  assert.deepEqual(node.interfaces[0].bindingTriggers.map(item => [item.condition.object, item.condition.operator, item.condition.threshold, item.actionName]), [
+    ['inputSignalName', 'EQUALS', 'ACTIVE', 'startDevice']
+  ])
+  assert.deepEqual(node.interfaces[2].bindingTriggers.map(item => [item.condition.object, item.condition.operator, item.condition.threshold, item.actionName]), [
+    ['inputPayload.stateName', 'EQUALS', 'COMPLETED', 'completeNode']
+  ])
+})
+
+test('节点校验拒绝删除或篡改DEV系统骨架', () => {
+  const node = createDeviceNode({ id: 7, capabilities: [] }, 'device')
+  node.interfaces = node.interfaces.filter(item => item.name !== 'Interface_state_in')
+  node.actions[0].signalName = 'OTHER'
+  const errors = validateNodeDefinition(node)
+  assert.ok(errors.some(error => error.path === 'interfaces' && /stateIn/.test(error.message)))
+  assert.ok(errors.some(error => error.path === 'actions' && /startDevice/.test(error.message)))
+})
+
+test('能力参数仅在编辑器类型映射相同的时候保留，INTEGER切DOUBLE会移除', () => {
+  const node = {
+    capability: { capabilityName: 'old', capabilityParameters: { count: 2, speed: 3 } },
+    _capabilityParameterTypes: { count: 'INTEGER', speed: 'INTEGER' }
+  }
+  const next = replaceCapability(node, {
+    capabilityName: 'new',
+    parameters: [{ parameterName: 'count', dataType: 'DOUBLE' }, { parameterName: 'speed', dataType: 'INTEGER' }]
+  })
+  assert.deepEqual(next.capability.capabilityParameters, { speed: 3 })
+  assert.deepEqual(next._capabilityParameterTypes, { count: 'DOUBLE', speed: 'INTEGER' })
+})
+
+test('removeVariable不保留未使用的端口连接参数', () => {
+  assert.equal(removeVariable.length, 2)
 })

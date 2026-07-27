@@ -5,12 +5,21 @@ import {
   createDeviceNode,
   createSubflowNode,
   isSystemItem,
+  normalizeTypedValue,
   replaceCapability,
   removeVariable,
   removeAction,
   removePort,
   validateNodeDefinition
 } from '../src/utils/workflowNodeDefinition.js'
+
+test('能力参数按声明类型序列化且拒绝隐式转换', () => {
+  assert.equal(normalizeTypedValue('INTEGER', 3), 3)
+  assert.equal(normalizeTypedValue('DOUBLE', 3.5), 3.5)
+  assert.equal(normalizeTypedValue('BOOLEAN', false), false)
+  assert.deepEqual(normalizeTypedValue('JSON', [{ key: 'mode', value: 'AUTO' }]), { mode: 'AUTO' })
+  assert.throws(() => normalizeTypedValue('INTEGER', '3'), /INTEGER参数必须是整数/)
+})
 
 test('BRANCH生成真假两个系统出口及互斥触发器', () => {
   const node = createFunctionNode('BRANCH', 'branch-1')

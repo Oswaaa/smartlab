@@ -30,6 +30,24 @@ export function isSystemItem(item) {
   return item?._system === true
 }
 
+export function normalizeTypedValue(dataType, value) {
+  if (dataType === 'JSON' && Array.isArray(value)) {
+    const entries = value.map(entry => [String(entry?.key || '').trim(), entry?.value])
+    if (entries.some(([key]) => !key) || new Set(entries.map(([key]) => key)).size !== entries.length) {
+      throw new Error('JSON参数键不能为空且不能重复')
+    }
+    return Object.fromEntries(entries)
+  }
+  const valid = (dataType === 'INTEGER' && Number.isInteger(value)) ||
+    (dataType === 'DOUBLE' && typeof value === 'number' && Number.isFinite(value)) ||
+    (dataType === 'BOOLEAN' && typeof value === 'boolean') ||
+    (dataType === 'STRING' && typeof value === 'string') ||
+    (dataType === 'JSON' && value !== null && !Array.isArray(value) && typeof value === 'object')
+  if (valid) return value
+  const label = { INTEGER: '整数', DOUBLE: '数值', BOOLEAN: '布尔值', STRING: '字符串', JSON: '对象' }[dataType] || '有效值'
+  throw new Error(`${dataType}参数必须是${label}`)
+}
+
 export function createFunctionNode(functionType, name) {
   if (functionType === 'BRANCH') return createBranchNode(name)
   if (functionType === 'START') return createStartNode(name)
@@ -288,5 +306,6 @@ function sameParameterType(value, dataType) {
   return (dataType === 'INTEGER' && Number.isInteger(value)) ||
     (dataType === 'DOUBLE' && typeof value === 'number') ||
     (dataType === 'BOOLEAN' && typeof value === 'boolean') ||
-    (dataType === 'STRING' && typeof value === 'string')
+    (dataType === 'STRING' && typeof value === 'string') ||
+    (dataType === 'JSON' && value !== null && !Array.isArray(value) && typeof value === 'object')
 }

@@ -2,6 +2,7 @@ package com.smartlab.management.service.db.constraint;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.global.util.JsonNodeSupport;
+import com.smartlab.engine.constraint.ConstraintExpressionEvaluator;
 import com.smartlab.management.entity.constraint.ConstraintRule;
 import com.smartlab.management.mapper.constraint.ConstraintRuleMapper;
 import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
@@ -19,7 +20,7 @@ class ConstraintRuleServiceTest {
     void acceptsOneRuleWithInlineObservableSources() {
         ConstraintRuleMapper rules = mock(ConstraintRuleMapper.class);
         when(rules.insert(any(ConstraintRule.class))).thenReturn(1);
-        ConstraintRuleService service = new ConstraintRuleService(rules, mock(DeviceInstancesMapper.class));
+        ConstraintRuleService service = new ConstraintRuleService(rules, mock(DeviceInstancesMapper.class), new ConstraintExpressionEvaluator());
 
         assertDoesNotThrow(() -> service.save(validRule()));
     }
@@ -27,7 +28,7 @@ class ConstraintRuleServiceTest {
     @Test
     void rejectsLegacyObservableNameBinding() {
         ConstraintRuleMapper rules = mock(ConstraintRuleMapper.class);
-        ConstraintRuleService service = new ConstraintRuleService(rules, mock(DeviceInstancesMapper.class));
+        ConstraintRuleService service = new ConstraintRuleService(rules, mock(DeviceInstancesMapper.class), new ConstraintExpressionEvaluator());
         ConstraintRule rule = validRule();
         ((ObjectNode) rule.getBindings().path("temperature")).put("observableName", "temperature");
         ((ObjectNode) rule.getBindings().path("temperature")).remove("source");
@@ -38,7 +39,7 @@ class ConstraintRuleServiceTest {
     @Test
     void rejectsMixedDeviceAndTaskScopedBindingsWithoutCorrelation() {
         ConstraintRuleMapper rules = mock(ConstraintRuleMapper.class);
-        ConstraintRuleService service = new ConstraintRuleService(rules, mock(DeviceInstancesMapper.class));
+        ConstraintRuleService service = new ConstraintRuleService(rules, mock(DeviceInstancesMapper.class), new ConstraintExpressionEvaluator());
         ConstraintRule rule = validRule();
         ObjectNode taskState = ((ObjectNode) rule.getBindings()).putObject("taskState");
         taskState.put("bindingType", "OBSERVABLE");
@@ -49,6 +50,24 @@ class ConstraintRuleServiceTest {
 
         assertThrows(IllegalArgumentException.class, () -> service.save(rule));
     }
+    @Test
+    void rejectsBareStringAsAnUndeclaredVariable() {
+        ConstraintRuleService service = new ConstraintRuleService(mock(ConstraintRuleMapper.class), mock(DeviceInstancesMapper.class), new ConstraintExpressionEvaluator());
+        ConstraintRule rule = validRule();
+        rule.setExpression("temperature == RUNNING");
+
+        assertThrows(IllegalArgumentException.class, () -> service.save(rule));
+    }
+
+    @Test
+    void rejectsBindingsThatAreNotReferencedByTheExpression() {
+        ConstraintRuleService service = new ConstraintRuleService(mock(ConstraintRuleMapper.class), mock(DeviceInstancesMapper.class), new ConstraintExpressionEvaluator());
+        ConstraintRule rule = validRule();
+        rule.setExpression("temperature > 0");
+
+        assertThrows(IllegalArgumentException.class, () -> service.save(rule));
+    }
+
     private ConstraintRule validRule() {
         ObjectNode bindings = JsonNodeSupport.objectNode();
         ObjectNode temperature = bindings.putObject("temperature");

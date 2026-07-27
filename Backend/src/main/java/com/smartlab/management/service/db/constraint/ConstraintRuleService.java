@@ -6,6 +6,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.smartlab.global.contract.DataType;
 import com.smartlab.global.contract.ObservableObjectType;
 import com.smartlab.global.contract.SystemViolationAction;
+import com.smartlab.global.util.JsonNodeSupport;
+import com.smartlab.engine.constraint.ConstraintExpressionEvaluator;
 import com.smartlab.management.dto.common.PageResult;
 import com.smartlab.management.entity.constraint.ConstraintRule;
 import com.smartlab.management.entity.resource.device.DeviceInstanceLifecycle;
@@ -16,6 +18,7 @@ import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
 
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -30,11 +33,14 @@ public class ConstraintRuleService extends ManagementCrudService<ConstraintRule>
 
     private final ConstraintRuleMapper mapper;
     private final DeviceInstancesMapper deviceInstancesMapper;
+    private final ConstraintExpressionEvaluator expressionEvaluator;
 
-    public ConstraintRuleService(ConstraintRuleMapper mapper, DeviceInstancesMapper deviceInstancesMapper) {
+    public ConstraintRuleService(ConstraintRuleMapper mapper, DeviceInstancesMapper deviceInstancesMapper,
+                                 ConstraintExpressionEvaluator expressionEvaluator) {
         super(mapper);
         this.mapper = mapper;
         this.deviceInstancesMapper = deviceInstancesMapper;
+        this.expressionEvaluator = expressionEvaluator;
     }
 
     public List<ConstraintRule> list(Boolean isEnabled) {
@@ -76,7 +82,7 @@ public class ConstraintRuleService extends ManagementCrudService<ConstraintRule>
     @Override
     public ConstraintRule save(ConstraintRule entity) {
         normalize(entity);
-        validate(entity);
+        validate(entity, false);
         return super.save(entity);
     }
 
@@ -88,12 +94,18 @@ public class ConstraintRuleService extends ManagementCrudService<ConstraintRule>
         if (entity.getIsEnabled() == null) entity.setIsEnabled(Boolean.TRUE);
     }
 
-    private void validate(ConstraintRule entity) {
+    public void validateTaskDefinition(ConstraintRule entity) {
+        normalize(entity);
+        validate(entity, true);
+    }
+
+    private void validate(ConstraintRule entity, boolean taskScoped) {
         requireText(entity.getRuleName(), "约束名称不能为空");
         requireText(entity.getExpression(), "expression不能为空");
         requireObject(entity.getBindings(), "bindings");
         validateBindings(entity.getBindings());
-        validateEvaluationScope(entity.getBindings());
+        if (!taskScoped) validateEvaluationScope(entity.getBindings());
+        expressionEvaluator.validate(entity.getExpression(), sampleVariables(entity.getBindings()));
         if (entity.getWindowSeconds() != null && entity.getWindowSeconds() <= 0) {
             throw new IllegalArgumentException("windowSeconds必须大于0或null");
         }
@@ -123,6 +135,29 @@ public class ConstraintRuleService extends ManagementCrudService<ConstraintRule>
                 throw new IllegalArgumentException(scope + ".bindingType必须是OBSERVABLE或LITERAL");
             }
         }
+    }
+
+    private Map<String, JsonNode> sampleVariables(JsonNode bindings) {
+        Map<String, JsonNode> result = new LinkedHashMap<>();
+        var fields = bindings.fields();
+        while (fields.hasNext()) {
+            Map.Entry<String, JsonNode> entry = fields.next();
+            JsonNode binding = entry.getValue();
+            if ("LITERAL".equals(text(binding, "bindingType"))) {
+                result.put(entry.getKey(), binding.path("value").deepCopy());
+                continue;
+            }
+            String dataType = binding.path("source").path("dataType").asText();
+            JsonNode sample = switch (DataType.valueOf(dataType)) {
+                case INTEGER -> JsonNodeSupport.MAPPER.getNodeFactory().numberNode(1);
+                case DOUBLE -> JsonNodeSupport.MAPPER.getNodeFactory().numberNode(1.5D);
+                case STRING -> JsonNodeSupport.MAPPER.getNodeFactory().textNode("sample");
+                case BOOLEAN -> JsonNodeSupport.MAPPER.getNodeFactory().booleanNode(true);
+                case JSON -> JsonNodeSupport.objectNode();
+            };
+            result.put(entry.getKey(), sample);
+        }
+        return result;
     }
 
     /** 最终约束模型没有跨设备与任务的关联键，保存时必须拒绝无法确定求值作用域的绑定组合 */

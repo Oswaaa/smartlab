@@ -75,7 +75,7 @@
             <span v-else style="color: #94a3b8; font-size: 12px;">待加载</span>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="200" fixed="right" align="center">
+        <el-table-column label="任务约束" width="100" align="center"><template #default="{row}"><el-tag v-if="row.taskConstraints?.length" type="warning" size="small" effect="plain">{{ row.taskConstraints.length }} 条</el-tag><span v-else style="color:#94a3b8;font-size:12px">无</span></template></el-table-column>        <el-table-column label="操作" width="200" fixed="right" align="center">
           <template #default="{ row }">
             <div class="action-buttons" @click.stop>
               <el-button
@@ -161,24 +161,17 @@
           </div>
 
           <div class="anchor-section industrial-section" v-if="selectedDeviceRoutes.length">
-            <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px; margin-top: 24px;">设备路由</h2>
-            <section class="drawer-section">
-              <el-alert type="info" :closable="false" title="设备实例由工作流模型的NODE_TO_DEVICE和DEVICE_TO_NODE连接固定声明，创建任务时不能二次替换" style="margin-bottom: 12px;" />
-              <div v-for="route in selectedDeviceRoutes" :key="route.nodeName" class="resource-map-row">
-                <div class="resource-node-label">{{ route.nodeName }}</div>
-                <el-icon style="color: #2563eb;"><ArrowRight /></el-icon>
-                <div class="resource-instance-label">{{ getInstanceName(route.deviceInstanceId) }}<span style="font-size: 11px; color: #94a3b8; margin-left: 6px;">(ID: {{ route.deviceInstanceId }})</span><div style="font-size: 11px; color: #64748b; margin-top: 3px;">状态机输入: {{ route.deviceInputInterfaceName }}，状态机输出: {{ route.deviceOutputInterfaceName }}</div></div>
-              </div>
+            <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px; margin-top: 24px;">设备实例绑定</h2>
+            <section class="drawer-section resource-binding-section">
+              <el-alert type="info" :closable="false" title="工作流模型只选择设备模型；任务实例按节点出现路径绑定具体设备。同一实例可以被多个节点复用，执行时由状态机IDLE状态统一仲裁" style="margin-bottom: 12px;" />
+              <TaskResourceBindingCanvas :groups="selectedWorkflowGroups" :routes="selectedDeviceRoutes" :errors="selectedWorkflowErrors" :model-value="createForm.resourceBindings" :instances="deviceInstances" :models="deviceModels" @update:model-value="updateResourceBindings" />
             </section>
           </div>
-          <div class="anchor-section industrial-section" v-else-if="createForm.flowModelId && workflowHasDeviceNodes[String(createForm.flowModelId)]">
-            <el-alert type="warning" :closable="false" title="该工作流未声明设备接口连接，后端会拒绝启动包含DEV_NODE的任务" />
-          </div>
+          <div class="anchor-section industrial-section" v-else-if="createForm.flowModelId && workflowHasDeviceNodes[String(createForm.flowModelId)]"><el-alert type="warning" :closable="false" title="该工作流包含DEV_NODE但无法生成设备绑定路径，请先修复工作流模型" /></div>
           <div class="anchor-section industrial-section">
-            <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px; margin-top: 24px;">约束配置</h2>
-            <section class="drawer-section"><el-alert type="info" :closable="false" title="约束规则在约束管理页面独立配置并由约束引擎持续执行，任务只负责执行工作流模型声明的节点与设备路由" /></section>
-          </div>
-          </el-form>
+            <div class="section-title-row"><h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px; margin-top: 24px;">任务级约束</h2><el-button type="primary" plain @click="openTaskConstraint()">添加任务约束</el-button></div>
+            <section class="drawer-section"><el-alert type="info" :closable="false" title="任务级约束随当前任务保存，只能观测或操作本任务及其绑定设备；全局约束仍在约束管理页面配置" style="margin-bottom:12px"/><el-empty v-if="!createForm.taskConstraints.length" description="未配置任务级约束" :image-size="48"/><div v-for="(rule,index) in createForm.taskConstraints" :key="index" class="task-constraint-row"><div><strong>{{ rule.ruleName }}</strong><code>{{ rule.expression }}</code><span>{{ Object.keys(rule.bindings||{}).length }}个变量 · {{ (rule.violationActions||[]).length }}个动作</span></div><div><el-button link type="primary" @click="openTaskConstraint(index)">编辑</el-button><el-button link type="danger" @click="createForm.taskConstraints.splice(index,1)">删除</el-button></div></div></section>
+          </div>          </el-form>
       </div>
       <template #footer>
         <div class="drawer-footer">
@@ -190,6 +183,10 @@
       </template>
     </el-drawer>
 
+    <el-dialog v-model="taskConstraintDialogVisible" :title="editingTaskConstraintIndex == null ? '添加任务级约束' : '编辑任务级约束'" width="1040px" append-to-body destroy-on-close @opened="loadTaskConstraintEditor">
+      <ConstraintRuleEditor ref="taskConstraintEditorRef" :models="deviceModels" :instances="deviceInstances" :workflows="processTemplates" :tasks="[]" task-mode :task-resources="selectedTaskResources" :task-workflow-nodes="selectedWorkflowNodes" />
+      <template #footer><el-button @click="taskConstraintDialogVisible=false">取消</el-button><el-button type="primary" @click="saveTaskConstraint">保存任务约束</el-button></template>
+    </el-dialog>
     <!-- Monitor Tab Drawer -->
     <el-drawer v-model="monitorDrawerVisible" :title="`任务详情 · ${activeTask?.taskName || ''}`" size="78%" class="unified-workflow-drawer">
       <div v-if="activeTask" class="monitor-container">
@@ -211,7 +208,7 @@
         </div>
         <el-descriptions border :column="2" size="small" class="mb-4" style="margin-top: 12px;">
           <el-descriptions-item label="设备路由">
-            <el-tag type="success" size="small" v-if="activeDeviceRoutes.length">{{ activeDeviceRoutes.length }} 条固定路由</el-tag>
+            <el-tag type="success" size="small" v-if="activeDeviceRoutes.length">{{ activeDeviceRoutes.length }} 条任务绑定</el-tag>
             <span v-else style="color: #94a3b8;">未声明</span>
           </el-descriptions-item>
           <el-descriptions-item label="当前节点">
@@ -295,21 +292,22 @@
               </div>
             </div>
           </el-tab-pane>
-          <!-- Tab 3: Fixed device routes declared by the workflow model -->
+          <!-- Tab 3: Device instances bound by TASK.resource_map -->
           <el-tab-pane label="设备路由" name="resources">
             <div class="constraints-section">
               <div v-if="activeDeviceRoutes.length">
-                <div v-for="route in activeDeviceRoutes" :key="route.nodeName" class="resource-map-row">
-                  <div class="resource-node-label">{{ route.nodeName }}</div>
+                <div v-for="route in activeDeviceRoutes" :key="route.bindingKey" class="resource-map-row">
+                  <div class="resource-node-label"><strong>{{ route.nodeName }}</strong><div class="resource-sub">{{ route.flowName }} · {{ getModelName(route.deviceModelId) }}</div></div>
                   <el-icon style="color: #2563eb;"><ArrowRight /></el-icon>
                   <div class="resource-instance-label">{{ getInstanceName(route.deviceInstanceId) }}<span style="font-size: 11px; color: #94a3b8; margin-left: 6px;">(ID: {{ route.deviceInstanceId }})</span><div style="font-size: 11px; color: #64748b; margin-top: 3px;">状态机输入: {{ route.deviceInputInterfaceName }}，状态机输出: {{ route.deviceOutputInterfaceName }}</div></div>
                 </div>
               </div>
-              <el-empty v-else description="工作流未声明设备接口连接" />
+              <el-empty v-else description="该任务没有设备实例绑定" />
             </div>
           </el-tab-pane>
 
 
+          <el-tab-pane label="任务约束" name="constraints"><div class="constraints-section"><el-empty v-if="!activeTask.taskConstraints?.length" description="该任务未配置任务级约束"/><div v-for="(rule,index) in activeTask.taskConstraints || []" :key="index" class="task-constraint-row"><div><strong>{{ rule.ruleName }}</strong><code>{{ rule.expression }}</code><span>{{ Object.keys(rule.bindings||{}).length }}个变量 · {{ (rule.violationActions||[]).length }}个动作</span></div><el-tag :type="rule.isEnabled===false?'info':'success'" size="small">{{ rule.isEnabled===false?'停用':'启用' }}</el-tag></div></div></el-tab-pane>
         </el-tabs>
       </div>
     </el-drawer>
@@ -320,7 +318,10 @@
 import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { Plus, Refresh, Delete, ArrowRight } from '@element-plus/icons-vue'
+import { Plus, Refresh, Delete } from '@element-plus/icons-vue'
+import ConstraintRuleEditor from '../../components/constraint/ConstraintRuleEditor.vue'
+import TaskResourceBindingCanvas from '../../components/task/TaskResourceBindingCanvas.vue'
+import { expandWorkflowDefinition } from '../../utils/taskResourceBindings.js'
 
 interface TaskInstance {
   id: number
@@ -328,6 +329,8 @@ interface TaskInstance {
   taskDesc?: string
   flowModelId: number
   taskVariables?: Record<string, any>
+  resourceMap?: any
+  taskConstraints?: any[]
   taskStatus: string
   currentNodeIdRef?: number
   currentFlowNodeId?: number
@@ -336,10 +339,17 @@ interface TaskInstance {
 }
 
 interface DeviceRoute {
+  flowModelId: number
+  flowName: string
   nodeName: string
-  deviceInstanceId: number
+  bindingKey: string
+  inheritanceKey: string
+  occurrencePath: string
+  depth: number
+  deviceModelId: number
   deviceInputInterfaceName: string
   deviceOutputInterfaceName: string
+  interfaceValid: boolean
 }
 
 interface TaskStep {
@@ -400,18 +410,41 @@ const createDrawerVisible = ref(false)
 const createFormRef = ref<FormInstance>()
 const createForm = ref({
   taskName: '',
-  flowModelId: null as number | null
+  flowModelId: null as number | null,
+  resourceBindings: {} as Record<string, number | null>,
+  taskConstraints: [] as any[]
 })
 const creating = ref(false)
 const workflowDeviceRoutes = ref<Record<string, DeviceRoute[]>>({})
 const workflowHasDeviceNodes = ref<Record<string, boolean>>({})
+const workflowNodes = ref<Record<string, any[]>>({})
+const workflowGroups = ref<Record<string, any[]>>({})
+const workflowErrors = ref<Record<string, string[]>>({})
+const workflowDefinitions = ref<Record<string, any>>({})
 const selectedDeviceRoutes = computed(() => createForm.value.flowModelId == null ? [] : workflowDeviceRoutes.value[String(createForm.value.flowModelId)] || [])
-const activeDeviceRoutes = computed(() => activeTask.value == null ? [] : workflowDeviceRoutes.value[String(activeTask.value.flowModelId)] || [])
+const selectedWorkflowGroups = computed(() => createForm.value.flowModelId == null ? [] : workflowGroups.value[String(createForm.value.flowModelId)] || [])
+const selectedWorkflowErrors = computed(() => createForm.value.flowModelId == null ? [] : workflowErrors.value[String(createForm.value.flowModelId)] || [])
+const activeDeviceRoutes = computed(() => activeTask.value == null ? [] : (workflowDeviceRoutes.value[String(activeTask.value.flowModelId)] || []).map(route => ({...route,deviceInstanceId:activeTask.value?.resourceMap?.deviceBindings?.[route.bindingKey]?.deviceInstanceId})))
+const selectedTaskResources = computed(() => selectedDeviceRoutes.value.map(route => ({...route,deviceInstanceId:createForm.value.resourceBindings[route.bindingKey],instanceName:getInstanceName(createForm.value.resourceBindings[route.bindingKey])})))
+const selectedWorkflowNodes = computed(() => createForm.value.flowModelId == null ? [] : workflowNodes.value[String(createForm.value.flowModelId)] || [])
 
 const applyTaskFilters = () => { taskPageNo.value = 1; fetchTasks() }
 
 const handleTemplateChange = async (value: number | null) => {
-  if (value != null) await loadWorkflowRoutes(value)
+  createForm.value.resourceBindings = {}
+  createForm.value.taskConstraints = []
+  if (value == null) return
+  await loadWorkflowRoutes(value)
+  for (const route of workflowDeviceRoutes.value[String(value)] || []) createForm.value.resourceBindings[route.bindingKey] = null
+}
+
+const updateResourceBindings = (next: Record<string, number | null>) => {
+  const changed = JSON.stringify(createForm.value.resourceBindings) !== JSON.stringify(next)
+  if (changed && createForm.value.taskConstraints.length) {
+    createForm.value.taskConstraints = []
+    ElMessage.warning('设备实例绑定已变更，原任务约束中的实例引用已清空，请重新配置')
+  }
+  createForm.value.resourceBindings = next
 }
 
 // Monitor Drawer
@@ -424,6 +457,11 @@ const loadingDetails = ref(false)
 const logContainerRef = ref<HTMLElement | null>()
 // All device instances cache for name lookup
 const allInstances = ref<Record<string, string>>({})
+const deviceInstances = ref<any[]>([])
+const deviceModels = ref<any[]>([])
+const taskConstraintDialogVisible = ref(false)
+const taskConstraintEditorRef = ref<any>()
+const editingTaskConstraintIndex = ref<number | null>(null)
 
 // Auto refresh interval id
 let pollIntervalId: any = null
@@ -453,7 +491,9 @@ const fetchTasks = async () => {
     const res = await axios.get('/api/task/page', {
       params: {
         pageNo: taskPageNo.value,
-        pageSize: taskPageSize.value
+        pageSize: taskPageSize.value,
+        keyword: taskKeyword.value || undefined,
+        status: taskStatusFilter.value || undefined
       }
     })
     if (res.data?.success) {
@@ -473,46 +513,44 @@ const fetchTasks = async () => {
 
 // Fetch all device instances for name lookup
 const fetchAllInstances = async () => {
-  try {
-    const res = await axios.get('/api/device/instance/page?pageSize=500')
-    if (res.data?.success) {
-      const records = res.data.data?.records || []
-      const map: Record<string, string> = {}
-      records.forEach((inst: any) => {
-        map[String(inst.id)] = inst.instanceName || inst.deviceName || String(inst.id)
-      })
-      allInstances.value = map
-    }
-  } catch (e) {}
+  const res = await axios.get('/api/device/instance/page', { params: { pageSize: 500, lifecycleStatus: 'IN_USE' } })
+  if (!res.data?.success) throw new Error(res.data?.message || '加载设备实例失败')
+  const records = res.data.data?.records || []
+  deviceInstances.value = records
+  allInstances.value = Object.fromEntries(records.map((inst:any) => [String(inst.id),inst.instanceName || inst.deviceName || String(inst.id)]))
+}
+
+const fetchAllModels = async () => {
+  const res = await axios.get('/api/device/model/list')
+  if (!res.data?.success) throw new Error(res.data?.message || '加载设备模型失败')
+  deviceModels.value = res.data.data || []
 }
 
 const getInstanceName = (instanceId: any) => {
-  return allInstances.value[String(instanceId)] || String(instanceId)
+  return instanceId ? (allInstances.value[String(instanceId)] || String(instanceId)) : '待绑定'
+}
+const instancesForModel = (modelId:any) => deviceInstances.value.filter((instance:any) => Number(instance.deviceModelId || instance.modelId) === Number(modelId))
+const getModelName = (modelId:any) => deviceModels.value.find((model:any) => Number(model.id || model.modelId) === Number(modelId))?.modelName || String(modelId)
+
+const workflowDetail = async (flowModelId: number) => {
+  const key = String(flowModelId)
+  if (workflowDefinitions.value[key]) return workflowDefinitions.value[key]
+  const res = await axios.get(`/api/workflow/detail/${flowModelId}`)
+  if (!res.data?.success || !res.data.data) throw new Error(res.data?.message || '加载工作流详情失败')
+  workflowDefinitions.value[key] = res.data.data
+  return res.data.data
 }
 
 const loadWorkflowRoutes = async (flowModelId: number) => {
   const key = String(flowModelId)
-  if (Object.prototype.hasOwnProperty.call(workflowDeviceRoutes.value, key)) return
-  const res = await axios.get(`/api/workflow/detail/${flowModelId}`)
-  if (!res.data?.success || !res.data.data) throw new Error(res.data?.message || '加载工作流详情失败')
-  const definition = res.data.data
-  workflowHasDeviceNodes.value[key] = (definition.nodesDef || []).some((node: any) => node.nodeType === 'DEV_NODE')
-  const inbound = new Map<string, any>()
-  for (const connection of definition.interfaceConnections || []) {
-    if (connection.connectionType === 'DEVICE_TO_NODE') inbound.set(connection.target?.nodeName, connection)
-  }
-  workflowDeviceRoutes.value[key] = (definition.interfaceConnections || []).flatMap((connection: any) => {
-    if (connection.connectionType !== 'NODE_TO_DEVICE') return []
-    const reverse = inbound.get(connection.source?.nodeName)
-    const deviceInstanceId = Number(connection.target?.deviceInstanceId)
-    if (!reverse || !Number.isInteger(deviceInstanceId) || deviceInstanceId <= 0 || Number(reverse.source?.deviceInstanceId) !== deviceInstanceId) return []
-    const deviceInputInterfaceName = connection.target?.interfaceName
-    const deviceOutputInterfaceName = reverse.source?.interfaceName
-    if (!connection.source?.nodeName || !deviceInputInterfaceName || !deviceOutputInterfaceName) return []
-    return [{ nodeName: connection.source.nodeName, deviceInstanceId, deviceInputInterfaceName, deviceOutputInterfaceName }]
-  })
+  if (Object.prototype.hasOwnProperty.call(workflowDeviceRoutes.value,key)) return
+  const expanded = await expandWorkflowDefinition(flowModelId, workflowDetail)
+  workflowDeviceRoutes.value[key] = expanded.deviceRoutes
+  workflowNodes.value[key] = expanded.workflowNodes
+  workflowGroups.value[key] = expanded.groups
+  workflowErrors.value[key] = expanded.errors
+  workflowHasDeviceNodes.value[key] = expanded.hasDeviceNodes
 }
-
 const fetchTaskSummary = async () => {
   try {
     const res = await axios.get('/api/task/summary')
@@ -773,13 +811,30 @@ const confirmDeleteTask = async (taskId: number) => {
 }
 
 const openCreateDrawer = () => {
-  createForm.value = { taskName: '', flowModelId: null }
+  createForm.value = { taskName: '', flowModelId: null, resourceBindings: {}, taskConstraints: [] }
   createDrawerVisible.value = true
   nextTick(() => {
     createFormRef.value?.clearValidate()
   })
 }
 
+const openTaskConstraint = (index?:number) => {
+  if (!createForm.value.flowModelId) return ElMessage.warning('请先选择关联流程')
+  if (selectedWorkflowErrors.value.length) return ElMessage.error('流程模型存在设备接口连接错误，不能配置任务约束')
+  if (selectedDeviceRoutes.value.some(route => !createForm.value.resourceBindings[route.bindingKey])) return ElMessage.warning('请先完成全部设备实例绑定')
+  editingTaskConstraintIndex.value = typeof index === 'number' ? index : null
+  taskConstraintDialogVisible.value = true
+}
+const loadTaskConstraintEditor = () => taskConstraintEditorRef.value?.loadRule(editingTaskConstraintIndex.value == null ? null : createForm.value.taskConstraints[editingTaskConstraintIndex.value])
+const saveTaskConstraint = () => {
+  try {
+    const rule = taskConstraintEditorRef.value?.validateAndBuild()
+    if (!rule) return
+    if (editingTaskConstraintIndex.value == null) createForm.value.taskConstraints.push(rule)
+    else createForm.value.taskConstraints.splice(editingTaskConstraintIndex.value,1,rule)
+    taskConstraintDialogVisible.value = false
+  } catch (error:any) { ElMessage.error(error.message || '任务约束配置不完整') }
+}
 // Submit Create task
 const submitCreateTask = async () => {
   if (!createFormRef.value) return
@@ -787,9 +842,19 @@ const submitCreateTask = async () => {
     if (valid) {
       creating.value = true
       try {
+        if (selectedWorkflowErrors.value.length) throw new Error('流程模型存在设备接口连接错误，请先修复流程模型')
+        const deviceBindings: Record<string,{deviceModelId:number,deviceInstanceId:number}> = {}
+        for (const route of selectedDeviceRoutes.value) {
+          const instanceId = Number(createForm.value.resourceBindings[route.bindingKey])
+          if (!Number.isInteger(instanceId) || instanceId <= 0) throw new Error(`请为${route.flowName}/${route.nodeName}绑定设备实例`)
+          deviceBindings[route.bindingKey] = { deviceModelId: route.deviceModelId, deviceInstanceId: instanceId }
+        }
         const payload = {
           taskName: createForm.value.taskName,
-          flowModelId: createForm.value.flowModelId
+          flowModelId: createForm.value.flowModelId,
+          resourceMap: { formatVersion: 1, deviceBindings },
+          taskConstraints: createForm.value.taskConstraints,
+          taskVariables: {}
         }
         
         const res = await axios.post('/api/task/save', payload)
@@ -865,7 +930,7 @@ const stopMainListPolling = () => {
 onMounted(() => {
   refreshTaskList()
   fetchWorkflows()
-  fetchAllInstances()
+  Promise.all([fetchAllInstances(), fetchAllModels()]).catch((error:any) => ElMessage.error(error.message || '加载设备资源失败'))
   startMainListPolling()
 })
 
@@ -1450,4 +1515,4 @@ onUnmounted(() => {
 @media (max-width: 800px) { .task-filter-bar { display:flex; gap:10px; margin-bottom:12px; }.task-filter-bar .el-input { width:280px; }.task-filter-bar .el-select { width:150px; }
 
 .task-list-fullscreen { padding: 12px; } .task-summary-strip { grid-template-columns: repeat(2, 1fr); } }
-</style>
+.section-title-row{display:flex;align-items:center;justify-content:space-between}.resource-instance-select{flex:1;min-width:240px}.resource-sub{margin-top:4px;color:#64748b;font-size:11px}.task-constraint-row{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:11px 12px;border-bottom:1px solid #e5e7eb}.task-constraint-row>div:first-child{display:grid;gap:4px}.task-constraint-row code{font-family:Consolas,monospace;color:#2563eb}.task-constraint-row span{color:#64748b;font-size:11px}</style>

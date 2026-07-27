@@ -5,22 +5,27 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.engine.workflow.WorkflowDefinitionCompiler;
+import com.smartlab.global.contract.DataType;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.workflow.WorkflowDetailResponse;
 import com.smartlab.management.dto.workflow.WorkflowSaveRequest;
 import com.smartlab.management.entity.workflow.FlowModels;
 import com.smartlab.management.entity.workflow.FlowNode;
 import com.smartlab.management.entity.workflow.Task;
+import com.smartlab.management.entity.resource.device.DeviceModels;
 import com.smartlab.management.mapper.workflow.FlowModelsMapper;
 import com.smartlab.management.mapper.workflow.FlowNodeMapper;
 import com.smartlab.management.mapper.workflow.TaskMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
+import com.smartlab.management.service.db.resource.device.DeviceModelService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /** Transactional aggregate service for FLOW_MODELS and its FLOW_NODE members. */
@@ -31,14 +36,17 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
     private final FlowNodeMapper nodeMapper;
     private final TaskMapper taskMapper;
     private final WorkflowDefinitionCompiler compiler;
+    private final DeviceModelService deviceModelService;
 
     public WorkflowService(FlowModelsMapper modelMapper, FlowNodeMapper nodeMapper,
-                           TaskMapper taskMapper, WorkflowDefinitionCompiler compiler) {
+                           TaskMapper taskMapper, WorkflowDefinitionCompiler compiler,
+                           DeviceModelService deviceModelService) {
         super(modelMapper);
         this.modelMapper = modelMapper;
         this.nodeMapper = nodeMapper;
         this.taskMapper = taskMapper;
         this.compiler = compiler;
+        this.deviceModelService = deviceModelService;
     }
 
     @Override
@@ -97,16 +105,14 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
         }
 
         WorkflowDefinitionCompiler.CompiledWorkflow compiled = compiler.compile(request);
+        validateDeviceConfiguration(request);
         validateSubFlowReferences(request, compiled);
         FlowModels model = request.getId() == null ? new FlowModels() : modelMapper.selectById(request.getId());
         if (request.getId() != null && model == null) {
             throw new IllegalArgumentException("流程模型不存在: " + request.getId());
         }
-        if (request.getId() != null) {
-            Long existingTasks = taskMapper.selectCount(Wrappers.<Task>lambdaQuery()
-                    .eq(Task::getFlowModelId, request.getId()));
-            if (existingTasks != null && existingTasks > 0)
-                throw new IllegalStateException("流程已有任务实例，不能覆盖节点定义；请新建流程版本");
+        if (request.getId() != null && hasTaskSnapshotReference(request.getId())) {
+            throw new IllegalStateException("流程或其上级流程已有任务实例，不能覆盖节点定义；请新建流程版本");
         }
         if (model == null) model = new FlowModels();
         model.setFlowName(request.getName().trim());
@@ -160,6 +166,116 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
         }
     }
 
+    public void validateDeviceConfiguration(WorkflowSaveRequest request) {
+        if (request == null || request.getNodesDef() == null || !request.getNodesDef().isArray()) {
+            throw new IllegalArgumentException("nodesDef 必须是数组");
+        }
+        for (JsonNode node : request.getNodesDef()) {
+            if (!"DEV_NODE".equals(node.path("nodeType").asText())) continue;
+            String nodeName = node.path("name").asText("");
+            long modelId = node.path("deviceModelId").asLong(0);
+            DeviceModels model = modelId > 0 ? deviceModelService.getById(String.valueOf(modelId)) : null;
+            if (model == null) throw configurationError(nodeName, "deviceModelId", "设备模型不存在: " + modelId);
+
+            JsonNode capabilityNode = node.path("capability");
+            String capabilityName = capabilityNode.path("capabilityName").asText("");
+            JsonNode capabilityDefinition = findByText(model.getCapabilities(), "capabilityName", capabilityName);
+            if (capabilityDefinition == null) {
+                throw configurationError(nodeName, "capability.capabilityName", "设备模型未声明能力: " + capabilityName);
+            }
+            validateCapabilityParameters(nodeName, capabilityNode.path("capabilityParameters"), capabilityDefinition.path("parameters"));
+            validateAttributeMappings(nodeName, node.path("internalVariables"), model.getAttributes());
+        }
+    }
+
+    private void validateCapabilityParameters(String nodeName, JsonNode values, JsonNode definitions) {
+        if (!values.isMissingNode() && !values.isObject()) {
+            throw configurationError(nodeName, "capability.capabilityParameters", "必须是对象");
+        }
+        Map<String, JsonNode> expected = new LinkedHashMap<>();
+        for (JsonNode definition : iterable(definitions)) {
+            String name = definition.path("name").asText("");
+            if (!name.isBlank()) expected.put(name, definition);
+        }
+        if (values.isObject()) {
+            values.fieldNames().forEachRemaining(name -> {
+                if (!expected.containsKey(name)) {
+                    throw configurationError(nodeName, "capability.capabilityParameters." + name, "能力未声明该参数");
+                }
+            });
+        }
+        for (Map.Entry<String, JsonNode> entry : expected.entrySet()) {
+            String parameterPath = "capability.capabilityParameters." + entry.getKey();
+            if (!values.isObject() || !values.has(entry.getKey())) {
+                throw configurationError(nodeName, parameterPath, "缺少必需能力参数");
+            }
+            String dataType = entry.getValue().path("dataType").asText("");
+            requireStrictValueType(dataType, values.get(entry.getKey()), nodeName, parameterPath);
+        }
+    }
+
+    private void validateAttributeMappings(String nodeName, JsonNode variables, JsonNode attributes) {
+        Map<String, JsonNode> definitions = new LinkedHashMap<>();
+        for (JsonNode attribute : iterable(attributes)) {
+            String name = attribute.path("attributeName").asText("");
+            if (!name.isBlank()) definitions.put(name, attribute);
+        }
+        int position = 0;
+        for (JsonNode variable : iterable(variables)) {
+            String mapping = variable.path("attributesMapping").asText("").trim();
+            if (!mapping.isBlank()) {
+                String path = "internalVariables[" + position + "].attributesMapping";
+                JsonNode attribute = definitions.get(mapping);
+                if (attribute == null) throw configurationError(nodeName, path, "设备模型属性不存在: " + mapping);
+                String variableType = variable.path("dataType").asText("");
+                String attributeType = attribute.path("dataType").asText("");
+                if (!variableType.equals(attributeType)) {
+                    throw configurationError(nodeName, path, "映射变量与设备属性数据类型不一致: " + variableType + " -> " + attributeType);
+                }
+            }
+            position++;
+        }
+    }
+
+    private void requireStrictValueType(String dataType, JsonNode value, String nodeName, String path) {
+        boolean valid;
+        try {
+            valid = value != null && !value.isNull() && switch (DataType.valueOf(dataType)) {
+                case INTEGER -> value.isIntegralNumber();
+                case DOUBLE -> value.isNumber();
+                case STRING -> value.isTextual();
+                case BOOLEAN -> value.isBoolean();
+                case JSON -> value.isObject() || value.isArray();
+            };
+        } catch (IllegalArgumentException error) {
+            throw configurationError(nodeName, path, "设备模型声明了不支持的数据类型: " + dataType);
+        }
+        if (!valid) throw configurationError(nodeName, path, "参数值数据类型不一致，要求" + dataType);
+    }
+
+    private JsonNode findByText(JsonNode values, String field, String expected) {
+        for (JsonNode value : iterable(values)) {
+            if (expected.equals(value.path(field).asText())) return value;
+        }
+        return null;
+    }
+
+    private Iterable<JsonNode> iterable(JsonNode node) {
+        return node != null && node.isArray() ? node : List.of();
+    }
+
+    private IllegalArgumentException configurationError(String nodeName, String path, String reason) {
+        return new IllegalArgumentException("节点" + nodeName + "." + path + ": " + reason);
+    }
+
+    private boolean hasTaskSnapshotReference(long targetFlowModelId) {
+        List<Task> tasks = taskMapper.selectList(Wrappers.<Task>query().select("flow_model_id"));
+        if (tasks == null) return false;
+        return tasks.stream().map(Task::getFlowModelId).filter(java.util.Objects::nonNull).distinct()
+                .anyMatch(rootFlowModelId -> rootFlowModelId == targetFlowModelId
+                        || referencesFlow(rootFlowModelId, targetFlowModelId, new HashSet<>()));
+    }
+
     private boolean referencesFlow(long flowModelId, long targetFlowModelId, Set<Long> visited) {
         if (!visited.add(flowModelId)) return false;
         for (FlowNode node : nodes(flowModelId)) {
@@ -184,6 +300,9 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
         } else if ("FUNC_NODE".equals(nodeType)) {
             capability.put("functionType", node.path("functionType").asText());
             if (node.has("expression")) capability.put("expression", node.path("expression").asText());
+        } else if ("SUBFLOW_NODE".equals(nodeType)) {
+            capability.put("subFlowModelId", node.path("subFlowModelId").asLong());
+            capability.put("subFlowModelDescription", node.path("subFlowModelDescription").asText(""));
         }
         entity.setCapability(capability);
         entity.setInVariables(nonNullArray(node.path("internalVariables")));
@@ -206,7 +325,11 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
             definition.put("functionType", node.getCapability().path("functionType").asText());
             if (node.getCapability().has("expression")) definition.put("expression", node.getCapability().path("expression").asText());
         } else if ("SUBFLOW_NODE".equals(node.getNodeType())) {
-            definition.put("subFlowModelId", node.getSubFlowModelId());
+            JsonNode capability = nonNullObject(node.getCapability());
+            long subFlowModelId = capability.path("subFlowModelId").asLong(
+                    node.getSubFlowModelId() == null ? 0 : node.getSubFlowModelId());
+            definition.put("subFlowModelId", subFlowModelId);
+            definition.put("subFlowModelDescription", capability.path("subFlowModelDescription").asText(""));
         }
         definition.set("internalVariables", nonNullArray(node.getInVariables()));
         definition.set("lifecycle", nonNullObject(node.getLifecycle()));

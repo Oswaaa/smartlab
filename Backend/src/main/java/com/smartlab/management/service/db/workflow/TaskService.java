@@ -1,5 +1,7 @@
 package com.smartlab.management.service.db.workflow;
 
+import com.fasterxml.jackson.databind.JsonNode;
+
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.smartlab.global.contract.TaskLifecycleState;
@@ -14,6 +16,7 @@ import com.smartlab.management.entity.workflow.TaskStep;
 import com.smartlab.management.mapper.workflow.TaskMapper;
 import com.smartlab.management.mapper.workflow.TaskStepMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
+import com.smartlab.management.service.db.constraint.TaskConstraintService;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -34,17 +37,20 @@ public class TaskService extends ManagementCrudService<Task> {
     private final ExecutionLogService executionLogService;
     private final WorkflowService workflowService;
     private final WorkflowTaskResourceService resourceService;
+    private final TaskConstraintService taskConstraintService;
     private final ApplicationEventPublisher eventPublisher;
 
     public TaskService(TaskMapper taskMapper, TaskStepMapper taskStepMapper,
                        ExecutionLogService executionLogService, WorkflowService workflowService,
-                       WorkflowTaskResourceService resourceService, ApplicationEventPublisher eventPublisher) {
+                       WorkflowTaskResourceService resourceService, TaskConstraintService taskConstraintService,
+                       ApplicationEventPublisher eventPublisher) {
         super(taskMapper);
         this.taskMapper = taskMapper;
         this.taskStepMapper = taskStepMapper;
         this.executionLogService = executionLogService;
         this.workflowService = workflowService;
         this.resourceService = resourceService;
+        this.taskConstraintService = taskConstraintService;
         this.eventPublisher = eventPublisher;
     }
 
@@ -74,18 +80,21 @@ public class TaskService extends ManagementCrudService<Task> {
         if (request.getFlowModelId() == null || workflowService.getDefinition(request.getFlowModelId()) == null) {
             throw new IllegalArgumentException("任务引用的工作流模型不存在");
         }
-        resourceService.validate(request.getFlowModelId());
+        JsonNode resourceMap = nonNullObject(request.getResourceMap());
+        resourceService.validate(request.getFlowModelId(), resourceMap);
         Task task = new Task();
         task.setFlowModelId(request.getFlowModelId());
         task.setTaskName(request.getTaskName().trim());
         task.setTaskDesc(request.getTaskDesc());
         task.setParentTaskId(request.getParentTaskId());
         task.setTaskStatus(TaskLifecycleState.PENDING.name());
-        task.setTaskConstraints(JsonNodeSupport.objectNode());
-        task.setResourceMap(JsonNodeSupport.objectNode());
+        task.setTaskConstraints(JsonNodeSupport.arrayNode());
+        task.setResourceMap(resourceMap);
         task.setTaskVariables(nonNullObject(request.getTaskVariables()));
         task.setCreatorId(request.getCreatorId());
         taskMapper.insert(task);
+        task.setTaskConstraints(taskConstraintService.normalizeAndValidate(task, request.getTaskConstraints()));
+        taskMapper.updateById(task);
         executionLogService.append("TASK", task.getId(), null, null, "INFO", "任务已创建");
         publishLifecycle(task);
         return task;
@@ -95,7 +104,8 @@ public class TaskService extends ManagementCrudService<Task> {
     public Task start(Long taskId) {
         Task task = requireTask(taskId);
         requireStatus(task, TaskLifecycleState.PENDING);
-        resourceService.validate(task.getFlowModelId());
+        resourceService.validate(task.getFlowModelId(), task.getResourceMap());
+        task.setTaskConstraints(taskConstraintService.normalizeAndValidate(task, task.getTaskConstraints()));
         task.setTaskStatus(TaskLifecycleState.RUNNING.name());
         task.setStartTime(OffsetDateTime.now());
         task.setEndTime(null);
@@ -133,6 +143,7 @@ public class TaskService extends ManagementCrudService<Task> {
     @Transactional(rollbackFor = Exception.class)
     public Task requestTermination(Long taskId) {
         Task task = requireTask(taskId);
+        if (TaskLifecycleState.TERMINATING.name().equals(task.getTaskStatus())) return task;
         if (!TaskLifecycleState.RUNNING.name().equals(task.getTaskStatus())
                 && !TaskLifecycleState.PAUSED.name().equals(task.getTaskStatus())) {
             throw new IllegalStateException("只有RUNNING或PAUSED任务可以终止，当前状态: " + task.getTaskStatus());

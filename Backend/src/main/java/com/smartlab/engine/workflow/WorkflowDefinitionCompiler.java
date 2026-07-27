@@ -3,15 +3,14 @@ package com.smartlab.engine.workflow;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.global.contract.ConstraintOperator;
+import com.smartlab.global.contract.DataType;
 import com.smartlab.global.contract.WorkflowNodeActionType;
 import com.smartlab.global.contract.WorkflowNodeFunctionType;
 import com.smartlab.global.contract.WorkflowNodeType;
-import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.workflow.WorkflowSaveRequest;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayDeque;
-import java.util.Arrays;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -20,9 +19,19 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** 定稿工作流模型编译器：运行时直接校验固定节点契约，不解释JSONSchema */
+/** 定稿工作流模型编译器：运行时直接校验固定节点契约，不解释JSONSchema。 */
 @Component
 public class WorkflowDefinitionCompiler {
+
+    private static final Set<String> NODE_TYPES = enumNames(WorkflowNodeType.values());
+    private static final Set<String> FUNCTION_TYPES = enumNames(WorkflowNodeFunctionType.values());
+    private static final Set<String> ACTION_TYPES = enumNames(WorkflowNodeActionType.values());
+    private static final Set<String> DATA_TYPES = enumNames(DataType.values());
+    private static final Set<String> LIFECYCLE_STATES = Set.of(
+            "PENDING", "RUNNING", "SUCCEEDED", "FAILED", "TERMINATING", "TERMINATED");
+    private static final Set<String> LIFECYCLE_TRANSITIONS = Set.of(
+            "PENDING→RUNNING", "PENDING→TERMINATED", "RUNNING→SUCCEEDED", "RUNNING→FAILED",
+            "RUNNING→TERMINATING", "TERMINATING→TERMINATED", "TERMINATING→FAILED");
 
     public CompiledWorkflow compile(WorkflowSaveRequest request) {
         if (request == null || request.getName() == null || request.getName().isBlank()) {
@@ -32,26 +41,29 @@ public class WorkflowDefinitionCompiler {
             throw new IllegalArgumentException("nodes必须是非空数组");
         }
         Map<String, Long> refsByName = new LinkedHashMap<>();
+        Map<String, NodeIndex> indexesByName = new LinkedHashMap<>();
         Map<Long, JsonNode> nodes = new LinkedHashMap<>();
         long startRef = -1;
         long endRef = -1;
         long nextRef = 1;
+        int nodePosition = 0;
         for (JsonNode source : request.getNodesDef()) {
-            String name = requiredText(source, "name", "节点缺少name");
-            if (refsByName.put(name, nextRef) != null) {
-                throw new IllegalArgumentException("节点name重复: " + name);
-            }
+            if (!source.isObject()) throw new IllegalArgumentException("nodes[" + nodePosition + "]: 节点必须是对象");
             ObjectNode node = source.deepCopy();
             node.put("nodeIdRef", nextRef);
-            validateNode(node);
-            String type = node.path("nodeType").asText();
-            if (WorkflowNodeType.FUNC_NODE.name().equals(type)) {
+            NodeIndex index = validateAndIndexNode(node, "nodes[" + nodePosition + "]");
+            if (refsByName.put(index.nodeName(), nextRef) != null) {
+                throw nodeError(index.nodeName(), "name", "节点名称重复");
+            }
+            indexesByName.put(index.nodeName(), index);
+            if (WorkflowNodeType.FUNC_NODE.name().equals(index.nodeType())) {
                 String functionType = node.path("functionType").asText();
                 if (WorkflowNodeFunctionType.START.name().equals(functionType)) startRef = unique(startRef, nextRef, "START");
                 if (WorkflowNodeFunctionType.END.name().equals(functionType)) endRef = unique(endRef, nextRef, "END");
             }
             nodes.put(nextRef, node);
             nextRef++;
+            nodePosition++;
         }
         if (startRef < 0 || endRef < 0) {
             throw new IllegalArgumentException("工作流必须且只能包含一个START和一个END节点");
@@ -59,216 +71,252 @@ public class WorkflowDefinitionCompiler {
 
         Map<Long, List<Connection>> outgoing = indexedConnections(nodes.keySet());
         Map<Long, List<Connection>> incoming = indexedConnections(nodes.keySet());
-        validateInterfaceConnections(request.getInterfaceConnections(), refsByName, nodes, outgoing, incoming);
-        validateDeviceInterfaceConnections(request.getInterfaceConnections(), refsByName, nodes);
-        validatePortConnections(request.getPortConnections(), refsByName, nodes);
+        validateInterfaceConnections(request.getInterfaceConnections(), refsByName, indexesByName, nodes, outgoing, incoming);
+        validatePortConnections(request.getPortConnections(), indexesByName);
         validateTopology(nodes, outgoing, incoming, startRef, endRef);
         validateAcyclic(nodes.keySet(), outgoing);
         return new CompiledWorkflow(Map.copyOf(nodes), immutable(outgoing), immutable(incoming), Map.copyOf(refsByName), startRef, endRef);
     }
 
-    private void validateNode(JsonNode node) {
-        String type = requiredText(node, "nodeType", "节点缺少nodeType");
-        if (!Set.of(WorkflowNodeType.values()).stream().map(Enum::name).collect(java.util.stream.Collectors.toSet()).contains(type)) {
-            throw new IllegalArgumentException("不支持的节点类型: " + type);
-        }
-        validateVariables(node.path("internalVariables"));
-        validateInterfaces(node);
-        validatePorts(node);
-        validateActions(node);
-        if (WorkflowNodeType.DEV_NODE.name().equals(type)) {
-            if (!node.path("deviceModelId").canConvertToLong()) throw new IllegalArgumentException("DEV_NODE缺少deviceModelId");
-            requiredText(node.path("capability"), "capabilityName", "DEV_NODE缺少capability.capabilityName");
-            validateLifecycle(node.path("lifecycle"));
-        } else if (WorkflowNodeType.SUBFLOW_NODE.name().equals(type)) {
-            if (!node.path("subFlowModelId").canConvertToLong()) throw new IllegalArgumentException("SUBFLOW_NODE缺少subFlowModelId");
-            validateLifecycle(node.path("lifecycle"));
-        } else {
-            String functionType = requiredText(node, "functionType", "FUNC_NODE缺少functionType");
-            try {
-                WorkflowNodeFunctionType.valueOf(functionType);
-            } catch (IllegalArgumentException error) {
-                throw new IllegalArgumentException("不支持的功能节点类型: " + functionType);
+    private NodeIndex validateAndIndexNode(JsonNode node, String path) {
+        String name = requiredText(node, "name", path + ".name: 不能为空");
+        String type = requiredText(node, "nodeType", nodePath(name, "nodeType") + ": 不能为空");
+        if (!NODE_TYPES.contains(type)) throw nodeError(name, "nodeType", "不支持的节点类型: " + type);
+
+        JsonNode variablesNode = requireArray(node, "internalVariables", name);
+        JsonNode interfacesNode = requireArray(node, "interfaces", name);
+        JsonNode portsNode = requireArray(node, "ports", name);
+        JsonNode actionsNode = requireArray(node, "actions", name);
+        Map<String, JsonNode> variables = indexNamedItems(variablesNode, "name", name, "internalVariables");
+        Map<String, JsonNode> interfaces = indexNamedItems(interfacesNode, "name", name, "interfaces");
+        Map<String, JsonNode> ports = indexNamedItems(portsNode, "name", name, "ports");
+        Map<String, JsonNode> actions = indexNamedItems(actionsNode, "actionName", name, "actions");
+
+        int position = 0;
+        for (JsonNode variable : variablesNode) {
+            String dataTypePath = nodePath(name, "internalVariables[" + position + "].dataType");
+            requireDataType(requiredText(variable, "dataType", dataTypePath + ": 不能为空"), dataTypePath);
+            if (variable.has("attributesMapping") && !variable.path("attributesMapping").isTextual()) {
+                throw nodeError(name, "internalVariables[" + position + "].attributesMapping", "必须是字符串");
             }
+            position++;
         }
+
+        position = 0;
+        for (JsonNode item : interfacesNode) {
+            String itemPath = "interfaces[" + position + "]";
+            String direction = requiredText(item, "direction", nodePath(name, itemPath + ".direction") + ": 不能为空");
+            String interfaceType = requiredText(item, "interfaceType", nodePath(name, itemPath + ".interfaceType") + ": 不能为空");
+            if (!Set.of("IN", "OUT").contains(direction)) throw nodeError(name, itemPath + ".direction", "只允许IN或OUT");
+            if (!Set.of("WORKFLOW", "STATE").contains(interfaceType)) throw nodeError(name, itemPath + ".interfaceType", "只允许WORKFLOW或STATE");
+            JsonNode allowedSignals = item.path("allowedSignals");
+            if (!allowedSignals.isArray()) throw nodeError(name, itemPath + ".allowedSignals", "必须是数组");
+            for (JsonNode signal : allowedSignals) {
+                if (!signal.isTextual() || signal.asText().isBlank()) throw nodeError(name, itemPath + ".allowedSignals", "只能包含非空字符串");
+            }
+            if (item.has("bindingTriggers") && !item.path("bindingTriggers").isArray()) {
+                throw nodeError(name, itemPath + ".bindingTriggers", "必须是数组");
+            }
+            position++;
+        }
+
+        position = 0;
+        for (JsonNode port : portsNode) {
+            String itemPath = "ports[" + position + "]";
+            String direction = requiredText(port, "direction", nodePath(name, itemPath + ".direction") + ": 不能为空");
+            if (!Set.of("IN", "OUT").contains(direction)) throw nodeError(name, itemPath + ".direction", "只允许IN或OUT");
+            String variableName = requiredText(port, "internalVariableName", nodePath(name, itemPath + ".internalVariableName") + ": 不能为空");
+            if (!variables.containsKey(variableName)) throw nodeError(name, itemPath + ".internalVariableName", "引用不存在的内部变量: " + variableName);
+            position++;
+        }
+
+        NodeIndex index = new NodeIndex(name, type, variables, interfaces, ports, actions);
+        validateActions(index, node, path);
+        validateTriggers(index, node, path);
+        validateSystemSkeleton(index, node, path);
+        return index;
     }
 
-    private void validateVariables(JsonNode variables) {
-        Set<String> names = new HashSet<>();
-        for (JsonNode variable : iterable(variables)) {
-            String name = requiredText(variable, "name", "内部变量缺少name");
-            if (!names.add(name)) throw new IllegalArgumentException("内部变量name重复: " + name);
+    private void validateSystemSkeleton(NodeIndex index, JsonNode node, String path) {
+        String name = index.nodeName();
+        if (WorkflowNodeType.DEV_NODE.name().equals(index.nodeType())) {
+            requirePositiveLong(node, "deviceModelId", name);
+            requiredText(node.path("capability"), "capabilityName", nodePath(name, "capability.capabilityName") + ": 不能为空");
+            validateLifecycle(node.path("lifecycle"), name);
+            requireInterface(index, "Interface_workflow_in", "IN", "WORKFLOW", Set.of("ACTIVE"));
+            requireInterface(index, "Interface_state_out", "OUT", "STATE", Set.of("WF_EXECUTE_START"));
+            requireInterface(index, "Interface_state_in", "IN", "STATE", Set.of("CMD_STATE", "OP_STATE"));
+            requireInterface(index, "Interface_workflow_out", "OUT", "WORKFLOW", Set.of("ACTIVE"));
+            requireEmitAction(index, "startDevice", "Interface_state_out", "WF_EXECUTE_START");
+            requireEmitAction(index, "completeNode", "Interface_workflow_out", "ACTIVE");
+            requireTrigger(index, "Interface_workflow_in", "inputSignalName", "=", "ACTIVE", null, "startDevice");
+            requireTrigger(index, "Interface_state_in", "inputPayload.stateName", "=", "COMPLETED", null, "completeNode");
+            return;
         }
-    }
-
-    private void validateLifecycle(JsonNode lifecycle) {
-        if (!lifecycle.isObject()) throw new IllegalArgumentException("节点lifecycle必须是对象");
-        String initial = requiredText(lifecycle, "initialStateName", "节点lifecycle缺少initialStateName");
-        Set<String> states = new HashSet<>();
-        for (JsonNode state : iterable(lifecycle.path("states"))) states.add(state.asText());
-        if (!states.contains(initial)) throw new IllegalArgumentException("节点初始生命周期状态未声明: " + initial);
-        if (!"PENDING".equals(initial)) throw new IllegalArgumentException("节点lifecycle.initialStateName必须为PENDING");
-        Set<String> transitions = new HashSet<>();
-        for (JsonNode transition : iterable(lifecycle.path("transitions"))) {
-            transitions.add(requiredText(transition, "fromStateName", "节点生命周期转移缺少fromStateName")
-                    + "→" + requiredText(transition, "toStateName", "节点生命周期转移缺少toStateName"));
-        }
-        for (String expected : List.of("PENDING→RUNNING", "PENDING→TERMINATED", "RUNNING→SUCCEEDED", "RUNNING→FAILED",
-                "RUNNING→TERMINATING", "TERMINATING→TERMINATED", "TERMINATING→FAILED")) {
-            if (!transitions.contains(expected)) throw new IllegalArgumentException("节点lifecycle缺少引擎必需转移: " + expected);
-        }        for (JsonNode transition : iterable(lifecycle.path("transitions"))) {
-            if (!states.contains(requiredText(transition, "fromStateName", "节点生命周期转移缺少fromStateName"))
-                    || !states.contains(requiredText(transition, "toStateName", "节点生命周期转移缺少toStateName"))) {
-                throw new IllegalArgumentException("节点生命周期转移引用未声明状态");
+        if (WorkflowNodeType.SUBFLOW_NODE.name().equals(index.nodeType())) {
+            requirePositiveLong(node, "subFlowModelId", name);
+            validateLifecycle(node.path("lifecycle"), name);
+            requireInterface(index, "Interface_workflow_in", "IN", "WORKFLOW", Set.of("ACTIVE"));
+            requireInterface(index, "Interface_workflow_out", "OUT", "WORKFLOW", Set.of("ACTIVE"));
+            if (index.actions().values().stream().anyMatch(action -> "EMIT".equals(action.path("actionType").asText()))) {
+                throw nodeError(name, "actions", "SUBFLOW_NODE不能声明EMIT动作");
             }
+            return;
         }
-    }
 
-    private void validateInterfaces(JsonNode node) {
-        Set<String> names = new HashSet<>();
-        for (JsonNode item : iterable(node.path("interfaces"))) {
-            String name = requiredText(item, "name", "节点接口缺少name");
-            if (!names.add(name)) throw new IllegalArgumentException("节点接口name重复: " + name);
-            if (!Set.of("IN", "OUT").contains(requiredText(item, "direction", "节点接口缺少direction"))
-                    || !Set.of("WORKFLOW", "STATE").contains(requiredText(item, "interfaceType", "节点接口缺少interfaceType"))) {
-                throw new IllegalArgumentException("节点接口方向或类型不合法: " + name);
+        String functionType = requiredText(node, "functionType", nodePath(name, "functionType") + ": 不能为空");
+        if (!FUNCTION_TYPES.contains(functionType)) throw nodeError(name, "functionType", "不支持的功能节点类型: " + functionType);
+        switch (WorkflowNodeFunctionType.valueOf(functionType)) {
+            case START -> {
+                requireInterface(index, "Interface_workflow_out", "OUT", "WORKFLOW", Set.of("ACTIVE"));
+                requireEmitAction(index, "emitActive", "Interface_workflow_out", "ACTIVE");
+                long emitCount = index.actions().values().stream().filter(action -> "EMIT".equals(action.path("actionType").asText())).count();
+                if (emitCount != 1) throw nodeError(name, "actions", "START只能声明系统EMIT动作emitActive");
             }
-        }
-    }
-
-    private void validatePorts(JsonNode node) {
-        Set<String> variables = names(node.path("internalVariables"), "name");
-        Set<String> ports = new HashSet<>();
-        for (JsonNode port : iterable(node.path("ports"))) {
-            String name = requiredText(port, "name", "节点端口缺少name");
-            if (!ports.add(name)) throw new IllegalArgumentException("节点端口name重复: " + name);
-            if (!Set.of("IN", "OUT").contains(requiredText(port, "direction", "节点端口缺少direction"))
-                    || !variables.contains(requiredText(port, "internalVariableName", "节点端口缺少internalVariableName"))) {
-                throw new IllegalArgumentException("节点端口引用了不存在的内部变量: " + name);
-            }
-        }
-    }
-
-    private void validateActions(JsonNode node) {
-        Map<String, JsonNode> interfaces = index(node.path("interfaces"), "name");
-        Set<String> variables = names(node.path("internalVariables"), "name");
-        Set<String> actions = new HashSet<>();
-        for (JsonNode action : iterable(node.path("actions"))) {
-            String actionName = requiredText(action, "actionName", "节点动作缺少actionName");
-            String actionType = requiredText(action, "actionType", "节点动作缺少actionType");
-            if (!Set.of(WorkflowNodeActionType.values()).stream().map(Enum::name).collect(java.util.stream.Collectors.toSet()).contains(actionType)
-                    || !actions.add(actionName)) {
-                throw new IllegalArgumentException("节点动作类型不合法或actionName重复: " + actionName);
-            }
-            if (WorkflowNodeActionType.EMIT.name().equals(actionType)) {
-                String interfaceName = requiredText(action, "targetInterfaceName", "EMIT缺少targetInterfaceName");
-                String signalName = requiredText(action, "signalName", "EMIT缺少signalName");
-                JsonNode target = interfaces.get(interfaceName);
-                if (target == null || !"OUT".equals(target.path("direction").asText())
-                        || !contains(target.path("allowedSignals"), signalName)) {
-                    throw new IllegalArgumentException("EMIT目标接口或信号不合法: " + interfaceName + "." + signalName);
+            case END -> {
+                requireInterface(index, "Interface_workflow_in", "IN", "WORKFLOW", Set.of("ACTIVE"));
+                if (index.actions().values().stream().anyMatch(action -> "EMIT".equals(action.path("actionType").asText()))) {
+                    throw nodeError(name, "actions", "END不能声明EMIT动作");
                 }
+            }
+            case BRANCH -> {
+                requiredText(node, "expression", nodePath(name, "expression") + ": 不能为空");
+                requireInterface(index, "Interface_workflow_in", "IN", "WORKFLOW", Set.of("ACTIVE"));
+                requireInterface(index, "Interface_true_out", "OUT", "WORKFLOW", Set.of("ACTIVE"));
+                requireInterface(index, "Interface_false_out", "OUT", "WORKFLOW", Set.of("ACTIVE"));
+                requireEmitAction(index, "emitTrue", "Interface_true_out", "ACTIVE");
+                requireEmitAction(index, "emitFalse", "Interface_false_out", "ACTIVE");
+                requireTrigger(index, "Interface_workflow_in", "expression", "=", null, true, "emitTrue");
+                requireTrigger(index, "Interface_workflow_in", "expression", "=", null, false, "emitFalse");
+            }
+            case AGGREGATE -> {
+                requireInterface(index, "Interface_workflow_in", "IN", "WORKFLOW", Set.of("ACTIVE"));
+                requireInterface(index, "Interface_workflow_out", "OUT", "WORKFLOW", Set.of("ACTIVE"));
+                requireEmitAction(index, "emitActive", "Interface_workflow_out", "ACTIVE");
+                requireTrigger(index, "Interface_workflow_in", "inputSignalName", "=", "ACTIVE", null, "emitActive");
+            }
+        }
+    }
+
+    private void validateActions(NodeIndex index, JsonNode node, String path) {
+        int position = 0;
+        for (JsonNode action : node.path("actions")) {
+            String actionPath = "actions[" + position + "]";
+            String type = requiredText(action, "actionType", nodePath(index.nodeName(), actionPath + ".actionType") + ": 不能为空");
+            if (!ACTION_TYPES.contains(type)) throw nodeError(index.nodeName(), actionPath + ".actionType", "只允许EMIT或UPDATE: " + type);
+            if (WorkflowNodeActionType.EMIT.name().equals(type)) {
+                String targetName = requiredText(action, "targetInterfaceName", nodePath(index.nodeName(), actionPath + ".targetInterfaceName") + ": 不能为空");
+                JsonNode target = index.interfaces().get(targetName);
+                if (target == null) throw nodeError(index.nodeName(), actionPath + ".targetInterfaceName", "EMIT目标接口不存在: " + targetName);
+                if (!"OUT".equals(target.path("direction").asText())) throw nodeError(index.nodeName(), actionPath + ".targetInterfaceName", "EMIT目标必须是OUT接口: " + targetName);
+                String signal = requiredText(action, "signalName", nodePath(index.nodeName(), actionPath + ".signalName") + ": 不能为空");
+                if (!contains(target.path("allowedSignals"), signal)) throw nodeError(index.nodeName(), actionPath + ".signalName", "EMIT信号不在接口allowedSignals中: " + signal);
             } else {
-                if (!variables.contains(requiredText(action, "internalVariableName", "UPDATE缺少internalVariableName"))
-                        || requiredText(action, "valueExpression", "UPDATE缺少valueExpression").isBlank()) {
-                    throw new IllegalArgumentException("UPDATE动作不合法");
-                }
+                String variable = requiredText(action, "internalVariableName", nodePath(index.nodeName(), actionPath + ".internalVariableName") + ": 不能为空");
+                if (!index.variables().containsKey(variable)) throw nodeError(index.nodeName(), actionPath + ".internalVariableName", "UPDATE引用不存在的内部变量: " + variable);
+                requiredText(action, "valueExpression", nodePath(index.nodeName(), actionPath + ".valueExpression") + ": 不能为空");
             }
-        }
-        for (JsonNode item : iterable(node.path("interfaces"))) {
-            if (!iterable(item.path("bindingTriggers")).iterator().hasNext()) continue;
-            if (!"IN".equals(item.path("direction").asText())) throw new IllegalArgumentException("bindingTriggers只能声明在IN接口: " + item.path("name").asText());
-            for (JsonNode trigger : iterable(item.path("bindingTriggers"))) {
-                String actionName = requiredText(trigger, "action", "接口触发器缺少action");
-                if (!actions.contains(actionName)) throw new IllegalArgumentException("接口触发器引用不存在动作: " + actionName);
-                JsonNode condition = trigger.path("condition");
-                requiredText(condition, "object", "接口触发器条件缺少object");
-                String operator = requiredText(condition, "operator", "接口触发器条件缺少operator");
-                if (!Arrays.stream(ConstraintOperator.values()).map(ConstraintOperator::value).toList().contains(operator)
-                        || !condition.has("threshold")) throw new IllegalArgumentException("接口触发器条件不合法");
-            }
+            position++;
         }
     }
 
-    private void validateInterfaceConnections(JsonNode connections, Map<String, Long> refs, Map<Long, JsonNode> nodes,
+    private void validateTriggers(NodeIndex index, JsonNode node, String path) {
+        int interfacePosition = 0;
+        for (JsonNode item : node.path("interfaces")) {
+            JsonNode triggers = item.path("bindingTriggers");
+            if (triggers.isArray() && !triggers.isEmpty() && !"IN".equals(item.path("direction").asText())) {
+                throw nodeError(index.nodeName(), "interfaces[" + interfacePosition + "].bindingTriggers", "OUT接口不能声明bindingTriggers");
+            }
+            int triggerPosition = 0;
+            for (JsonNode trigger : iterable(triggers)) {
+                String triggerPath = "interfaces[" + interfacePosition + "].bindingTriggers[" + triggerPosition + "]";
+                String actionName = requiredText(trigger, "action", nodePath(index.nodeName(), triggerPath + ".action") + ": 不能为空");
+                if (!index.actions().containsKey(actionName)) throw nodeError(index.nodeName(), triggerPath + ".action", "引用不存在的动作: " + actionName);
+                JsonNode condition = trigger.path("condition");
+                if (!condition.isObject()) throw nodeError(index.nodeName(), triggerPath + ".condition", "必须是对象");
+                String object = requiredText(condition, "object", nodePath(index.nodeName(), triggerPath + ".condition.object") + ": 不能为空");
+                String operator = requiredText(condition, "operator", nodePath(index.nodeName(), triggerPath + ".condition.operator") + ": 不能为空");
+                if (!ConstraintOperator.supports(operator)) throw nodeError(index.nodeName(), triggerPath + ".condition.operator", "不支持的运算符: " + operator);
+                if (!condition.has("threshold") || condition.path("threshold").isNull()) throw nodeError(index.nodeName(), triggerPath + ".condition.threshold", "不能为空");
+                JsonNode variable = index.variables().get(object);
+                if (variable != null && !matchesDataType(condition.path("threshold"), variable.path("dataType").asText())) {
+                    throw nodeError(index.nodeName(), triggerPath + ".condition.threshold",
+                            "与内部变量" + object + "的数据类型不一致");
+                }
+                triggerPosition++;
+            }
+            interfacePosition++;
+        }
+    }
+
+    private void validateInterfaceConnections(JsonNode connections, Map<String, Long> refs,
+                                              Map<String, NodeIndex> indexes, Map<Long, JsonNode> nodes,
                                               Map<Long, List<Connection>> outgoing, Map<Long, List<Connection>> incoming) {
         if (connections == null || !connections.isArray()) throw new IllegalArgumentException("interfaceConnections必须是数组");
+        Map<String, Long> nodeToDevice = new HashMap<>();
+        Map<String, Long> deviceToNode = new HashMap<>();
+        int position = 0;
         for (JsonNode connection : connections) {
-            String type = requiredText(connection, "connectionType", "接口连接缺少connectionType");
+            String path = "interfaceConnections[" + position + "]";
+            String type = requiredText(connection, "connectionType", path + ".connectionType: 不能为空");
             JsonNode source = connection.path("source");
             JsonNode target = connection.path("target");
             if ("NODE_TO_NODE".equals(type)) {
-                long sourceRef = ref(source, refs, "接口连接source");
-                long targetRef = ref(target, refs, "接口连接target");
-                validateEndpointType(nodes.get(sourceRef), source.path("interfaceName").asText(), "OUT", "WORKFLOW", "节点到节点连接source");
-                validateEndpointType(nodes.get(targetRef), target.path("interfaceName").asText(), "IN", "WORKFLOW", "节点到节点连接target");
-                Connection item = new Connection(sourceRef, source.path("interfaceName").asText(), targetRef, target.path("interfaceName").asText());
+                NodeIndex sourceNode = referencedNode(source, indexes, path + ".source");
+                NodeIndex targetNode = referencedNode(target, indexes, path + ".target");
+                JsonNode sourceInterface = referencedInterface(source, sourceNode, "OUT", "WORKFLOW", path + ".source");
+                JsonNode targetInterface = referencedInterface(target, targetNode, "IN", "WORKFLOW", path + ".target");
+                long sourceRef = refs.get(sourceNode.nodeName());
+                long targetRef = refs.get(targetNode.nodeName());
+                Connection item = new Connection(sourceRef, sourceInterface.path("name").asText(), targetRef, targetInterface.path("name").asText());
                 outgoing.get(sourceRef).add(item);
                 incoming.get(targetRef).add(item);
             } else if ("NODE_TO_DEVICE".equals(type)) {
-                long sourceRef = ref(source, refs, "节点到设备连接source");
-                validateEndpointType(nodes.get(sourceRef), source.path("interfaceName").asText(), "OUT", "STATE", "节点到设备连接source");
-                if (!target.path("deviceInstanceId").canConvertToLong()) throw new IllegalArgumentException("节点到设备连接缺少deviceInstanceId");
+                NodeIndex sourceNode = referencedNode(source, indexes, path + ".source");
+                if (!WorkflowNodeType.DEV_NODE.name().equals(sourceNode.nodeType())) throw new IllegalArgumentException(path + ".source: NODE_TO_DEVICE只能从DEV_NODE发出");
+                referencedInterface(source, sourceNode, "OUT", "STATE", path + ".source");
+                long modelId = positiveLong(target, "deviceModelId", path + ".target.deviceModelId");
+                requiredText(target, "interfaceName", path + ".target.interfaceName: 不能为空");
+                if (nodeToDevice.putIfAbsent(sourceNode.nodeName(), modelId) != null) throw new IllegalArgumentException(path + ": DEV_NODE只能有一个NODE_TO_DEVICE连接");
             } else if ("DEVICE_TO_NODE".equals(type)) {
-                long targetRef = ref(target, refs, "设备到节点连接target");
-                validateEndpointType(nodes.get(targetRef), target.path("interfaceName").asText(), "IN", "STATE", "设备到节点连接target");
-                if (!source.path("deviceInstanceId").canConvertToLong()) throw new IllegalArgumentException("设备到节点连接缺少deviceInstanceId");
-            } else {
-                throw new IllegalArgumentException("接口连接类型不合法: " + type);
-            }
+                NodeIndex targetNode = referencedNode(target, indexes, path + ".target");
+                if (!WorkflowNodeType.DEV_NODE.name().equals(targetNode.nodeType())) throw new IllegalArgumentException(path + ".target: DEVICE_TO_NODE只能连接到DEV_NODE");
+                referencedInterface(target, targetNode, "IN", "STATE", path + ".target");
+                long modelId = positiveLong(source, "deviceModelId", path + ".source.deviceModelId");
+                requiredText(source, "interfaceName", path + ".source.interfaceName: 不能为空");
+                if (deviceToNode.putIfAbsent(targetNode.nodeName(), modelId) != null) throw new IllegalArgumentException(path + ": DEV_NODE只能有一个DEVICE_TO_NODE连接");
+            } else throw new IllegalArgumentException(path + ".connectionType: 不支持的接口连接类型: " + type);
+            position++;
+        }
+        for (Map.Entry<String, NodeIndex> entry : indexes.entrySet()) {
+            NodeIndex index = entry.getValue();
+            if (!WorkflowNodeType.DEV_NODE.name().equals(index.nodeType())) continue;
+            Long outbound = nodeToDevice.get(index.nodeName());
+            Long inbound = deviceToNode.get(index.nodeName());
+            if (outbound == null || inbound == null) throw nodeError(index.nodeName(), "interfaceConnections", "DEV_NODE必须同时声明NODE_TO_DEVICE和DEVICE_TO_NODE连接");
+            if (!outbound.equals(inbound)) throw nodeError(index.nodeName(), "interfaceConnections", "设备输入输出连接必须引用同一设备模型");
+            JsonNode definition = nodes.get(refs.get(index.nodeName()));
+            if (outbound.longValue() != definition.path("deviceModelId").asLong()) throw nodeError(index.nodeName(), "interfaceConnections", "连接deviceModelId必须与节点deviceModelId一致");
         }
     }
 
-    private void validateDeviceInterfaceConnections(JsonNode connections, Map<String, Long> refs, Map<Long, JsonNode> nodes) {
-        Map<Long, Long> nodeToDevice = new HashMap<>();
-        Map<Long, Long> deviceToNode = new HashMap<>();
-        for (JsonNode connection : iterable(connections)) {
-            String type = connection.path("connectionType").asText("");
-            if ("NODE_TO_DEVICE".equals(type)) {
-                long sourceRef = ref(connection.path("source"), refs, "节点到设备连接source");
-                if (!WorkflowNodeType.DEV_NODE.name().equals(nodes.get(sourceRef).path("nodeType").asText())) {
-                    throw new IllegalArgumentException("NODE_TO_DEVICE只能从DEV_NODE发出");
-                }
-                long deviceInstanceId = connection.path("target").path("deviceInstanceId").asLong(0);
-                if (deviceInstanceId <= 0 || connection.path("target").path("interfaceName").asText("").isBlank()) {
-                    throw new IllegalArgumentException("NODE_TO_DEVICE目标设备或接口不完整");
-                }
-                if (nodeToDevice.putIfAbsent(sourceRef, deviceInstanceId) != null) {
-                    throw new IllegalArgumentException("DEV_NODE只能有一个NODE_TO_DEVICE连接");
-                }
-            } else if ("DEVICE_TO_NODE".equals(type)) {
-                long targetRef = ref(connection.path("target"), refs, "设备到节点连接target");
-                if (!WorkflowNodeType.DEV_NODE.name().equals(nodes.get(targetRef).path("nodeType").asText())) {
-                    throw new IllegalArgumentException("DEVICE_TO_NODE只能连接到DEV_NODE");
-                }
-                long deviceInstanceId = connection.path("source").path("deviceInstanceId").asLong(0);
-                if (deviceInstanceId <= 0 || connection.path("source").path("interfaceName").asText("").isBlank()) {
-                    throw new IllegalArgumentException("DEVICE_TO_NODE源设备或接口不完整");
-                }
-                if (deviceToNode.putIfAbsent(targetRef, deviceInstanceId) != null) {
-                    throw new IllegalArgumentException("DEV_NODE只能有一个DEVICE_TO_NODE连接");
-                }
-            }
-        }
-        for (Map.Entry<Long, JsonNode> entry : nodes.entrySet()) {
-            if (!WorkflowNodeType.DEV_NODE.name().equals(entry.getValue().path("nodeType").asText())) continue;
-            Long outboundDevice = nodeToDevice.get(entry.getKey());
-            Long inboundDevice = deviceToNode.get(entry.getKey());
-            if (outboundDevice == null || inboundDevice == null) {
-                throw new IllegalArgumentException("DEV_NODE必须同时声明NODE_TO_DEVICE和DEVICE_TO_NODE连接");
-            }
-            if (!outboundDevice.equals(inboundDevice)) {
-                throw new IllegalArgumentException("DEV_NODE的设备输入输出连接必须引用同一设备实例");
-            }
-        }
-    }
-    private void validatePortConnections(JsonNode connections, Map<String, Long> refs, Map<Long, JsonNode> nodes) {
+    private void validatePortConnections(JsonNode connections, Map<String, NodeIndex> nodes) {
         if (connections == null || !connections.isArray()) throw new IllegalArgumentException("portConnections必须是数组");
+        int position = 0;
         for (JsonNode connection : connections) {
-            JsonNode source = connection.path("source");
-            JsonNode target = connection.path("target");
-            validatePort(nodes.get(ref(source, refs, "端口连接source")), source.path("portName").asText(), "OUT");
-            validatePort(nodes.get(ref(target, refs, "端口连接target")), target.path("portName").asText(), "IN");
+            String path = "portConnections[" + position + "]";
+            JsonNode sourceEndpoint = connection.path("source");
+            JsonNode targetEndpoint = connection.path("target");
+            NodeIndex sourceNode = referencedNode(sourceEndpoint, nodes, path + ".source");
+            NodeIndex targetNode = referencedNode(targetEndpoint, nodes, path + ".target");
+            JsonNode sourcePort = referencedPort(sourceEndpoint, sourceNode, "OUT", path + ".source");
+            JsonNode targetPort = referencedPort(targetEndpoint, targetNode, "IN", path + ".target");
+            JsonNode sourceVariable = sourceNode.variables().get(sourcePort.path("internalVariableName").asText());
+            JsonNode targetVariable = targetNode.variables().get(targetPort.path("internalVariableName").asText());
+            String sourceType = sourceVariable.path("dataType").asText();
+            String targetType = targetVariable.path("dataType").asText();
+            if (!sourceType.equals(targetType)) throw new IllegalArgumentException(path + ": 源目标内部变量数据类型不一致: " + sourceType + " -> " + targetType);
+            position++;
         }
     }
 
@@ -276,12 +324,13 @@ public class WorkflowDefinitionCompiler {
                                   Map<Long, List<Connection>> incoming, long startRef, long endRef) {
         for (Map.Entry<Long, JsonNode> entry : nodes.entrySet()) {
             long ref = entry.getKey();
+            String name = entry.getValue().path("name").asText();
             String function = entry.getValue().path("functionType").asText();
-            if (ref == startRef && !incoming.get(ref).isEmpty()) throw new IllegalArgumentException("START节点不能有NODE_TO_NODE输入");
-            if (ref == endRef && !outgoing.get(ref).isEmpty()) throw new IllegalArgumentException("END节点不能有NODE_TO_NODE输出");
-            if (ref != startRef && incoming.get(ref).isEmpty()) throw new IllegalArgumentException("非START节点必须有NODE_TO_NODE输入");
-            if (ref != endRef && outgoing.get(ref).isEmpty()) throw new IllegalArgumentException("非END节点必须有NODE_TO_NODE输出");
-            if (WorkflowNodeFunctionType.AGGREGATE.name().equals(function) && incoming.get(ref).size() < 2) throw new IllegalArgumentException("AGGREGATE节点至少需要两个输入");
+            if (ref == startRef && !incoming.get(ref).isEmpty()) throw nodeError(name, "interfaceConnections", "START节点不能有NODE_TO_NODE输入");
+            if (ref == endRef && !outgoing.get(ref).isEmpty()) throw nodeError(name, "interfaceConnections", "END节点不能有NODE_TO_NODE输出");
+            if (ref != startRef && incoming.get(ref).isEmpty()) throw nodeError(name, "interfaceConnections", "非START节点必须有NODE_TO_NODE输入");
+            if (ref != endRef && outgoing.get(ref).isEmpty()) throw nodeError(name, "interfaceConnections", "非END节点必须有NODE_TO_NODE输出");
+            if (WorkflowNodeFunctionType.AGGREGATE.name().equals(function) && incoming.get(ref).size() < 2) throw nodeError(name, "interfaceConnections", "AGGREGATE节点至少需要两个输入");
         }
     }
 
@@ -311,35 +360,128 @@ public class WorkflowDefinitionCompiler {
         if (visited != nodes.size()) throw new IllegalArgumentException("工作流不支持环形NODE_TO_NODE连接");
     }
 
-    private long ref(JsonNode endpoint, Map<String, Long> refs, String label) {
-        Long ref = refs.get(requiredText(endpoint, "nodeName", label + "缺少nodeName"));
-        if (ref == null) throw new IllegalArgumentException(label + "引用不存在节点");
-        return ref;
-    }
-
-    private void validateEndpointType(JsonNode node, String name, String direction, String interfaceType, String label) {
-        for (JsonNode item : iterable(node.path("interfaces"))) {
-            if (name.equals(item.path("name").asText()) && direction.equals(item.path("direction").asText())
-                    && interfaceType.equals(item.path("interfaceType").asText())) return;
+    private void validateLifecycle(JsonNode lifecycle, String nodeName) {
+        if (!lifecycle.isObject()) throw nodeError(nodeName, "lifecycle", "必须是对象");
+        String initial = requiredText(lifecycle, "initialStateName", nodePath(nodeName, "lifecycle.initialStateName") + ": 不能为空");
+        if (!"PENDING".equals(initial)) throw nodeError(nodeName, "lifecycle.initialStateName", "必须为PENDING");
+        JsonNode states = lifecycle.path("states");
+        if (!states.isArray() || !textSet(states).equals(LIFECYCLE_STATES)) throw nodeError(nodeName, "lifecycle.states", "必须完整声明引擎生命周期状态");
+        JsonNode transitionNodes = lifecycle.path("transitions");
+        if (!transitionNodes.isArray()) throw nodeError(nodeName, "lifecycle.transitions", "必须是数组");
+        Set<String> transitions = new HashSet<>();
+        int position = 0;
+        for (JsonNode transition : transitionNodes) {
+            String from = requiredText(transition, "fromStateName", nodePath(nodeName, "lifecycle.transitions[" + position + "].fromStateName") + ": 不能为空");
+            String to = requiredText(transition, "toStateName", nodePath(nodeName, "lifecycle.transitions[" + position + "].toStateName") + ": 不能为空");
+            transitions.add(from + "→" + to);
+            position++;
         }
-        throw new IllegalArgumentException(label + "接口不存在、方向不匹配或接口类型不匹配: " + name);
+        if (!transitions.equals(LIFECYCLE_TRANSITIONS)) throw nodeError(nodeName, "lifecycle.transitions", "必须完整声明引擎生命周期转移");
     }
 
-    private void validatePort(JsonNode node, String name, String direction) {
-        for (JsonNode port : iterable(node.path("ports"))) if (name.equals(port.path("name").asText()) && direction.equals(port.path("direction").asText())) return;
-        throw new IllegalArgumentException("端口不存在或方向不匹配: " + name);
+    private void requireInterface(NodeIndex index, String name, String direction, String type, Set<String> signals) {
+        JsonNode item = index.interfaces().get(name);
+        if (item == null) throw nodeError(index.nodeName(), "interfaces", "缺少系统接口" + name);
+        if (!direction.equals(item.path("direction").asText()) || !type.equals(item.path("interfaceType").asText())
+                || !textSet(item.path("allowedSignals")).equals(signals)) {
+            throw nodeError(index.nodeName(), "interfaces." + name, "系统接口定义被修改");
+        }
     }
 
-    private Map<String, JsonNode> index(JsonNode nodes, String field) {
-        Map<String, JsonNode> result = new HashMap<>();
-        for (JsonNode node : iterable(nodes)) result.put(node.path(field).asText(), node);
-        return result;
+    private void requireEmitAction(NodeIndex index, String name, String target, String signal) {
+        JsonNode action = index.actions().get(name);
+        if (action == null) throw nodeError(index.nodeName(), "actions", "缺少系统动作" + name);
+        if (!"EMIT".equals(action.path("actionType").asText())
+                || !target.equals(action.path("targetInterfaceName").asText())
+                || !signal.equals(action.path("signalName").asText())) {
+            throw nodeError(index.nodeName(), "actions." + name, "系统动作定义被修改");
+        }
     }
 
-    private Set<String> names(JsonNode nodes, String field) {
-        Set<String> result = new HashSet<>();
-        for (JsonNode node : iterable(nodes)) result.add(node.path(field).asText());
-        return result;
+    private void requireTrigger(NodeIndex index, String interfaceName, String object, String operator,
+                                String textThreshold, Boolean booleanThreshold, String actionName) {
+        JsonNode item = index.interfaces().get(interfaceName);
+        for (JsonNode trigger : iterable(item == null ? null : item.path("bindingTriggers"))) {
+            JsonNode condition = trigger.path("condition");
+            JsonNode threshold = condition.path("threshold");
+            boolean thresholdMatches = textThreshold != null
+                    ? threshold.isTextual() && textThreshold.equals(threshold.asText())
+                    : threshold.isBoolean() && booleanThreshold != null && booleanThreshold == threshold.asBoolean();
+            if (actionName.equals(trigger.path("action").asText())
+                    && object.equals(condition.path("object").asText())
+                    && operator.equals(condition.path("operator").asText()) && thresholdMatches) return;
+        }
+        throw nodeError(index.nodeName(), "interfaces." + interfaceName + ".bindingTriggers", "缺少系统触发器" + actionName);
+    }
+
+    private NodeIndex referencedNode(JsonNode endpoint, Map<String, NodeIndex> nodes, String path) {
+        String name = requiredText(endpoint, "nodeName", path + ".nodeName: 不能为空");
+        NodeIndex node = nodes.get(name);
+        if (node == null) throw new IllegalArgumentException(path + ".nodeName: 引用不存在的节点: " + name);
+        return node;
+    }
+
+    private JsonNode referencedInterface(JsonNode endpoint, NodeIndex node, String direction, String type, String path) {
+        String name = requiredText(endpoint, "interfaceName", path + ".interfaceName: 不能为空");
+        JsonNode item = node.interfaces().get(name);
+        if (item == null || !direction.equals(item.path("direction").asText()) || !type.equals(item.path("interfaceType").asText())) {
+            throw new IllegalArgumentException(path + ".interfaceName: 接口不存在、方向不匹配或类型不匹配: " + name);
+        }
+        return item;
+    }
+
+    private JsonNode referencedPort(JsonNode endpoint, NodeIndex node, String direction, String path) {
+        String name = requiredText(endpoint, "portName", path + ".portName: 不能为空");
+        JsonNode port = node.ports().get(name);
+        if (port == null || !direction.equals(port.path("direction").asText())) {
+            throw new IllegalArgumentException(path + ".portName: 端口不存在或方向不匹配: " + name);
+        }
+        return port;
+    }
+
+    private Map<String, JsonNode> indexNamedItems(JsonNode items, String nameField, String nodeName, String fieldPath) {
+        Map<String, JsonNode> result = new LinkedHashMap<>();
+        int position = 0;
+        for (JsonNode item : items) {
+            if (!item.isObject()) throw nodeError(nodeName, fieldPath + "[" + position + "]", "必须是对象");
+            String name = requiredText(item, nameField, nodePath(nodeName, fieldPath + "[" + position + "]." + nameField) + ": 不能为空");
+            if (result.putIfAbsent(name, item) != null) throw nodeError(nodeName, fieldPath + "[" + position + "]." + nameField, "名称重复: " + name);
+            position++;
+        }
+        return Map.copyOf(result);
+    }
+
+    private JsonNode requireArray(JsonNode node, String field, String nodeName) {
+        JsonNode value = node.path(field);
+        if (!value.isArray()) throw nodeError(nodeName, field, "必须是数组");
+        return value;
+    }
+
+    private void requirePositiveLong(JsonNode node, String field, String nodeName) {
+        positiveLong(node, field, nodePath(nodeName, field));
+    }
+
+    private long positiveLong(JsonNode node, String field, String path) {
+        JsonNode value = node.path(field);
+        if (!value.isIntegralNumber() || !value.canConvertToLong() || value.asLong() <= 0) {
+            throw new IllegalArgumentException(path + ": 必须是正整数");
+        }
+        return value.asLong();
+    }
+
+    private void requireDataType(String dataType, String path) {
+        if (!DATA_TYPES.contains(dataType)) throw new IllegalArgumentException(path + ": 不支持的数据类型: " + dataType);
+    }
+
+    private boolean matchesDataType(JsonNode value, String dataType) {
+        if (value == null || value.isNull()) return false;
+        return switch (DataType.valueOf(dataType)) {
+            case INTEGER -> value.isIntegralNumber();
+            case DOUBLE -> value.isNumber();
+            case STRING -> value.isTextual();
+            case BOOLEAN -> value.isBoolean();
+            case JSON -> value.isObject() || value.isArray();
+        };
     }
 
     private boolean contains(JsonNode values, String value) {
@@ -347,20 +489,45 @@ public class WorkflowDefinitionCompiler {
         return false;
     }
 
+    private Set<String> textSet(JsonNode values) {
+        Set<String> result = new HashSet<>();
+        for (JsonNode item : iterable(values)) result.add(item.asText());
+        return result;
+    }
+
     private Iterable<JsonNode> iterable(JsonNode node) {
         return node != null && node.isArray() ? node : List.of();
     }
 
     private String requiredText(JsonNode node, String field, String message) {
-        String value = node.path(field).asText("").trim();
-        if (value.isBlank()) throw new IllegalArgumentException(message);
-        return value;
+        JsonNode value = node == null ? null : node.path(field);
+        if (value == null || !value.isTextual() || value.asText().trim().isEmpty()) throw new IllegalArgumentException(message);
+        return value.asText().trim();
     }
 
     private Map<Long, List<Connection>> immutable(Map<Long, List<Connection>> source) {
         Map<Long, List<Connection>> result = new LinkedHashMap<>();
         source.forEach((key, value) -> result.put(key, List.copyOf(value)));
         return Map.copyOf(result);
+    }
+
+    private static Set<String> enumNames(Enum<?>[] values) {
+        Set<String> names = new HashSet<>();
+        for (Enum<?> value : values) names.add(value.name());
+        return Set.copyOf(names);
+    }
+
+    private static IllegalArgumentException nodeError(String nodeName, String fieldPath, String reason) {
+        return new IllegalArgumentException(nodePath(nodeName, fieldPath) + ": " + reason);
+    }
+
+    private static String nodePath(String nodeName, String fieldPath) {
+        return "节点" + nodeName + "." + fieldPath;
+    }
+
+    private record NodeIndex(String nodeName, String nodeType, Map<String, JsonNode> variables,
+                             Map<String, JsonNode> interfaces, Map<String, JsonNode> ports,
+                             Map<String, JsonNode> actions) {
     }
 
     public record Connection(long sourceNodeIdRef, String sourceInterface, long targetNodeIdRef, String targetInterface) {

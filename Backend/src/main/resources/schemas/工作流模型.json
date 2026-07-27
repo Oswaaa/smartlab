@@ -81,13 +81,13 @@
       "required": [ "nodeName", "interfaceName" ]
     },
     "deviceIfRef": {
-      "description": "设备状态机接口引用，标识某个设备实例状态机上的某个接口，作为接口连接的端点",
+      "description": "设备状态机接口引用，标识某个设备模型状态机上的某个接口；任务执行时由TASK.resource_map将DEV_NODE绑定到具体设备实例",
       "type": "object",
       "properties": {
-        "deviceInstanceId": { "type": "integer", "description": "设备实例在数据库中的ID" },
+        "deviceModelId": { "type": "integer", "description": "设备模型在数据库中的ID，须与相连DEV_NODE.deviceModelId一致" },
         "interfaceName": { "type": "string", "description": "设备状态机上的接口name字段值" }
       },
-      "required": [ "deviceInstanceId", "interfaceName" ]
+      "required": [ "deviceModelId", "interfaceName" ]
     },
     "Node2NodeConn": {
       "description": "节点→节点的接口连接，用于同一工作流内节点间的信号路由",

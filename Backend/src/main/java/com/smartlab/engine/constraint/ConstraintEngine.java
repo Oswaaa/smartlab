@@ -14,9 +14,11 @@ import com.smartlab.management.entity.constraint.ConstraintRule;
 import com.smartlab.management.entity.constraint.ViolationLog;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
 import com.smartlab.management.entity.resource.device.DeviceModels;
+import com.smartlab.management.entity.workflow.Task;
 import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
 import com.smartlab.management.mapper.resource.device.DeviceModelsMapper;
 import com.smartlab.management.service.db.constraint.ConstraintRuleService;
+import com.smartlab.management.service.db.constraint.TaskConstraintService;
 import com.smartlab.management.service.db.constraint.ViolationLogService;
 import com.smartlab.management.service.db.workflow.WorkflowService;
 import org.slf4j.Logger;
@@ -40,6 +42,7 @@ public class ConstraintEngine {
     private static final int MAX_HISTORY_SIZE = 4096;
 
     private final ConstraintRuleService ruleService;
+    private final TaskConstraintService taskConstraintService;
     private final ViolationLogService violationLogService;
     private final WorkflowTaskControlService taskControlService;
     private final StateMachineEngine stateMachineEngine;
@@ -52,12 +55,14 @@ public class ConstraintEngine {
     private final Map<String, Instant> expressionTrueSince = new ConcurrentHashMap<>();
     private final Map<String, Boolean> expressionTriggered = new ConcurrentHashMap<>();
 
-    public ConstraintEngine(ConstraintRuleService ruleService, ViolationLogService violationLogService,
+    public ConstraintEngine(ConstraintRuleService ruleService, TaskConstraintService taskConstraintService,
+                            ViolationLogService violationLogService,
                             WorkflowTaskControlService taskControlService, StateMachineEngine stateMachineEngine,
                             DeviceInstancesMapper deviceInstancesMapper, DeviceModelsMapper deviceModelsMapper,
                             WorkflowService workflowService, ConstraintExpressionEvaluator expressionEvaluator,
                             ApplicationEventPublisher eventPublisher) {
         this.ruleService = ruleService;
+        this.taskConstraintService = taskConstraintService;
         this.violationLogService = violationLogService;
         this.taskControlService = taskControlService;
         this.stateMachineEngine = stateMachineEngine;
@@ -70,7 +75,14 @@ public class ConstraintEngine {
 
     @EventListener
     public void observeTelemetry(DeviceTelemetryUpdatedEvent event) {
-        for (ConstraintRule rule : ruleService.list(Boolean.TRUE)) {
+        observeTelemetryRules(ruleService.list(Boolean.TRUE), event, null);
+        for (Task task : taskConstraintService.activeTasksForDevice(event.deviceInstanceId())) {
+            observeTelemetryRules(taskConstraintService.rulesForTask(task), event, task.getId());
+        }
+    }
+
+    private void observeTelemetryRules(List<ConstraintRule> rules, DeviceTelemetryUpdatedEvent event, Long taskId) {
+        for (ConstraintRule rule : rules) {
             ScopeState scope = null;
             for (ObservableBinding binding : observableBindings(rule)) {
                 JsonNode source = binding.source();
@@ -78,13 +90,13 @@ public class ConstraintEngine {
                         || !matchesDevice(source, event.deviceModelId(), event.deviceInstanceId())) continue;
                 JsonNode value = event.attributes().get(text(source, "targetName"));
                 if (value == null) continue;
-                scope = scope(rule, deviceScope(event.deviceInstanceId()), null, null, event.deviceInstanceId());
+                scope = scope(rule, taskId == null ? deviceScope(event.deviceInstanceId()) : taskScope(taskId),
+                        taskId, null, event.deviceInstanceId());
                 update(scope, binding.variableName(), value, event.occurredAt());
             }
             if (scope != null) evaluateRule(rule, scope);
         }
     }
-
     @EventListener
     public void observeStateMachine(StateMachineInterfaceSignalEvent event) {
         if (!"STATE".equals(event.interfaceType()) || !"Interface_state_out".equals(event.interfaceName())) return;
@@ -93,30 +105,47 @@ public class ConstraintEngine {
         Long deviceModelId = positiveLong(payload.get("deviceModelId"));
         Long deviceInstanceId = positiveLong(payload.get("deviceInstanceId"));
         if (deviceModelId == null || deviceInstanceId == null) return;
+        observeStateMachineRules(ruleService.list(Boolean.TRUE), event, signalName, payload, deviceModelId, deviceInstanceId, null);
+        for (Task task : taskConstraintService.activeTasksForDevice(deviceInstanceId)) {
+            observeStateMachineRules(taskConstraintService.rulesForTask(task), event, signalName, payload,
+                    deviceModelId, deviceInstanceId, task.getId());
+        }
+    }
+
+    private void observeStateMachineRules(List<ConstraintRule> rules, StateMachineInterfaceSignalEvent event,
+                                          String signalName, JsonNode payload, Long deviceModelId,
+                                          Long deviceInstanceId, Long taskId) {
         Instant occurredAt = timestamp(payload.path("timestamp"));
-        for (ConstraintRule rule : ruleService.list(Boolean.TRUE)) {
+        for (ConstraintRule rule : rules) {
             ScopeState scope = null;
             for (ObservableBinding binding : observableBindings(rule)) {
                 JsonNode source = binding.source();
                 String sourceType = text(source, "sourceType");
                 if (!matchesDevice(source, deviceModelId, deviceInstanceId)) continue;
                 if ("CMD_STATE".equals(signalName) && "DEVICE_COMMAND_LIFECYCLE".equals(sourceType)) {
-                    scope = scope(rule, deviceScope(deviceInstanceId), null, null, deviceInstanceId);
+                    scope = scope(rule, taskId == null ? deviceScope(deviceInstanceId) : taskScope(taskId),
+                            taskId, null, deviceInstanceId);
                     update(scope, binding.variableName(), payload.path("stateName"), occurredAt);
                 }
                 if ("OP_STATE".equals(signalName) && "DEVICE_OPERATION_STATE".equals(sourceType)
                         && Objects.equals(text(source, "regionName"), text(payload, "regionName"))) {
-                    scope = scope(rule, deviceScope(deviceInstanceId), null, null, deviceInstanceId);
+                    scope = scope(rule, taskId == null ? deviceScope(deviceInstanceId) : taskScope(taskId),
+                            taskId, null, deviceInstanceId);
                     update(scope, binding.variableName(), payload.path("stateName"), occurredAt);
                 }
             }
             if (scope != null) evaluateRule(rule, scope);
         }
     }
-
     @EventListener
     public void observeWorkflowNode(WorkflowNodeObservationEvent event) {
-        for (ConstraintRule rule : ruleService.list(Boolean.TRUE)) {
+        observeWorkflowNodeRules(ruleService.list(Boolean.TRUE), event);
+        Task task = taskConstraintService.task(event.taskId());
+        if (TaskConstraintService.isActive(task)) observeWorkflowNodeRules(taskConstraintService.rulesForTask(task), event);
+    }
+
+    private void observeWorkflowNodeRules(List<ConstraintRule> rules, WorkflowNodeObservationEvent event) {
+        for (ConstraintRule rule : rules) {
             ScopeState scope = null;
             for (ObservableBinding binding : observableBindings(rule)) {
                 JsonNode source = binding.source();
@@ -134,10 +163,15 @@ public class ConstraintEngine {
             if (scope != null) evaluateRule(rule, scope);
         }
     }
-
     @EventListener
     public void observeTask(TaskLifecycleObservationEvent event) {
-        for (ConstraintRule rule : ruleService.list(Boolean.TRUE)) {
+        observeTaskRules(ruleService.list(Boolean.TRUE), event);
+        Task task = taskConstraintService.task(event.taskId());
+        if (TaskConstraintService.isActive(task)) observeTaskRules(taskConstraintService.rulesForTask(task), event);
+    }
+
+    private void observeTaskRules(List<ConstraintRule> rules, TaskLifecycleObservationEvent event) {
+        for (ConstraintRule rule : rules) {
             ScopeState scope = null;
             for (ObservableBinding binding : observableBindings(rule)) {
                 JsonNode source = binding.source();
@@ -149,11 +183,13 @@ public class ConstraintEngine {
             if (scope != null) evaluateRule(rule, scope);
         }
     }
-
     @Scheduled(fixedDelay = 1000)
     public void evaluateSustainedConstraints() {
         Map<Long, ConstraintRule> enabledRules = new HashMap<>();
         for (ConstraintRule rule : ruleService.list(Boolean.TRUE)) enabledRules.put(rule.getId(), rule);
+        for (Task task : taskConstraintService.activeTasks()) {
+            for (ConstraintRule rule : taskConstraintService.rulesForTask(task)) enabledRules.put(rule.getId(), rule);
+        }
         scopes.entrySet().removeIf(entry -> !enabledRules.containsKey(entry.getValue().ruleId));
         for (ScopeState scope : scopes.values()) {
             ConstraintRule rule = enabledRules.get(scope.ruleId);
@@ -250,7 +286,7 @@ public class ConstraintEngine {
                     yield "SYSTEM:PAUSE";
                 }
                 case "ALERT" -> {
-                    eventPublisher.publishEvent(new ConstraintAlertEvent(rule.getId(), rule.getRuleName(),
+                    eventPublisher.publishEvent(new ConstraintAlertEvent(TaskConstraintService.isTaskRule(rule) ? null : rule.getId(), rule.getRuleName(),
                             targetTaskId == null ? scope.taskId : targetTaskId, snapshot(values), Instant.now()));
                     yield "SYSTEM:ALERT";
                 }
@@ -288,8 +324,8 @@ public class ConstraintEngine {
     private void writeViolationLog(ConstraintRule rule, JsonNode action, ScopeState scope,
                                    Map<String, JsonNode> values, String actionTaken) {
         ViolationLog logEntry = new ViolationLog();
-        logEntry.setConstraintRuleId(rule.getId());
-        logEntry.setConstraintType("CONSTRAINT_MODEL");
+        logEntry.setConstraintRuleId(TaskConstraintService.isTaskRule(rule) ? null : rule.getId());
+        logEntry.setConstraintType(TaskConstraintService.isTaskRule(rule) ? "TASK_CONSTRAINT" : "CONSTRAINT_MODEL");
         logEntry.setTaskId(scope.taskId == null ? positiveLong(action.get("targetTaskId")) : scope.taskId);
         logEntry.setTaskStepId(scope.taskStepId);
         logEntry.setDeviceInstanceId(scope.deviceInstanceId == null ? positiveLong(action.get("deviceInstanceId")) : scope.deviceInstanceId);

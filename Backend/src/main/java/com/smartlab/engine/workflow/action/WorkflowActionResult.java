@@ -29,6 +29,10 @@ public record WorkflowActionResult(WorkflowActionStatus status, ObjectNode varia
         return new WorkflowActionResult(WorkflowActionStatus.SUSPEND_UNTIL, JsonNodeSupport.objectNode(), deadline, null, null, null);
     }
 
+    public static WorkflowActionResult waitDeviceIdle(String messageId) {
+        return new WorkflowActionResult(WorkflowActionStatus.WAIT_DEVICE_IDLE, JsonNodeSupport.objectNode(), null, messageId, null, null);
+    }
+
     public static WorkflowActionResult awaitExternalSignal(String messageId) {
         return new WorkflowActionResult(WorkflowActionStatus.AWAIT_EXTERNAL_SIGNAL, JsonNodeSupport.objectNode(), null, messageId, null, null);
     }

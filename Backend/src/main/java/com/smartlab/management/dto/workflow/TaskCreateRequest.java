@@ -14,5 +14,7 @@ public class TaskCreateRequest {
     private Long flowModelId;
     private Long parentTaskId;
     private JsonNode taskVariables;
+    private JsonNode resourceMap;
+    private JsonNode taskConstraints;
     private Long creatorId;
 }

@@ -42,7 +42,9 @@ public class WorkflowRuntimeService {
     }
 
     public List<Task> runningTasks() {
-        return taskMapper.selectList(Wrappers.<Task>lambdaQuery().eq(Task::getTaskStatus, "RUNNING"));
+        return taskMapper.selectList(Wrappers.<Task>lambdaQuery()
+                .eq(Task::getTaskStatus, "RUNNING")
+                .orderByAsc(Task::getId));
     }
 
     public Task task(Long id) {

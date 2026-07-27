@@ -194,7 +194,7 @@ public class WorkflowEngine {
                 runtime.mergeVariableSpace(step, result.variableUpdates());
                 mergeObject(variables, result.variableUpdates());
             }
-            if (result.status() == WorkflowActionStatus.SUSPEND_UNTIL || result.status() == WorkflowActionStatus.AWAIT_EXTERNAL_SIGNAL) {
+            if (result.status() != WorkflowActionStatus.CONTINUE) {
                 return ActionRunResult.awaitingExternalSignal();
             }
             if (result.emittedInterfaceName() != null) {
@@ -332,7 +332,7 @@ public class WorkflowEngine {
             FlowNode node = flowNodeService.getById(step.getFlowNodeId());
             if (task == null || node == null) return;
             String inputInterface = stateInputInterface(node);
-            if (!hasDeviceToNodeConnection(node, event, inputInterface)) {
+            if (!hasDeviceToNodeConnection(task, step, node, event, inputInterface)) {
                 runtime.failStep(step, "设备状态回执未声明DEVICE_TO_NODE连接");
                 return;
             }
@@ -378,10 +378,11 @@ public class WorkflowEngine {
         }
     }
 
-    private boolean hasDeviceToNodeConnection(FlowNode node, StateMachineInterfaceSignalEvent event, String nodeInputInterface) {
+    private boolean hasDeviceToNodeConnection(Task task, TaskStep step, FlowNode node, StateMachineInterfaceSignalEvent event, String nodeInputInterface) {
         Long deviceInstanceId = event.signal().path("payload").path("deviceInstanceId").canConvertToLong()
                 ? event.signal().path("payload").path("deviceInstanceId").asLong() : null;
         if (deviceInstanceId == null || deviceInstanceId <= 0) return false;
+        if (executionOperations.resolveDeviceInstance(task, step, node) != deviceInstanceId) return false;
         var definition = workflowService.getDefinition(node.getFlowModelId());
         if (definition == null) return false;
         var compiled = workflowService.compileDefinition(node.getFlowModelId());
@@ -389,7 +390,7 @@ public class WorkflowEngine {
             if (!"DEVICE_TO_NODE".equals(connection.path("connectionType").asText())) continue;
             Long targetRef = compiled.refsByNodeName().get(connection.path("target").path("nodeName").asText(""));
             if (targetRef == null || targetRef != node.getNodeIdRef()) continue;
-            if (connection.path("source").path("deviceInstanceId").asLong(0) != deviceInstanceId) continue;
+            if (connection.path("source").path("deviceModelId").asLong(0) != node.getDeviceModelId()) continue;
             if (!event.interfaceName().equals(connection.path("source").path("interfaceName").asText(""))) continue;
             if (nodeInputInterface.equals(connection.path("target").path("interfaceName").asText(""))) return true;
         }

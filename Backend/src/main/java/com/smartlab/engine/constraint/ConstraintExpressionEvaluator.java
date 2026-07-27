@@ -7,8 +7,10 @@ import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Component
 public class ConstraintExpressionEvaluator {
@@ -20,6 +22,37 @@ public class ConstraintExpressionEvaluator {
             throw new IllegalArgumentException("约束expression必须返回boolean");
         }
         return value;
+    }
+
+    public void validate(String expression, Map<String, JsonNode> variables) {
+        Set<String> referenced = referencedVariables(expression);
+        Set<String> unknown = new LinkedHashSet<>(referenced);
+        unknown.removeAll(variables.keySet());
+        if (!unknown.isEmpty()) {
+            throw new IllegalArgumentException("expression引用了未绑定变量: " + unknown + "；字符串常量必须使用引号");
+        }
+        Set<String> unused = new LinkedHashSet<>(variables.keySet());
+        unused.removeAll(referenced);
+        if (!unused.isEmpty()) throw new IllegalArgumentException("bindings存在未被expression引用的变量: " + unused);
+        Instant now = Instant.now();
+        Map<String, List<TimedValue>> histories = variables.entrySet().stream().collect(java.util.stream.Collectors.toMap(
+                Map.Entry::getKey, entry -> List.of(new TimedValue(now.minusSeconds(1), entry.getValue()), new TimedValue(now, entry.getValue()))));
+        evaluate(expression, variables, histories, now);
+    }
+
+    private Set<String> referencedVariables(String expression) {
+        if (expression == null || expression.isBlank()) throw new IllegalArgumentException("约束expression不能为空");
+        Set<String> result = new LinkedHashSet<>();
+        Lexer lexer = new Lexer(expression);
+        Token token;
+        do {
+            token = lexer.next();
+            if (token.type == TokenType.IDENTIFIER
+                    && !List.of("true", "false", "delta", "avg", "rate").contains(token.text.toLowerCase())) {
+                result.add(token.text);
+            }
+        } while (token.type != TokenType.EOF);
+        return result;
     }
 
     public record TimedValue(Instant occurredAt, JsonNode value) {
@@ -144,7 +177,8 @@ public class ConstraintExpressionEvaluator {
             if ("true".equalsIgnoreCase(identifier)) return Boolean.TRUE;
             if ("false".equalsIgnoreCase(identifier)) return Boolean.FALSE;
             JsonNode value = variables.get(identifier);
-            return value == null || value.isNull() ? identifier : unwrap(value);
+            if (value == null || value.isNull()) throw error("expression引用了未绑定变量: " + identifier);
+            return unwrap(value);
         }
 
         private Object function(String name) {

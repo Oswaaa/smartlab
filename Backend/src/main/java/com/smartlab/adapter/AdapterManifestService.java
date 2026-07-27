@@ -886,14 +886,6 @@ public class AdapterManifestService {
         return single;
     }
 
-    private ArrayNode copyArray(JsonNode node) {
-        ArrayNode copy = JsonNodeSupport.arrayNode();
-        for (JsonNode item : array(node)) {
-            copy.add(item);
-        }
-        return copy;
-    }
-
     private ArrayNode toModelContractEvents(JsonNode node) {
         ArrayNode events = JsonNodeSupport.arrayNode();
         for (JsonNode item : array(node)) {

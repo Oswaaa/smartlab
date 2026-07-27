@@ -1,7 +1,6 @@
 package com.smartlab.management.entity.workflow;
 
 import com.baomidou.mybatisplus.annotation.IdType;
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.baomidou.mybatisplus.annotation.TableField;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;

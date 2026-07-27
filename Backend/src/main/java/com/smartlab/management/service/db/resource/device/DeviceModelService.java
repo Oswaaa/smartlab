@@ -81,13 +81,15 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         if (categoryId == null) {
             return super.page(pageNo, pageSize, keyword, "model_name");
         }
-        com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<DeviceModels> wrapper = com.baomidou.mybatisplus.core.toolkit.Wrappers.lambdaQuery();
+        com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper<DeviceModels> wrapper = com.baomidou.mybatisplus.core.toolkit.Wrappers
+                .lambdaQuery();
         wrapper.eq(DeviceModels::getCategoryId, categoryId);
         if (keyword != null && !keyword.isBlank()) {
             wrapper.like(DeviceModels::getModelName, keyword.trim());
         }
         wrapper.orderByDesc(DeviceModels::getId);
-        com.baomidou.mybatisplus.extension.plugins.pagination.Page<DeviceModels> page = mapper.selectPage(new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(pageNo, pageSize), wrapper);
+        com.baomidou.mybatisplus.extension.plugins.pagination.Page<DeviceModels> page = mapper.selectPage(
+                new com.baomidou.mybatisplus.extension.plugins.pagination.Page<>(pageNo, pageSize), wrapper);
         return new PageResult<>(page.getTotal(), page.getCurrent(), page.getSize(), page.getRecords());
     }
 
@@ -302,7 +304,8 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             return;
         }
         JsonNode mainNode = templateNode.has("main") ? templateNode.path("main") : templateNode;
-        JsonNode detailsNode = templateNode.has("details") ? templateNode.path("details") : templateNode.path("columns");
+        JsonNode detailsNode = templateNode.has("details") ? templateNode.path("details")
+                : templateNode.path("columns");
         if (detailsNode == null || !detailsNode.isArray() || detailsNode.size() == 0) {
             return;
         }
@@ -356,14 +359,16 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
     }
 
     private Long longValue(JsonNode node, String field) {
-        if (node == null || node.isNull() || !node.has(field) || node.get(field).isNull() || node.get(field).asText().isBlank()) {
+        if (node == null || node.isNull() || !node.has(field) || node.get(field).isNull()
+                || node.get(field).asText().isBlank()) {
             return null;
         }
         return node.get(field).asLong();
     }
 
     private Integer integerValue(JsonNode node, String field) {
-        if (node == null || node.isNull() || !node.has(field) || node.get(field).isNull() || node.get(field).asText().isBlank()) {
+        if (node == null || node.isNull() || !node.has(field) || node.get(field).isNull()
+                || node.get(field).asText().isBlank()) {
             return null;
         }
         return node.get(field).asInt();
@@ -409,6 +414,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         result.set("stateMachineModel", toStateMachineModel(model));
         return result;
     }
+
     private ObjectNode toCapabilityModel(DeviceModels model) {
         ObjectNode capabilityModel = JsonNodeSupport.objectNode();
         ObjectNode metadata = JsonNodeSupport.objectNode();
@@ -446,6 +452,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         stateMachineModel.set("transitions", nullToArray(model.getStateTransitions()));
         return stateMachineModel;
     }
+
     private void enrichStateMachine(DeviceModels model, JsonNode opStateNode, JsonNode transitionNode) {
         model.setStateMachineInterfaces(generateStandardInterfaces(extractAdapterEvents(model.getAdapterContract())));
         model.setCmdState(generateStandardCmdLifecycleSpace());
@@ -455,6 +462,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         mergeCustomTransitions(transitions, transitionNode != null ? transitionNode : model.getStateTransitions());
         model.setStateTransitions(transitions);
     }
+
     private List<String> extractAdapterEvents(JsonNode adapterContract) {
         List<String> eventNames = new ArrayList<>();
         if (adapterContract == null || adapterContract.isNull() || !adapterContract.has("events")) {
@@ -494,16 +502,20 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
 
     private ArrayNode generateStandardInterfaces(List<String> adapterEvents) {
         ArrayNode interfaces = JsonNodeSupport.arrayNode();
-        interfaces.add(createInterface("Interface_workflow_in", "IN", "WORKFLOW", protocolArray("WorkflowControlSignal")));
+        interfaces.add(
+                createInterface("Interface_workflow_in", "IN", "WORKFLOW", protocolArray("WorkflowControlSignal")));
         interfaces.add(createInterface("Interface_control_in", "IN", "CONTROL", protocolArray("ManualControlSignal")));
-        interfaces.add(createInterface("Interface_constraint_in", "IN", "CONSTRAINT", protocolArray("ConstraintControlSignal")));
+        interfaces.add(createInterface("Interface_constraint_in", "IN", "CONSTRAINT",
+                protocolArray("ConstraintControlSignal")));
         ArrayNode adapterInputSignals = JsonNodeSupport.arrayNode();
         adapterEvents.forEach(adapterInputSignals::add);
         interfaces.add(createInterface("Interface_adapter_in", "IN", "ADAPTER", adapterInputSignals));
-        interfaces.add(createInterface("Interface_adapter_out", "OUT", "ADAPTER", protocolArray("AdapterOutboundSignal")));
+        interfaces.add(
+                createInterface("Interface_adapter_out", "OUT", "ADAPTER", protocolArray("AdapterOutboundSignal")));
         interfaces.add(createInterface("Interface_state_out", "OUT", "STATE", protocolArray("StatusSignal")));
         return interfaces;
     }
+
     private ObjectNode createInterface(String name, String direction, String interfaceType, ArrayNode allowedSignals) {
         ObjectNode node = JsonNodeSupport.objectNode();
         node.put("name", name);
@@ -524,6 +536,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         }
         return cmdSpace;
     }
+
     private ArrayNode createStatusOnEntryActions(String signalName) {
         ArrayNode actions = JsonNodeSupport.arrayNode();
         ObjectNode action = actions.addObject();
@@ -533,6 +546,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
                 .put("signalName", protocolSignal(signalName));
         return actions;
     }
+
     private ArrayNode protocolArray(String definitionName) {
         ArrayNode array = JsonNodeSupport.arrayNode();
         for (String value : protocolDictionaryService.enumValues(definitionName)) {
@@ -551,16 +565,12 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         return signalName;
     }
 
-    private Set<String> standardTriggerSignals() {
-        return Set.of(
-                "WF_EXECUTE_START", "WF_EXECUTE_ABORT", "MANUAL_EXECUTE_START", "MANUAL_EXECUTE_ABORT",
-                "CONSTRAINT_EXECUTE", "CONSTRAINT_ABORT");
-    }
     private Set<String> standardSystemSignals() {
         return Set.of(
                 "WF_EXECUTE_START", "WF_EXECUTE_ABORT", "MANUAL_EXECUTE_START", "MANUAL_EXECUTE_ABORT",
                 "CONSTRAINT_EXECUTE", "CONSTRAINT_ABORT", "CMD_START", "CMD_ABORT", "CMD_STATE", "OP_STATE");
     }
+
     private ObjectNode parseOpStateSpace(JsonNode node) {
         ObjectNode opSpace = JsonNodeSupport.objectNode();
         ArrayNode regions = opSpace.putArray("regions");
@@ -579,7 +589,8 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
                                 ObjectNode stateObj = states.addObject();
                                 stateObj.put("stateName", s.get("stateName").asText());
                                 JsonNode onEntry = s.get("onEntry");
-                                stateObj.set("onEntry", onEntry != null && onEntry.isArray() ? onEntry.deepCopy() : JsonNodeSupport.arrayNode());
+                                stateObj.set("onEntry", onEntry != null && onEntry.isArray() ? onEntry.deepCopy()
+                                        : JsonNodeSupport.arrayNode());
                             } else if (s.isTextual()) {
                                 ObjectNode stateObj = states.addObject();
                                 stateObj.put("stateName", s.asText());
@@ -629,9 +640,11 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             transition.put("fromStateName", fromState);
             transition.put("toStateName", toState);
             transition.putObject("trigger").put("interfaceName", interfaceName).put("signalName", signalName);
-            transition.set("actions", source.path("actions").isArray() ? source.path("actions").deepCopy() : JsonNodeSupport.arrayNode());
+            transition.set("actions",
+                    source.path("actions").isArray() ? source.path("actions").deepCopy() : JsonNodeSupport.arrayNode());
         }
     }
+
     public void delete(String id) {
         Long modelId = parseId(id);
         Long count = deviceInstancesMapper.selectCount(
@@ -687,7 +700,8 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             requireText(command, "commandName", "Adapter命令");
             for (JsonNode parameter : iterable(command.path("commandParameters"))) {
                 if (parameter.path("internal").asBoolean(false)) {
-                    throw new IllegalArgumentException("定稿设备能力模型不允许Adapter内部参数: " + command.path("commandName").asText());
+                    throw new IllegalArgumentException(
+                            "定稿设备能力模型不允许Adapter内部参数: " + command.path("commandName").asText());
                 }
                 requireText(parameter, "paramName", "Adapter命令参数");
                 validateDataType(parameter, "dataType", "Adapter命令参数");
@@ -742,8 +756,10 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             JsonNode actualInterface = actual.get(name);
             JsonNode expectedInterface = expected.get(name);
             if (!expectedInterface.path("direction").asText().equals(actualInterface.path("direction").asText())
-                    || !expectedInterface.path("interfaceType").asText().equals(actualInterface.path("interfaceType").asText())
-                    || !textSet(expectedInterface.path("allowedSignals")).equals(textSet(actualInterface.path("allowedSignals")))) {
+                    || !expectedInterface.path("interfaceType").asText()
+                            .equals(actualInterface.path("interfaceType").asText())
+                    || !textSet(expectedInterface.path("allowedSignals"))
+                            .equals(textSet(actualInterface.path("allowedSignals")))) {
                 throw new IllegalArgumentException("状态机接口不符合定稿定义: " + name);
             }
         }
@@ -772,7 +788,8 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             }
             if ("CMD".equals(stateSpace)) {
                 if (!cmdStates.contains(fromState) || !cmdStates.contains(toState) || !cmdEvents.contains(signalName)) {
-                    throw new IllegalArgumentException("CMD状态转移引用了错误状态或事件: " + fromState + "→" + toState + "/" + signalName);
+                    throw new IllegalArgumentException(
+                            "CMD状态转移引用了错误状态或事件: " + fromState + "→" + toState + "/" + signalName);
                 }
             } else {
                 String regionName = transition.path("regionName").asText("");
@@ -852,6 +869,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         }
         return result;
     }
+
     private void validateModelAdapterContract(DeviceModels model) {
         validateCapabilityModelIdentifiers(model);
         JsonNode contract = model.getAdapterContract();
@@ -950,6 +968,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             }
         }
     }
+
     private void validateCapabilityParameterMapping(JsonNode capability, String commandName,
             Map<String, JsonNode> commandParams) {
         Map<String, String> capabilityParamTypes = new HashMap<>();

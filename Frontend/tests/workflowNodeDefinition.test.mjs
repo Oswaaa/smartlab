@@ -169,10 +169,19 @@ test('接口声明后端类型及允许信号，触发器使用action和等号',
 
 test('DEV与SUBFLOW使用后端所需完整生命周期', () => {
   const expectedStates = ['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'TERMINATING', 'TERMINATED']
+  const expectedTransitions = [
+    { fromStateName: 'PENDING', toStateName: 'RUNNING', _system: true, _systemKey: 'lifecycle.pending.running' },
+    { fromStateName: 'PENDING', toStateName: 'TERMINATED', _system: true, _systemKey: 'lifecycle.pending.terminated' },
+    { fromStateName: 'RUNNING', toStateName: 'SUCCEEDED', _system: true, _systemKey: 'lifecycle.running.succeeded' },
+    { fromStateName: 'RUNNING', toStateName: 'FAILED', _system: true, _systemKey: 'lifecycle.running.failed' },
+    { fromStateName: 'RUNNING', toStateName: 'TERMINATING', _system: true, _systemKey: 'lifecycle.running.terminating' },
+    { fromStateName: 'TERMINATING', toStateName: 'TERMINATED', _system: true, _systemKey: 'lifecycle.terminating.terminated' },
+    { fromStateName: 'TERMINATING', toStateName: 'FAILED', _system: true, _systemKey: 'lifecycle.terminating.failed' }
+  ]
   for (const node of [createDeviceNode({ id: 1, capabilities: [] }, 'dev'), createSubflowNode({ id: 2 }, 'sub')]) {
     assert.equal(node.lifecycle.initialStateName, 'PENDING')
     assert.deepEqual(node.lifecycle.states, expectedStates)
-    assert.equal(node.lifecycle.transitions.length, 7)
+    assert.deepEqual(node.lifecycle.transitions, expectedTransitions)
   }
 })
 
@@ -218,6 +227,22 @@ test('UPDATE使用internalVariableName字段定位内部变量', () => {
   node.internalVariables.push({ name: 'payload', dataType: 'JSON' })
   node.actions.push({ actionName: 'setPayload', actionType: 'UPDATE', internalVariableName: 'payload', valueExpression: '{}' })
   assert.deepEqual(validateNodeDefinition(node), [])
+})
+
+test('UPDATE拒绝不存在的internalVariableName', () => {
+  const node = createFunctionNode('AGGREGATE', 'aggregate')
+  node.internalVariables.push({ name: 'payload', dataType: 'JSON' })
+  node.actions.push({ actionName: 'setMissing', actionType: 'UPDATE', internalVariableName: 'missing', valueExpression: '{}' })
+  assert.ok(validateNodeDefinition(node).some(error => error.path === 'actions[1]' && /UPDATE/.test(error.message)))
+})
+
+test('UPDATE拒绝空或缺失的valueExpression', () => {
+  for (const [actionName, valueExpression] of [['setEmpty', '   '], ['setMissing', undefined]]) {
+    const node = createFunctionNode('AGGREGATE', 'aggregate')
+    node.internalVariables.push({ name: 'payload', dataType: 'JSON' })
+    node.actions.push({ actionName, actionType: 'UPDATE', internalVariableName: 'payload', valueExpression })
+    assert.ok(validateNodeDefinition(node).some(error => error.path === 'actions[1]' && /valueExpression/.test(error.message)))
+  }
 })
 
 test('DEV状态接口明确声明STATE类型和各自允许信号', () => {

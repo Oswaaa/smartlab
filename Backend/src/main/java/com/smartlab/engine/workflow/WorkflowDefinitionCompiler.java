@@ -6,6 +6,7 @@ import com.smartlab.global.contract.ConstraintOperator;
 import com.smartlab.global.contract.DataType;
 import com.smartlab.global.contract.WorkflowNodeActionType;
 import com.smartlab.global.contract.WorkflowNodeFunctionType;
+import com.smartlab.global.contract.WorkflowNodeSystemContract;
 import com.smartlab.global.contract.WorkflowNodeType;
 import com.smartlab.management.dto.workflow.WorkflowSaveRequest;
 import org.springframework.stereotype.Component;
@@ -27,11 +28,6 @@ public class WorkflowDefinitionCompiler {
     private static final Set<String> FUNCTION_TYPES = enumNames(WorkflowNodeFunctionType.values());
     private static final Set<String> ACTION_TYPES = enumNames(WorkflowNodeActionType.values());
     private static final Set<String> DATA_TYPES = enumNames(DataType.values());
-    private static final Set<String> LIFECYCLE_STATES = Set.of(
-            "PENDING", "RUNNING", "SUCCEEDED", "FAILED", "TERMINATING", "TERMINATED");
-    private static final Set<String> LIFECYCLE_TRANSITIONS = Set.of(
-            "PENDING→RUNNING", "PENDING→TERMINATED", "RUNNING→SUCCEEDED", "RUNNING→FAILED",
-            "RUNNING→TERMINATING", "TERMINATING→TERMINATED", "TERMINATING→FAILED");
 
     public CompiledWorkflow compile(WorkflowSaveRequest request) {
         if (request == null || request.getName() == null || request.getName().isBlank()) {
@@ -138,66 +134,15 @@ public class WorkflowDefinitionCompiler {
     }
 
     private void validateSystemSkeleton(NodeIndex index, JsonNode node, String path) {
-        String name = index.nodeName();
-        if (WorkflowNodeType.DEV_NODE.name().equals(index.nodeType())) {
-            requirePositiveLong(node, "deviceModelId", name);
-            requiredText(node.path("capability"), "capabilityName", nodePath(name, "capability.capabilityName") + ": 不能为空");
-            validateLifecycle(node.path("lifecycle"), name);
-            requireInterface(index, "Interface_workflow_in", "IN", "WORKFLOW", Set.of("ACTIVE"));
-            requireInterface(index, "Interface_state_out", "OUT", "STATE", Set.of("WF_EXECUTE_START"));
-            requireInterface(index, "Interface_state_in", "IN", "STATE", Set.of("CMD_STATE", "OP_STATE"));
-            requireInterface(index, "Interface_workflow_out", "OUT", "WORKFLOW", Set.of("ACTIVE"));
-            requireEmitAction(index, "startDevice", "Interface_state_out", "WF_EXECUTE_START");
-            requireEmitAction(index, "completeNode", "Interface_workflow_out", "ACTIVE");
-            requireTrigger(index, "Interface_workflow_in", "inputSignalName", "=", "ACTIVE", null, "startDevice");
-            requireTrigger(index, "Interface_state_in", "inputPayload.stateName", "=", "COMPLETED", null, "completeNode");
-            return;
-        }
-        if (WorkflowNodeType.SUBFLOW_NODE.name().equals(index.nodeType())) {
-            requirePositiveLong(node, "subFlowModelId", name);
-            validateLifecycle(node.path("lifecycle"), name);
-            requireInterface(index, "Interface_workflow_in", "IN", "WORKFLOW", Set.of("ACTIVE"));
-            requireInterface(index, "Interface_workflow_out", "OUT", "WORKFLOW", Set.of("ACTIVE"));
-            if (index.actions().values().stream().anyMatch(action -> "EMIT".equals(action.path("actionType").asText()))) {
-                throw nodeError(name, "actions", "SUBFLOW_NODE不能声明EMIT动作");
-            }
-            return;
-        }
-
-        String functionType = requiredText(node, "functionType", nodePath(name, "functionType") + ": 不能为空");
-        if (!FUNCTION_TYPES.contains(functionType)) throw nodeError(name, "functionType", "不支持的功能节点类型: " + functionType);
-        switch (WorkflowNodeFunctionType.valueOf(functionType)) {
-            case START -> {
-                requireInterface(index, "Interface_workflow_out", "OUT", "WORKFLOW", Set.of("ACTIVE"));
-                requireEmitAction(index, "emitActive", "Interface_workflow_out", "ACTIVE");
-                long emitCount = index.actions().values().stream().filter(action -> "EMIT".equals(action.path("actionType").asText())).count();
-                if (emitCount != 1) throw nodeError(name, "actions", "START只能声明系统EMIT动作emitActive");
-            }
-            case END -> {
-                requireInterface(index, "Interface_workflow_in", "IN", "WORKFLOW", Set.of("ACTIVE"));
-                if (index.actions().values().stream().anyMatch(action -> "EMIT".equals(action.path("actionType").asText()))) {
-                    throw nodeError(name, "actions", "END不能声明EMIT动作");
-                }
-            }
-            case BRANCH -> {
-                requiredText(node, "expression", nodePath(name, "expression") + ": 不能为空");
-                requireInterface(index, "Interface_workflow_in", "IN", "WORKFLOW", Set.of("ACTIVE"));
-                requireInterface(index, "Interface_true_out", "OUT", "WORKFLOW", Set.of("ACTIVE"));
-                requireInterface(index, "Interface_false_out", "OUT", "WORKFLOW", Set.of("ACTIVE"));
-                requireEmitAction(index, "emitTrue", "Interface_true_out", "ACTIVE");
-                requireEmitAction(index, "emitFalse", "Interface_false_out", "ACTIVE");
-                requireTrigger(index, "Interface_workflow_in", "expression", "=", null, true, "emitTrue");
-                requireTrigger(index, "Interface_workflow_in", "expression", "=", null, false, "emitFalse");
-            }
-            case AGGREGATE -> {
-                requireInterface(index, "Interface_workflow_in", "IN", "WORKFLOW", Set.of("ACTIVE"));
-                requireInterface(index, "Interface_workflow_out", "OUT", "WORKFLOW", Set.of("ACTIVE"));
-                requireEmitAction(index, "emitActive", "Interface_workflow_out", "ACTIVE");
-                requireTrigger(index, "Interface_workflow_in", "inputSignalName", "=", "ACTIVE", null, "emitActive");
-            }
-        }
+        String name = index.nodeName(); String functionType = null;
+        if (WorkflowNodeType.DEV_NODE.name().equals(index.nodeType())) { requirePositiveLong(node, "deviceModelId", name); requiredText(node.path("capability"), "capabilityName", nodePath(name, "capability.capabilityName") + ": 不能为空");
+        } else if (WorkflowNodeType.SUBFLOW_NODE.name().equals(index.nodeType())) { requirePositiveLong(node, "subFlowModelId", name);
+        } else { functionType = requiredText(node, "functionType", nodePath(name, "functionType") + ": 不能为空"); if (!FUNCTION_TYPES.contains(functionType)) throw nodeError(name, "functionType", "不支持的功能节点类型: " + functionType); if (WorkflowNodeFunctionType.BRANCH.name().equals(functionType)) requiredText(node, "expression", nodePath(name, "expression") + ": 不能为空"); }
+        ObjectNode expected = WorkflowNodeSystemContract.template(index.nodeType(), functionType);
+        validateTemplateLifecycle(node.path("lifecycle"), expected.path("lifecycle"), name);
+        validateSystemInterfaces(index, node.path("interfaces"), expected.path("interfaces"));
+        validateSystemActions(index, node.path("actions"), expected.path("actions"));
     }
-
     private void validateActions(NodeIndex index, JsonNode node, String path) {
         int position = 0;
         for (JsonNode action : node.path("actions")) {
@@ -360,60 +305,30 @@ public class WorkflowDefinitionCompiler {
         if (visited != nodes.size()) throw new IllegalArgumentException("工作流不支持环形NODE_TO_NODE连接");
     }
 
-    private void validateLifecycle(JsonNode lifecycle, String nodeName) {
-        if (!lifecycle.isObject()) throw nodeError(nodeName, "lifecycle", "必须是对象");
-        String initial = requiredText(lifecycle, "initialStateName", nodePath(nodeName, "lifecycle.initialStateName") + ": 不能为空");
-        if (!"PENDING".equals(initial)) throw nodeError(nodeName, "lifecycle.initialStateName", "必须为PENDING");
-        JsonNode states = lifecycle.path("states");
-        if (!states.isArray() || !textSet(states).equals(LIFECYCLE_STATES)) throw nodeError(nodeName, "lifecycle.states", "必须完整声明引擎生命周期状态");
-        JsonNode transitionNodes = lifecycle.path("transitions");
-        if (!transitionNodes.isArray()) throw nodeError(nodeName, "lifecycle.transitions", "必须是数组");
-        Set<String> transitions = new HashSet<>();
-        int position = 0;
-        for (JsonNode transition : transitionNodes) {
-            String from = requiredText(transition, "fromStateName", nodePath(nodeName, "lifecycle.transitions[" + position + "].fromStateName") + ": 不能为空");
-            String to = requiredText(transition, "toStateName", nodePath(nodeName, "lifecycle.transitions[" + position + "].toStateName") + ": 不能为空");
-            transitions.add(from + "→" + to);
-            position++;
-        }
-        if (!transitions.equals(LIFECYCLE_TRANSITIONS)) throw nodeError(nodeName, "lifecycle.transitions", "必须完整声明引擎生命周期转移");
+    private void validateTemplateLifecycle(JsonNode lifecycle, JsonNode expected, String nodeName) {
+        if (!expected.equals(lifecycle)) throw nodeError(nodeName, "lifecycle", "系统生命周期定义被修改");
     }
-
-    private void requireInterface(NodeIndex index, String name, String direction, String type, Set<String> signals) {
-        JsonNode item = index.interfaces().get(name);
-        if (item == null) throw nodeError(index.nodeName(), "interfaces", "缺少系统接口" + name);
-        if (!direction.equals(item.path("direction").asText()) || !type.equals(item.path("interfaceType").asText())
-                || !textSet(item.path("allowedSignals")).equals(signals)) {
-            throw nodeError(index.nodeName(), "interfaces." + name, "系统接口定义被修改");
-        }
+    private void validateSystemInterfaces(NodeIndex index, JsonNode actualInterfaces, JsonNode expectedInterfaces) {
+        Map<String, JsonNode> expectedByName = namedItems(expectedInterfaces, "name");
+        for (JsonNode expected : iterable(expectedInterfaces)) { String interfaceName = expected.path("name").asText(); JsonNode actual = index.interfaces().get(interfaceName); if (actual == null || !matchesSystemInterface(actual, expected)) throw nodeError(index.nodeName(), "interfaces." + interfaceName, "系统接口定义被修改"); validateSystemTriggers(index.nodeName(), interfaceName, actual.path("bindingTriggers"), expected.path("bindingTriggers")); }
+        for (JsonNode actual : iterable(actualInterfaces)) if (!expectedByName.containsKey(actual.path("name").asText())) throw nodeError(index.nodeName(), "interfaces", "不允许新增接口");
     }
-
-    private void requireEmitAction(NodeIndex index, String name, String target, String signal) {
-        JsonNode action = index.actions().get(name);
-        if (action == null) throw nodeError(index.nodeName(), "actions", "缺少系统动作" + name);
-        if (!"EMIT".equals(action.path("actionType").asText())
-                || !target.equals(action.path("targetInterfaceName").asText())
-                || !signal.equals(action.path("signalName").asText())) {
-            throw nodeError(index.nodeName(), "actions." + name, "系统动作定义被修改");
-        }
+    private boolean matchesSystemInterface(JsonNode actual, JsonNode expected) {
+        if (!actual.isObject() || !expected.isObject()) return false; ObjectNode actualDefinition = ((ObjectNode) actual).deepCopy(); ObjectNode expectedDefinition = ((ObjectNode) expected).deepCopy(); actualDefinition.remove("bindingTriggers"); expectedDefinition.remove("bindingTriggers"); return expectedDefinition.equals(actualDefinition);
     }
-
-    private void requireTrigger(NodeIndex index, String interfaceName, String object, String operator,
-                                String textThreshold, Boolean booleanThreshold, String actionName) {
-        JsonNode item = index.interfaces().get(interfaceName);
-        for (JsonNode trigger : iterable(item == null ? null : item.path("bindingTriggers"))) {
-            JsonNode condition = trigger.path("condition");
-            JsonNode threshold = condition.path("threshold");
-            boolean thresholdMatches = textThreshold != null
-                    ? threshold.isTextual() && textThreshold.equals(threshold.asText())
-                    : threshold.isBoolean() && booleanThreshold != null && booleanThreshold == threshold.asBoolean();
-            if (actionName.equals(trigger.path("action").asText())
-                    && object.equals(condition.path("object").asText())
-                    && operator.equals(condition.path("operator").asText()) && thresholdMatches) return;
-        }
-        throw nodeError(index.nodeName(), "interfaces." + interfaceName + ".bindingTriggers", "缺少系统触发器" + actionName);
+    private void validateSystemTriggers(String nodeName, String interfaceName, JsonNode actualTriggers, JsonNode expectedTriggers) {
+        Map<String, JsonNode> expectedByKey = systemItemsByKey(expectedTriggers); Set<String> actualKeys = new HashSet<>();
+        for (JsonNode actual : iterable(actualTriggers)) { if (!isSystemItem(actual)) continue; String key = actual.path("_systemKey").asText(); JsonNode expected = expectedByKey.get(key); if (key.isBlank() || !actualKeys.add(key) || expected == null || !expected.equals(actual)) throw nodeError(nodeName, "interfaces." + interfaceName + ".bindingTriggers", "系统触发器缺失或已篡改"); }
+        if (!actualKeys.equals(expectedByKey.keySet())) throw nodeError(nodeName, "interfaces." + interfaceName + ".bindingTriggers", "系统触发器缺失或已篡改");
     }
-
+    private void validateSystemActions(NodeIndex index, JsonNode actualActions, JsonNode expectedActions) {
+        Map<String, JsonNode> expectedByName = namedItems(expectedActions, "actionName");
+        for (JsonNode expected : iterable(expectedActions)) { String actionName = expected.path("actionName").asText(); JsonNode actual = index.actions().get(actionName); if (actual == null || !expected.equals(actual)) throw nodeError(index.nodeName(), "actions." + actionName, "系统动作定义被修改"); }
+        for (JsonNode actual : iterable(actualActions)) { String actionName = actual.path("actionName").asText(); if (expectedByName.containsKey(actionName)) continue; if (isSystemItem(actual) || !WorkflowNodeActionType.UPDATE.name().equals(actual.path("actionType").asText())) throw nodeError(index.nodeName(), "actions." + actionName, "只允许新增非系统UPDATE动作"); }
+    }
+    private Map<String, JsonNode> namedItems(JsonNode items, String nameField) { Map<String, JsonNode> result = new LinkedHashMap<>(); for (JsonNode item : iterable(items)) result.put(item.path(nameField).asText(), item); return result; }
+    private Map<String, JsonNode> systemItemsByKey(JsonNode items) { Map<String, JsonNode> result = new LinkedHashMap<>(); for (JsonNode item : iterable(items)) if (isSystemItem(item)) result.put(item.path("_systemKey").asText(), item); return result; }
+    private boolean isSystemItem(JsonNode item) { return item.path("_system").asBoolean(false); }
     private NodeIndex referencedNode(JsonNode endpoint, Map<String, NodeIndex> nodes, String path) {
         String name = requiredText(endpoint, "nodeName", path + ".nodeName: 不能为空");
         NodeIndex node = nodes.get(name);

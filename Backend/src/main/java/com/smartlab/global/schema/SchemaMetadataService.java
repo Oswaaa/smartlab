@@ -11,6 +11,7 @@ import com.smartlab.global.contract.SystemViolationAction;
 import com.smartlab.global.contract.TaskLifecycleState;
 import com.smartlab.global.contract.WorkflowNodeActionType;
 import com.smartlab.global.contract.WorkflowNodeFunctionType;
+import com.smartlab.global.contract.WorkflowNodeSystemContract;
 import com.smartlab.global.contract.WorkflowNodeType;
 import com.smartlab.global.protocol.ProtocolDictionaryService;
 import com.smartlab.global.util.JsonNodeSupport;
@@ -92,6 +93,7 @@ public class SchemaMetadataService {
         metadata.set("actionTypes", textArray(workflowActionNames()));
         metadata.set("standardNodeInterfaces", nodeInterfaces(SystemExecutionContract.workflowNodeInterfaces()));
         metadata.set("nodeLifecycleStates", textArray(names(NodeLifecycleState.values())));
+        metadata.set("nodeTemplates", WorkflowNodeSystemContract.templates());
         return metadata;
     }
 

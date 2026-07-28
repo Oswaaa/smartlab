@@ -9,7 +9,6 @@ import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.common.PageResult;
 import com.smartlab.management.dto.resource.data.DataTemplateSaveDTO;
 import com.smartlab.management.dto.resource.device.DeviceModelSaveDTO;
-import com.smartlab.management.dto.resource.device.DeviceStateMachineSaveDTO;
 import com.smartlab.management.entity.resource.data.DataTemplateDetail;
 import com.smartlab.management.entity.resource.data.DataTemplateMain;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
@@ -97,18 +96,15 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         return mapper.selectById(parseId(id));
     }
 
-    /**
-     * 更新设备模型的 Adapter 北向契约字段。
-     */
-    public DeviceModels updateAdapterContract(Long modelId, JsonNode adapterContract) {
+    public DeviceModels requireRuntimeReady(Long modelId) {
+        if (modelId == null) {
+            throw new IllegalArgumentException("deviceModelId不能为空");
+        }
         DeviceModels model = mapper.selectById(modelId);
         if (model == null) {
-            throw new IllegalArgumentException("设备模型不存在");
+            throw new IllegalArgumentException("设备模型不存在: " + modelId);
         }
-        model.setAdapterContract(canonicalAdapterContract(adapterContract));
-        validateModelAdapterContract(model);
-        model.setUpdateTime(OffsetDateTime.now());
-        mapper.updateById(model);
+        validateForPersistence(model);
         return model;
     }
 
@@ -119,52 +115,6 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         return list().stream().map(this::toStateMachineView).toList();
     }
 
-    /**
-     * 保存设备模型中的状态机相关 JSON 字段。
-     */
-    public String saveStateMachine(DeviceStateMachineSaveDTO payload) {
-        if (payload == null || payload.getModelId() == null) {
-            throw new IllegalArgumentException("modelId 不能为空");
-        }
-        DeviceModels model = getById(String.valueOf(payload.getModelId()));
-        if (model == null) {
-            throw new IllegalArgumentException("设备模型不存在，无法保存状态机");
-        }
-        if (payload.getInterfacesDef() != null) {
-            model.setStateMachineInterfaces(payload.getInterfacesDef());
-        }
-        if (payload.getCommandLifecycleDef() != null) {
-            model.setCmdState(payload.getCommandLifecycleDef());
-        }
-        if (payload.getOperationStateDef() != null) {
-            model.setOpState(payload.getOperationStateDef());
-        }
-        if (payload.getTransitions() != null) {
-            model.setStateTransitions(payload.getTransitions());
-        }
-
-        enrichStateMachine(model, payload.getOperationStateDef(), payload.getTransitions());
-
-        model.setUpdateTime(OffsetDateTime.now());
-        mapper.updateById(model);
-        return String.valueOf(model.getId());
-    }
-
-    /**
-     * 清空设备模型中的状态机相关 JSON 字段。
-     */
-    public void deleteStateMachine(String modelId) {
-        DeviceModels model = getById(modelId);
-        if (model == null) {
-            throw new IllegalArgumentException("设备模型不存在");
-        }
-        model.setStateMachineInterfaces(null);
-        model.setCmdState(null);
-        model.setOpState(null);
-        model.setStateTransitions(null);
-        model.setUpdateTime(OffsetDateTime.now());
-        mapper.updateById(model);
-    }
 
     /**
      * 查询设备模型内置约束规则。
@@ -285,7 +235,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         model.setUpdateTime(now);
 
         enrichStateMachine(model, payload.getOpState(), payload.getStateTransitions());
-        validateModelAdapterContract(model);
+        validateForPersistence(model);
 
         if (model.getId() == null) {
             mapper.insert(model);
@@ -394,21 +344,16 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         model.setComponentsBom(payload.getComponentsBom());
 
         enrichStateMachine(model, payload.getOpState(), payload.getStateTransitions());
-        validateModelAdapterContract(model);
+        validateForPersistence(model);
 
         return toModelBundle(model);
     }
 
     public ObjectNode modelBundle(String id) {
-        DeviceModels model = getById(id);
-        if (model == null) {
-            throw new IllegalArgumentException("设备模型不存在");
-        }
-        return toModelBundle(model);
+        return toModelBundle(requireRuntimeReady(parseId(id)));
     }
 
     private ObjectNode toModelBundle(DeviceModels model) {
-        validateFinalDeviceModel(model);
         ObjectNode result = JsonNodeSupport.objectNode();
         result.set("capabilityModel", toCapabilityModel(model));
         result.set("stateMachineModel", toStateMachineModel(model));
@@ -663,7 +608,13 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             throw new IllegalArgumentException("deviceCategoryId不能为空");
         }
         validateCapabilityModelShape(model);
+        validateCapabilityModelIdentifiers(model);
         validateModelAdapterContract(model);
+    }
+
+    void validateForPersistence(DeviceModels model) {
+        validateFinalDeviceModel(model);
+        validateDeviceStateMachine(model);
     }
 
     private void validateCapabilityModelShape(DeviceModels model) {
@@ -871,7 +822,6 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
     }
 
     private void validateModelAdapterContract(DeviceModels model) {
-        validateCapabilityModelIdentifiers(model);
         JsonNode contract = model.getAdapterContract();
         if (contract == null || contract.isNull() || contract.isMissingNode()) {
             return;
@@ -944,7 +894,6 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             validateCapabilityParameterMapping(capability, commandName, commandParams);
         }
 
-        validateDeviceStateMachine(model);
     }
 
     private void validateCapabilityModelIdentifiers(DeviceModels model) {

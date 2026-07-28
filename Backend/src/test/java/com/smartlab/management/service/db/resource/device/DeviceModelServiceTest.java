@@ -21,14 +21,18 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class DeviceModelServiceTest {
 
+    private AdapterManifestService adapterManifestService;
     private DeviceModelsMapper modelMapper;
     private DeviceModelService service;
     private AdapterIndexService adapterIndexService;
@@ -38,14 +42,16 @@ class DeviceModelServiceTest {
         modelMapper = mock(DeviceModelsMapper.class);
         adapterIndexService = mock(AdapterIndexService.class);
         ProtocolDictionaryService protocol = new ProtocolDictionaryService();
+        adapterManifestService = mock(AdapterManifestService.class);
         service = new DeviceModelService(
                 modelMapper,
                 mock(DeviceInstancesMapper.class),
                 mock(DeviceCategoryService.class),
-                mock(AdapterManifestService.class),
+                adapterManifestService,
                 protocol,
                 mock(DataTemplateService.class),
                 adapterIndexService);
+        when(adapterManifestService.normalizeDataType(any())).thenAnswer(invocation -> invocation.getArgument(0));
     }
 
     @Test
@@ -83,6 +89,34 @@ class DeviceModelServiceTest {
         JsonNode savedConfig = captor.getValue().getAdapterContract().path("config");
         assertEquals("Reactor", savedConfig.path("categoryName").asText());
         assertFalse(savedConfig.has("templateName"));
+    }
+
+    @Test
+    void saveRejectsCapabilityWithoutRequiredShapeBeforeInsert() {
+        DeviceModelSaveDTO payload = completePayload();
+        ((ArrayNode) payload.getCapabilities()).addObject()
+                .put("capabilityName", "broken");
+
+        assertThrows(IllegalArgumentException.class, () -> service.savePayload(payload));
+        verify(modelMapper, never()).insert(any(DeviceModels.class));
+    }
+
+    @Test
+    void saveRejectsStateTransitionReferencingUnknownAdapterEvent() {
+        DeviceModelSaveDTO payload = completePayload();
+        payload.setStateTransitions(arrayWithTransition(
+                "CMD", "SENT", "RUNNING", "UNKNOWN_EVENT"));
+
+        assertThrows(IllegalArgumentException.class, () -> service.savePayload(payload));
+        verify(modelMapper, never()).insert(any(DeviceModels.class));
+    }
+
+    @Test
+    void runtimeReadyReturnsOnlyFullyValidatedModel() {
+        DeviceModels model = completeModel();
+        when(modelMapper.selectById(7L)).thenReturn(model);
+
+        assertSame(model, service.requireRuntimeReady(7L));
     }
 
     @Test
@@ -257,6 +291,138 @@ class DeviceModelServiceTest {
         events.putArray("cmdEvents");
         events.putArray("opEvents");
         return contract;
+    }
+
+    private DeviceModelSaveDTO completePayload() {
+        DeviceModelSaveDTO payload = minimalPayload();
+        ((ArrayNode) payload.getAttributes()).addObject()
+                .put("attributeName", "temperature")
+                .put("valueKind", "CONTINUOUS")
+                .put("dataType", "DOUBLE");
+        ObjectNode capability = ((ArrayNode) payload.getCapabilities()).addObject();
+        capability.put("capabilityName", "start")
+                .put("adapterCommandName", "start")
+                .put("displayName", "启动");
+        capability.putArray("parameters").addObject()
+                .put("name", "duration")
+                .put("displayName", "时长")
+                .put("dataType", "INTEGER");
+        capability.putArray("parameterMapping").addObject()
+                .put("commandParamName", "duration")
+                .put("capabilityParamName", "duration");
+
+        ObjectNode contract = (ObjectNode) payload.getAdapterContract();
+        ObjectNode config = (ObjectNode) contract.path("config");
+        config.put("adapterName", "adapter-1");
+        config.put("categoryName", "Reactor");
+        contract.putArray("commands").addObject()
+                .put("commandName", "start")
+                .putArray("commandParameters").addObject()
+                .put("paramName", "duration")
+                .put("dataType", "INTEGER");
+        ObjectNode telemetry = (ObjectNode) contract.path("telemetry");
+        telemetry.putArray("adapterAttributes").addObject()
+                .put("telemetryName", "temperature")
+                .put("dataType", "DOUBLE");
+        telemetry.putArray("attributesMapping").addObject()
+                .put("adapterAttrName", "temperature")
+                .put("modelAttributeName", "temperature");
+        ObjectNode events = (ObjectNode) contract.path("events");
+        addEvent(events.withArray("cmdEvents"), "SENT_EVENT");
+        addEvent(events.withArray("cmdEvents"), "RUNNING_EVENT");
+        addEvent(events.withArray("cmdEvents"), "COMPLETED_EVENT");
+        addEvent(events.withArray("cmdEvents"), "FAILED_EVENT");
+        payload.setStateMachineInterfaces(standardInterfaces());
+        payload.setCmdState(completeCmdState());
+        payload.setStateTransitions(completeCmdTransitions());
+        when(adapterIndexService.buildAdapterContract("adapter-1", "Reactor")).thenReturn(contract);
+        return payload;
+    }
+
+    private DeviceModels completeModel() {
+        DeviceModelSaveDTO payload = completePayload();
+        DeviceModels model = new DeviceModels();
+        model.setModelName(payload.getModelName());
+        model.setCategoryId(payload.getCategoryId());
+        model.setAttributes(payload.getAttributes());
+        model.setCapabilities(payload.getCapabilities());
+        model.setAdapterContract(payload.getAdapterContract());
+        model.setPorts(payload.getPorts());
+        model.setIntrinsicConstraints(payload.getIntrinsicConstraints());
+        model.setStateMachineInterfaces(payload.getStateMachineInterfaces());
+        model.setCmdState(payload.getCmdState());
+        model.setOpState(payload.getOpState());
+        model.setStateTransitions(payload.getStateTransitions());
+        return model;
+    }
+
+    private ArrayNode completeCmdTransitions() {
+        ArrayNode transitions = JsonNodeSupport.arrayNode();
+        addTransition(transitions, "CMD", "SENT", "RUNNING", "SENT_EVENT");
+        addTransition(transitions, "CMD", "RUNNING", "RUNNING", "RUNNING_EVENT");
+        addTransition(transitions, "CMD", "RUNNING", "COMPLETED", "COMPLETED_EVENT");
+        addTransition(transitions, "CMD", "RUNNING", "FAILED", "FAILED_EVENT");
+        return transitions;
+    }
+
+    private ArrayNode arrayWithTransition(String stateSpace, String from, String to, String signal) {
+        ArrayNode transitions = JsonNodeSupport.arrayNode();
+        addTransition(transitions, stateSpace, from, to, signal);
+        return transitions;
+    }
+
+    private void addTransition(ArrayNode transitions, String stateSpace, String from, String to, String signal) {
+        ObjectNode transition = transitions.addObject();
+        transition.put("stateSpace", stateSpace);
+        transition.put("fromStateName", from);
+        transition.put("toStateName", to);
+        transition.putObject("trigger")
+                .put("interfaceName", "Interface_adapter_in")
+                .put("signalName", signal);
+        transition.putArray("actions");
+    }
+
+    private ObjectNode completeCmdState() {
+        ObjectNode cmdState = JsonNodeSupport.objectNode();
+        cmdState.put("initialStateName", "IDLE");
+        for (String stateName : Set.of("IDLE", "SENT", "RUNNING", "COMPLETED", "FAILED", "ABORTING", "ABORTED")) {
+            ObjectNode state = cmdState.withArray("states").addObject();
+            state.put("stateName", stateName);
+            state.putArray("onEntry").addObject()
+                    .put("actionName", "SEND")
+                    .putObject("payload")
+                    .put("interfaceName", "Interface_state_out")
+                    .put("signalName", "CMD_STATE");
+        }
+        return cmdState;
+    }
+
+    private ArrayNode standardInterfaces() {
+        ArrayNode interfaces = JsonNodeSupport.arrayNode();
+        addInterface(interfaces, "Interface_workflow_in", "IN", "WORKFLOW", "WF_EXECUTE_START", "WF_EXECUTE_ABORT");
+        addInterface(interfaces, "Interface_control_in", "IN", "CONTROL", "MANUAL_EXECUTE_START", "MANUAL_EXECUTE_ABORT");
+        addInterface(interfaces, "Interface_constraint_in", "IN", "CONSTRAINT", "CONSTRAINT_EXECUTE", "CONSTRAINT_ABORT");
+        addInterface(interfaces, "Interface_adapter_in", "IN", "ADAPTER", "SENT_EVENT", "RUNNING_EVENT", "COMPLETED_EVENT", "FAILED_EVENT");
+        addInterface(interfaces, "Interface_adapter_out", "OUT", "ADAPTER", "CMD_START", "CMD_ABORT");
+        addInterface(interfaces, "Interface_state_out", "OUT", "STATE", "CMD_STATE", "OP_STATE");
+        return interfaces;
+    }
+
+    private void addInterface(ArrayNode interfaces, String name, String direction, String type, String... signals) {
+        ObjectNode item = interfaces.addObject();
+        item.put("name", name);
+        item.put("direction", direction);
+        item.put("interfaceType", type);
+        ArrayNode allowedSignals = item.putArray("allowedSignals");
+        for (String signal : signals) {
+            allowedSignals.add(signal);
+        }
+    }
+
+    private void addEvent(ArrayNode events, String eventName) {
+        events.addObject()
+                .put("eventName", eventName)
+                .put("description", eventName);
     }
     private DeviceModelSaveDTO minimalPayload() {
         DeviceModelSaveDTO payload = new DeviceModelSaveDTO();

@@ -1,11 +1,9 @@
 package com.smartlab.management.controller.resource.device;
 
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.management.dto.common.ApiResponse;
 import com.smartlab.management.dto.common.PageResult;
 import com.smartlab.management.dto.resource.device.DeviceModelSaveDTO;
-import com.smartlab.management.dto.resource.device.DeviceStateMachineSaveDTO;
 import com.smartlab.management.entity.resource.device.DeviceModels;
 import com.smartlab.management.service.db.resource.device.DeviceModelService;
 import org.springframework.web.bind.annotation.*;
@@ -74,30 +72,12 @@ public class DeviceModelController {
         }
     }
 
-    @PutMapping("/model/{modelId}/adapter-contract")
-    public ApiResponse<DeviceModels> updateAdapterContract(@PathVariable Long modelId,
-                                                           @RequestBody JsonNode adapterContract) {
-        try {
-            return ApiResponse.ok(deviceModelService.updateAdapterContract(modelId, adapterContract));
-        } catch (Exception e) {
-            return ApiResponse.fail(e.getMessage());
-        }
-    }
 
     @GetMapping("/model/state-machine/list")
     public ApiResponse<List<ObjectNode>> listStateMachines() {
         return ApiResponse.ok(deviceModelService.listStateMachines());
     }
 
-    @PostMapping("/model/state-machine/save")
-    public ApiResponse<Map<String, String>> saveStateMachine(@RequestBody DeviceStateMachineSaveDTO payload) {
-        try {
-            String stateMachineId = deviceModelService.saveStateMachine(payload);
-            return ApiResponse.ok(Map.of("stateMachineId", stateMachineId));
-        } catch (Exception e) {
-            return ApiResponse.fail(e.getMessage());
-        }
-    }
 
     @DeleteMapping("/model/delete/{id}")
     public ApiResponse<String> delete(@PathVariable String id) {

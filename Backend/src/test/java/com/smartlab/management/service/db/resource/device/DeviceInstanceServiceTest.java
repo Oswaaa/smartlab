@@ -88,6 +88,8 @@ class DeviceInstanceServiceTest {
         final AdapterPayloadMapperService routes = mock(AdapterPayloadMapperService.class);
         final DeviceModelsMapper models = mock(DeviceModelsMapper.class);
         final DeviceComponentService components = mock(DeviceComponentService.class);
-        final DeviceInstanceService service = new DeviceInstanceService(instances, twins, data, routes, models, components);
+        final DeviceModelService modelService = mock(DeviceModelService.class);
+        final DeviceInstanceService service = new DeviceInstanceService(
+                instances, twins, data, routes, models, components, modelService);
     }
 }

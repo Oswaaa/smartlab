@@ -26,6 +26,7 @@ import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 /**
@@ -43,13 +44,15 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
     private final AdapterPayloadMapperService protocolMapperService;
     private final DeviceModelsMapper deviceModelsMapper;
     private final DeviceComponentService deviceComponentService;
+    private final DeviceModelService deviceModelService;
 
     public DeviceInstanceService(DeviceInstancesMapper mapper,
                                  DeviceTwinStatesMapper twinStatesMapper,
                                  DataIndexService dataIndexService,
                                  AdapterPayloadMapperService protocolMapperService,
                                  DeviceModelsMapper deviceModelsMapper,
-                                 DeviceComponentService deviceComponentService) {
+                                 DeviceComponentService deviceComponentService,
+                                 DeviceModelService deviceModelService) {
         super(mapper);
         this.mapper = mapper;
         this.twinStatesMapper = twinStatesMapper;
@@ -57,6 +60,7 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
         this.protocolMapperService = protocolMapperService;
         this.deviceModelsMapper = deviceModelsMapper;
         this.deviceComponentService = deviceComponentService;
+        this.deviceModelService = deviceModelService;
     }
 
     @Override
@@ -131,6 +135,7 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
         if (id != null && !String.valueOf(id).isBlank()) {
             instance.setId(Long.valueOf(String.valueOf(id)));
         }
+        boolean deviceModelIdSpecified = payload.containsKey("deviceModelId") || payload.containsKey("modelId");
         Object modelId = first(payload, "deviceModelId", "modelId");
         if (modelId != null && !String.valueOf(modelId).isBlank()) {
             instance.setDeviceModelId(Long.valueOf(String.valueOf(modelId)));
@@ -142,12 +147,19 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
 
         if (instance.getId() == null) {
             instance.setLifecycleStatus(DeviceInstanceLifecycle.IN_USE);
+            deviceModelService.requireRuntimeReady(instance.getDeviceModelId());
         } else {
             DeviceInstances existing = mapper.selectById(instance.getId());
             if (existing == null) {
                 throw new IllegalArgumentException("设备实例不存在: " + instance.getId());
             }
             requireUsable(existing, "设备实例已注销，不能继续修改");
+            if (!deviceModelIdSpecified) {
+                instance.setDeviceModelId(existing.getDeviceModelId());
+            }
+            if (!Objects.equals(existing.getDeviceModelId(), instance.getDeviceModelId())) {
+                throw new IllegalStateException("设备实例创建后不能更换设备模型");
+            }
             instance.setLifecycleStatus(existing.getLifecycleStatus());
         }
 

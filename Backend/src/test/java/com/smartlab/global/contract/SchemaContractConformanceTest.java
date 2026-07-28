@@ -58,7 +58,7 @@ class SchemaContractConformanceTest {
         List<String> schemaTransitions = StreamSupport.stream(transitions.spliterator(), false)
                 .filter(item -> "CMD".equals(item.path("stateSpace").asText()))
                 .filter(item -> !item.path("trigger").path("signalName").asText().startsWith("<"))
-                .filter(item -> item.path("actions").isArray() && item.path("actions").size() == 1)
+                .filter(item -> item.path("actions").isArray() && !item.path("actions").isEmpty())
                 .map(this::normalizeTransition)
                 .toList();
         List<String> contractTransitions = SystemExecutionContract.stateMachineSystemTransitions().stream()

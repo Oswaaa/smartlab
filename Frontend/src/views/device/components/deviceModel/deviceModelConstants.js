@@ -1,5 +1,5 @@
-import axios from 'axios'
 import { reactive } from 'vue'
+import { loadFrontendContractMetadata } from '../../../../services/frontendContractMetadata.js'
 
 // ==========================================
 // 1. UI 静态常量与下拉菜单项
@@ -66,8 +66,7 @@ export function applyProtocolMetadata(metadata = {}) {
   }
 }
 export async function loadProtocolMetadata() {
-  const res = await axios.get('/api/schema-metadata/frontend')
-  const metadata = res.data?.data || res.data || {}
+  const metadata = await loadFrontendContractMetadata()
   applyProtocolMetadata(metadata)
   return metadata
 }

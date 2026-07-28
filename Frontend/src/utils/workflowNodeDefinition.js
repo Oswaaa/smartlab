@@ -1,31 +1,22 @@
-const system = (systemKey, value) => ({ ...value, _system: true, _systemKey: systemKey })
+let configuredTemplates
 
-const workflowInterface = (name, direction, bindingTriggers = [], interfaceType = 'WORKFLOW', allowedSignals = ['ACTIVE']) => ({ name, direction, interfaceType, allowedSignals, bindingTriggers })
+export function configureWorkflowNodeTemplates(templates) {
+  configuredTemplates = templates && typeof templates === 'object' ? templates : undefined
+}
 
-const trigger = (systemKey, object, operator, threshold, action) => system(systemKey, {
-  action,
-  condition: { object, operator, threshold }
-})
+export function workflowNodeTemplates() {
+  return configuredTemplates ?? {}
+}
 
-const lockedLifecycle = () => system('lifecycle', {
-  initialStateName: 'PENDING',
-  states: ['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'TERMINATING', 'TERMINATED'],
-  transitions: [
-    ['PENDING', 'RUNNING'], ['PENDING', 'TERMINATED'], ['RUNNING', 'SUCCEEDED'], ['RUNNING', 'FAILED'],
-    ['RUNNING', 'TERMINATING'], ['TERMINATING', 'TERMINATED'], ['TERMINATING', 'FAILED']
-  ].map(([fromStateName, toStateName]) => system(`lifecycle.${fromStateName.toLowerCase()}.${toStateName.toLowerCase()}`, { fromStateName, toStateName }))
-})
+export function resetWorkflowNodeTemplatesForTest() {
+  configuredTemplates = undefined
+}
 
-const systemWorkflowInterface = (systemKey, name, direction, bindingTriggers = [], interfaceType = 'WORKFLOW', allowedSignals = ['ACTIVE']) =>
-  system(systemKey, workflowInterface(name, direction, bindingTriggers, interfaceType, allowedSignals))
-
-const emitAction = (systemKey, actionName, targetInterfaceName, signalName) => system(systemKey, {
-  actionName,
-  actionType: 'EMIT',
-  targetInterfaceName,
-  signalName
-})
-
+function templateCopy(key) {
+  const template = configuredTemplates?.[key]
+  if (!template) throw new Error(`工作流系统模板尚未加载:${key}`)
+  return structuredClone(template)
+}
 export function isSystemItem(item) {
   return item?._system === true
 }
@@ -49,65 +40,20 @@ export function normalizeTypedValue(dataType, value) {
 }
 
 export function createFunctionNode(functionType, name) {
-  if (functionType === 'BRANCH') return createBranchNode(name)
-  if (functionType === 'START') return createStartNode(name)
-  if (functionType === 'END') return createEndNode(name)
-  if (functionType === 'AGGREGATE') return createAggregateNode(name)
-  return createGenericFunctionNode(functionType, name)
-}
-
-function functionNode(name, functionType, interfaces, actions = []) {
-  return { name, nodeType: 'FUNC_NODE', functionType, internalVariables: [], lifecycle: lockedLifecycle(), interfaces, ports: [], actions }
-}
-
-function createBranchNode(name) {
-  const emitTrue = emitAction('branch.emitTrue', 'emitTrue', 'Interface_true_out', 'ACTIVE')
-  const emitFalse = emitAction('branch.emitFalse', 'emitFalse', 'Interface_false_out', 'ACTIVE')
+  const templateKey = { START: 'START', END: 'END', BRANCH: 'BRANCH', AGGREGATE: 'AGGREGATE' }[functionType]
+  if (!templateKey) throw new Error(`工作流系统模板尚未加载:FUNC_NODE+${functionType}`)
   return {
-    ...functionNode(name, 'BRANCH', [
-      systemWorkflowInterface('branch.workflowIn', 'Interface_workflow_in', 'IN', [
-        trigger('branch.true', 'expression', '=', true, 'emitTrue'),
-        trigger('branch.false', 'expression', '=', false, 'emitFalse')
-      ]),
-      systemWorkflowInterface('branch.trueOut', 'Interface_true_out', 'OUT'),
-      systemWorkflowInterface('branch.falseOut', 'Interface_false_out', 'OUT')
-    ], [emitTrue, emitFalse]),
-    expression: ''
+    name,
+    nodeType: 'FUNC_NODE',
+    functionType,
+    internalVariables: [],
+    ...templateCopy(templateKey),
+    ports: [],
+    ...(functionType === 'BRANCH' ? { expression: '' } : {})
   }
 }
 
-function createStartNode(name) {
-  return functionNode(name, 'START', [
-    systemWorkflowInterface('start.workflowOut', 'Interface_workflow_out', 'OUT')
-  ], [emitAction('start.emitActive', 'emitActive', 'Interface_workflow_out', 'ACTIVE')])
-}
-
-function createEndNode(name) {
-  return functionNode(name, 'END', [
-    systemWorkflowInterface('end.workflowIn', 'Interface_workflow_in', 'IN')
-  ])
-}
-
-function createAggregateNode(name) {
-  const emitActive = emitAction('aggregate.emitActive', 'emitActive', 'Interface_workflow_out', 'ACTIVE')
-  return functionNode(name, 'AGGREGATE', [
-    systemWorkflowInterface('aggregate.workflowIn', 'Interface_workflow_in', 'IN', [
-      trigger('aggregate.active', 'inputSignalName', '=', 'ACTIVE', 'emitActive')
-    ]),
-    systemWorkflowInterface('aggregate.workflowOut', 'Interface_workflow_out', 'OUT')
-  ], [emitActive])
-}
-
-function createGenericFunctionNode(functionType, name) {
-  return functionNode(name, functionType, [
-    systemWorkflowInterface('linear.workflowIn', 'Interface_workflow_in', 'IN'),
-    systemWorkflowInterface('linear.workflowOut', 'Interface_workflow_out', 'OUT')
-  ])
-}
-
 export function createDeviceNode(model, name) {
-  const startDevice = emitAction('device.startDevice', 'startDevice', 'Interface_state_out', 'WF_EXECUTE_START')
-  const completeNode = emitAction('device.completeNode', 'completeNode', 'Interface_workflow_out', 'ACTIVE')
   return {
     name,
     nodeType: 'DEV_NODE',
@@ -117,19 +63,8 @@ export function createDeviceNode(model, name) {
       : null,
     _capabilityParameterTypes: Object.fromEntries((model.capabilities?.[0]?.parameters ?? []).map(parameter => [parameter.parameterName, parameter.dataType])),
     internalVariables: [],
-    lifecycle: lockedLifecycle(),
-    interfaces: [
-      systemWorkflowInterface('device.workflowIn', 'Interface_workflow_in', 'IN', [
-        trigger('device.workflowStart', 'inputSignalName', '=', 'ACTIVE', 'startDevice')
-      ]),
-      systemWorkflowInterface('device.stateOut', 'Interface_state_out', 'OUT', [], 'STATE', ['WF_EXECUTE_START']),
-      systemWorkflowInterface('device.stateIn', 'Interface_state_in', 'IN', [
-        trigger('device.stateCompleted', 'inputPayload.stateName', '=', 'COMPLETED', 'completeNode')
-      ], 'STATE', ['CMD_STATE', 'OP_STATE']),
-      systemWorkflowInterface('device.workflowOut', 'Interface_workflow_out', 'OUT')
-    ],
-    ports: [],
-    actions: [startDevice, completeNode]
+    ...templateCopy('DEV_NODE'),
+    ports: []
   }
 }
 
@@ -139,13 +74,8 @@ export function createSubflowNode(workflow, name) {
     nodeType: 'SUBFLOW_NODE',
     subFlowModelId: workflow.id,
     internalVariables: [],
-    lifecycle: lockedLifecycle(),
-    interfaces: [
-      systemWorkflowInterface('subflow.workflowIn', 'Interface_workflow_in', 'IN'),
-      systemWorkflowInterface('subflow.workflowOut', 'Interface_workflow_out', 'OUT')
-    ],
-    ports: [],
-    actions: []
+    ...templateCopy('SUBFLOW_NODE'),
+    ports: []
   }
 }
 
@@ -218,7 +148,13 @@ function validateVariables(node, errors) {
 }
 
 function validateSystemSkeleton(node, errors) {
-  const expected = expectedSystemSkeleton(node)
+  let expected
+  try {
+    expected = expectedSystemSkeleton(node)
+  } catch (error) {
+    errors.push({ path: 'systemTemplate', message: error.message })
+    return
+  }
   if (!expected) return
   validateSystemValue(node.lifecycle, expected.lifecycle, 'lifecycle', errors)
   validateSystemCollection(node.interfaces, expected.interfaces, 'interfaces', errors)

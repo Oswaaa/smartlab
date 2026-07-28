@@ -17,7 +17,7 @@
         <el-tooltip content="刷新设备模型与流程资源" placement="bottom"><el-button :icon="Refresh" circle @click="loadAll" /></el-tooltip>
         <el-button :icon="Plus" @click="create">新建</el-button>
         <el-button :icon="Setting" @click="openSettings">流程设置</el-button>
-        <el-button type="primary" :loading="saving" @click="save">保存模型</el-button>
+        <el-button type="primary" :loading="saving" :disabled="!contractReady" @click="save">保存模型</el-button>
       </div>
     </header>
 
@@ -29,9 +29,10 @@
         </div>
 
         <section class="function-section">
+          <el-alert v-if="contractError" class="contract-error" type="error" :closable="false" :title="contractError" />
           <div class="section-title"><span>功能节点</span><small>流程控制</small></div>
           <div class="function-grid">
-            <button v-for="item in palette" :key="item.type" class="function-card" draggable="true" @dragstart="drag($event,{kind:'function',type:item.type})" @click="addResource({kind:'function',type:item.type})">
+            <button v-for="item in palette" :key="item.type" class="function-card" :disabled="!contractReady" :draggable="contractReady" @dragstart="drag($event,{kind:'function',type:item.type})" @click="addResource({kind:'function',type:item.type})">
               <span class="function-icon" :class="item.type.toLowerCase()">{{ item.glyph }}</span>
               <span><strong>{{ item.label }}</strong><small>{{ item.description }}</small></span>
             </button>
@@ -42,9 +43,9 @@
           <el-tab-pane label="设备模型" name="devices">
             <el-tree v-if="filteredDeviceTree.length" :data="filteredDeviceTree" node-key="key" default-expand-all :expand-on-click-node="false" class="resource-tree">
               <template #default="{ data }">
-                <div class="tree-item" :class="{ draggable:data.kind==='model' }" :draggable="data.kind==='model'" @dragstart="drag($event,data)">
+                <div class="tree-item" :class="{ draggable:data.kind==='model' && contractReady }" :draggable="data.kind==='model' && contractReady" @dragstart="drag($event,data)">
                   <span class="tree-label"><span class="tree-dot" :class="data.kind"></span><span>{{ data.label }}</span></span>
-                  <el-button v-if="data.kind==='model'" link type="primary" title="添加到画布" @click.stop="addResource({kind:'model',model:data.model})">＋</el-button>
+                  <el-button v-if="data.kind==='model'" link type="primary" title="添加到画布" :disabled="!contractReady" @click.stop="addResource({kind:'model',model:data.model})">＋</el-button>
                   <small v-else-if="data.kind==='instance'">实例</small>
                 </div>
               </template>
@@ -53,7 +54,7 @@
           </el-tab-pane>
           <el-tab-pane label="子流程" name="workflows">
             <div v-if="filteredWorkflows.length" class="flow-list">
-              <button v-for="item in filteredWorkflows" :key="item.id" class="flow-item" draggable="true" @dragstart="drag($event,{kind:'workflow',workflow:item})" @click="addResource({kind:'workflow',workflow:item})">
+              <button v-for="item in filteredWorkflows" :key="item.id" class="flow-item" :disabled="!contractReady" :draggable="contractReady" @dragstart="drag($event,{kind:'workflow',workflow:item})" @click="addResource({kind:'workflow',workflow:item})">
                 <span class="flow-icon">↳</span><span><strong>{{ item.flowName }}</strong><small>{{ item.description || '作为子流程节点引用' }}</small></span><span class="add-mark">＋</span>
               </button>
             </div>
@@ -146,7 +147,8 @@ import {
 } from '../../utils/workflowCanvas.js'
 import WorkflowCanvasNode from '../../components/task/workflow/WorkflowCanvasNode.vue'
 import WorkflowNodeInspector from '../../components/task/workflow/WorkflowNodeInspector.vue'
-import { createDeviceNode, createFunctionNode, createSubflowNode, removePort, validateNodeDefinition } from '../../utils/workflowNodeDefinition.js'
+import { loadFrontendContractMetadata } from '../../services/frontendContractMetadata.js'
+import { configureWorkflowNodeTemplates, createDeviceNode, createFunctionNode, createSubflowNode, removePort, validateNodeDefinition } from '../../utils/workflowNodeDefinition.js'
 
 type NodeDefinition = Record<string, any>
 type FlowNode = Record<string, any>
@@ -159,6 +161,8 @@ const instances = ref<any[]>([])
 const categories = ref<any[]>([])
 const saving = ref(false)
 const resourceKeyword = ref('')
+const contractReady = ref(false)
+const contractError = ref('')
 const openedWorkflowId = ref<number | null>(null)
 const settingsVisible = ref(false)
 const nodeDrawerVisible = ref(false)
@@ -286,6 +290,7 @@ function createResourceNode(data:any):NodeDefinition | null {
 
 function drag(event:DragEvent, data:any) {
   const payload = data.kind === 'model' ? { kind:'model', model:data.model } : data
+  if (!contractReady.value) return
   event.dataTransfer?.setData('workflow-resource', JSON.stringify(payload))
   if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy'
 }
@@ -297,6 +302,7 @@ function suggestedPosition() {
 
 function drop(event:DragEvent) {
   try {
+    if (!contractReady.value) return
     const data = JSON.parse(event.dataTransfer?.getData('workflow-resource') || '{}')
     const point = screenToFlowCoordinate({ x:event.clientX, y:event.clientY })
     addResource(data, { x:point.x-110, y:point.y-55 })
@@ -306,7 +312,13 @@ function drop(event:DragEvent) {
 }
 
 function addResource(data:any, position = suggestedPosition()) {
-  const node = createResourceNode(data)
+  if (!contractReady.value) return ElMessage.error(contractError.value || '工作流系统模板尚未加载，暂时不能添加节点')
+  let node:NodeDefinition | null
+  try {
+    node = createResourceNode(data)
+  } catch (error:any) {
+    return ElMessage.error(error.message || '无法创建节点')
+  }
   if (!node) return
 
   if (node.nodeType === 'DEV_NODE') {
@@ -522,6 +534,7 @@ async function loadAll() {
 }
 
 async function save() {
+  if (!contractReady.value) return ElMessage.error(contractError.value || '工作流系统模板尚未加载，不能保存')
   if (!form.name.trim()) {
     settingsVisible.value = true
     return ElMessage.error('请输入流程名称')
@@ -565,7 +578,19 @@ async function loadWorkflow(id:number | null) {
   }
 }
 
-onMounted(loadAll)
+onMounted(async () => {
+  try {
+    const metadata = await loadFrontendContractMetadata()
+    const nodeTemplates = metadata?.workflow?.nodeTemplates
+    if (!['START', 'END', 'BRANCH', 'AGGREGATE', 'DEV_NODE', 'SUBFLOW_NODE'].every(key => nodeTemplates?.[key])) throw new Error('工作流系统模板不完整')
+    configureWorkflowNodeTemplates(nodeTemplates)
+    contractReady.value = true
+    await loadAll()
+  } catch (error:any) {
+    contractError.value = `工作流系统模板加载失败：${error.message || '请检查后端契约服务'}`
+    ElMessage.error(contractError.value)
+  }
+})
 </script>
 
 <style scoped>

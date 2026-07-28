@@ -12,6 +12,7 @@ import java.util.stream.StreamSupport;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class SchemaContractConformanceTest {
 
@@ -57,7 +58,7 @@ class SchemaContractConformanceTest {
         List<String> schemaTransitions = StreamSupport.stream(transitions.spliterator(), false)
                 .filter(item -> "CMD".equals(item.path("stateSpace").asText()))
                 .filter(item -> !item.path("trigger").path("signalName").asText().startsWith("<"))
-                .filter(item -> item.path("actions").isArray() && !item.path("actions").isEmpty())
+                .filter(item -> item.path("actions").isArray() && item.path("actions").size() == 1)
                 .map(this::normalizeTransition)
                 .toList();
         List<String> contractTransitions = SystemExecutionContract.stateMachineSystemTransitions().stream()
@@ -112,25 +113,47 @@ class SchemaContractConformanceTest {
         assertEquals(name, actual.path("name").asText(), name + ".name");
         assertEquals(direction, actual.path("direction").asText(), name + ".direction");
         assertEquals(interfaceType.name(), actual.path("interfaceType").asText(), name + ".interfaceType");
-        if (actual.has("allowedSignalsRef")) {
-            String definitionName = actual.path("allowedSignalsRef").asText()
-                    .substring(actual.path("allowedSignalsRef").asText().lastIndexOf('/') + 1);
-            assertEquals(ProtocolContract.enumValues(definitionName), allowedSignals, name + ".allowedSignalsRef");
+        if ("Interface_adapter_in".equals(name)) {
+            assertTrue(actual.has("allowedSignals"), name + ".allowedSignals must exist");
+            assertTrue(actual.path("allowedSignals").isArray(), name + ".allowedSignals must be an array");
+            assertTrue(!actual.has("allowedSignalsRef"), name + ".allowedSignalsRef must not exist");
+            assertEquals(List.of(), textValues(actual.path("allowedSignals")), name + ".allowedSignals");
         } else {
-            assertEquals(allowedSignals, textValues(actual.path("allowedSignals")), name + ".allowedSignals");
+            assertTrue(actual.has("allowedSignalsRef"), name + ".allowedSignalsRef must exist");
+            assertTrue(actual.path("allowedSignalsRef").isTextual(), name + ".allowedSignalsRef must be text");
+            String definitionName = definitionNameForSignals(allowedSignals);
+            String expectedRef = "协议规范.json#/definitions/" + definitionName;
+            assertEquals(expectedRef, actual.path("allowedSignalsRef").asText(), name + ".allowedSignalsRef");
+            assertEquals(ProtocolContract.enumValues(definitionName), allowedSignals, name + ".allowedSignalsRef");
         }
     }
 
+    private String definitionNameForSignals(List<String> allowedSignals) {
+        return List.of("WorkflowNodeSignal", "WorkflowControlSignal", "ManualControlSignal",
+                        "ConstraintControlSignal", "AdapterOutboundSignal", "StatusSignal")
+                .stream()
+                .filter(name -> ProtocolContract.enumValues(name).equals(allowedSignals))
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("未找到标准信号定义: " + allowedSignals));
+    }
+
     private String normalizeTransition(JsonNode item) {
-        JsonNode action = item.path("actions").get(0).path("payload");
+        JsonNode actions = item.path("actions");
+        assertTrue(actions.isArray() && actions.size() == 1, "system transition actions must contain exactly one action");
+        JsonNode action = actions.get(0);
+        assertEquals("SEND", action.path("actionName").asText(), "system transition actionName");
+        JsonNode payload = action.path("payload");
+        assertTrue(payload.isObject(), "system transition action payload must be an object");
+        assertTrue(payload.path("interfaceName").isTextual(), "system transition action interfaceName must be text");
+        assertTrue(payload.path("signalName").isTextual(), "system transition action signalName must be text");
         return String.join("|",
                 item.path("stateSpace").asText(),
                 item.path("fromStateName").asText(),
                 item.path("toStateName").asText(),
                 item.path("trigger").path("interfaceName").asText(),
                 item.path("trigger").path("signalName").asText(),
-                action.path("interfaceName").asText(),
-                action.path("signalName").asText());
+                payload.path("interfaceName").asText(),
+                payload.path("signalName").asText());
     }
 
     private String normalizeTransition(SystemExecutionContract.SystemTransitionDefinition item) {

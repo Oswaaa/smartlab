@@ -134,10 +134,23 @@ public class WorkflowDefinitionCompiler {
     }
 
     private void validateSystemSkeleton(NodeIndex index, JsonNode node, String path) {
-        String name = index.nodeName(); String functionType = null;
-        if (WorkflowNodeType.DEV_NODE.name().equals(index.nodeType())) { requirePositiveLong(node, "deviceModelId", name); requiredText(node.path("capability"), "capabilityName", nodePath(name, "capability.capabilityName") + ": 不能为空");
-        } else if (WorkflowNodeType.SUBFLOW_NODE.name().equals(index.nodeType())) { requirePositiveLong(node, "subFlowModelId", name);
-        } else { functionType = requiredText(node, "functionType", nodePath(name, "functionType") + ": 不能为空"); if (!FUNCTION_TYPES.contains(functionType)) throw nodeError(name, "functionType", "不支持的功能节点类型: " + functionType); if (WorkflowNodeFunctionType.BRANCH.name().equals(functionType)) requiredText(node, "expression", nodePath(name, "expression") + ": 不能为空"); }
+        String name = index.nodeName();
+        String functionType = null;
+        if (WorkflowNodeType.DEV_NODE.name().equals(index.nodeType())) {
+            requirePositiveLong(node, "deviceModelId", name);
+            requiredText(node.path("capability"), "capabilityName",
+                    nodePath(name, "capability.capabilityName") + ": 不能为空");
+        } else if (WorkflowNodeType.SUBFLOW_NODE.name().equals(index.nodeType())) {
+            requirePositiveLong(node, "subFlowModelId", name);
+        } else {
+            functionType = requiredText(node, "functionType", nodePath(name, "functionType") + ": 不能为空");
+            if (!FUNCTION_TYPES.contains(functionType)) {
+                throw nodeError(name, "functionType", "不支持的功能节点类型: " + functionType);
+            }
+            if (WorkflowNodeFunctionType.BRANCH.name().equals(functionType)) {
+                requiredText(node, "expression", nodePath(name, "expression") + ": 不能为空");
+            }
+        }
         ObjectNode expected = WorkflowNodeSystemContract.template(index.nodeType(), functionType);
         validateTemplateLifecycle(node.path("lifecycle"), expected.path("lifecycle"), name);
         validateSystemInterfaces(index, node.path("interfaces"), expected.path("interfaces"));
@@ -306,29 +319,174 @@ public class WorkflowDefinitionCompiler {
     }
 
     private void validateTemplateLifecycle(JsonNode lifecycle, JsonNode expected, String nodeName) {
-        if (!expected.equals(lifecycle)) throw nodeError(nodeName, "lifecycle", "系统生命周期定义被修改");
+        if (!lifecycle.isObject() || !matchesOptionalSystemIdentity(lifecycle, expected)
+                || !expected.path("initialStateName").equals(lifecycle.path("initialStateName"))) {
+            throw nodeError(nodeName, "lifecycle", "系统生命周期定义被修改");
+        }
+        Set<String> actualStates = uniqueTextSet(lifecycle.path("states"));
+        Set<String> expectedStates = uniqueTextSet(expected.path("states"));
+        if (actualStates == null || !actualStates.equals(expectedStates)
+                || !sameLifecycleTransitions(lifecycle.path("transitions"), expected.path("transitions"))) {
+            throw nodeError(nodeName, "lifecycle", "系统生命周期定义被修改");
+        }
     }
+
+    private boolean sameLifecycleTransitions(JsonNode actualTransitions, JsonNode expectedTransitions) {
+        Map<String, JsonNode> actualByKey = lifecycleTransitions(actualTransitions);
+        Map<String, JsonNode> expectedByKey = lifecycleTransitions(expectedTransitions);
+        if (actualByKey == null || expectedByKey == null || !actualByKey.keySet().equals(expectedByKey.keySet())) {
+            return false;
+        }
+        for (Map.Entry<String, JsonNode> entry : expectedByKey.entrySet()) {
+            if (!matchesOptionalSystemIdentity(actualByKey.get(entry.getKey()), entry.getValue())) return false;
+        }
+        return true;
+    }
+
+    private Map<String, JsonNode> lifecycleTransitions(JsonNode transitions) {
+        if (!transitions.isArray()) return null;
+        Map<String, JsonNode> result = new LinkedHashMap<>();
+        for (JsonNode transition : transitions) {
+            if (!transition.isObject()
+                    || !transition.path("fromStateName").isTextual()
+                    || transition.path("fromStateName").asText().isBlank()
+                    || !transition.path("toStateName").isTextual()
+                    || transition.path("toStateName").asText().isBlank()) return null;
+            String key = transition.path("fromStateName").asText() + "→" + transition.path("toStateName").asText();
+            if (result.putIfAbsent(key, transition) != null) return null;
+        }
+        return result;
+    }
+
     private void validateSystemInterfaces(NodeIndex index, JsonNode actualInterfaces, JsonNode expectedInterfaces) {
         Map<String, JsonNode> expectedByName = namedItems(expectedInterfaces, "name");
-        for (JsonNode expected : iterable(expectedInterfaces)) { String interfaceName = expected.path("name").asText(); JsonNode actual = index.interfaces().get(interfaceName); if (actual == null || !matchesSystemInterface(actual, expected)) throw nodeError(index.nodeName(), "interfaces." + interfaceName, "系统接口定义被修改"); validateSystemTriggers(index.nodeName(), interfaceName, actual.path("bindingTriggers"), expected.path("bindingTriggers")); }
-        for (JsonNode actual : iterable(actualInterfaces)) if (!expectedByName.containsKey(actual.path("name").asText())) throw nodeError(index.nodeName(), "interfaces", "不允许新增接口");
+        for (JsonNode expected : iterable(expectedInterfaces)) {
+            String interfaceName = expected.path("name").asText();
+            JsonNode actual = index.interfaces().get(interfaceName);
+            if (!matchesSystemInterface(actual, expected)) {
+                throw nodeError(index.nodeName(), "interfaces." + interfaceName, "系统接口定义被修改");
+            }
+            validateSystemTriggers(index.nodeName(), interfaceName,
+                    actual.path("bindingTriggers"), expected.path("bindingTriggers"));
+        }
+        for (JsonNode actual : iterable(actualInterfaces)) {
+            if (!expectedByName.containsKey(actual.path("name").asText())) {
+                throw nodeError(index.nodeName(), "interfaces", "不允许新增接口");
+            }
+        }
     }
+
     private boolean matchesSystemInterface(JsonNode actual, JsonNode expected) {
-        if (!actual.isObject() || !expected.isObject()) return false; ObjectNode actualDefinition = ((ObjectNode) actual).deepCopy(); ObjectNode expectedDefinition = ((ObjectNode) expected).deepCopy(); actualDefinition.remove("bindingTriggers"); expectedDefinition.remove("bindingTriggers"); return expectedDefinition.equals(actualDefinition);
+        if (actual == null || !actual.isObject() || !matchesOptionalSystemIdentity(actual, expected)) return false;
+        Set<String> actualSignals = uniqueTextSet(actual.path("allowedSignals"));
+        Set<String> expectedSignals = uniqueTextSet(expected.path("allowedSignals"));
+        return sameTextField(actual, expected, "name")
+                && sameTextField(actual, expected, "direction")
+                && sameTextField(actual, expected, "interfaceType")
+                && actualSignals != null
+                && actualSignals.equals(expectedSignals);
     }
-    private void validateSystemTriggers(String nodeName, String interfaceName, JsonNode actualTriggers, JsonNode expectedTriggers) {
-        Map<String, JsonNode> expectedByKey = systemItemsByKey(expectedTriggers); Set<String> actualKeys = new HashSet<>();
-        for (JsonNode actual : iterable(actualTriggers)) { if (!isSystemItem(actual)) continue; String key = actual.path("_systemKey").asText(); JsonNode expected = expectedByKey.get(key); if (key.isBlank() || !actualKeys.add(key) || expected == null || !expected.equals(actual)) throw nodeError(nodeName, "interfaces." + interfaceName + ".bindingTriggers", "系统触发器缺失或已篡改"); }
-        if (!actualKeys.equals(expectedByKey.keySet())) throw nodeError(nodeName, "interfaces." + interfaceName + ".bindingTriggers", "系统触发器缺失或已篡改");
+
+    private void validateSystemTriggers(String nodeName, String interfaceName,
+                                        JsonNode actualTriggers, JsonNode expectedTriggers) {
+        List<JsonNode> actualItems = nodeList(actualTriggers);
+        Set<Integer> matchedIndexes = new HashSet<>();
+        for (JsonNode expected : iterable(expectedTriggers)) {
+            int matchedIndex = -1;
+            for (int index = 0; index < actualItems.size(); index++) {
+                JsonNode actual = actualItems.get(index);
+                if (!matchedIndexes.contains(index)
+                        && triggerBusinessEquals(actual, expected)
+                        && matchesOptionalSystemIdentity(actual, expected)) {
+                    matchedIndex = index;
+                    break;
+                }
+            }
+            if (matchedIndex < 0) {
+                throw nodeError(nodeName, "interfaces." + interfaceName + ".bindingTriggers",
+                        "系统触发器缺失或已篡改");
+            }
+            matchedIndexes.add(matchedIndex);
+        }
+        for (int index = 0; index < actualItems.size(); index++) {
+            if (!matchedIndexes.contains(index) && claimsSystemIdentity(actualItems.get(index))) {
+                throw nodeError(nodeName, "interfaces." + interfaceName + ".bindingTriggers",
+                        "存在未知或已篡改的系统触发器");
+            }
+        }
     }
+
+    private boolean triggerBusinessEquals(JsonNode actual, JsonNode expected) {
+        return actual != null && actual.isObject()
+                && sameTextField(actual, expected, "action")
+                && expected.path("condition").equals(actual.path("condition"));
+    }
+
     private void validateSystemActions(NodeIndex index, JsonNode actualActions, JsonNode expectedActions) {
         Map<String, JsonNode> expectedByName = namedItems(expectedActions, "actionName");
-        for (JsonNode expected : iterable(expectedActions)) { String actionName = expected.path("actionName").asText(); JsonNode actual = index.actions().get(actionName); if (actual == null || !expected.equals(actual)) throw nodeError(index.nodeName(), "actions." + actionName, "系统动作定义被修改"); }
-        for (JsonNode actual : iterable(actualActions)) { String actionName = actual.path("actionName").asText(); if (expectedByName.containsKey(actionName)) continue; if (isSystemItem(actual) || !WorkflowNodeActionType.UPDATE.name().equals(actual.path("actionType").asText())) throw nodeError(index.nodeName(), "actions." + actionName, "只允许新增非系统UPDATE动作"); }
+        for (JsonNode expected : iterable(expectedActions)) {
+            String actionName = expected.path("actionName").asText();
+            JsonNode actual = index.actions().get(actionName);
+            if (!matchesSystemAction(actual, expected)) {
+                throw nodeError(index.nodeName(), "actions." + actionName, "系统动作定义被修改");
+            }
+        }
+        for (JsonNode actual : iterable(actualActions)) {
+            String actionName = actual.path("actionName").asText();
+            if (expectedByName.containsKey(actionName)) continue;
+            if (claimsSystemIdentity(actual)
+                    || !WorkflowNodeActionType.UPDATE.name().equals(actual.path("actionType").asText())) {
+                throw nodeError(index.nodeName(), "actions." + actionName, "只允许新增非系统UPDATE动作");
+            }
+        }
     }
-    private Map<String, JsonNode> namedItems(JsonNode items, String nameField) { Map<String, JsonNode> result = new LinkedHashMap<>(); for (JsonNode item : iterable(items)) result.put(item.path(nameField).asText(), item); return result; }
-    private Map<String, JsonNode> systemItemsByKey(JsonNode items) { Map<String, JsonNode> result = new LinkedHashMap<>(); for (JsonNode item : iterable(items)) if (isSystemItem(item)) result.put(item.path("_systemKey").asText(), item); return result; }
-    private boolean isSystemItem(JsonNode item) { return item.path("_system").asBoolean(false); }
+
+    private boolean matchesSystemAction(JsonNode actual, JsonNode expected) {
+        return actual != null && actual.isObject()
+                && matchesOptionalSystemIdentity(actual, expected)
+                && sameTextField(actual, expected, "actionName")
+                && sameTextField(actual, expected, "actionType")
+                && sameTextField(actual, expected, "targetInterfaceName")
+                && sameTextField(actual, expected, "signalName");
+    }
+
+    private boolean matchesOptionalSystemIdentity(JsonNode actual, JsonNode expected) {
+        if (actual.has("_system")
+                && (!actual.path("_system").isBoolean() || !actual.path("_system").asBoolean())) return false;
+        return !actual.has("_systemKey")
+                || actual.path("_systemKey").isTextual()
+                && expected.path("_systemKey").asText().equals(actual.path("_systemKey").asText());
+    }
+
+    private boolean claimsSystemIdentity(JsonNode item) {
+        return item.has("_system") || item.has("_systemKey");
+    }
+
+    private boolean sameTextField(JsonNode actual, JsonNode expected, String field) {
+        return actual.path(field).isTextual()
+                && expected.path(field).asText().equals(actual.path(field).asText());
+    }
+
+    private Set<String> uniqueTextSet(JsonNode values) {
+        if (!values.isArray()) return null;
+        Set<String> result = new HashSet<>();
+        for (JsonNode value : values) {
+            if (!value.isTextual() || value.asText().isBlank() || !result.add(value.asText())) return null;
+        }
+        return result;
+    }
+
+    private List<JsonNode> nodeList(JsonNode values) {
+        List<JsonNode> result = new ArrayList<>();
+        for (JsonNode value : iterable(values)) result.add(value);
+        return result;
+    }
+
+    private Map<String, JsonNode> namedItems(JsonNode items, String nameField) {
+        Map<String, JsonNode> result = new LinkedHashMap<>();
+        for (JsonNode item : iterable(items)) result.put(item.path(nameField).asText(), item);
+        return result;
+    }
     private NodeIndex referencedNode(JsonNode endpoint, Map<String, NodeIndex> nodes, String path) {
         String name = requiredText(endpoint, "nodeName", path + ".nodeName: 不能为空");
         NodeIndex node = nodes.get(name);
@@ -402,12 +560,6 @@ public class WorkflowDefinitionCompiler {
     private boolean contains(JsonNode values, String value) {
         for (JsonNode item : iterable(values)) if (value.equals(item.asText())) return true;
         return false;
-    }
-
-    private Set<String> textSet(JsonNode values) {
-        Set<String> result = new HashSet<>();
-        for (JsonNode item : iterable(values)) result.add(item.asText());
-        return result;
     }
 
     private Iterable<JsonNode> iterable(JsonNode node) {

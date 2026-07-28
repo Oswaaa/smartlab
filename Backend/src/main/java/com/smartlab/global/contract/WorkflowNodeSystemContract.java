@@ -15,6 +15,9 @@ public final class WorkflowNodeSystemContract {
     }
 
     public static ObjectNode template(String nodeType, String functionType) {
+        if (nodeType == null) {
+            throw new IllegalArgumentException("工作流节点类型不能为空");
+        }
         return switch (nodeType) {
             case "DEV_NODE" -> deviceTemplate();
             case "SUBFLOW_NODE" -> subflowTemplate();
@@ -35,6 +38,9 @@ public final class WorkflowNodeSystemContract {
     }
 
     private static ObjectNode functionTemplate(String functionType) {
+        if (functionType == null) {
+            throw new IllegalArgumentException("功能节点类型不能为空");
+        }
         return switch (functionType) {
             case "START" -> startTemplate();
             case "END" -> endTemplate();
@@ -88,7 +94,7 @@ public final class WorkflowNodeSystemContract {
         stateTriggers.add(trigger("device.stateCompleted", "inputPayload.stateName", "=", "COMPLETED", "completeNode"));
         template.withArray("interfaces").add(workflowInterface("device.workflowIn", "Interface_workflow_in", "IN", workflowTriggers));
         template.withArray("interfaces").add(interfaceDefinition("device.stateOut", "Interface_state_out", "OUT", "STATE",
-                names(WorkflowControlSignal.values()), JsonNodeSupport.arrayNode()));
+                List.of(WorkflowControlSignal.WF_EXECUTE_START.name()), JsonNodeSupport.arrayNode()));
         template.withArray("interfaces").add(interfaceDefinition("device.stateIn", "Interface_state_in", "IN", "STATE",
                 names(StatusSignal.values()), stateTriggers));
         template.withArray("interfaces").add(workflowInterface("device.workflowOut", "Interface_workflow_out", "OUT", List.of()));

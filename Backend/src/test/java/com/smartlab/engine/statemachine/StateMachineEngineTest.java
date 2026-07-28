@@ -18,6 +18,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import java.util.List;
 import java.util.Map;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.any;
@@ -47,13 +48,6 @@ class StateMachineEngineTest {
 
         assertEquals("CMD_ABORT", signal(emitted, "CMD_ABORT").path("signalName").asText());
         assertEquals("ABORTING", sentFixture.twinState().getCurrentCmdState());
-
-        Fixture idleFixture = fixture();
-        List<ObjectNode> rejected = idleFixture.engine().dispatchSignal(
-                7L, "Interface_constraint_in", "CONSTRAINT_ABORT", Map.of("messageId", "idle-abort"));
-
-        assertEquals(List.of(), rejected);
-        assertEquals("IDLE", idleFixture.twinState().getCurrentCmdState());
     }
 
     @Test
@@ -67,6 +61,36 @@ class StateMachineEngineTest {
 
         assertEquals(List.of(), emitted);
         assertEquals("IDLE", fixture.twinState().getCurrentCmdState());
+    }
+
+    @Test
+    void rejectedRunningStartPreservesActiveCommandCorrelation() {
+        Fixture fixture = fixture();
+        startAndRun(fixture, "message-1");
+
+        List<ObjectNode> rejected = start(fixture, "message-2");
+
+        assertEquals(List.of(), rejected);
+        assertEquals("RUNNING", fixture.twinState().getCurrentCmdState());
+        List<ObjectNode> associated = assertDoesNotThrow(() -> fixture.engine().dispatchAdapterEvent(
+                7L, "HEAT_STARTED", JsonNodeSupport.objectNode().put("messageId", "message-1")));
+        assertEquals(List.of(), associated);
+        assertEquals("RUNNING", fixture.twinState().getCurrentCmdState());
+    }
+
+    @Test
+    void idleSystemAbortsWithoutMessageIdReturnNoTransition() {
+        for (Map.Entry<String, String> abort : List.of(
+                Map.entry("Interface_constraint_in", "CONSTRAINT_ABORT"),
+                Map.entry("Interface_control_in", "MANUAL_EXECUTE_ABORT"))) {
+            Fixture fixture = fixture();
+
+            List<ObjectNode> emitted = assertDoesNotThrow(() -> fixture.engine().dispatchSignal(
+                    7L, abort.getKey(), abort.getValue(), Map.of()));
+
+            assertEquals(List.of(), emitted);
+            assertEquals("IDLE", fixture.twinState().getCurrentCmdState());
+        }
     }
 
     @Test
@@ -177,7 +201,7 @@ class StateMachineEngineTest {
                 .add("WF_EXECUTE_START").add("WF_EXECUTE_ABORT");
         interfaces.addObject().put("name", "Interface_control_in").put("direction", "IN")
                 .put("interfaceType", "CONTROL").putArray("allowedSignals")
-                .add("WF_EXECUTE_START");
+                .add("WF_EXECUTE_START").add("MANUAL_EXECUTE_ABORT");
         interfaces.addObject().put("name", "Interface_constraint_in").put("direction", "IN")
                 .put("interfaceType", "CONSTRAINT").putArray("allowedSignals")
                 .add("CONSTRAINT_ABORT");

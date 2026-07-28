@@ -137,9 +137,16 @@ public class StateMachineEngine {
         if (isAdapterInputInterface(model, interfaceName)) {
             validateCommandEventCorrelation(instanceId, model, interfaceName, signalName, incomingMessageId);
         }
-        if (SystemExecutionContract.isCommandStartSignal(signalName)) {
+        boolean commandStartSignal = SystemExecutionContract.isCommandStartSignal(signalName);
+        boolean commandAbortSignal = SystemExecutionContract.isCommandAbortSignal(signalName);
+        if ((commandStartSignal || commandAbortSignal)
+                && SystemExecutionContract.findStateMachineSystemTransition(
+                        "CMD", currentCmdState, interfaceName, signalName).isEmpty()) {
+            return List.of();
+        }
+        if (commandStartSignal) {
             context = prepareStartContext(instance, model, signalName, context);
-        } else if (SystemExecutionContract.isCommandAbortSignal(signalName)) {
+        } else if (commandAbortSignal) {
             context.put("messageId", activeMessageId(instanceId, context));
         } else if (!context.containsKey("messageId")) {
             String activeMessageId = activeCommandMessages.get(instanceId);

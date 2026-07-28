@@ -451,15 +451,22 @@ public class WorkflowDefinitionCompiler {
     }
 
     private boolean matchesOptionalSystemIdentity(JsonNode actual, JsonNode expected) {
-        if (actual.has("_system")
-                && (!actual.path("_system").isBoolean() || !actual.path("_system").asBoolean())) return false;
-        return !actual.has("_systemKey")
-                || actual.path("_systemKey").isTextual()
+        boolean hasSystemFlag = actual.has("_system");
+        boolean hasSystemKey = actual.has("_systemKey");
+        if (!hasSystemFlag && !hasSystemKey) return true;
+        return hasSystemFlag
+                && hasSystemKey
+                && actual.path("_system").isBoolean()
+                && actual.path("_system").asBoolean()
+                && actual.path("_systemKey").isTextual()
+                && !actual.path("_systemKey").asText().isBlank()
                 && expected.path("_systemKey").asText().equals(actual.path("_systemKey").asText());
     }
 
     private boolean claimsSystemIdentity(JsonNode item) {
-        return item.has("_system") || item.has("_systemKey");
+        if (item.has("_systemKey")) return true;
+        return item.has("_system")
+                && (!item.path("_system").isBoolean() || item.path("_system").asBoolean());
     }
 
     private boolean sameTextField(JsonNode actual, JsonNode expected, String field) {

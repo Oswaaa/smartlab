@@ -28,6 +28,48 @@ import static org.mockito.Mockito.when;
 class StateMachineEngineTest {
 
     @Test
+    void workflowStartUsesContractTransitionAndEmitsCmdStart() {
+        Fixture fixture = fixture();
+
+        List<ObjectNode> emitted = start(fixture, "message-contract-start");
+
+        assertEquals("CMD_START", signal(emitted, "CMD_START").path("signalName").asText());
+        assertEquals("SENT", fixture.twinState().getCurrentCmdState());
+    }
+
+    @Test
+    void constraintAbortUsesContractTransitionOnlyFromSentOrRunning() {
+        Fixture sentFixture = fixture();
+        start(sentFixture, "message-contract-abort");
+
+        List<ObjectNode> emitted = sentFixture.engine().dispatchSignal(
+                7L, "Interface_constraint_in", "CONSTRAINT_ABORT", Map.of());
+
+        assertEquals("CMD_ABORT", signal(emitted, "CMD_ABORT").path("signalName").asText());
+        assertEquals("ABORTING", sentFixture.twinState().getCurrentCmdState());
+
+        Fixture idleFixture = fixture();
+        List<ObjectNode> rejected = idleFixture.engine().dispatchSignal(
+                7L, "Interface_constraint_in", "CONSTRAINT_ABORT", Map.of("messageId", "idle-abort"));
+
+        assertEquals(List.of(), rejected);
+        assertEquals("IDLE", idleFixture.twinState().getCurrentCmdState());
+    }
+
+    @Test
+    void sameSignalOnDifferentDeclaredInterfaceDoesNotTriggerSystemTransition() {
+        Fixture fixture = fixture();
+
+        List<ObjectNode> emitted = fixture.engine().dispatchSignal(
+                7L, "Interface_control_in", "WF_EXECUTE_START",
+                Map.of("messageId", "message-wrong-interface", "capabilityName", "heat",
+                        "parameters", Map.of("temperature", 80)));
+
+        assertEquals(List.of(), emitted);
+        assertEquals("IDLE", fixture.twinState().getCurrentCmdState());
+    }
+
+    @Test
     void workflowStartResolvesCapabilityAndPublishesFinalSentState() {
         Fixture fixture = fixture();
 
@@ -133,6 +175,12 @@ class StateMachineEngineTest {
         interfaces.addObject().put("name", "Interface_workflow_in").put("direction", "IN")
                 .put("interfaceType", "WORKFLOW").putArray("allowedSignals")
                 .add("WF_EXECUTE_START").add("WF_EXECUTE_ABORT");
+        interfaces.addObject().put("name", "Interface_control_in").put("direction", "IN")
+                .put("interfaceType", "CONTROL").putArray("allowedSignals")
+                .add("WF_EXECUTE_START");
+        interfaces.addObject().put("name", "Interface_constraint_in").put("direction", "IN")
+                .put("interfaceType", "CONSTRAINT").putArray("allowedSignals")
+                .add("CONSTRAINT_ABORT");
         interfaces.addObject().put("name", "Interface_adapter_in").put("direction", "IN")
                 .put("interfaceType", "ADAPTER").putArray("allowedSignals")
                 .add("HEAT_STARTED").add("ABORT_DONE");

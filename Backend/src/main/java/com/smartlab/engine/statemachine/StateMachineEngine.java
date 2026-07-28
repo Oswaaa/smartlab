@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.engine.statemachine.action.StateMachineActionExecutor;
 import com.smartlab.engine.statemachine.action.StateMachineActionRegistry;
+import com.smartlab.global.contract.SystemExecutionContract;
 import com.smartlab.global.protocol.ProtocolDictionaryService;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
@@ -26,7 +27,6 @@ import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -35,14 +35,6 @@ import java.util.concurrent.ConcurrentHashMap;
  */
 @Service
 public class StateMachineEngine {
-
-    private static final Set<String> START_SIGNALS = Set.of(
-            "WF_EXECUTE_START", "MANUAL_EXECUTE_START", "CONSTRAINT_EXECUTE");
-    private static final Set<String> ABORT_SIGNALS = Set.of(
-            "WF_EXECUTE_ABORT", "MANUAL_EXECUTE_ABORT", "CONSTRAINT_ABORT");
-    private static final Set<String> TERMINAL_COMMAND_STATES = Set.of("COMPLETED", "FAILED", "ABORTED");
-    private static final String ADAPTER_OUTPUT_INTERFACE = "Interface_adapter_out";
-    private static final String STATE_OUTPUT_INTERFACE = "Interface_state_out";
 
     private final DeviceModelService deviceModelService;
     private final DeviceTwinStateService deviceTwinStateService;
@@ -88,11 +80,12 @@ public class StateMachineEngine {
     public ObjectNode handleManualControl(Long instanceId, String signalName, String capabilityName,
                                           Map<String, Object> parameters) {
         String resolvedSignal = signalName == null || signalName.isBlank() ? "MANUAL_EXECUTE_START" : signalName;
-        if (!START_SIGNALS.contains(resolvedSignal) && !ABORT_SIGNALS.contains(resolvedSignal)) {
+        if (!SystemExecutionContract.isCommandStartSignal(resolvedSignal)
+                && !SystemExecutionContract.isCommandAbortSignal(resolvedSignal)) {
             throw new IllegalArgumentException("不是可由人工控制台发送的状态机信号: " + resolvedSignal);
         }
         Map<String, Object> context = new HashMap<>();
-        if (START_SIGNALS.contains(resolvedSignal)) {
+        if (SystemExecutionContract.isCommandStartSignal(resolvedSignal)) {
             context.put("capabilityName", capabilityName);
             context.put("parameters", parameters == null ? Map.of() : Map.copyOf(parameters));
         }
@@ -144,9 +137,9 @@ public class StateMachineEngine {
         if (isAdapterInputInterface(model, interfaceName)) {
             validateCommandEventCorrelation(instanceId, model, interfaceName, signalName, incomingMessageId);
         }
-        if (START_SIGNALS.contains(signalName)) {
+        if (SystemExecutionContract.isCommandStartSignal(signalName)) {
             context = prepareStartContext(instance, model, signalName, context);
-        } else if (ABORT_SIGNALS.contains(signalName)) {
+        } else if (SystemExecutionContract.isCommandAbortSignal(signalName)) {
             context.put("messageId", activeMessageId(instanceId, context));
         } else if (!context.containsKey("messageId")) {
             String activeMessageId = activeCommandMessages.get(instanceId);
@@ -188,13 +181,16 @@ public class StateMachineEngine {
         try {
             executeAndPublish(instanceId, adapterActions, eventContext, emittedSignals);
         } catch (RuntimeException e) {
-            if (START_SIGNALS.contains(signalName)) activeCommandMessages.remove(instanceId);
+            if (SystemExecutionContract.isCommandStartSignal(signalName)) {
+                activeCommandMessages.remove(instanceId);
+            }
             throw e;
         }
         deviceTwinStateService.save(twinState);
         executeAndPublish(instanceId, internalActions, eventContext, emittedSignals);
 
-        if (result.nextCmdState() != null && TERMINAL_COMMAND_STATES.contains(result.nextCmdState())) {
+        if (result.nextCmdState() != null
+                && SystemExecutionContract.terminalCommandStateNames().contains(result.nextCmdState())) {
             resetTerminalCommandState(instance, model, twinState, interfaceName, signalName, emittedSignals);
         }
         return List.copyOf(emittedSignals);
@@ -243,9 +239,10 @@ public class StateMachineEngine {
     private TransitionResult computeNextState(StateMachineModels.Definition definition, String currentCmdState,
                                               JsonNode currentOpState, String interfaceName, String signalName,
                                               Map<String, Object> context) {
-        TransitionResult standardTransition = systemCommandTransition(currentCmdState, signalName, context);
+        TransitionResult standardTransition = systemCommandTransition(currentCmdState, interfaceName, signalName);
         if (standardTransition != null) return standardTransition;
-        if (START_SIGNALS.contains(signalName) || ABORT_SIGNALS.contains(signalName)) return TransitionResult.none();
+        if (SystemExecutionContract.isCommandStartSignal(signalName)
+                || SystemExecutionContract.isCommandAbortSignal(signalName)) return TransitionResult.none();
 
         ObjectNode nextOpState = currentOpState != null && currentOpState.isObject()
                 ? currentOpState.deepCopy() : JsonNodeSupport.objectNode();
@@ -278,16 +275,19 @@ public class StateMachineEngine {
                 List.copyOf(actions), List.copyOf(changedOpRegions));
     }
 
-    private TransitionResult systemCommandTransition(String currentCmdState, String signalName,
-                                                      Map<String, Object> context) {
-        if (START_SIGNALS.contains(signalName) && "IDLE".equals(currentCmdState)) {
-            return new TransitionResult("SENT", null, List.of(sendAction(ADAPTER_OUTPUT_INTERFACE, "CMD_START")), List.of());
-        }
-        if (ABORT_SIGNALS.contains(signalName) && Set.of("SENT", "RUNNING").contains(currentCmdState)) {
-            return new TransitionResult("ABORTING", null, List.of(sendAction(ADAPTER_OUTPUT_INTERFACE, "CMD_ABORT")), List.of());
-        }
-        return null;
+    private TransitionResult systemCommandTransition(String currentCmdState,
+                                                     String interfaceName,
+                                                     String signalName) {
+        return SystemExecutionContract.findStateMachineSystemTransition(
+                        "CMD", currentCmdState, interfaceName, signalName)
+                .map(row -> new TransitionResult(
+                        row.toStateName(),
+                        null,
+                        List.of(sendAction(row.actionInterfaceName(), row.actionSignalName())),
+                        List.of()))
+                .orElse(null);
     }
+
     private StateMachineModels.ActionDefinition sendAction(String interfaceName, String signalName) {
         return sendAction(interfaceName, signalName, null);
     }
@@ -308,7 +308,9 @@ public class StateMachineEngine {
         boolean alreadyDeclared = actions.stream().anyMatch(action -> "SEND".equals(action.actionName())
                 && signalName.equals(action.payload().path("signalName").asText())
                 && (regionName == null || regionName.equals(action.payload().path("regionName").asText())));
-        if (!alreadyDeclared) actions.add(sendAction(STATE_OUTPUT_INTERFACE, signalName, regionName));
+        if (!alreadyDeclared) {
+            actions.add(sendAction(SystemExecutionContract.stateOutputInterfaceName(), signalName, regionName));
+        }
     }
 
     private Map<String, Object> prepareStartContext(DeviceInstances instance, DeviceModels model,

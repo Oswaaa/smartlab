@@ -4,6 +4,7 @@ import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.smartlab.global.contract.SystemExecutionContract;
 import com.smartlab.global.protocol.ProtocolDictionaryService;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.common.PageResult;
@@ -474,7 +475,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         ObjectNode cmdSpace = JsonNodeSupport.objectNode();
         cmdSpace.put("initialStateName", "IDLE");
         ArrayNode states = cmdSpace.putArray("states");
-        for (String stateName : List.of("IDLE", "SENT", "RUNNING", "COMPLETED", "FAILED", "ABORTING", "ABORTED")) {
+        for (String stateName : SystemExecutionContract.commandStateNames()) {
             ObjectNode state = states.addObject();
             state.put("stateName", stateName);
             state.set("onEntry", createStatusOnEntryActions("CMD_STATE"));
@@ -673,7 +674,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
     }
 
     private String requireText(JsonNode node, String fieldName, String scope) {
-        String value = node.path(fieldName).asText("");
+        String value = node == null ? "" : node.path(fieldName).asText("");
         if (value.isBlank()) {
             throw new IllegalArgumentException(scope + "缺少" + fieldName);
         }
@@ -715,14 +716,15 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             }
         }
 
-        Set<String> cmdStates = stateNames(model.getCmdState());
-        if (!cmdStates.containsAll(Set.of("IDLE", "SENT", "RUNNING", "COMPLETED", "FAILED", "ABORTING", "ABORTED"))) {
+        Set<String> cmdStates = stateNames(model.getCmdState(), "CMD状态空间");
+        if (!cmdStates.containsAll(SystemExecutionContract.commandStateNames())) {
             throw new IllegalArgumentException("CMD状态空间不完整");
         }
         Map<String, Set<String>> opStates = operationStateNames(model.getOpState());
         Set<String> cmdEvents = eventNames(model.getAdapterContract().path("events").path("cmdEvents"));
         Set<String> opEvents = eventNames(model.getAdapterContract().path("events").path("opEvents"));
         Set<String> transitionKeys = new HashSet<>();
+        Set<String> commandTransitionPaths = new HashSet<>();
         for (JsonNode transition : iterable(model.getStateTransitions())) {
             String stateSpace = transition.path("stateSpace").asText("");
             String fromState = transition.path("fromStateName").asText("");
@@ -742,6 +744,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
                     throw new IllegalArgumentException(
                             "CMD状态转移引用了错误状态或事件: " + fromState + "→" + toState + "/" + signalName);
                 }
+                commandTransitionPaths.add(fromState + "|" + toState);
             } else {
                 String regionName = transition.path("regionName").asText("");
                 Set<String> regionStates = opStates.get(regionName);
@@ -751,6 +754,14 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
                 }
             }
             validateStateMachineActions(transition.path("actions"), actual);
+        }
+        for (SystemExecutionContract.DeviceCommandTransitionRequirement requirement : SystemExecutionContract
+                .deviceCommandTransitionRequirements()) {
+            if ("REQUIRED".equals(requirement.triggerPolicy())
+                    && !commandTransitionPaths.contains(requirement.fromStateName() + "|" + requirement.toStateName())) {
+                throw new IllegalArgumentException("缺少必需Adapter事件CMD转移: " + requirement.fromStateName()
+                        + "→" + requirement.toStateName());
+            }
         }
         validateStateMachineActions(model.getCmdState().path("states"), actual);
         for (JsonNode region : model.getOpState().path("regions")) {
@@ -782,19 +793,30 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
 
     private Map<String, Set<String>> operationStateNames(JsonNode opState) {
         Map<String, Set<String>> result = new HashMap<>();
-        for (JsonNode region : iterable(opState.path("regions"))) {
-            result.put(region.path("regionName").asText(""), stateNames(region));
+        if (opState == null || !opState.isObject()) {
+            throw new IllegalArgumentException("OP状态空间必须是对象");
+        }
+        for (JsonNode region : iterable(opState == null ? null : opState.path("regions"))) {
+            String regionName = requireText(region, "regionName", "OP状态分区");
+            if (result.containsKey(regionName)) {
+                throw new IllegalArgumentException("OP状态分区名称重复: " + regionName);
+            }
+            result.put(regionName, stateNames(region, "OP状态分区" + regionName));
         }
         return result;
     }
 
-    private Set<String> stateNames(JsonNode stateSpace) {
+    private Set<String> stateNames(JsonNode stateSpace, String stateSpaceName) {
         Set<String> names = new HashSet<>();
-        for (JsonNode state : iterable(stateSpace.path("states"))) {
-            String name = state.path("stateName").asText("");
-            if (!name.isBlank()) {
-                names.add(name);
+        for (JsonNode state : iterable(stateSpace == null ? null : stateSpace.path("states"))) {
+            String name = requireText(state, "stateName", stateSpaceName);
+            if (!names.add(name)) {
+                throw new IllegalArgumentException(stateSpaceName + "状态名重复: " + name);
             }
+        }
+        String initialStateName = requireText(stateSpace, "initialStateName", stateSpaceName);
+        if (!names.contains(initialStateName)) {
+            throw new IllegalArgumentException(stateSpaceName + "initialStateName未引用分区内状态: " + initialStateName);
         }
         return names;
     }
@@ -847,7 +869,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             String adapterAttr = mapping.path("adapterAttrName").asText("");
             String modelAttr = mapping.path("modelAttributeName").asText("");
             if (adapterAttr.isBlank() || modelAttr.isBlank()) {
-                continue;
+                throw new IllegalArgumentException("属性映射缺少adapterAttrName或modelAttributeName");
             }
             String adapterType = adapterAttrTypes.get(adapterAttr);
             String modelType = modelAttrTypes.get(modelAttr);

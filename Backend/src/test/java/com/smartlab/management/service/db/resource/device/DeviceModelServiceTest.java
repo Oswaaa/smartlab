@@ -148,9 +148,13 @@ class DeviceModelServiceTest {
         assertEquals(6, names.size());
         assertEquals(Set.of("WF_EXECUTE_START", "WF_EXECUTE_ABORT"),
                 interfaceSignals(interfaces, "Interface_workflow_in"));
-        assertEquals(Set.of(), interfaceSignals(interfaces, "Interface_adapter_in"));
+        assertEquals(Set.of("SENT_EVENT", "RUNNING_EVENT", "COMPLETED_EVENT", "FAILED_EVENT", "ABORTED_EVENT"),
+                interfaceSignals(interfaces, "Interface_adapter_in"));
         assertEquals(Set.of("CMD_STATE", "OP_STATE"), interfaceSignals(interfaces, "Interface_state_out"));
-        assertTrue(stateMachine.path("transitions").isEmpty());
+        assertTrue(hasTransition(stateMachine.path("transitions"), "SENT", "RUNNING", "SENT_EVENT"));
+        assertTrue(hasTransition(stateMachine.path("transitions"), "RUNNING", "COMPLETED", "COMPLETED_EVENT"));
+        assertTrue(hasTransition(stateMachine.path("transitions"), "RUNNING", "FAILED", "FAILED_EVENT"));
+        assertTrue(hasTransition(stateMachine.path("transitions"), "ABORTING", "ABORTED", "ABORTED_EVENT"));
         assertEquals(Set.of("IDLE", "SENT", "RUNNING", "COMPLETED", "FAILED", "ABORTING", "ABORTED"),
                 stateNames(stateMachine.path("cmdLifecycleSpace").path("states")));
 
@@ -288,7 +292,11 @@ class DeviceModelServiceTest {
         telemetry.putArray("adapterAttributes");
         telemetry.putArray("attributesMapping");
         ObjectNode events = contract.putObject("events");
-        events.putArray("cmdEvents");
+        addEvent(events.putArray("cmdEvents"), "SENT_EVENT");
+        addEvent(events.withArray("cmdEvents"), "RUNNING_EVENT");
+        addEvent(events.withArray("cmdEvents"), "COMPLETED_EVENT");
+        addEvent(events.withArray("cmdEvents"), "FAILED_EVENT");
+        addEvent(events.withArray("cmdEvents"), "ABORTED_EVENT");
         events.putArray("opEvents");
         return contract;
     }
@@ -332,6 +340,7 @@ class DeviceModelServiceTest {
         addEvent(events.withArray("cmdEvents"), "RUNNING_EVENT");
         addEvent(events.withArray("cmdEvents"), "COMPLETED_EVENT");
         addEvent(events.withArray("cmdEvents"), "FAILED_EVENT");
+        addEvent(events.withArray("cmdEvents"), "ABORTED_EVENT");
         payload.setStateMachineInterfaces(standardInterfaces());
         payload.setCmdState(completeCmdState());
         payload.setStateTransitions(completeCmdTransitions());
@@ -362,6 +371,7 @@ class DeviceModelServiceTest {
         addTransition(transitions, "CMD", "RUNNING", "RUNNING", "RUNNING_EVENT");
         addTransition(transitions, "CMD", "RUNNING", "COMPLETED", "COMPLETED_EVENT");
         addTransition(transitions, "CMD", "RUNNING", "FAILED", "FAILED_EVENT");
+        addTransition(transitions, "CMD", "ABORTING", "ABORTED", "ABORTED_EVENT");
         return transitions;
     }
 
@@ -402,7 +412,7 @@ class DeviceModelServiceTest {
         addInterface(interfaces, "Interface_workflow_in", "IN", "WORKFLOW", "WF_EXECUTE_START", "WF_EXECUTE_ABORT");
         addInterface(interfaces, "Interface_control_in", "IN", "CONTROL", "MANUAL_EXECUTE_START", "MANUAL_EXECUTE_ABORT");
         addInterface(interfaces, "Interface_constraint_in", "IN", "CONSTRAINT", "CONSTRAINT_EXECUTE", "CONSTRAINT_ABORT");
-        addInterface(interfaces, "Interface_adapter_in", "IN", "ADAPTER", "SENT_EVENT", "RUNNING_EVENT", "COMPLETED_EVENT", "FAILED_EVENT");
+        addInterface(interfaces, "Interface_adapter_in", "IN", "ADAPTER", "SENT_EVENT", "RUNNING_EVENT", "COMPLETED_EVENT", "FAILED_EVENT", "ABORTED_EVENT");
         addInterface(interfaces, "Interface_adapter_out", "OUT", "ADAPTER", "CMD_START", "CMD_ABORT");
         addInterface(interfaces, "Interface_state_out", "OUT", "STATE", "CMD_STATE", "OP_STATE");
         return interfaces;
@@ -440,7 +450,11 @@ class DeviceModelServiceTest {
         telemetry.putArray("adapterAttributes");
         telemetry.putArray("attributesMapping");
         ObjectNode events = contract.putObject("events");
-        events.putArray("cmdEvents");
+        addEvent(events.putArray("cmdEvents"), "SENT_EVENT");
+        addEvent(events.withArray("cmdEvents"), "RUNNING_EVENT");
+        addEvent(events.withArray("cmdEvents"), "COMPLETED_EVENT");
+        addEvent(events.withArray("cmdEvents"), "FAILED_EVENT");
+        addEvent(events.withArray("cmdEvents"), "ABORTED_EVENT");
         events.putArray("opEvents");
         payload.setAdapterContract(contract);
         payload.setPorts(JsonNodeSupport.arrayNode());
@@ -455,7 +469,9 @@ class DeviceModelServiceTest {
         state.put("stateName", "IDLE");
         state.putArray("onEntry");
         payload.setOpState(opState);
-        payload.setStateTransitions(JsonNodeSupport.arrayNode());
+        payload.setStateMachineInterfaces(standardInterfaces());
+        payload.setCmdState(completeCmdState());
+        payload.setStateTransitions(completeCmdTransitions());
         return payload;
     }
     private Set<String> stateNames(JsonNode states) {

@@ -37,14 +37,24 @@ class SystemExecutionContractTest {
         List<SystemExecutionContract.SystemTransitionDefinition> transitions =
                 SystemExecutionContract.stateMachineSystemTransitions();
 
-        assertEquals(9, transitions.size());
-        assertEquals(3, transitions.stream()
-                .filter(row -> "IDLE".equals(row.fromStateName()) && "SENT".equals(row.toStateName()))
-                .count());
-        assertEquals(6, transitions.stream()
-                .filter(row -> List.of("SENT", "RUNNING").contains(row.fromStateName())
-                        && "ABORTING".equals(row.toStateName()))
-                .count());
+        assertEquals(List.of(
+                "CMD|IDLE|SENT|Interface_workflow_in|WF_EXECUTE_START|Interface_adapter_out|CMD_START",
+                "CMD|IDLE|SENT|Interface_control_in|MANUAL_EXECUTE_START|Interface_adapter_out|CMD_START",
+                "CMD|IDLE|SENT|Interface_constraint_in|CONSTRAINT_EXECUTE|Interface_adapter_out|CMD_START",
+                "CMD|SENT|ABORTING|Interface_workflow_in|WF_EXECUTE_ABORT|Interface_adapter_out|CMD_ABORT",
+                "CMD|RUNNING|ABORTING|Interface_workflow_in|WF_EXECUTE_ABORT|Interface_adapter_out|CMD_ABORT",
+                "CMD|SENT|ABORTING|Interface_control_in|MANUAL_EXECUTE_ABORT|Interface_adapter_out|CMD_ABORT",
+                "CMD|RUNNING|ABORTING|Interface_control_in|MANUAL_EXECUTE_ABORT|Interface_adapter_out|CMD_ABORT",
+                "CMD|SENT|ABORTING|Interface_constraint_in|CONSTRAINT_ABORT|Interface_adapter_out|CMD_ABORT",
+                "CMD|RUNNING|ABORTING|Interface_constraint_in|CONSTRAINT_ABORT|Interface_adapter_out|CMD_ABORT"
+        ), transitions.stream().map(row -> String.join("|",
+                row.stateSpace(),
+                row.fromStateName(),
+                row.toStateName(),
+                row.triggerInterfaceName(),
+                row.triggerSignalName(),
+                row.actionInterfaceName(),
+                row.actionSignalName())).toList());
     }
 
     @Test

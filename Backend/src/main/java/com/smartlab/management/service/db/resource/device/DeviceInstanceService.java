@@ -147,7 +147,7 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
 
         if (instance.getId() == null) {
             instance.setLifecycleStatus(DeviceInstanceLifecycle.IN_USE);
-            deviceModelService.requireRuntimeReady(instance.getDeviceModelId());
+            deviceModelService.requireRuntimeReadyForUpdate(instance.getDeviceModelId());
         } else {
             DeviceInstances existing = mapper.selectById(instance.getId());
             if (existing == null) {

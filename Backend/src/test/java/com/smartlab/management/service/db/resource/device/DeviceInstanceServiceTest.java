@@ -1,6 +1,7 @@
 package com.smartlab.management.service.db.resource.device;
 
 import com.smartlab.management.entity.resource.device.DeviceInstances;
+import com.smartlab.management.entity.resource.device.DeviceModels;
 import com.smartlab.management.entity.resource.device.DeviceTwinStates;
 import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
 import com.smartlab.management.mapper.resource.device.DeviceModelsMapper;
@@ -8,6 +9,7 @@ import com.smartlab.management.mapper.resource.device.DeviceTwinStatesMapper;
 import com.smartlab.management.service.db.resource.data.DataIndexService;
 import com.smartlab.management.service.protocol.AdapterPayloadMapperService;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -16,6 +18,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -36,9 +39,28 @@ class DeviceInstanceServiceTest {
     }
 
     @Test
+    void createLocksAndValidatesModelBeforeInsertingInstance() {
+        Fixture fixture = new Fixture();
+        DeviceModels runtimeModel = new DeviceModels();
+        runtimeModel.setId(3L);
+        when(fixture.modelService.requireRuntimeReadyForUpdate(3L)).thenReturn(runtimeModel);
+        doAnswer(invocation -> {
+            DeviceInstances instance = invocation.getArgument(0);
+            instance.setId(11L);
+            return 1;
+        }).when(fixture.instances).insert(any(DeviceInstances.class));
+
+        fixture.service.savePayload(Map.of("deviceModelId", 3L, "instanceName", "Reactor-01"));
+
+        InOrder order = inOrder(fixture.modelService, fixture.instances);
+        order.verify(fixture.modelService).requireRuntimeReadyForUpdate(3L);
+        order.verify(fixture.instances).insert(any(DeviceInstances.class));
+    }
+
+    @Test
     void createInstanceRequiresRuntimeReadyModelBeforeAnyWrite() {
         Fixture fixture = new Fixture();
-        when(fixture.modelService.requireRuntimeReady(7L))
+        when(fixture.modelService.requireRuntimeReadyForUpdate(7L))
                 .thenThrow(new IllegalArgumentException("设备模型不完整"));
 
         Map<String, Object> payload = Map.of(
@@ -46,7 +68,7 @@ class DeviceInstanceServiceTest {
                 "instanceName", "device-1");
 
         assertThrows(IllegalArgumentException.class, () -> fixture.service.savePayload(payload));
-        verify(fixture.modelService).requireRuntimeReady(7L);
+        verify(fixture.modelService).requireRuntimeReadyForUpdate(7L);
         verify(fixture.instances, never()).insert(any(DeviceInstances.class));
         verify(fixture.twins, never()).insert(any(DeviceTwinStates.class));
         verifyNoInteractions(fixture.data, fixture.routes, fixture.models, fixture.components);

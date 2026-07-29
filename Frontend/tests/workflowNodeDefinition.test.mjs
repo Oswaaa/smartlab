@@ -225,10 +225,11 @@ test('DEV与SUBFLOW使用后端所需完整生命周期', () => {
   }
 })
 
-test('系统IN接口允许业务触发器且系统动作允许业务动作', () => {
+test('系统IN接口允许业务触发器调用自定义UPDATE动作', () => {
   const node = createFunctionNode('AGGREGATE', 'aggregate')
-  node.interfaces[0].bindingTriggers.push({ action: 'notify', condition: { object: 'inputSignalName', operator: '=', threshold: 'OTHER' } })
-  node.actions.push({ actionName: 'notify', actionType: 'EMIT', targetInterfaceName: 'Interface_workflow_out', signalName: 'ACTIVE' })
+  node.internalVariables.push({ name: 'ready', dataType: 'BOOLEAN' })
+  node.interfaces[0].bindingTriggers.push({ action: 'markReady', condition: { object: 'ready', operator: '=', threshold: false } })
+  node.actions.push({ actionName: 'markReady', actionType: 'UPDATE', internalVariableName: 'ready', valueExpression: 'true' })
   assert.deepEqual(validateNodeDefinition(node), [])
 })
 

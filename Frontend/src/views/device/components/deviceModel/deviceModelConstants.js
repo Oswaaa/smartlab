@@ -1,5 +1,5 @@
 import { reactive } from 'vue'
-import { loadFrontendContractMetadata } from '../../../../services/frontendContractMetadata.js'
+import { invalidateFrontendContractMetadata, loadFrontendContractMetadata } from '../../../../services/frontendContractMetadata.js'
 
 // ==========================================
 // 1. UI 静态常量与下拉菜单项
@@ -85,6 +85,7 @@ export async function ensureProtocolMetadataLoaded(loader = loadProtocolMetadata
   }
   await protocolMetadataLoading
   if (!metadataReady()) {
+    invalidateFrontendContractMetadata()
     throw new Error('设备模型规范元数据不完整')
   }
 }

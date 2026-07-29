@@ -149,7 +149,7 @@ import {
 import WorkflowCanvasNode from '../../components/task/workflow/WorkflowCanvasNode.vue'
 import WorkflowNodeInspector from '../../components/task/workflow/WorkflowNodeInspector.vue'
 import { invalidateFrontendContractMetadata, loadFrontendContractMetadata } from '../../services/frontendContractMetadata.js'
-import { configureWorkflowNodeTemplates, createDeviceNode, createFunctionNode, createSubflowNode, removePort, validateNodeDefinition } from '../../utils/workflowNodeDefinition.js'
+import { configureWorkflowNodeTemplates, createDeviceNode, createFunctionNode, createSubflowNode, rehydrateWorkflowNodes, removePort, validateNodeDefinition } from '../../utils/workflowNodeDefinition.js'
 
 type NodeDefinition = Record<string, any>
 type FlowNode = Record<string, any>
@@ -612,9 +612,12 @@ async function save() {
 async function loadWorkflow(id:number | null) {
   if (!id) return
   try {
+    await initializeContract()
+    if (!contractReady.value) throw Error(contractError.value || '工作流系统模板尚未加载')
     const response = await axios.get('/api/workflow/detail/'+id)
     if (!response.data?.success) throw Error(response.data?.message || '加载失败')
-    reset(response.data.data)
+    const workflow = response.data.data
+    reset({ ...workflow, nodesDef: rehydrateWorkflowNodes(workflow.nodesDef || []) })
   } catch (error:any) {
     ElMessage.error(error.message || '加载流程失败')
   }

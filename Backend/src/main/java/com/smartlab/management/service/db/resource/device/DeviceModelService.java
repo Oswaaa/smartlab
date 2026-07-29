@@ -23,6 +23,7 @@ import com.smartlab.management.service.db.resource.data.DataTemplateService;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.io.Serializable;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -31,7 +32,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
-import java.util.UUID;
 
 /**
  * 设备模型表服务。
@@ -73,6 +73,11 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         return mapper.selectList(Wrappers.<DeviceModels>lambdaQuery().orderByDesc(DeviceModels::getId));
     }
 
+    @Override
+    public DeviceModels save(DeviceModels entity) {
+        throw new UnsupportedOperationException("设备模型必须通过savePayload完成完整校验");
+    }
+
     public PageResult<DeviceModels> page(long pageNo, long pageSize, String keyword) {
         return page(pageNo, pageSize, keyword, (Long) null);
     }
@@ -106,6 +111,23 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             throw new IllegalArgumentException("设备模型不存在: " + modelId);
         }
         validateForPersistence(model);
+        return model;
+    }
+
+    public DeviceModels requireRuntimeReadyForUpdate(Long modelId) {
+        DeviceModels model = lockExistingModel(modelId);
+        validateForPersistence(model);
+        return model;
+    }
+
+    private DeviceModels lockExistingModel(Long modelId) {
+        if (modelId == null) {
+            throw new IllegalArgumentException("deviceModelId不能为空");
+        }
+        DeviceModels model = mapper.selectByIdForUpdate(modelId);
+        if (model == null) {
+            throw new IllegalArgumentException("设备模型不存在: " + modelId);
+        }
         return model;
     }
 
@@ -148,52 +170,14 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
      * 保存设备模型内置约束规则。
      */
     public void saveModelConstraintRule(Map<String, Object> payload) {
-        String modelId = Objects.toString(payload.get("modelId"), "");
-        DeviceModels model = getById(modelId);
-        if (model == null) {
-            throw new IllegalArgumentException("设备模型不存在");
-        }
-        ArrayNode constraints = model.getIntrinsicConstraint() != null && model.getIntrinsicConstraint().isArray()
-                ? (ArrayNode) model.getIntrinsicConstraint()
-                : JsonNodeSupport.arrayNode();
-        String ruleId = Objects.toString(payload.getOrDefault("constraintRuleId", "RULE_" + UUID.randomUUID()), "");
-        ArrayNode next = JsonNodeSupport.arrayNode();
-        constraints.forEach(rule -> {
-            if (!ruleId.equals(rule.path("constraintRuleId").asText())) {
-                next.add(rule);
-            }
-        });
-        Map<String, Object> storedRule = new HashMap<>(payload);
-        storedRule.put("constraintRuleId", ruleId);
-        if (!storedRule.containsKey("violationStateRef") && storedRule.containsKey("action")) {
-            storedRule.put("violationStateRef", storedRule.get("action"));
-        }
-        next.add(JsonNodeSupport.toNode(storedRule));
-        model.setIntrinsicConstraint(next);
-        model.setUpdateTime(OffsetDateTime.now());
-        mapper.updateById(model);
+        throw new UnsupportedOperationException("Use savePayload to update intrinsic constraints");
     }
 
     /**
      * 删除设备模型内置约束规则。
      */
     public void deleteModelConstraintRule(String modelId, String constraintRuleId) {
-        DeviceModels model = getById(modelId);
-        if (model == null) {
-            throw new IllegalArgumentException("设备模型不存在");
-        }
-        ArrayNode next = JsonNodeSupport.arrayNode();
-        JsonNode current = model.getIntrinsicConstraint();
-        if (current != null && current.isArray()) {
-            current.forEach(rule -> {
-                if (!constraintRuleId.equals(rule.path("constraintRuleId").asText())) {
-                    next.add(rule);
-                }
-            });
-        }
-        model.setIntrinsicConstraint(next);
-        model.setUpdateTime(OffsetDateTime.now());
-        mapper.updateById(model);
+        throw new UnsupportedOperationException("Use savePayload to update intrinsic constraints");
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -203,7 +187,9 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         }
         DeviceModels model = new DeviceModels();
         if (payload.getModelId() != null) {
+            DeviceModels existing = lockExistingModel(payload.getModelId());
             model.setId(payload.getModelId());
+            model.setCreateTime(existing.getCreateTime());
             Long count = deviceInstancesMapper.selectCount(
                     com.baomidou.mybatisplus.core.toolkit.Wrappers.<DeviceInstances>lambdaQuery()
                             .eq(DeviceInstances::getDeviceModelId, payload.getModelId()));
@@ -591,8 +577,11 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         }
     }
 
-    public void delete(String id) {
-        Long modelId = parseId(id);
+    @Override
+    @Transactional(rollbackFor = Exception.class)
+    public void delete(Serializable id) {
+        Long modelId = parseId(String.valueOf(id));
+        lockExistingModel(modelId);
         Long count = deviceInstancesMapper.selectCount(
                 Wrappers.<DeviceInstances>lambdaQuery().eq(DeviceInstances::getDeviceModelId, modelId));
         if (count != null && count > 0) {
@@ -619,7 +608,30 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
     }
 
     private void validateCapabilityModelShape(DeviceModels model) {
-        for (JsonNode attribute : iterable(model.getAttributes())) {
+        JsonNode attributes = requireObjectArray(model.getAttributes(), "attributes");
+        JsonNode capabilities = requireObjectArray(model.getCapabilities(), "capabilities");
+        requireObjectArray(model.getPorts(), "ports");
+        requireObjectArray(model.getIntrinsicConstraint(), "intrinsicConstraints");
+        for (JsonNode capability : capabilities) {
+            requireObjectArray(capability.get("parameters"), "capabilities[].parameters");
+            requireObjectArray(capability.get("parameterMapping"), "capabilities[].parameterMapping");
+        }
+        JsonNode contract = requireObject(model.getAdapterContract(), "adapterContract");
+        JsonNode config = requireObject(contract.get("config"), "adapterContract.config");
+        JsonNode commands = requireObjectArray(contract.get("commands"), "adapterContract.commands");
+        for (JsonNode command : commands) {
+            requireObjectArray(command.get("commandParameters"),
+                    "adapterContract.commands[].commandParameters");
+        }
+        JsonNode telemetry = requireObject(contract.get("telemetry"), "adapterContract.telemetry");
+        requireObjectArray(telemetry.get("adapterAttributes"),
+                "adapterContract.telemetry.adapterAttributes");
+        requireObjectArray(telemetry.get("attributesMapping"),
+                "adapterContract.telemetry.attributesMapping");
+        JsonNode events = requireObject(contract.get("events"), "adapterContract.events");
+        requireObjectArray(events.get("cmdEvents"), "adapterContract.events.cmdEvents");
+        requireObjectArray(events.get("opEvents"), "adapterContract.events.opEvents");
+        for (JsonNode attribute : attributes) {
             requireText(attribute, "attributeName", "设备属性");
             String valueKind = requireText(attribute, "valueKind", "设备属性");
             if (!Set.of("DISCRETE", "CONTINUOUS").contains(valueKind)) {
@@ -627,7 +639,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             }
             validateDataType(attribute, "dataType", "设备属性");
         }
-        for (JsonNode capability : iterable(model.getCapabilities())) {
+        for (JsonNode capability : capabilities) {
             requireText(capability, "capabilityName", "设备能力");
             requireText(capability, "adapterCommandName", "设备能力");
             requireText(capability, "displayName", "设备能力");
@@ -637,18 +649,13 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
                 validateDataType(parameter, "dataType", "能力参数");
             }
         }
-        JsonNode contract = model.getAdapterContract();
-        if (contract == null || !contract.isObject()) {
-            throw new IllegalArgumentException("adapterContract必须是对象");
-        }
-        JsonNode config = contract.path("config");
         requireText(config, "adapterName", "adapterContract.config");
         requireText(config, "categoryName", "adapterContract.config");
         String protocol = requireText(config, "protocol", "adapterContract.config");
         if (!protocolDictionaryService.enumValues("CommunicationProtocol").contains(protocol)) {
             throw new IllegalArgumentException("Adapter通信协议不合法: " + protocol);
         }
-        for (JsonNode command : iterable(contract.path("commands"))) {
+        for (JsonNode command : commands) {
             requireText(command, "commandName", "Adapter命令");
             for (JsonNode parameter : iterable(command.path("commandParameters"))) {
                 if (parameter.path("internal").asBoolean(false)) {
@@ -659,12 +666,10 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
                 validateDataType(parameter, "dataType", "Adapter命令参数");
             }
         }
-        JsonNode telemetry = contract.path("telemetry");
         for (JsonNode attribute : iterable(telemetry.path("adapterAttributes"))) {
             requireText(attribute, "telemetryName", "Adapter遥测属性");
             validateDataType(attribute, "dataType", "Adapter遥测属性");
         }
-        JsonNode events = contract.path("events");
         for (String group : List.of("cmdEvents", "opEvents")) {
             for (JsonNode event : iterable(events.path(group))) {
                 requireText(event, "eventName", "Adapter事件");
@@ -673,6 +678,25 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         }
     }
 
+
+    private JsonNode requireObject(JsonNode node, String path) {
+        if (node == null || !node.isObject()) {
+            throw new IllegalArgumentException(path + " must be an object");
+        }
+        return node;
+    }
+
+    private JsonNode requireObjectArray(JsonNode node, String path) {
+        if (node == null || !node.isArray()) {
+            throw new IllegalArgumentException(path + " must be an array");
+        }
+        for (JsonNode item : node) {
+            if (!item.isObject()) {
+                throw new IllegalArgumentException(path + "[] must contain objects");
+            }
+        }
+        return node;
+    }
     private String requireText(JsonNode node, String fieldName, String scope) {
         String value = node == null ? "" : node.path(fieldName).asText("");
         if (value.isBlank()) {

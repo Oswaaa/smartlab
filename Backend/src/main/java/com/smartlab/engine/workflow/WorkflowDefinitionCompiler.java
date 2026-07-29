@@ -153,7 +153,8 @@ public class WorkflowDefinitionCompiler {
         }
         ObjectNode expected = WorkflowNodeSystemContract.template(index.nodeType(), functionType);
         validateTemplateLifecycle(node.path("lifecycle"), expected.path("lifecycle"), name);
-        validateSystemInterfaces(index, node.path("interfaces"), expected.path("interfaces"));
+        Set<String> systemActionNames = namedItems(expected.path("actions"), "actionName").keySet();
+        validateSystemInterfaces(index, node.path("interfaces"), expected.path("interfaces"), systemActionNames);
         validateSystemActions(index, node.path("actions"), expected.path("actions"));
     }
     private void validateActions(NodeIndex index, JsonNode node, String path) {
@@ -358,7 +359,8 @@ public class WorkflowDefinitionCompiler {
         return result;
     }
 
-    private void validateSystemInterfaces(NodeIndex index, JsonNode actualInterfaces, JsonNode expectedInterfaces) {
+    private void validateSystemInterfaces(NodeIndex index, JsonNode actualInterfaces, JsonNode expectedInterfaces,
+            Set<String> systemActionNames) {
         Map<String, JsonNode> expectedByName = namedItems(expectedInterfaces, "name");
         for (JsonNode expected : iterable(expectedInterfaces)) {
             String interfaceName = expected.path("name").asText();
@@ -366,8 +368,8 @@ public class WorkflowDefinitionCompiler {
             if (!matchesSystemInterface(actual, expected)) {
                 throw nodeError(index.nodeName(), "interfaces." + interfaceName, "系统接口定义被修改");
             }
-            validateSystemTriggers(index.nodeName(), interfaceName,
-                    actual.path("bindingTriggers"), expected.path("bindingTriggers"));
+            validateSystemTriggers(index, interfaceName, actual.path("bindingTriggers"),
+                    expected.path("bindingTriggers"), systemActionNames);
         }
         for (JsonNode actual : iterable(actualInterfaces)) {
             if (!expectedByName.containsKey(actual.path("name").asText())) {
@@ -387,8 +389,8 @@ public class WorkflowDefinitionCompiler {
                 && actualSignals.equals(expectedSignals);
     }
 
-    private void validateSystemTriggers(String nodeName, String interfaceName,
-                                        JsonNode actualTriggers, JsonNode expectedTriggers) {
+    private void validateSystemTriggers(NodeIndex nodeIndex, String interfaceName,
+            JsonNode actualTriggers, JsonNode expectedTriggers, Set<String> systemActionNames) {
         List<JsonNode> actualItems = nodeList(actualTriggers);
         Set<Integer> matchedIndexes = new HashSet<>();
         for (JsonNode expected : iterable(expectedTriggers)) {
@@ -403,15 +405,27 @@ public class WorkflowDefinitionCompiler {
                 }
             }
             if (matchedIndex < 0) {
-                throw nodeError(nodeName, "interfaces." + interfaceName + ".bindingTriggers",
+                throw nodeError(nodeIndex.nodeName(), "interfaces." + interfaceName + ".bindingTriggers",
                         "系统触发器缺失或已篡改");
             }
             matchedIndexes.add(matchedIndex);
         }
         for (int index = 0; index < actualItems.size(); index++) {
             if (!matchedIndexes.contains(index) && claimsSystemIdentity(actualItems.get(index))) {
-                throw nodeError(nodeName, "interfaces." + interfaceName + ".bindingTriggers",
+                throw nodeError(nodeIndex.nodeName(), "interfaces." + interfaceName + ".bindingTriggers",
                         "存在未知或已篡改的系统触发器");
+            }
+            if (!matchedIndexes.contains(index)) {
+                JsonNode trigger = actualItems.get(index);
+                String actionName = trigger.path("action").asText("");
+                JsonNode action = nodeIndex.actions().get(actionName);
+                if (action == null || systemActionNames.contains(actionName)
+                        || claimsSystemIdentity(action)
+                        || !WorkflowNodeActionType.UPDATE.name().equals(action.path("actionType").asText())) {
+                    throw nodeError(nodeIndex.nodeName(),
+                            "interfaces." + interfaceName + ".bindingTriggers[" + index + "].action",
+                            "自定义触发器只能调用非系统UPDATE动作: " + actionName);
+                }
             }
         }
     }

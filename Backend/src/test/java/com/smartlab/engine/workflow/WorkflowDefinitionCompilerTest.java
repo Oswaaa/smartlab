@@ -37,7 +37,64 @@ class WorkflowDefinitionCompilerTest {
         ((ObjectNode) targetNode.withArray("internalVariables").get(0)).put("dataType", "STRING");
 
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> compiler.compile(request));
-        assertTrue(error.getMessage() != null);
+        assertEquals(
+                "portConnections[0]: 源目标内部变量数据类型不一致: DOUBLE -> STRING",
+                error.getMessage());
+    }
+
+    @Test
+    void acceptsCustomTriggerThatTargetsCustomUpdate() {
+        ObjectNode aggregate = node(new NodeCase("FUNC_NODE", "AGGREGATE"));
+        aggregate.withArray("internalVariables").addObject()
+                .put("name", "payload")
+                .put("dataType", "JSON");
+        aggregate.withArray("actions").addObject()
+                .put("actionName", "setPayload")
+                .put("actionType", "UPDATE")
+                .put("internalVariableName", "payload")
+                .put("valueExpression", "{}");
+        ((ObjectNode) aggregate.withArray("interfaces").get(0)).withArray("bindingTriggers").addObject()
+                .put("action", "setPayload")
+                .putObject("condition")
+                .put("object", "inputSignalName")
+                .put("operator", "=")
+                .put("threshold", "OTHER");
+
+        assertDoesNotThrow(() -> compiler.compile(requestWith(aggregate)));
+    }
+
+    @Test
+    void rejectsCustomTriggerThatTargetsSystemEmit() {
+        ObjectNode aggregate = node(new NodeCase("FUNC_NODE", "AGGREGATE"));
+        ((ObjectNode) aggregate.withArray("interfaces").get(0)).withArray("bindingTriggers").addObject()
+                .put("action", "emitActive")
+                .putObject("condition")
+                .put("object", "inputSignalName")
+                .put("operator", "=")
+                .put("threshold", "OTHER");
+
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class, () -> compiler.compile(requestWith(aggregate)));
+        assertEquals(
+                "节点candidate.interfaces.Interface_workflow_in.bindingTriggers[1].action: "
+                        + "自定义触发器只能调用非系统UPDATE动作: emitActive",
+                error.getMessage());
+    }
+
+    @Test
+    void rejectsCustomEmitEvenWhenItsTargetWouldOtherwiseBeValid() {
+        ObjectNode aggregate = node(new NodeCase("FUNC_NODE", "AGGREGATE"));
+        aggregate.withArray("actions").addObject()
+                .put("actionName", "customEmit")
+                .put("actionType", "EMIT")
+                .put("targetInterfaceName", "Interface_workflow_out")
+                .put("signalName", "ACTIVE");
+
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class, () -> compiler.compile(requestWith(aggregate)));
+        assertEquals(
+                "节点candidate.actions.customEmit: 只允许新增非系统UPDATE动作",
+                error.getMessage());
     }
 
     @Test
@@ -54,8 +111,12 @@ class WorkflowDefinitionCompilerTest {
     @Test
     void rejectsEmitToInputInterface() throws Exception {
         WorkflowSaveRequest request = validDefinition();
-        ObjectNode start = (ObjectNode) request.getNodesDef().get(0);
-        ((ObjectNode) start.withArray("actions").get(0)).put("targetInterfaceName", "Interface_workflow_in");
+        ObjectNode end = (ObjectNode) request.getNodesDef().get(1);
+        end.withArray("actions").addObject()
+                .put("actionName", "invalidEmit")
+                .put("actionType", "EMIT")
+                .put("targetInterfaceName", "Interface_workflow_in")
+                .put("signalName", "ACTIVE");
 
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> compiler.compile(request));
         assertTrue(error.getMessage().contains("EMIT"));
@@ -77,13 +138,25 @@ class WorkflowDefinitionCompilerTest {
     private WorkflowSaveRequest validDefinition() throws Exception {
         WorkflowSaveRequest request = new WorkflowSaveRequest();
         request.setName("port-workflow");
-        request.setNodesDef(JsonNodeSupport.MAPPER.readTree("""
-                [
-                  {"name":"source","nodeType":"FUNC_NODE","functionType":"START","internalVariables":[{"name":"value","dataType":"DOUBLE"}],"interfaces":[{"name":"Interface_workflow_out","direction":"OUT","interfaceType":"WORKFLOW","allowedSignals":["ACTIVE"]},{"name":"Interface_workflow_in","direction":"IN","interfaceType":"WORKFLOW","allowedSignals":["ACTIVE"]}],"ports":[{"name":"valueOut","direction":"OUT","internalVariableName":"value"}],"actions":[{"actionName":"emitActive","actionType":"EMIT","targetInterfaceName":"Interface_workflow_out","signalName":"ACTIVE"}]},
-                  {"name":"target","nodeType":"FUNC_NODE","functionType":"END","internalVariables":[{"name":"value","dataType":"DOUBLE"}],"interfaces":[{"name":"Interface_workflow_in","direction":"IN","interfaceType":"WORKFLOW","allowedSignals":["ACTIVE"]}],"ports":[{"name":"valueIn","direction":"IN","internalVariableName":"value"}],"actions":[]}
-                ]
-                """));
-        normalize(request);
+        ObjectNode source = node(new NodeCase("FUNC_NODE", "START"));
+        source.put("name", "source");
+        source.withArray("internalVariables").addObject()
+                .put("name", "value")
+                .put("dataType", "DOUBLE");
+        source.withArray("ports").addObject()
+                .put("name", "valueOut")
+                .put("direction", "OUT")
+                .put("internalVariableName", "value");
+        ObjectNode target = node(new NodeCase("FUNC_NODE", "END"));
+        target.put("name", "target");
+        target.withArray("internalVariables").addObject()
+                .put("name", "value")
+                .put("dataType", "DOUBLE");
+        target.withArray("ports").addObject()
+                .put("name", "valueIn")
+                .put("direction", "IN")
+                .put("internalVariableName", "value");
+        request.setNodesDef(JsonNodeSupport.arrayNode().add(source).add(target));
         request.setInterfaceConnections(JsonNodeSupport.MAPPER.readTree("""
                 [{"connectionType":"NODE_TO_NODE","source":{"nodeName":"source","interfaceName":"Interface_workflow_out"},"target":{"nodeName":"target","interfaceName":"Interface_workflow_in"}}]
                 """));

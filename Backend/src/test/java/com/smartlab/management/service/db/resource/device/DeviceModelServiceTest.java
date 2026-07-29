@@ -15,43 +15,145 @@ import com.smartlab.management.service.db.resource.data.DataTemplateService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 
+import java.io.Serializable;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
+import java.util.function.Consumer;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 class DeviceModelServiceTest {
 
     private AdapterManifestService adapterManifestService;
     private DeviceModelsMapper modelMapper;
+    private DeviceInstancesMapper deviceInstancesMapper;
     private DeviceModelService service;
     private AdapterIndexService adapterIndexService;
 
     @BeforeEach
     void setUp() {
         modelMapper = mock(DeviceModelsMapper.class);
+        deviceInstancesMapper = mock(DeviceInstancesMapper.class);
         adapterIndexService = mock(AdapterIndexService.class);
         ProtocolDictionaryService protocol = new ProtocolDictionaryService();
         adapterManifestService = mock(AdapterManifestService.class);
         service = new DeviceModelService(
                 modelMapper,
-                mock(DeviceInstancesMapper.class),
+                deviceInstancesMapper,
                 mock(DeviceCategoryService.class),
                 adapterManifestService,
                 protocol,
                 mock(DataTemplateService.class),
                 adapterIndexService);
         when(adapterManifestService.normalizeDataType(any())).thenAnswer(invocation -> invocation.getArgument(0));
+    }
+
+    @Test
+    void sealsGenericAndConstraintMutationBypasses() {
+        assertThrows(UnsupportedOperationException.class, () -> service.save(completeModel()));
+        assertThrows(UnsupportedOperationException.class,
+                () -> service.saveModelConstraintRule(java.util.Map.of("modelId", "7")));
+        assertThrows(UnsupportedOperationException.class,
+                () -> service.deleteModelConstraintRule("7", "rule-1"));
+
+        verifyNoInteractions(modelMapper, deviceInstancesMapper);
+    }
+
+    @Test
+    void genericDeleteSignatureOverridesTheBaseMethodAndKeepsReferenceFreeze() throws Exception {
+        assertEquals(DeviceModelService.class,
+                DeviceModelService.class.getMethod("delete", Serializable.class).getDeclaringClass());
+        DeviceModels lockedModel = completeModel();
+        when(modelMapper.selectByIdForUpdate(7L)).thenReturn(lockedModel);
+        when(deviceInstancesMapper.selectCount(any())).thenReturn(1L);
+
+        assertThrows(IllegalStateException.class, () -> service.delete((Serializable) "7"));
+
+        InOrder order = inOrder(modelMapper, deviceInstancesMapper);
+        order.verify(modelMapper).selectByIdForUpdate(7L);
+        order.verify(deviceInstancesMapper).selectCount(any());
+        verify(modelMapper, never()).deleteById(any(Serializable.class));
+    }
+
+    @Test
+    void updateLocksModelRowBeforeReferenceCheckAndWrite() {
+        DeviceModelSaveDTO payload = completePayload();
+        payload.setModelId(7L);
+        DeviceModels lockedModel = completeModel();
+        when(modelMapper.selectByIdForUpdate(7L)).thenReturn(lockedModel);
+        when(deviceInstancesMapper.selectCount(any())).thenReturn(0L);
+
+        service.savePayload(payload);
+
+        InOrder order = inOrder(modelMapper, deviceInstancesMapper);
+        order.verify(modelMapper).selectByIdForUpdate(7L);
+        order.verify(deviceInstancesMapper).selectCount(any());
+        order.verify(modelMapper).updateById(any(DeviceModels.class));
+    }
+
+    @Test
+    void rejectsMalformedRequiredJsonShapes() {
+        List<ShapeCase> cases = List.of(
+                new ShapeCase("attributes", payload -> payload.setAttributes(JsonNodeSupport.objectNode())),
+                new ShapeCase("capabilities", payload -> payload.setCapabilities(JsonNodeSupport.objectNode())),
+                new ShapeCase("ports", payload -> payload.setPorts(JsonNodeSupport.objectNode())),
+                new ShapeCase("intrinsicConstraints",
+                        payload -> payload.setIntrinsicConstraints(JsonNodeSupport.objectNode())),
+                new ShapeCase("capabilities[].parameters", payload ->
+                        ((ObjectNode) payload.getCapabilities().get(0))
+                                .set("parameters", JsonNodeSupport.objectNode())),
+                new ShapeCase("capabilities[].parameterMapping", payload ->
+                        ((ObjectNode) payload.getCapabilities().get(0)).remove("parameterMapping")),
+                new ShapeCase("adapterContract.commands", payload ->
+                        ((ObjectNode) payload.getAdapterContract())
+                                .set("commands", JsonNodeSupport.objectNode())),
+                new ShapeCase("adapterContract.commands[].commandParameters", payload ->
+                        ((ObjectNode) payload.getAdapterContract().path("commands").get(0))
+                                .set("commandParameters", JsonNodeSupport.objectNode())),
+                new ShapeCase("adapterContract.telemetry", payload ->
+                        ((ObjectNode) payload.getAdapterContract())
+                                .set("telemetry", JsonNodeSupport.arrayNode())),
+                new ShapeCase("adapterContract.telemetry.adapterAttributes", payload ->
+                        ((ObjectNode) payload.getAdapterContract().path("telemetry"))
+                                .set("adapterAttributes", JsonNodeSupport.objectNode())),
+                new ShapeCase("adapterContract.telemetry.attributesMapping", payload ->
+                        ((ObjectNode) payload.getAdapterContract().path("telemetry"))
+                                .remove("attributesMapping")),
+                new ShapeCase("adapterContract.events", payload ->
+                        ((ObjectNode) payload.getAdapterContract())
+                                .set("events", JsonNodeSupport.arrayNode())),
+                new ShapeCase("adapterContract.events.cmdEvents", payload ->
+                        ((ObjectNode) payload.getAdapterContract().path("events"))
+                                .set("cmdEvents", JsonNodeSupport.objectNode())),
+                new ShapeCase("adapterContract.events.opEvents", payload ->
+                        ((ObjectNode) payload.getAdapterContract().path("events"))
+                                .remove("opEvents"))
+        );
+
+        assertAll(cases.stream().map(shapeCase -> () -> {
+            DeviceModelSaveDTO payload = completePayload();
+            shapeCase.mutation().accept(payload);
+            IllegalArgumentException error = assertThrows(
+                    IllegalArgumentException.class, () -> service.previewModel(payload));
+            assertTrue(error.getMessage().contains(shapeCase.expectedPath()),
+                    () -> shapeCase.expectedPath() + " should identify the malformed shape, got: "
+                            + error.getMessage());
+        }));
     }
 
     @Test
@@ -478,5 +580,8 @@ class DeviceModelServiceTest {
         Set<String> names = new HashSet<>();
         states.forEach(state -> names.add(state.path("stateName").asText()));
         return names;
+    }
+
+    private record ShapeCase(String expectedPath, Consumer<DeviceModelSaveDTO> mutation) {
     }
 }

@@ -25,6 +25,73 @@ export function isSystemItem(item) {
   return item?._system === true
 }
 
+export function customTriggerActionNames(node) {
+  return (node?.actions ?? [])
+    .filter(action => !isSystemItem(action) && action.actionType === 'UPDATE' && action.actionName)
+    .map(action => action.actionName)
+}
+
+export function rehydrateWorkflowNodes(nodes = []) {
+  return nodes.map(rehydrateWorkflowNode)
+}
+
+export function rehydrateWorkflowNode(node) {
+  const restored = structuredClone(node)
+  const expected = templateCopy(templateKeyForNode(restored))
+
+  restoreSystemIdentity(restored.lifecycle, expected.lifecycle)
+  restoreMatchedItems(
+    restored.lifecycle?.transitions,
+    expected.lifecycle?.transitions,
+    item => `${item?.fromStateName ?? ''}->${item?.toStateName ?? ''}`,
+  )
+  restoreMatchedItems(restored.interfaces, expected.interfaces, item => item?.name)
+  restoreMatchedItems(restored.actions, expected.actions, item => item?.actionName)
+
+  for (const expectedInterface of expected.interfaces ?? []) {
+    const actualInterface = (restored.interfaces ?? [])
+      .find(item => item?.name === expectedInterface?.name)
+    restoreMatchedItems(
+      actualInterface?.bindingTriggers,
+      expectedInterface?.bindingTriggers,
+      triggerBusinessIdentity,
+    )
+  }
+  return restored
+}
+
+function templateKeyForNode(node) {
+  if (node?.nodeType === 'DEV_NODE') return 'DEV_NODE'
+  if (node?.nodeType === 'SUBFLOW_NODE') return 'SUBFLOW_NODE'
+  if (node?.nodeType === 'FUNC_NODE') {
+    const key = { START: 'START', END: 'END', BRANCH: 'BRANCH', AGGREGATE: 'AGGREGATE' }[node.functionType]
+    if (key) return key
+  }
+  throw new Error(`无法恢复节点系统模板:${node?.name || node?.nodeType || 'unknown'}`)
+}
+
+function restoreMatchedItems(actualItems = [], expectedItems = [], identity) {
+  const actualByIdentity = new Map((actualItems ?? []).map(item => [identity(item), item]))
+  for (const expected of expectedItems ?? []) {
+    restoreSystemIdentity(actualByIdentity.get(identity(expected)), expected)
+  }
+}
+
+function triggerBusinessIdentity(trigger) {
+  return JSON.stringify([
+    trigger?.condition?.object,
+    trigger?.condition?.operator,
+    trigger?.condition?.threshold,
+    trigger?.action,
+  ])
+}
+
+function restoreSystemIdentity(actual, expected) {
+  if (!actual || !expected || expected._system !== true || !expected._systemKey) return
+  actual._system = true
+  actual._systemKey = expected._systemKey
+}
+
 export function normalizeTypedValue(dataType, value) {
   if (dataType === 'JSON' && Array.isArray(value)) {
     const entries = value.map(entry => [String(entry?.key || '').trim(), entry?.value])
@@ -195,7 +262,10 @@ function sameSystemValue(actual, expected, path) {
   const { bindingTriggers: expectedTriggers = [], ...expectedInterface } = expected
   if (JSON.stringify(actualInterface) !== JSON.stringify(expectedInterface)) return false
   const expectedByKey = new Map(expectedTriggers.filter(isSystemItem).map(item => [item._systemKey, item]))
-  return [...expectedByKey].every(([key, trigger]) => JSON.stringify(actualTriggers.find(item => item?._systemKey === key)) === JSON.stringify(trigger))
+  return [...expectedByKey].every(([key, trigger]) => {
+    const actualTrigger = actualTriggers.find(item => item?._systemKey === key)
+    return isSystemItem(actualTrigger) && triggerBusinessIdentity(actualTrigger) === triggerBusinessIdentity(trigger)
+  })
 }
 
 function validatePorts(node, errors) {
@@ -209,6 +279,9 @@ function validateActions(node, errors) {
   const interfaces = new Map((node.interfaces ?? []).map(item => [item.name, item]))
   const variables = new Set((node.internalVariables ?? []).map(item => item.name))
   ;(node.actions ?? []).forEach((action, index) => {
+    if (!isSystemItem(action) && action.actionType !== 'UPDATE') {
+      errors.push({ path: `actions[${index}].actionType`, message: '自定义动作只允许UPDATE' })
+    }
     if (action.actionType === 'EMIT') {
       const target = interfaces.get(action.targetInterfaceName)
       if (!target) errors.push({ path: `actions[${index}].targetInterfaceName`, message: `EMIT动作${action.actionName}引用的输出接口${action.targetInterfaceName}不存在` })
@@ -223,10 +296,14 @@ function validateActions(node, errors) {
 }
 function validateTriggers(node, errors) {
   const actionNames = new Set((node.actions ?? []).map(item => item.actionName))
+  const customActionNames = new Set(customTriggerActionNames(node))
   ;(node.interfaces ?? []).forEach((item, interfaceIndex) => (item.bindingTriggers ?? []).forEach((bindingTrigger, triggerIndex) => {
     const path = `interfaces[${interfaceIndex}].bindingTriggers[${triggerIndex}]`
     if (item.direction !== 'IN') errors.push({ path, message: `${item.direction}接口不能声明bindingTriggers` })
     if (!actionNames.has(bindingTrigger.action)) errors.push({ path: `${path}.action`, message: `触发器引用的动作${bindingTrigger.action}不存在` })
+    if (!isSystemItem(bindingTrigger) && !customActionNames.has(bindingTrigger.action)) {
+      errors.push({ path: `${path}.action`, message: '自定义触发器只能调用非系统UPDATE动作' })
+    }
   }))
 }
 

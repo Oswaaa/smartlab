@@ -2,6 +2,7 @@ package com.smartlab.management.service.db.workflow;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.engine.workflow.WorkflowDefinitionCompiler;
+import com.smartlab.global.contract.WorkflowNodeSystemContract;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.workflow.WorkflowDetailResponse;
 import com.smartlab.management.dto.workflow.WorkflowSaveRequest;
@@ -168,7 +169,24 @@ class WorkflowServiceTest {
     private WorkflowSaveRequest validSubflowWorkflow() throws Exception {
         WorkflowSaveRequest request = new WorkflowSaveRequest();
         request.setName("subflow-parent");
-        request.setNodesDef(JsonNodeSupport.MAPPER.readTree("[{\"name\":\"start\",\"nodeType\":\"FUNC_NODE\",\"functionType\":\"START\",\"internalVariables\":[],\"interfaces\":[{\"name\":\"Interface_workflow_out\",\"direction\":\"OUT\",\"interfaceType\":\"WORKFLOW\",\"allowedSignals\":[\"ACTIVE\"]}],\"ports\":[],\"actions\":[{\"actionName\":\"emitActive\",\"actionType\":\"EMIT\",\"targetInterfaceName\":\"Interface_workflow_out\",\"signalName\":\"ACTIVE\"}]},{\"name\":\"subflow\",\"nodeType\":\"SUBFLOW_NODE\",\"subFlowModelId\":2,\"subFlowModelDescription\":\"\",\"internalVariables\":[],\"lifecycle\":{\"initialStateName\":\"PENDING\",\"states\":[\"PENDING\",\"RUNNING\",\"SUCCEEDED\",\"FAILED\",\"TERMINATING\",\"TERMINATED\"],\"transitions\":[{\"fromStateName\":\"PENDING\",\"toStateName\":\"RUNNING\"},{\"fromStateName\":\"PENDING\",\"toStateName\":\"TERMINATED\"},{\"fromStateName\":\"RUNNING\",\"toStateName\":\"SUCCEEDED\"},{\"fromStateName\":\"RUNNING\",\"toStateName\":\"FAILED\"},{\"fromStateName\":\"RUNNING\",\"toStateName\":\"TERMINATING\"},{\"fromStateName\":\"TERMINATING\",\"toStateName\":\"TERMINATED\"},{\"fromStateName\":\"TERMINATING\",\"toStateName\":\"FAILED\"}]},\"interfaces\":[{\"name\":\"Interface_workflow_in\",\"direction\":\"IN\",\"interfaceType\":\"WORKFLOW\",\"allowedSignals\":[\"ACTIVE\"]},{\"name\":\"Interface_workflow_out\",\"direction\":\"OUT\",\"interfaceType\":\"WORKFLOW\",\"allowedSignals\":[\"ACTIVE\"]}],\"ports\":[],\"actions\":[]},{\"name\":\"end\",\"nodeType\":\"FUNC_NODE\",\"functionType\":\"END\",\"internalVariables\":[],\"interfaces\":[{\"name\":\"Interface_workflow_in\",\"direction\":\"IN\",\"interfaceType\":\"WORKFLOW\",\"allowedSignals\":[\"ACTIVE\"]}],\"ports\":[],\"actions\":[]}]"));
+
+        ObjectNode start = WorkflowNodeSystemContract.template("FUNC_NODE", "START");
+        start.put("name", "start").put("nodeType", "FUNC_NODE").put("functionType", "START");
+        start.putArray("internalVariables");
+        start.putArray("ports");
+
+        ObjectNode subflow = WorkflowNodeSystemContract.template("SUBFLOW_NODE", null);
+        subflow.put("name", "subflow").put("nodeType", "SUBFLOW_NODE")
+                .put("subFlowModelId", 2).put("subFlowModelDescription", "");
+        subflow.putArray("internalVariables");
+        subflow.putArray("ports");
+
+        ObjectNode end = WorkflowNodeSystemContract.template("FUNC_NODE", "END");
+        end.put("name", "end").put("nodeType", "FUNC_NODE").put("functionType", "END");
+        end.putArray("internalVariables");
+        end.putArray("ports");
+
+        request.setNodesDef(JsonNodeSupport.arrayNode().add(start).add(subflow).add(end));
         request.setInterfaceConnections(JsonNodeSupport.MAPPER.readTree("[{\"connectionType\":\"NODE_TO_NODE\",\"source\":{\"nodeName\":\"start\",\"interfaceName\":\"Interface_workflow_out\"},\"target\":{\"nodeName\":\"subflow\",\"interfaceName\":\"Interface_workflow_in\"}},{\"connectionType\":\"NODE_TO_NODE\",\"source\":{\"nodeName\":\"subflow\",\"interfaceName\":\"Interface_workflow_out\"},\"target\":{\"nodeName\":\"end\",\"interfaceName\":\"Interface_workflow_in\"}}]"));
         request.setPortConnections(JsonNodeSupport.arrayNode());
         return request;

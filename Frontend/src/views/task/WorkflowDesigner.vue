@@ -148,7 +148,7 @@ import {
 } from '../../utils/workflowCanvas.js'
 import WorkflowCanvasNode from '../../components/task/workflow/WorkflowCanvasNode.vue'
 import WorkflowNodeInspector from '../../components/task/workflow/WorkflowNodeInspector.vue'
-import { loadFrontendContractMetadata } from '../../services/frontendContractMetadata.js'
+import { invalidateFrontendContractMetadata, loadFrontendContractMetadata } from '../../services/frontendContractMetadata.js'
 import { configureWorkflowNodeTemplates, createDeviceNode, createFunctionNode, createSubflowNode, removePort, validateNodeDefinition } from '../../utils/workflowNodeDefinition.js'
 
 type NodeDefinition = Record<string, any>
@@ -552,6 +552,7 @@ function initializeContract() {
         contractError.value = ''
         contractReady.value = true
       } catch (error:any) {
+        invalidateFrontendContractMetadata()
         contractReady.value = false
         contractError.value = `工作流系统模板加载失败：${error.message || '请检查后端契约服务'}`
         ElMessage.error(contractError.value)

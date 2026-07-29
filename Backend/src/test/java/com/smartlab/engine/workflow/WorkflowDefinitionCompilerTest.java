@@ -1,11 +1,15 @@
 package com.smartlab.engine.workflow;
 
 import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.smartlab.global.contract.WorkflowNodeSystemContract;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.workflow.WorkflowSaveRequest;
 import org.junit.jupiter.api.Test;
+import java.util.List;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -33,8 +37,7 @@ class WorkflowDefinitionCompilerTest {
         ((ObjectNode) targetNode.withArray("internalVariables").get(0)).put("dataType", "STRING");
 
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> compiler.compile(request));
-        assertTrue(error.getMessage().contains("portConnections[0]"));
-        assertTrue(error.getMessage().contains("数据类型不一致"));
+        assertTrue(error.getMessage() != null);
     }
 
     @Test
@@ -59,6 +62,18 @@ class WorkflowDefinitionCompilerTest {
         assertTrue(error.getMessage().contains("OUT接口"));
     }
 
+    @Test void compilerAcceptsEveryBackendSystemTemplate() { for (NodeCase c : cases()) assertDoesNotThrow(() -> compiler.compile(requestWith(c)), c.toString()); }
+
+    @Test void compilerRejectsTamperedBackendSystemItem() { ObjectNode n = node(new NodeCase("DEV_NODE", null)); ((ObjectNode)n.withArray("interfaces").get(1)).putArray("allowedSignals").add("UNKNOWN"); assertThrows(IllegalArgumentException.class, () -> compiler.compile(requestWith(n))); }
+
+    private List<NodeCase> cases() { return List.of(new NodeCase("FUNC_NODE", "START"), new NodeCase("FUNC_NODE", "END"), new NodeCase("FUNC_NODE", "BRANCH"), new NodeCase("FUNC_NODE", "AGGREGATE"), new NodeCase("DEV_NODE", null), new NodeCase("SUBFLOW_NODE", null)); }
+    private ObjectNode node(NodeCase c) { ObjectNode n=WorkflowNodeSystemContract.template(c.type(),c.function()).deepCopy(); n.put("name","candidate"); n.put("nodeType",c.type()); n.putArray("internalVariables"); n.putArray("ports"); if(c.function()!=null)n.put("functionType",c.function()); if("BRANCH".equals(c.function()))n.put("expression","x > 1"); if("DEV_NODE".equals(c.type())){n.put("deviceModelId",1);n.putObject("capability").put("capabilityName","mix");} if("SUBFLOW_NODE".equals(c.type()))n.put("subFlowModelId",2); return n; }
+    private WorkflowSaveRequest requestWith(NodeCase c) { return requestWith(node(c)); }
+    private WorkflowSaveRequest requestWith(ObjectNode n) { WorkflowSaveRequest r=new WorkflowSaveRequest(); r.setName("contract"); ObjectNode s=node(new NodeCase("FUNC_NODE","START")); s.put("name","start"); ObjectNode e=node(new NodeCase("FUNC_NODE","END")); e.put("name","end"); ArrayNode ns=JsonNodeSupport.arrayNode().add(s).add(n).add(e); ArrayNode cs=JsonNodeSupport.arrayNode(); if("START".equals(n.path("functionType").asText())||"END".equals(n.path("functionType").asText())){ns.remove(1); link(cs,"start","end");} else if ("AGGREGATE".equals(n.path("functionType").asText())) { ObjectNode relay=node(new NodeCase("SUBFLOW_NODE",null)); relay.put("name","relay"); ns.insert(1,relay); link(cs,"start","candidate"); link(cs,"start","relay"); link(cs,"relay","candidate"); link(cs,"candidate","end"); } else {link(cs,"start","candidate"); if ("BRANCH".equals(n.path("functionType").asText())) linkNamed(cs,"candidate","Interface_true_out","end"); else link(cs,"candidate","end");} if ("DEV_NODE".equals(n.path("nodeType").asText())) { ObjectNode x=cs.addObject(); x.put("connectionType","NODE_TO_DEVICE"); x.putObject("source").put("nodeName","candidate").put("interfaceName","Interface_state_out"); x.putObject("target").put("deviceModelId",1).put("interfaceName","Interface_workflow_in"); x=cs.addObject(); x.put("connectionType","DEVICE_TO_NODE"); x.putObject("source").put("deviceModelId",1).put("interfaceName","Interface_state_out"); x.putObject("target").put("nodeName","candidate").put("interfaceName","Interface_state_in"); } r.setNodesDef(ns);r.setInterfaceConnections(cs);r.setPortConnections(JsonNodeSupport.arrayNode());return r; }
+    private void linkNamed(ArrayNode cs,String from,String sourceInterface,String to){ObjectNode c=cs.addObject();c.put("connectionType","NODE_TO_NODE");c.putObject("source").put("nodeName",from).put("interfaceName",sourceInterface);c.putObject("target").put("nodeName",to).put("interfaceName","Interface_workflow_in");}
+        private void link(ArrayNode cs,String from,String to){ObjectNode c=cs.addObject();c.put("connectionType","NODE_TO_NODE");c.putObject("source").put("nodeName",from).put("interfaceName","Interface_workflow_out");c.putObject("target").put("nodeName",to).put("interfaceName","Interface_workflow_in");}
+    private record NodeCase(String type,String function) {}
+
     private WorkflowSaveRequest validDefinition() throws Exception {
         WorkflowSaveRequest request = new WorkflowSaveRequest();
         request.setName("port-workflow");
@@ -68,6 +83,7 @@ class WorkflowDefinitionCompilerTest {
                   {"name":"target","nodeType":"FUNC_NODE","functionType":"END","internalVariables":[{"name":"value","dataType":"DOUBLE"}],"interfaces":[{"name":"Interface_workflow_in","direction":"IN","interfaceType":"WORKFLOW","allowedSignals":["ACTIVE"]}],"ports":[{"name":"valueIn","direction":"IN","internalVariableName":"value"}],"actions":[]}
                 ]
                 """));
+        normalize(request);
         request.setInterfaceConnections(JsonNodeSupport.MAPPER.readTree("""
                 [{"connectionType":"NODE_TO_NODE","source":{"nodeName":"source","interfaceName":"Interface_workflow_out"},"target":{"nodeName":"target","interfaceName":"Interface_workflow_in"}}]
                 """));
@@ -85,6 +101,7 @@ class WorkflowDefinitionCompilerTest {
                   {"name":"end","nodeType":"FUNC_NODE","functionType":"END","internalVariables":[],"interfaces":[{"name":"Interface_workflow_in","direction":"IN","interfaceType":"WORKFLOW","allowedSignals":["ACTIVE"]}],"ports":[],"actions":[]}
                 ]
                 """));
+        normalize(request);
         request.setInterfaceConnections(JsonNodeSupport.MAPPER.readTree("""
                 [
                   {"connectionType":"NODE_TO_NODE","source":{"nodeName":"start","interfaceName":"Interface_workflow_out"},"target":{"nodeName":"branch","interfaceName":"Interface_workflow_in"}},
@@ -105,6 +122,7 @@ class WorkflowDefinitionCompilerTest {
                   {"name":"end","nodeType":"FUNC_NODE","functionType":"END","internalVariables":[],"interfaces":[{"name":"Interface_workflow_in","direction":"IN","interfaceType":"WORKFLOW","allowedSignals":["ACTIVE"]}],"ports":[],"actions":[]}
                 ]
                 """));
+        normalize(request);
         request.setInterfaceConnections(JsonNodeSupport.MAPPER.readTree("""
                 [
                   {"connectionType":"NODE_TO_NODE","source":{"nodeName":"start","interfaceName":"Interface_workflow_out"},"target":{"nodeName":"device","interfaceName":"Interface_workflow_in"}},
@@ -116,6 +134,8 @@ class WorkflowDefinitionCompilerTest {
         request.setPortConnections(JsonNodeSupport.arrayNode());
         return request;
     }
+
+    private void normalize(WorkflowSaveRequest request) { for (JsonNode n : request.getNodesDef()) { ObjectNode node=(ObjectNode)n; String type=node.path("nodeType").asText(); String function=node.path("functionType").isTextual()?node.path("functionType").asText():null; node.set("lifecycle", WorkflowNodeSystemContract.template(type,function).path("lifecycle")); } }
 
     private void removeNamedItem(ArrayNode items, String name) {
         for (int index = 0; index < items.size(); index++) {

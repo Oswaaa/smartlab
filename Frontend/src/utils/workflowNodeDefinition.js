@@ -1,11 +1,15 @@
 let configuredTemplates
+const requiredTemplateKeys = ['START', 'END', 'BRANCH', 'AGGREGATE', 'DEV_NODE', 'SUBFLOW_NODE']
 
 export function configureWorkflowNodeTemplates(templates) {
-  configuredTemplates = templates && typeof templates === 'object' ? templates : undefined
+  const missingKeys = requiredTemplateKeys.filter(key => !templates?.[key] || typeof templates[key] !== 'object')
+  if (missingKeys.length) throw new Error(`工作流系统模板不完整:${missingKeys.join(',')}`)
+  const snapshot = structuredClone(templates)
+  configuredTemplates = snapshot
 }
 
 export function workflowNodeTemplates() {
-  return configuredTemplates ?? {}
+  return configuredTemplates ? structuredClone(configuredTemplates) : {}
 }
 
 export function resetWorkflowNodeTemplatesForTest() {

@@ -114,6 +114,7 @@
       :device-capabilities="selectedDeviceModel?.capabilities || []"
       :device-attributes="selectedDeviceModel?.attributes || []"
       :port-connections="form.portConnections"
+      :contract-ready="contractReady"
       @close="closeNodeDrawer"
       @rename="renameSelectedNode"
       @update:node="replaceSelectedNode"
@@ -171,6 +172,8 @@ const selectedEdgeId = ref('')
 const flowNodes = ref<FlowNode[]>([])
 const flowEdges = ref<FlowEdge[]>([])
 const draftLayoutKey = ref(newDraftKey())
+let workflowListPromise: Promise<void> | null = null
+let contractInitializationPromise: Promise<void> | null = null
 const { screenToFlowCoordinate, fitView } = useVueFlow()
 
 const empty = () => ({ id:null as number | null, name:'', description:'', version:1, status:'DRAFT', nodesDef:[] as NodeDefinition[], interfaceConnections:[] as any[], portConnections:[] as any[] })
@@ -326,9 +329,14 @@ function addResource(data:any, position = suggestedPosition()) {
     const deviceIn = (model?.stateMachineInterfaces || []).find((item:any) => item.direction === 'IN' && item.interfaceType === 'WORKFLOW')?.name
     const deviceOut = (model?.stateMachineInterfaces || []).find((item:any) => item.direction === 'OUT' && item.interfaceType === 'STATE')?.name
     if (!deviceIn || !deviceOut) return ElMessage.error('设备模型缺少WORKFLOW输入接口或STATE输出接口')
+    const stateOutputs = (node.interfaces || []).filter((item:any) => item.direction === 'OUT' && item.interfaceType === 'STATE')
+    const stateInputs = (node.interfaces || []).filter((item:any) => item.direction === 'IN' && item.interfaceType === 'STATE')
+    if (stateOutputs.length !== 1 || stateInputs.length !== 1 || !stateOutputs[0].name || !stateInputs[0].name) {
+      return ElMessage.error('DEV_NODE系统模板必须各包含一个命名的STATE输入和输出接口')
+    }
     form.interfaceConnections.push(
-      { connectionType:'NODE_TO_DEVICE', source:{ nodeName:node.name, interfaceName:'Interface_state_out' }, target:{ deviceModelId:node.deviceModelId, interfaceName:deviceIn } },
-      { connectionType:'DEVICE_TO_NODE', source:{ deviceModelId:node.deviceModelId, interfaceName:deviceOut }, target:{ nodeName:node.name, interfaceName:'Interface_state_in' } }
+      { connectionType:'NODE_TO_DEVICE', source:{ nodeName:node.name, interfaceName:stateOutputs[0].name }, target:{ deviceModelId:node.deviceModelId, interfaceName:deviceIn } },
+      { connectionType:'DEVICE_TO_NODE', source:{ deviceModelId:node.deviceModelId, interfaceName:deviceOut }, target:{ nodeName:node.name, interfaceName:stateInputs[0].name } }
     )
   }
 
@@ -515,22 +523,55 @@ function nodeIssues(nodeName:string) {
   return validateNodeDefinition(node, { deviceModel:modelById(node.deviceModelId) }).map((issue:any) => ({ ...issue, nodeName:node.name }))
 }
 
-async function loadList() {
-  const response = await axios.get('/api/workflow/list')
-  if (!response.data?.success) throw Error(response.data?.message || '加载失败')
-  workflows.value = response.data.data || []
+function loadList() {
+  if (!workflowListPromise) {
+    workflowListPromise = (async () => {
+      const response = await axios.get('/api/workflow/list')
+      if (!response.data?.success) throw Error(response.data?.message || '加载失败')
+      workflows.value = response.data.data || []
+    })().finally(() => {
+      workflowListPromise = null
+    })
+  }
+  return workflowListPromise
+}
+
+async function loadCreationResources() {
+  const [modelResponse, instanceResponse, categoryResponse] = await Promise.all([axios.get('/api/device/model/list'),axios.get('/api/device/instance/list'),axios.get('/api/device/category/list')])
+  if (modelResponse.data?.success) models.value = modelResponse.data.data || []
+  if (instanceResponse.data?.success) instances.value = instanceResponse.data.data || []
+  if (categoryResponse.data?.success) categories.value = categoryResponse.data.data || []
+}
+
+function initializeContract() {
+  if (!contractInitializationPromise) {
+    contractInitializationPromise = (async () => {
+      try {
+        const metadata = await loadFrontendContractMetadata()
+        configureWorkflowNodeTemplates(metadata?.workflow?.nodeTemplates)
+        contractError.value = ''
+        contractReady.value = true
+      } catch (error:any) {
+        contractReady.value = false
+        contractError.value = `工作流系统模板加载失败：${error.message || '请检查后端契约服务'}`
+        ElMessage.error(contractError.value)
+        return
+      }
+      try {
+        await loadCreationResources()
+      } catch (error:any) {
+        ElMessage.error(error.message || '加载设计资源失败')
+      }
+    })().finally(() => {
+      contractInitializationPromise = null
+    })
+  }
+  return contractInitializationPromise
 }
 
 async function loadAll() {
-  try {
-    const [modelResponse, instanceResponse, categoryResponse] = await Promise.all([axios.get('/api/device/model/list'),axios.get('/api/device/instance/list'),axios.get('/api/device/category/list')])
-    if (modelResponse.data?.success) models.value = modelResponse.data.data || []
-    if (instanceResponse.data?.success) instances.value = instanceResponse.data.data || []
-    if (categoryResponse.data?.success) categories.value = categoryResponse.data.data || []
-    await loadList()
-  } catch (error:any) {
-    ElMessage.error(error.message || '加载设计资源失败')
-  }
+  const [workflowResult] = await Promise.allSettled([loadList(), initializeContract()])
+  if (workflowResult.status === 'rejected') ElMessage.error(workflowResult.reason?.message || '加载已有工作流失败')
 }
 
 async function save() {
@@ -578,19 +619,7 @@ async function loadWorkflow(id:number | null) {
   }
 }
 
-onMounted(async () => {
-  try {
-    const metadata = await loadFrontendContractMetadata()
-    const nodeTemplates = metadata?.workflow?.nodeTemplates
-    if (!['START', 'END', 'BRANCH', 'AGGREGATE', 'DEV_NODE', 'SUBFLOW_NODE'].every(key => nodeTemplates?.[key])) throw new Error('工作流系统模板不完整')
-    configureWorkflowNodeTemplates(nodeTemplates)
-    contractReady.value = true
-    await loadAll()
-  } catch (error:any) {
-    contractError.value = `工作流系统模板加载失败：${error.message || '请检查后端契约服务'}`
-    ElMessage.error(contractError.value)
-  }
-})
+onMounted(loadAll)
 </script>
 
 <style scoped>

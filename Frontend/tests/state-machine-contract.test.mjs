@@ -2,7 +2,18 @@ import assert from 'node:assert/strict'
 import { after, test } from 'node:test'
 import { createServer } from 'vite'
 
-const server = await createServer({ server: { middlewareMode: true }, appType: 'custom' })
+const metadataLoaderFixture = {
+  name: 'task-7-metadata-loader-fixture',
+  enforce: 'pre',
+  resolveId(source, importer) {
+    return importer?.includes('deviceModelConstants.js') && source.includes('frontendContractMetadata.js') ? '\0task-7-metadata-loader-fixture' : undefined
+  },
+  load(id) {
+    return id === '\0task-7-metadata-loader-fixture' ? 'export const loadFrontendContractMetadata = async () => ({})\nexport const invalidateFrontendContractMetadata = () => {}' : undefined
+  }
+}
+
+const server = await createServer({ plugins: [metadataLoaderFixture], server: { middlewareMode: true }, appType: 'custom' })
 const constants = await server.ssrLoadModule('/src/views/device/components/deviceModel/deviceModelConstants.js')
 const normalizers = await server.ssrLoadModule('/src/views/device/components/deviceModel/normalizers.js')
 

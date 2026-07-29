@@ -4,6 +4,9 @@ import {
   createFunctionNode,
   createDeviceNode,
   createSubflowNode,
+  configureWorkflowNodeTemplates,
+  resetWorkflowNodeTemplatesForTest,
+  workflowNodeTemplates,
   isSystemItem,
   normalizeTypedValue,
   replaceCapability,
@@ -12,6 +15,34 @@ import {
   removePort,
   validateNodeDefinition
 } from '../src/utils/workflowNodeDefinition.js'
+
+const workflowTemplateFixture = {
+  START: { lifecycle: { _system: true, _systemKey: 'start.lifecycle' }, interfaces: [{ name: 'Interface_workflow_out', direction: 'OUT', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], bindingTriggers: [], _system: true, _systemKey: 'start.workflowOut' }], actions: [{ actionName: 'emitActive', actionType: 'EMIT', targetInterfaceName: 'Interface_workflow_out', signalName: 'ACTIVE', _system: true, _systemKey: 'start.emitActive' }] },
+  END: { lifecycle: { _system: true, _systemKey: 'end.lifecycle' }, interfaces: [{ name: 'Interface_workflow_in', direction: 'IN', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], bindingTriggers: [], _system: true, _systemKey: 'end.workflowIn' }], actions: [] },
+  BRANCH: { lifecycle: { _system: true, _systemKey: 'branch.lifecycle' }, interfaces: [{ name: 'Interface_workflow_in', direction: 'IN', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], bindingTriggers: [{ condition: { object: 'expression', operator: '=', threshold: true }, action: 'emitTrue', _system: true, _systemKey: 'branch.trueTrigger' }, { condition: { object: 'expression', operator: '=', threshold: false }, action: 'emitFalse', _system: true, _systemKey: 'branch.falseTrigger' }], _system: true, _systemKey: 'branch.workflowIn' }, { name: 'Interface_true_out', direction: 'OUT', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], _system: true, _systemKey: 'branch.trueOut' }, { name: 'Interface_false_out', direction: 'OUT', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], _system: true, _systemKey: 'branch.falseOut' }], actions: [{ actionName: 'emitTrue', actionType: 'EMIT', targetInterfaceName: 'Interface_true_out', signalName: 'ACTIVE', _system: true, _systemKey: 'branch.emitTrue' }, { actionName: 'emitFalse', actionType: 'EMIT', targetInterfaceName: 'Interface_false_out', signalName: 'ACTIVE', _system: true, _systemKey: 'branch.emitFalse' }] },
+  AGGREGATE: { lifecycle: { _system: true, _systemKey: 'aggregate.lifecycle' }, interfaces: [{ name: 'Interface_workflow_in', direction: 'IN', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], bindingTriggers: [{ condition: { object: 'inputSignalName', operator: '=', threshold: 'ACTIVE' }, action: 'emitActive', _system: true, _systemKey: 'aggregate.activeTrigger' }], _system: true, _systemKey: 'aggregate.workflowIn' }, { name: 'Interface_workflow_out', direction: 'OUT', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], _system: true, _systemKey: 'aggregate.workflowOut' }], actions: [{ actionName: 'emitActive', actionType: 'EMIT', targetInterfaceName: 'Interface_workflow_out', signalName: 'ACTIVE', _system: true, _systemKey: 'aggregate.emitActive' }] },
+  DEV_NODE: { lifecycle: { initialStateName: 'PENDING', states: ['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'TERMINATING', 'TERMINATED'], transitions: [['PENDING', 'RUNNING', 'lifecycle.pending.running'], ['PENDING', 'TERMINATED', 'lifecycle.pending.terminated'], ['RUNNING', 'SUCCEEDED', 'lifecycle.running.succeeded'], ['RUNNING', 'FAILED', 'lifecycle.running.failed'], ['RUNNING', 'TERMINATING', 'lifecycle.running.terminating'], ['TERMINATING', 'TERMINATED', 'lifecycle.terminating.terminated'], ['TERMINATING', 'FAILED', 'lifecycle.terminating.failed']].map(([fromStateName, toStateName, _systemKey]) => ({ fromStateName, toStateName, _system: true, _systemKey })) }, interfaces: [{ name: 'Interface_workflow_in', direction: 'IN', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], bindingTriggers: [{ condition: { object: 'inputSignalName', operator: '=', threshold: 'ACTIVE' }, action: 'startDevice', _system: true, _systemKey: 'device.startTrigger' }], _system: true, _systemKey: 'device.workflowIn' }, { name: 'Interface_state_out', direction: 'OUT', interfaceType: 'STATE', allowedSignals: ['WF_EXECUTE_START'], _system: true, _systemKey: 'device.stateOut' }, { name: 'Interface_state_in', direction: 'IN', interfaceType: 'STATE', allowedSignals: ['CMD_STATE', 'OP_STATE'], bindingTriggers: [{ condition: { object: 'inputPayload.stateName', operator: '=', threshold: 'COMPLETED' }, action: 'completeNode', _system: true, _systemKey: 'device.completeTrigger' }], _system: true, _systemKey: 'device.stateIn' }, { name: 'Interface_workflow_out', direction: 'OUT', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], _system: true, _systemKey: 'device.workflowOut' }], actions: [{ actionName: 'startDevice', actionType: 'EMIT', targetInterfaceName: 'Interface_state_out', signalName: 'WF_EXECUTE_START', _system: true, _systemKey: 'device.startDevice' }, { actionName: 'completeNode', actionType: 'EMIT', targetInterfaceName: 'Interface_workflow_out', signalName: 'ACTIVE', _system: true, _systemKey: 'device.completeNode' }] },
+  SUBFLOW_NODE: { lifecycle: { initialStateName: 'PENDING', states: ['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'TERMINATING', 'TERMINATED'], transitions: [['PENDING', 'RUNNING', 'lifecycle.pending.running'], ['PENDING', 'TERMINATED', 'lifecycle.pending.terminated'], ['RUNNING', 'SUCCEEDED', 'lifecycle.running.succeeded'], ['RUNNING', 'FAILED', 'lifecycle.running.failed'], ['RUNNING', 'TERMINATING', 'lifecycle.running.terminating'], ['TERMINATING', 'TERMINATED', 'lifecycle.terminating.terminated'], ['TERMINATING', 'FAILED', 'lifecycle.terminating.failed']].map(([fromStateName, toStateName, _systemKey]) => ({ fromStateName, toStateName, _system: true, _systemKey })) }, interfaces: [{ name: 'Interface_workflow_in', direction: 'IN', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], _system: true, _systemKey: 'subflow.workflowIn' }, { name: 'Interface_workflow_out', direction: 'OUT', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], _system: true, _systemKey: 'subflow.workflowOut' }], actions: [] }
+}
+
+test.before(() => configureWorkflowNodeTemplates(workflowTemplateFixture))
+
+test('system templates reject creation before loading and restore fixture', () => {
+  resetWorkflowNodeTemplatesForTest()
+  assert.throws(() => createFunctionNode('START', 'start'), /工作流系统模板尚未加载:START/)
+  configureWorkflowNodeTemplates(workflowTemplateFixture)
+})
+
+test('node creation uses backend fixture and clones DEV_NODE and BRANCH templates', () => {
+  const device = createDeviceNode({ id: 7, capabilities: [] }, 'heater')
+  const branch = createFunctionNode('BRANCH', 'branch')
+  assert.equal(device.interfaces[1].name, workflowTemplateFixture.DEV_NODE.interfaces[1].name)
+  assert.equal(branch.actions[0].actionName, workflowTemplateFixture.BRANCH.actions[0].actionName)
+  device.interfaces[1].allowedSignals.push('MUTATED')
+  branch.actions[0].actionName = 'MUTATED'
+  assert.deepEqual(workflowNodeTemplates().DEV_NODE.interfaces[1].allowedSignals, ['WF_EXECUTE_START'])
+  assert.equal(workflowNodeTemplates().BRANCH.actions[0].actionName, 'emitTrue')
+})
 
 test('能力参数按声明类型序列化且拒绝隐式转换', () => {
   assert.equal(normalizeTypedValue('INTEGER', 3), 3)

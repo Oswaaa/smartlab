@@ -157,6 +157,82 @@ class DeviceModelServiceTest {
     }
 
     @Test
+    void saveRejectsPortWithoutRequiredFieldsBeforeInsert() {
+        DeviceModelSaveDTO payload = completePayload();
+        ((ArrayNode) payload.getPorts()).addObject();
+
+        assertThrows(IllegalArgumentException.class, () -> service.savePayload(payload));
+        verify(modelMapper, never()).insert(any(DeviceModels.class));
+    }
+
+    @Test
+    void saveRejectsIntrinsicConstraintWithoutRequiredFieldsBeforeInsert() {
+        DeviceModelSaveDTO payload = completePayload();
+        ((ArrayNode) payload.getIntrinsicConstraints()).addObject();
+
+        assertThrows(IllegalArgumentException.class, () -> service.savePayload(payload));
+        verify(modelMapper, never()).insert(any(DeviceModels.class));
+    }
+
+    @Test
+    void saveRejectsParameterMappingWithoutIsFixedValueBeforeInsert() {
+        DeviceModelSaveDTO payload = completePayload();
+        ((ObjectNode) payload.getCapabilities().get(0).path("parameterMapping").get(0))
+                .remove("isFixedValue");
+
+        assertThrows(IllegalArgumentException.class, () -> service.savePayload(payload));
+        verify(modelMapper, never()).insert(any(DeviceModels.class));
+    }
+
+    @Test
+    void rejectsCollectionElementFieldsWithTypesOutsideFrozenCapabilitySchema() {
+        List<ShapeCase> cases = List.of(
+                new ShapeCase("portName", payload -> ((ArrayNode) payload.getPorts()).addObject()
+                        .put("portName", 1)
+                        .put("direction", "IN")
+                        .put("bindingAttrName", "temperature")),
+                new ShapeCase("direction", payload -> ((ArrayNode) payload.getPorts()).addObject()
+                        .put("portName", "input")
+                        .put("direction", "SIDEWAYS")
+                        .put("bindingAttrName", "temperature")),
+                new ShapeCase("bindingAttrName", payload -> ((ArrayNode) payload.getPorts()).addObject()
+                        .put("portName", "input")
+                        .put("direction", "IN")
+                        .put("bindingAttrName", true)),
+                new ShapeCase("objectAttributeName",
+                        payload -> addIntrinsicConstraint(payload).put("objectAttributeName", 1)),
+                new ShapeCase("operator",
+                        payload -> addIntrinsicConstraint(payload).put("operator", "BETWEEN")),
+                new ShapeCase("boundaryValue",
+                        payload -> addIntrinsicConstraint(payload).put("boundaryValue", "100")),
+                new ShapeCase("violationStateName",
+                        payload -> addIntrinsicConstraint(payload).put("violationStateName", 1)),
+                new ShapeCase("commandParamName", payload ->
+                        ((ObjectNode) payload.getCapabilities().get(0)
+                                .path("parameterMapping").get(0))
+                                .put("commandParamName", 1)),
+                new ShapeCase("isFixedValue", payload ->
+                        ((ObjectNode) payload.getCapabilities().get(0)
+                                .path("parameterMapping").get(0))
+                                .put("isFixedValue", "false")),
+                new ShapeCase("capabilityParamName", payload ->
+                        ((ObjectNode) payload.getCapabilities().get(0)
+                                .path("parameterMapping").get(0))
+                                .put("capabilityParamName", 1))
+        );
+
+        assertAll(cases.stream().map(shapeCase -> () -> {
+            DeviceModelSaveDTO payload = completePayload();
+            shapeCase.mutation().accept(payload);
+            IllegalArgumentException error = assertThrows(
+                    IllegalArgumentException.class, () -> service.previewModel(payload));
+            assertTrue(error.getMessage().contains(shapeCase.expectedPath()),
+                    () -> shapeCase.expectedPath() + " should identify the malformed field, got: "
+                            + error.getMessage());
+        }));
+    }
+
+    @Test
     void previewUsesCategoryAsTheOnlyAdapterContractSelector() {
         DeviceModelSaveDTO payload = minimalPayload();
         ObjectNode config = (ObjectNode) payload.getAdapterContract().path("config");
@@ -419,7 +495,8 @@ class DeviceModelServiceTest {
                 .put("dataType", "INTEGER");
         capability.putArray("parameterMapping").addObject()
                 .put("commandParamName", "duration")
-                .put("capabilityParamName", "duration");
+                .put("capabilityParamName", "duration")
+                .put("isFixedValue", false);
 
         ObjectNode contract = (ObjectNode) payload.getAdapterContract();
         ObjectNode config = (ObjectNode) contract.path("config");
@@ -536,6 +613,15 @@ class DeviceModelServiceTest {
                 .put("eventName", eventName)
                 .put("description", eventName);
     }
+
+    private ObjectNode addIntrinsicConstraint(DeviceModelSaveDTO payload) {
+        return ((ArrayNode) payload.getIntrinsicConstraints()).addObject()
+                .put("objectAttributeName", "temperature")
+                .put("operator", ">")
+                .put("boundaryValue", 100)
+                .put("violationStateName", "FAILED");
+    }
+
     private DeviceModelSaveDTO minimalPayload() {
         DeviceModelSaveDTO payload = new DeviceModelSaveDTO();
         payload.setModelName("ReactorModel");

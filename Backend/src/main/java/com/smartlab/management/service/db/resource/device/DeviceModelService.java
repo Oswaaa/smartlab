@@ -610,8 +610,8 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
     private void validateCapabilityModelShape(DeviceModels model) {
         JsonNode attributes = requireObjectArray(model.getAttributes(), "attributes");
         JsonNode capabilities = requireObjectArray(model.getCapabilities(), "capabilities");
-        requireObjectArray(model.getPorts(), "ports");
-        requireObjectArray(model.getIntrinsicConstraint(), "intrinsicConstraints");
+        JsonNode ports = requireObjectArray(model.getPorts(), "ports");
+        JsonNode intrinsicConstraints = requireObjectArray(model.getIntrinsicConstraint(), "intrinsicConstraints");
         for (JsonNode capability : capabilities) {
             requireObjectArray(capability.get("parameters"), "capabilities[].parameters");
             requireObjectArray(capability.get("parameterMapping"), "capabilities[].parameterMapping");
@@ -648,6 +648,28 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
                 requireText(parameter, "displayName", "能力参数");
                 validateDataType(parameter, "dataType", "能力参数");
             }
+            for (JsonNode mapping : iterable(capability.path("parameterMapping"))) {
+                requireSchemaText(mapping, "commandParamName", "能力参数映射");
+                requireSchemaBoolean(mapping, "isFixedValue", "能力参数映射");
+                validateOptionalSchemaText(mapping, "capabilityParamName", "能力参数映射");
+            }
+        }
+        for (JsonNode port : ports) {
+            requireSchemaText(port, "portName", "设备端口");
+            String direction = requireSchemaText(port, "direction", "设备端口");
+            if (!Set.of("IN", "OUT").contains(direction)) {
+                throw new IllegalArgumentException("设备端口direction不合法: " + direction);
+            }
+            requireSchemaText(port, "bindingAttrName", "设备端口");
+        }
+        for (JsonNode constraint : intrinsicConstraints) {
+            requireSchemaText(constraint, "objectAttributeName", "设备内置约束");
+            String operator = requireSchemaText(constraint, "operator", "设备内置约束");
+            if (!Set.of(">", "<", ">=", "<=", "=", "!=").contains(operator)) {
+                throw new IllegalArgumentException("设备内置约束operator不合法: " + operator);
+            }
+            requireSchemaNumber(constraint, "boundaryValue", "设备内置约束");
+            requireSchemaText(constraint, "violationStateName", "设备内置约束");
         }
         requireText(config, "adapterName", "adapterContract.config");
         requireText(config, "categoryName", "adapterContract.config");
@@ -703,6 +725,35 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             throw new IllegalArgumentException(scope + "缺少" + fieldName);
         }
         return value;
+    }
+
+    private String requireSchemaText(JsonNode node, String fieldName, String scope) {
+        JsonNode value = node == null ? null : node.get(fieldName);
+        if (value == null || !value.isTextual() || value.textValue().isBlank()) {
+            throw new IllegalArgumentException(scope + "缺少或非法" + fieldName);
+        }
+        return value.textValue();
+    }
+
+    private boolean requireSchemaBoolean(JsonNode node, String fieldName, String scope) {
+        JsonNode value = node == null ? null : node.get(fieldName);
+        if (value == null || !value.isBoolean()) {
+            throw new IllegalArgumentException(scope + "缺少或非法" + fieldName);
+        }
+        return value.booleanValue();
+    }
+
+    private void validateOptionalSchemaText(JsonNode node, String fieldName, String scope) {
+        if (node != null && node.has(fieldName) && !node.get(fieldName).isTextual()) {
+            throw new IllegalArgumentException(scope + fieldName + "类型非法");
+        }
+    }
+
+    private void requireSchemaNumber(JsonNode node, String fieldName, String scope) {
+        JsonNode value = node == null ? null : node.get(fieldName);
+        if (value == null || !value.isNumber()) {
+            throw new IllegalArgumentException(scope + "缺少或非法" + fieldName);
+        }
     }
 
     private void validateDataType(JsonNode node, String fieldName, String scope) {

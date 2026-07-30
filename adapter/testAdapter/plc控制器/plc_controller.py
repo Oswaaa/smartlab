@@ -24,7 +24,7 @@ USER      = "plc"
 PASSWORD  = "123456"
 CLIENT_ID = "plc_controller"          # 客户端名称
 
-TOPIC_SUB = "plc/#"                   # 订阅全部 PLC 话题（通配符，自动适配）
+TOPIC_SUB = "plc/0001/data"           # 订阅：PLC 上报数据
 TOPIC_PUB = "plc/0001/command"        # 发布：向 PLC 写寄存器
 DEVICE_SN = "plc0001"
 

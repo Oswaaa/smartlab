@@ -59,6 +59,7 @@ class Core:
         self._event_lock = threading.RLock()
         self._client = None
         self._connected = False
+        self._subscribed = False
         self._stopping = False
         self._registers: dict[str, int | float] = {}
         self._baseline_ready = False
@@ -98,6 +99,7 @@ class Core:
             client.on_connect = self._on_connect
             client.on_disconnect = self._on_disconnect
             client.on_message = self._on_message
+            client.on_subscribe = self._on_subscribe
             self._client = client
 
         broker = self._required_text(self._config.get("broker"), "plc.broker")
@@ -115,6 +117,7 @@ class Core:
             client = self._client
             self._client = None
             self._connected = False
+            self._subscribed = False
         if client is None:
             return
         try:
@@ -126,7 +129,7 @@ class Core:
 
     def is_connected(self) -> bool:
         with self._lock:
-            return self._connected
+            return self._connected and self._subscribed
 
     def execute_command(
         self,
@@ -170,46 +173,65 @@ class Core:
             self._fail_command(message_id, command_name, str(exc))
             return
 
-        with self._lock:
-            connected = self._connected
-            client = self._client
-        if not connected or client is None:
-            self._fail_command(message_id, command_name, "PLC MQTT 未连接")
-            return
-
         wire_payload = json.dumps(
             [{"DeviceSN": self.device_sn, "TagData": [registers]}],
             ensure_ascii=False,
             separators=(",", ":"),
         )
         with self._event_lock:
-            try:
-                result = client.publish(self.command_topic, wire_payload, qos=self.qos)
-            except Exception as exc:
-                self._fail_command(message_id, command_name, f"PLC 指令发布异常: {exc}")
-                return
-            if result.rc != mqtt.MQTT_ERR_SUCCESS:
-                self._fail_command(
-                    message_id,
-                    command_name,
-                    f"PLC 指令发布失败 rc={result.rc}",
-                )
-                return
-
-            pending = PendingCommand(
-                message_id=message_id,
-                command_name=command_name,
-                expected_registers=registers,
-                deadline_ms=self._now_ms() + self.command_timeout_ms,
-            )
             with self._lock:
+                client = self._client
+                if not self._connected or not self._subscribed or client is None:
+                    self._fail_command(
+                        message_id,
+                        command_name,
+                        "PLC MQTT 未连接或数据订阅未就绪",
+                    )
+                    return
+                if command_name == "setCooling" and registers.get("MW20") == 1:
+                    if not self._baseline_ready or not (
+                        int(self._registers.get("MW22", 0)) & 1
+                    ):
+                        self._fail_command(
+                            message_id,
+                            command_name,
+                            "只有手动模式才能开启散热",
+                        )
+                        return
+                try:
+                    result = client.publish(
+                        self.command_topic,
+                        wire_payload,
+                        qos=self.qos,
+                    )
+                except Exception as exc:
+                    self._fail_command(
+                        message_id,
+                        command_name,
+                        f"PLC 指令发布异常: {exc}",
+                    )
+                    return
+                if result.rc != mqtt.MQTT_ERR_SUCCESS:
+                    self._fail_command(
+                        message_id,
+                        command_name,
+                        f"PLC 指令发布失败 rc={result.rc}",
+                    )
+                    return
+
+                pending = PendingCommand(
+                    message_id=message_id,
+                    command_name=command_name,
+                    expected_registers=registers,
+                    deadline_ms=self._now_ms() + self.command_timeout_ms,
+                )
                 self._inflight.discard(message_id)
                 self._pending[message_id] = pending
-            self._emit_event(
-                "COMMAND_RUNNING",
-                message_id,
-                {"commandName": command_name},
-            )
+                self._emit_event(
+                    "COMMAND_RUNNING",
+                    message_id,
+                    {"commandName": command_name},
+                )
 
     def expire_commands(self, now_ms: int | None = None) -> None:
         current_time = self._now_ms() if now_ms is None else int(now_ms)
@@ -275,8 +297,41 @@ class Core:
             return
         with self._lock:
             self._connected = True
-        client.subscribe(self.data_topic, qos=self.qos)
-        self._logger.info("PLC MQTT 已连接并订阅 %s", self.data_topic)
+            self._subscribed = False
+        result, _message_id = client.subscribe(self.data_topic, qos=self.qos)
+        if result != mqtt.MQTT_ERR_SUCCESS:
+            self._logger.error(
+                "PLC MQTT 订阅请求失败 topic=%s rc=%s",
+                self.data_topic,
+                result,
+            )
+            return
+        self._logger.info("PLC MQTT 已连接，等待订阅确认 %s", self.data_topic)
+
+    def _on_subscribe(
+        self,
+        _client,
+        _userdata,
+        _message_id,
+        reason_codes,
+        _properties=None,
+    ) -> None:
+        failures = [
+            code
+            for code in reason_codes
+            if getattr(code, "is_failure", False)
+            or (isinstance(code, int) and code >= 128)
+        ]
+        with self._lock:
+            self._subscribed = not failures
+        if failures:
+            self._logger.error(
+                "PLC MQTT 订阅被拒绝 topic=%s reasons=%s",
+                self.data_topic,
+                failures,
+            )
+        else:
+            self._logger.info("PLC MQTT 已订阅 %s", self.data_topic)
 
     def _on_disconnect(
         self,
@@ -288,6 +343,7 @@ class Core:
     ) -> None:
         with self._lock:
             self._connected = False
+            self._subscribed = False
             stopping = self._stopping
         if not stopping:
             self._logger.warning("PLC MQTT 已断开 rc=%s，等待自动重连", reason_code)
@@ -441,4 +497,3 @@ class Core:
         if invalid:
             raise ValueError(f"{field} 必须{'大于等于' if allow_zero else '大于'} 0")
         return parsed
-

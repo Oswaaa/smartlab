@@ -7,6 +7,7 @@ import json
 import logging
 import threading
 import time
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping
@@ -116,6 +117,13 @@ class AdapterRuntime:
     """Owns SmartLab MQTT registration, heartbeat, routing, and publishing."""
 
     REGISTER_TOPIC = "smartlab/adapter/register"
+    COMMAND_EVENTS = {
+        "COMMAND_RECEIVED",
+        "COMMAND_RUNNING",
+        "COMMAND_COMPLETED",
+        "COMMAND_FAILED",
+        "COMMAND_TIMEOUT",
+    }
 
     def __init__(self, config: RuntimeConfig, setup: AdapterSetup, core: Core) -> None:
         self.config = config
@@ -123,11 +131,17 @@ class AdapterRuntime:
         self.core = core
         self._logger = logging.getLogger("smartlab.adapter.runtime")
         self._lock = threading.RLock()
+        self._outbound_lock = threading.RLock()
         self._stop_event = threading.Event()
         self._maintenance_thread: threading.Thread | None = None
         self._client = None
         self._connected = False
         self._stopping = False
+        self._pending_subscriptions: dict[int, str] = {}
+        self._queued_command_events: deque[
+            tuple[str, dict[str, Any], tuple[str, str]]
+        ] = deque()
+        self._queued_command_event_keys: set[tuple[str, str]] = set()
         self._command_topics = {
             self._command_topic(point): point for point in self.setup.device_points
         }
@@ -156,6 +170,7 @@ class AdapterRuntime:
             client.on_connect = self._on_connect
             client.on_disconnect = self._on_disconnect
             client.on_message = self._on_message
+            client.on_subscribe = self._on_subscribe
             self._client = client
 
         self.core.start()
@@ -260,7 +275,21 @@ class AdapterRuntime:
             message["messageId"] = message_id
         if payload:
             message["payload"] = payload
-        self._publish_json(self._event_topic(device_point), message)
+        topic = self._event_topic(device_point)
+        if message_id is None or event_name not in self.COMMAND_EVENTS:
+            self._publish_json(topic, message)
+            return
+
+        key = (message_id, event_name)
+        with self._outbound_lock:
+            if key in self._queued_command_event_keys:
+                return
+            if self._queued_command_events:
+                self._enqueue_command_event_locked(topic, message, key)
+                self._flush_command_events_locked()
+                return
+            if not self._publish_json(topic, message):
+                self._enqueue_command_event_locked(topic, message, key)
 
     def _on_connect(self, client, _userdata, _flags, reason_code, _properties=None) -> None:
         failed = getattr(reason_code, "is_failure", False)
@@ -269,14 +298,54 @@ class AdapterRuntime:
             return
         with self._lock:
             self._connected = True
+            self._pending_subscriptions.clear()
         qos = self._qos()
+        accepted = 0
         for topic in self._command_topics:
-            client.subscribe(topic, qos=qos)
+            result, message_id = client.subscribe(topic, qos=qos)
+            if result != mqtt.MQTT_ERR_SUCCESS:
+                self._logger.error(
+                    "SmartLab MQTT 订阅请求失败 topic=%s rc=%s",
+                    topic,
+                    result,
+                )
+                continue
+            with self._lock:
+                self._pending_subscriptions[message_id] = topic
+            accepted += 1
         self._logger.info(
-            "SmartLab MQTT 已连接，订阅 %s 个命令主题", len(self._command_topics)
+            "SmartLab MQTT 已连接，等待 %s 个命令订阅确认",
+            accepted,
         )
-        self.publish_registration()
-        self.publish_heartbeat()
+        with self._outbound_lock:
+            self.publish_registration()
+            self.publish_heartbeat()
+            self._flush_command_events_locked()
+
+    def _on_subscribe(
+        self,
+        _client,
+        _userdata,
+        message_id,
+        reason_codes,
+        _properties=None,
+    ) -> None:
+        with self._lock:
+            topic = self._pending_subscriptions.pop(message_id, "未知主题")
+        failures = [
+            code
+            for code in reason_codes
+            if getattr(code, "is_failure", False)
+            or (isinstance(code, int) and code >= 128)
+        ]
+        if failures:
+            self._logger.error(
+                "SmartLab MQTT 命令订阅被拒绝 topic=%s reasons=%s",
+                topic,
+                failures,
+            )
+        else:
+            self._logger.info("SmartLab MQTT 已订阅命令主题 %s", topic)
 
     def _on_disconnect(
         self,
@@ -288,6 +357,7 @@ class AdapterRuntime:
     ) -> None:
         with self._lock:
             self._connected = False
+            self._pending_subscriptions.clear()
             stopping = self._stopping
         if not stopping:
             self._logger.warning("SmartLab MQTT 已断开 rc=%s，等待自动重连", reason_code)
@@ -335,6 +405,33 @@ class AdapterRuntime:
             self._logger.error("SmartLab 命令无效 topic=%s: %s", message.topic, exc)
         except Exception:
             self._logger.exception("处理 SmartLab 命令时发生未预期异常")
+
+    def _enqueue_command_event_locked(
+        self,
+        topic: str,
+        message: dict[str, Any],
+        key: tuple[str, str],
+    ) -> None:
+        self._queued_command_events.append((topic, dict(message), key))
+        self._queued_command_event_keys.add(key)
+        self._logger.warning(
+            "SmartLab MQTT 当前不可用，暂存命令事件 messageId=%s event=%s",
+            key[0],
+            key[1],
+        )
+
+    def _flush_command_events_locked(self) -> None:
+        while self._queued_command_events:
+            topic, message, key = self._queued_command_events[0]
+            if not self._publish_json(topic, message):
+                return
+            self._queued_command_events.popleft()
+            self._queued_command_event_keys.discard(key)
+            self._logger.info(
+                "已补发命令事件 messageId=%s event=%s",
+                key[0],
+                key[1],
+            )
 
     def _maintenance_loop(self) -> None:
         next_heartbeat = time.monotonic() + self.config.heartbeat_interval_sec

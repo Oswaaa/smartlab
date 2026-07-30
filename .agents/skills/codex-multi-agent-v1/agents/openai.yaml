@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex Multi-Agent V1"
+  short_description: "Safely switch GPT-5.6 to a full V1 catalog"
+  default_prompt: "Use $codex-multi-agent-v1 to inspect my Windows Codex configuration and apply the full-catalog MultiAgent V1 workaround safely."

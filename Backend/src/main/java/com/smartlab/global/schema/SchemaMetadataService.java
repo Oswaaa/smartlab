@@ -82,6 +82,9 @@ public class SchemaMetadataService {
         ObjectNode metadata = JsonNodeSupport.objectNode();
         metadata.set("commandStateNames", textArray(SystemExecutionContract.commandStateNames()));
         metadata.set("standardInterfaces", interfaces(SystemExecutionContract.stateMachineInterfaces(List.of())));
+        metadata.set("systemTransitions", systemTransitions(SystemExecutionContract.stateMachineSystemTransitions()));
+        metadata.set("deviceCommandTransitionRequirements", deviceCommandTransitionRequirements(
+                SystemExecutionContract.deviceCommandTransitionRequirements()));
         metadata.set("actionTypes", textArray(stateMachineActionNames()));
         return metadata;
     }
@@ -135,6 +138,38 @@ public class SchemaMetadataService {
             item.put("direction", definition.direction());
             item.put("interfaceType", definition.interfaceType().name());
             item.set("allowedSignals", textArray(definition.allowedSignals()));
+        }
+        return result;
+    }
+
+    private ArrayNode systemTransitions(List<SystemExecutionContract.SystemTransitionDefinition> definitions) {
+        ArrayNode result = JsonNodeSupport.arrayNode();
+        for (SystemExecutionContract.SystemTransitionDefinition definition : definitions) {
+            ObjectNode item = result.addObject();
+            item.put("stateSpace", definition.stateSpace());
+            item.put("fromStateName", definition.fromStateName());
+            item.put("toStateName", definition.toStateName());
+            item.putObject("trigger")
+                    .put("interfaceName", definition.triggerInterfaceName())
+                    .put("signalName", definition.triggerSignalName());
+            ObjectNode action = item.putArray("actions").addObject();
+            action.put("actionName", "SEND");
+            action.putObject("payload")
+                    .put("interfaceName", definition.actionInterfaceName())
+                    .put("signalName", definition.actionSignalName());
+        }
+        return result;
+    }
+
+    private ArrayNode deviceCommandTransitionRequirements(
+            List<SystemExecutionContract.DeviceCommandTransitionRequirement> requirements) {
+        ArrayNode result = JsonNodeSupport.arrayNode();
+        for (SystemExecutionContract.DeviceCommandTransitionRequirement requirement : requirements) {
+            ObjectNode item = result.addObject();
+            item.put("kind", requirement.kind());
+            item.put("fromStateName", requirement.fromStateName());
+            item.put("toStateName", requirement.toStateName());
+            item.put("triggerPolicy", requirement.triggerPolicy());
         }
         return result;
     }

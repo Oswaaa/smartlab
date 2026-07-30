@@ -2,11 +2,22 @@ package com.smartlab.engine.workflow.action;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.smartlab.engine.constraint.ConstraintExpressionEvaluator;
 import com.smartlab.global.util.JsonNodeSupport;
+
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
 import org.springframework.stereotype.Component;
 
 @Component
 public class WorkflowValueResolver {
+    private final ConstraintExpressionEvaluator expressionEvaluator;
+
+    public WorkflowValueResolver(ConstraintExpressionEvaluator expressionEvaluator) {
+        this.expressionEvaluator = expressionEvaluator;
+    }
     public JsonNode resolve(JsonNode source, JsonNode variables) {
         if (source == null || !source.isObject()) throw new IllegalArgumentException("值来源必须是对象");
         return switch (source.path("kind").asText("")) {
@@ -20,23 +31,17 @@ public class WorkflowValueResolver {
         };
     }
 
-    /** 定稿UPDATE.valueExpression允许引用当前输入payload或节点内部变量，也允许布尔、数值和字符串字面量 */
+    /** UPDATE与约束使用同一表达式语法；裸字符串不再作为解析失败的兜底 */
     public JsonNode resolveExpression(String expression, JsonNode variables) {
         String value = expression == null ? "" : expression.trim();
         if (value.isBlank()) throw new IllegalArgumentException("valueExpression不能为空");
         JsonNode resolved = tryResolvePath(variables, value);
         if (resolved != null) return resolved;
-        if ((value.startsWith("\"") && value.endsWith("\"")) || (value.startsWith("'") && value.endsWith("'"))) {
-            return JsonNodeSupport.MAPPER.valueToTree(value.substring(1, value.length() - 1));
+        Map<String, JsonNode> roots = new LinkedHashMap<>();
+        if (variables != null && variables.isObject()) {
+            variables.fields().forEachRemaining(entry -> roots.put(entry.getKey(), entry.getValue()));
         }
-        if ("true".equalsIgnoreCase(value) || "false".equalsIgnoreCase(value)) {
-            return JsonNodeSupport.MAPPER.valueToTree(Boolean.parseBoolean(value));
-        }
-        try {
-            return JsonNodeSupport.MAPPER.valueToTree(new java.math.BigDecimal(value));
-        } catch (NumberFormatException ignored) {
-            return JsonNodeSupport.MAPPER.valueToTree(value);
-        }
+        return expressionEvaluator.evaluateValue(value, roots, Map.of(), Instant.now());
     }
 
     public JsonNode resolvePath(JsonNode root, String path) {

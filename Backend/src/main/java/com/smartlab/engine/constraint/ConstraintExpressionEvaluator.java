@@ -1,6 +1,7 @@
 package com.smartlab.engine.constraint;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.smartlab.global.util.JsonNodeSupport;
 import org.springframework.stereotype.Component;
 
 import java.math.BigDecimal;
@@ -15,13 +16,17 @@ import java.util.Set;
 @Component
 public class ConstraintExpressionEvaluator {
 
+    public JsonNode evaluateValue(String expression, Map<String, JsonNode> variables,
+                                  Map<String, List<TimedValue>> histories, Instant now) {
+        Object result = new Parser(expression, variables, histories, now).parse();
+        return JsonNodeSupport.MAPPER.valueToTree(result);
+    }
+
     public boolean evaluate(String expression, Map<String, JsonNode> variables,
                             Map<String, List<TimedValue>> histories, Instant now) {
-        Object result = new Parser(expression, variables, histories, now).parse();
-        if (!(result instanceof Boolean value)) {
-            throw new IllegalArgumentException("约束expression必须返回boolean");
-        }
-        return value;
+        JsonNode result = evaluateValue(expression, variables, histories, now);
+        if (!result.isBoolean()) throw new IllegalArgumentException("约束expression必须返回boolean");
+        return result.booleanValue();
     }
 
     public void validate(String expression, Map<String, JsonNode> variables) {
@@ -176,9 +181,18 @@ public class ConstraintExpressionEvaluator {
             if (match("(")) return function(identifier);
             if ("true".equalsIgnoreCase(identifier)) return Boolean.TRUE;
             if ("false".equalsIgnoreCase(identifier)) return Boolean.FALSE;
-            JsonNode value = variables.get(identifier);
+            JsonNode value = resolvePath(variables, identifier);
             if (value == null || value.isNull()) throw error("expression引用了未绑定变量: " + identifier);
             return unwrap(value);
+        }
+
+        private JsonNode resolvePath(Map<String, JsonNode> roots, String path) {
+            String[] parts = path.split("\\.");
+            JsonNode current = roots.get(parts[0]);
+            for (int index = 1; current != null && index < parts.length; index++) {
+                current = current.isObject() ? current.get(parts[index]) : null;
+            }
+            return current;
         }
 
         private Object function(String name) {
@@ -306,7 +320,7 @@ public class ConstraintExpressionEvaluator {
             }
             if (Character.isLetter(character) || character == '_') {
                 index++;
-                while (index < source.length() && (Character.isLetterOrDigit(source.charAt(index)) || source.charAt(index) == '_')) index++;
+                while (index < source.length() && (Character.isLetterOrDigit(source.charAt(index)) || source.charAt(index) == '_' || source.charAt(index) == '.')) index++;
                 return new Token(TokenType.IDENTIFIER, source.substring(start, index), start);
             }
             if (character == '\'' || character == '"') {

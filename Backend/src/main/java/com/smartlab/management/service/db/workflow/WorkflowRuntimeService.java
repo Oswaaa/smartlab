@@ -124,6 +124,11 @@ public class WorkflowRuntimeService {
         publishNode(current);
     }
 
+    public void appendStepLog(Task task, TaskStep step, String level, String message) {
+        if (task == null || step == null) throw new IllegalArgumentException("任务步骤日志上下文不完整");
+        logService.append("TASK", task.getId(), step.getId(), null, level, message);
+    }
+
     @Transactional(rollbackFor = Exception.class)
     public void beginTerminationStep(TaskStep step) {
         TaskStep current = stepMapper.selectById(step.getId());

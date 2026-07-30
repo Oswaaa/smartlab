@@ -167,17 +167,26 @@ public class WorkflowEngine {
             throw new IllegalArgumentException("节点输入接口不存在或不是IN: " + inputInterfaceName);
         }
         ObjectNode variables = actionVariables(task, step, inputInterface, node);
-        List<JsonNode> actions = new java.util.ArrayList<>();
+        return executeActions(task, step, node, collectMatchedActions(node, inputInterface, variables), variables);
+    }
+
+    List<JsonNode> collectMatchedActions(FlowNode node, JsonNode inputInterface, ObjectNode variables) {
+        java.util.LinkedHashMap<String, JsonNode> matched = new java.util.LinkedHashMap<>();
         for (JsonNode trigger : iterable(inputInterface.path("bindingTriggers"))) {
-            if (conditionEvaluator.evaluate(trigger.path("condition"), variables)) {
-                actions.add(actionByName(node, trigger.path("action").asText()));
-            }
+            if (!conditionEvaluator.evaluate(trigger.path("condition"), variables)) continue;
+            String actionName = trigger.path("action").asText("");
+            matched.putIfAbsent(actionName, actionByName(node, actionName));
         }
-        return executeActions(task, step, node, actions, variables);
+        return List.copyOf(matched.values());
     }
 
     private ObjectNode actionVariables(Task task, TaskStep step, JsonNode inputInterface, FlowNode node) {
         ObjectNode variables = (ObjectNode) mergeVariables(task, step);
+        ObjectNode mapped = executionOperations.resolveMappedVariables(task, step, node);
+        if (mapped != null && !mapped.isEmpty()) {
+            runtime.mergeVariableSpace(step, mapped);
+            mergeObject(variables, mapped);
+        }
         JsonNode input = step.getInterfaceInSnapshot();
         if (input != null && input.isObject()) {
             variables.set("input", input.deepCopy());
@@ -202,24 +211,43 @@ public class WorkflowEngine {
         return variables;
     }
 
-    private ActionRunResult executeActions(Task task, TaskStep step, FlowNode node, Iterable<JsonNode> actions,
+    ActionRunResult executeActions(Task task, TaskStep step, FlowNode node, Iterable<JsonNode> actions,
             ObjectNode variables) {
+        List<WorkflowActionDefinition> updates = new java.util.ArrayList<>();
+        List<WorkflowActionDefinition> emits = new java.util.ArrayList<>();
         for (JsonNode actionNode : actions) {
             WorkflowActionDefinition action = WorkflowActionDefinition.from(actionNode);
-            WorkflowActionResult result = actionRegistry.required(action.actionType()).execute(
-                    action, new WorkflowActionContext(task, step, node, variables, Instant.now(), executionOperations));
-            if (!result.variableUpdates().isEmpty()) {
-                runtime.mergeVariableSpace(step, result.variableUpdates());
-                mergeObject(variables, result.variableUpdates());
-            }
-            if (result.status() != WorkflowActionStatus.CONTINUE) {
-                return ActionRunResult.awaitingExternalSignal();
-            }
-            if (result.emittedInterfaceName() != null) {
-                return ActionRunResult.emitted(result.emittedInterfaceName(), result.emittedSignalName(), variables);
+            switch (action.actionType()) {
+                case "UPDATE" -> updates.add(action);
+                case "EMIT" -> emits.add(action);
+                default -> throw new IllegalArgumentException("不支持的工作流动作类型: " + action.actionType());
             }
         }
-        return ActionRunResult.continueWithoutEmission();
+        if (emits.size() > 1) throw new IllegalStateException("同一输入命中多个EMIT动作");
+        for (WorkflowActionDefinition update : updates) {
+            WorkflowActionResult result = executeAction(task, step, node, variables, update);
+            if (result.status() != WorkflowActionStatus.CONTINUE) {
+                throw new IllegalStateException("UPDATE动作不能挂起工作流节点: " + update.actionName());
+            }
+        }
+        if (emits.isEmpty()) return ActionRunResult.continueWithoutEmission();
+        WorkflowActionResult result = executeAction(task, step, node, variables, emits.get(0));
+        if (result.status() != WorkflowActionStatus.CONTINUE) return ActionRunResult.awaitingExternalSignal();
+        if (result.emittedInterfaceName() == null || result.emittedInterfaceName().isBlank()) {
+            throw new IllegalStateException("EMIT动作未产生输出接口: " + emits.get(0).actionName());
+        }
+        return ActionRunResult.emitted(result.emittedInterfaceName(), result.emittedSignalName(), variables);
+    }
+
+    private WorkflowActionResult executeAction(Task task, TaskStep step, FlowNode node, ObjectNode variables,
+            WorkflowActionDefinition action) {
+        WorkflowActionResult result = actionRegistry.required(action.actionType()).execute(
+                action, new WorkflowActionContext(task, step, node, variables, Instant.now(), executionOperations));
+        if (!result.variableUpdates().isEmpty()) {
+            runtime.mergeVariableSpace(step, result.variableUpdates());
+            mergeObject(variables, result.variableUpdates());
+        }
+        return result;
     }
 
     private void settleEmittedWorkflowSignal(Task task, TaskStep step, FlowNode node, ActionRunResult result) {
@@ -296,15 +324,13 @@ public class WorkflowEngine {
         }
     }
 
-    private ObjectNode mapPortValues(FlowNode sourceNode, FlowNode targetNode, TaskStep sourceStep) {
+    ObjectNode mapPortValues(FlowNode sourceNode, FlowNode targetNode, TaskStep sourceStep) {
         ObjectNode values = JsonNodeSupport.objectNode();
         if (sourceNode.getPorts() == null || sourceNode.getPorts().isEmpty() || targetNode.getPorts() == null
-                || targetNode.getPorts().isEmpty())
-            return values;
+                || targetNode.getPorts().isEmpty()) return values;
         var definition = workflowService.getDefinition(sourceNode.getFlowModelId());
         JsonNode connections = definition == null ? null : definition.getPortConnections();
-        if (connections == null || !connections.isArray())
-            return values;
+        if (connections == null || !connections.isArray()) return values;
         var compiled = workflowService.compileDefinition(sourceNode.getFlowModelId());
         for (JsonNode connection : connections) {
             JsonNode source = connection.path("source");
@@ -312,31 +338,55 @@ public class WorkflowEngine {
             Long sourceRef = compiled.refsByNodeName().get(source.path("nodeName").asText(""));
             Long targetRef = compiled.refsByNodeName().get(target.path("nodeName").asText(""));
             if (!java.util.Objects.equals(sourceRef, sourceNode.getNodeIdRef())
-                    || !java.util.Objects.equals(targetRef, targetNode.getNodeIdRef()))
+                    || !java.util.Objects.equals(targetRef, targetNode.getNodeIdRef())) continue;
+            String sourcePortName = source.path("portName").asText("");
+            String targetPortName = target.path("portName").asText("");
+            JsonNode sourcePort = requiredNamed(sourceNode.getPorts(), sourcePortName, "源端口");
+            JsonNode targetPort = requiredNamed(targetNode.getPorts(), targetPortName, "目标端口");
+            if (!"OUT".equals(sourcePort.path("direction").asText())
+                    || !"IN".equals(targetPort.path("direction").asText())) {
+                throw new IllegalStateException("端口连接必须从OUT指向IN: " + sourcePortName + "→" + targetPortName);
+            }
+            String sourceVariableName = sourcePort.path("internalVariableName").asText("");
+            String targetVariableName = targetPort.path("internalVariableName").asText("");
+            JsonNode sourceVariable = requiredNamed(sourceNode.getInVariables(), sourceVariableName, "源变量");
+            JsonNode targetVariable = requiredNamed(targetNode.getInVariables(), targetVariableName, "目标变量");
+            String sourceType = sourceVariable.path("dataType").asText("");
+            String targetType = targetVariable.path("dataType").asText("");
+            if (!sourceType.equals(targetType)) {
+                throw new IllegalStateException("端口连接变量数据类型不一致: " + sourceType + "→" + targetType);
+            }
+            JsonNode value = sourceStep.getVariableSpace() == null
+                    ? null : sourceStep.getVariableSpace().get(sourceVariableName);
+            if (value == null || value.isNull() || value.isMissingNode()) {
+                Task task = runtime.task(sourceStep.getTaskId());
+                runtime.appendStepLog(task, sourceStep, "WARN",
+                        "端口" + sourcePortName + "绑定变量" + sourceVariableName + "尚无值");
                 continue;
-            String sourceVariable = portVariable(sourceNode.getPorts(), source.path("portName").asText(),
-                    source.path("portName").asText());
-            String targetVariable = portVariable(targetNode.getPorts(), target.path("portName").asText(),
-                    target.path("portName").asText());
-            JsonNode value = valueFromStep(sourceStep, sourceVariable);
-            if (value != null && !value.isMissingNode())
-                values.set(targetVariable, value.deepCopy());
+            }
+            requireValueType(targetVariableName, targetType, value);
+            values.set(targetVariableName, value.deepCopy());
         }
         return values;
     }
 
-    private String portVariable(JsonNode ports, String portName, String fallback) {
-        for (JsonNode port : iterable(ports)) {
-            if (portName.equals(port.path("name").asText()))
-                return port.path("internalVariableName").asText(fallback);
+    private JsonNode requiredNamed(JsonNode definitions, String name, String label) {
+        for (JsonNode definition : iterable(definitions)) {
+            if (name.equals(definition.path("name").asText())) return definition;
         }
-        return fallback;
+        throw new IllegalStateException(label + "不存在: " + name);
     }
 
-    private JsonNode valueFromStep(TaskStep step, String variableName) {
-        JsonNode value = step.getVariableSpace() == null ? null : step.getVariableSpace().get(variableName);
-        return value != null ? value
-                : step.getInterfaceOutSnapshot() == null ? null : step.getInterfaceOutSnapshot().get(variableName);
+    private void requireValueType(String variableName, String dataType, JsonNode value) {
+        boolean valid = switch (dataType) {
+            case "INTEGER" -> value.isIntegralNumber();
+            case "DOUBLE" -> value.isNumber();
+            case "STRING" -> value.isTextual();
+            case "BOOLEAN" -> value.isBoolean();
+            case "JSON" -> value.isObject() || value.isArray();
+            default -> false;
+        };
+        if (!valid) throw new IllegalStateException("端口目标变量" + variableName + "要求" + dataType);
     }
 
     @EventListener
@@ -574,7 +624,7 @@ public class WorkflowEngine {
         return node != null && node.isArray() ? node : List.of();
     }
 
-    private record ActionRunResult(boolean waiting, String interfaceName, String signalName, ObjectNode variables) {
+    record ActionRunResult(boolean waiting, String interfaceName, String signalName, ObjectNode variables) {
         private static ActionRunResult awaitingExternalSignal() {
             return new ActionRunResult(true, null, null, null);
         }

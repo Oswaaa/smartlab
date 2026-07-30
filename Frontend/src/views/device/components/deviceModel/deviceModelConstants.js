@@ -18,8 +18,9 @@ export const manualControlSignals = reactive([])
 export const constraintControlSignals = reactive([])
 export const statusSignals = reactive([])
 export const standardInterfaces = reactive([])
-export const executionLifecycleMainPath = reactive([])
+
 export const systemTransitions = reactive([])
+export const deviceCommandTransitionRequirements = reactive([])
 export const mqttTopics = reactive({
   registerTopic: '',
   heartbeatTopic: '',
@@ -59,8 +60,8 @@ export function applyProtocolMetadata(metadata = {}) {
   replaceArray(constraintControlSignals, signalsOf('IN', 'CONSTRAINT'))
   replaceArray(statusSignals, signalsOf('OUT', 'STATE'))
   replaceArray(standardInterfaces, interfaces)
-  replaceArray(executionLifecycleMainPath, stateMachine.executionLifecycleMainPath)
   replaceArray(systemTransitions, stateMachine.systemTransitions)
+  replaceArray(deviceCommandTransitionRequirements, stateMachine.deviceCommandTransitionRequirements)
   if (protocol.mqttTopics && typeof protocol.mqttTopics === 'object') {
     Object.assign(mqttTopics, protocol.mqttTopics)
   }
@@ -77,6 +78,8 @@ export async function ensureProtocolMetadataLoaded(loader = loadProtocolMetadata
   const metadataReady = () => communicationProtocols.length > 0
     && adapterDataTypes.length > 0
     && standardInterfaces.length > 0
+    && systemTransitions.length > 0
+    && deviceCommandTransitionRequirements.length > 0
   if (metadataReady()) return
   if (!protocolMetadataLoading) {
     protocolMetadataLoading = Promise.resolve().then(loader).finally(() => {
@@ -220,7 +223,14 @@ export function defaultStateEntryActions(type, stateName) {
 }
 
 export function defaultCommandLifecycleTransitions() {
-  return systemTransitions.map(transition => JSON.parse(JSON.stringify(transition)))
+  return systemTransitions.map(transition => ({
+    ...transition,
+    trigger: transition.trigger ? { ...transition.trigger } : null,
+    actions: asArray(transition.actions).map(action => ({
+      ...action,
+      payload: action.payload ? { ...action.payload } : {}
+    }))
+  }))
 }
 // ==========================================
 // 4. 适配器 Manifest 配置映射逻辑
@@ -324,7 +334,7 @@ export function buildAdapterContractFromManifestCategory(parsed, category) {
   }))
 
   const adapterAttributes = asArray(template.attributes).map(attr => ({
-    telemetryName: stringValue(attr.telemetryName || attr.name),
+    telemetryName: stringValue(attr.name),
     dataType: normalizeDataType(attr.dataType, 'DOUBLE', adapterDataTypes),
     description: stringValue(attr.description)
   }))

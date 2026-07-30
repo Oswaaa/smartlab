@@ -19,8 +19,35 @@ const normalizers = await server.ssrLoadModule('/src/views/device/components/dev
 
 after(() => server.close())
 
-test('system command lifecycle transitions explicitly belong to CMD state space', () => {
+test('maps canonical state-machine metadata fields from the backend contract', () => {
   constants.applyProtocolMetadata({
+    stateMachine: {
+      actionTypes: ['SEND'],
+      standardInterfaces: [
+        { name: 'Interface_adapter_out', direction: 'OUT', interfaceType: 'ADAPTER', allowedSignals: ['CMD_START', 'CMD_ABORT'] },
+        { name: 'Interface_state_out', direction: 'OUT', interfaceType: 'STATE', allowedSignals: ['CMD_STATE', 'OP_STATE'] }
+      ]
+    }
+  })
+  assert.deepEqual([...constants.stateActionNames], ['SEND'])
+  assert.deepEqual([...constants.interfaceTypes].sort(), ['ADAPTER', 'STATE'])
+  assert.deepEqual([...constants.statusSignals], ['CMD_STATE', 'OP_STATE'])
+})
+
+test('uses telemetryName for adapter telemetry fields in persisted model contracts', () => {
+  const built = constants.buildAdapterContractFromManifestCategory({ adapterName: 'adapter-A' }, {
+    categoryName: 'reactor',
+    deviceTemplate: { attributes: [{ name: 'temperature', dataType: 'DOUBLE' }] }
+  })
+  assert.deepEqual(built.telemetry.adapterAttributes, [{ telemetryName: 'temperature', dataType: 'DOUBLE', description: '' }])
+  const normalized = normalizers.normalizeAdapterContract({
+    telemetry: { adapterAttributes: [{ telemetryName: 'temperature', dataType: 'DOUBLE' }] }
+  })
+  assert.equal(normalized.telemetry.adapterAttributes[0].telemetryName, 'temperature')
+  assert.equal('name' in normalized.telemetry.adapterAttributes[0], false)
+})
+
+test('system command lifecycle transitions explicitly belong to CMD state space', () => {  constants.applyProtocolMetadata({
     stateMachine: {
       commandStateNames: ['IDLE', 'SENT', 'RECEIVED', 'RUNNING', 'COMPLETED', 'ABORTED', 'FAILED'],
       systemTransitions: [{ stateSpace: 'CMD', fromStateName: 'IDLE', toStateName: 'SENT', trigger: { interfaceName: 'Interface_workflow_in', signalName: 'WF_EXECUTE_START' }, actions: [] }]
@@ -42,12 +69,12 @@ test('normalizes transition stateSpace without inferring it from state names', (
 })
 
 test('normalizes orthogonal operation regions and keeps transition region identity', () => {
-  const stateSpace = normalizers.normalizeOperationStateSpace({
+  const stateSpace = normalizers.normalizeStateSpace({
     regions: [
       { regionName: 'operatingMode', initialStateName: 'MANUAL', states: [{ stateName: 'MANUAL' }, { stateName: 'AUTOMATIC' }] },
       { regionName: 'cooling', initialStateName: 'IDLE', states: [{ stateName: 'IDLE' }, { stateName: 'COOLING' }] }
     ]
-  })
+  }, 'IDLE', 'OP')
   const [transition] = normalizers.normalizeTransitions([{
     stateSpace: 'OP',
     regionName: 'operatingMode',
@@ -59,23 +86,20 @@ test('normalizes orthogonal operation regions and keeps transition region identi
   assert.equal(transition.regionName, 'operatingMode')
 })
 
-test('builds normal failure and termination lifecycle branches', async () => {
+test('builds only final adapter-driven command lifecycle transitions', async () => {
   const lifecycle = await server.ssrLoadModule('/src/views/device/components/deviceModel/deviceModelLifecycle.js')
-  const rows = lifecycle.buildLifecycleRuleRows(
-    [
-      { fromStateName: 'IDLE', toStateName: 'SENT', triggerPolicy: 'SYSTEM' },
-      { fromStateName: 'SENT', toStateName: 'RECEIVED', triggerPolicy: 'OPTIONAL' },
-      { fromStateName: 'RECEIVED', toStateName: 'RUNNING', triggerPolicy: 'OPTIONAL' },
-      { fromStateName: 'RUNNING', toStateName: 'COMPLETED', triggerPolicy: 'REQUIRED' }
-    ],
-    [
-      { kind: 'FAILURE', targetStateName: 'FAILED', sourceStateNames: ['SENT', 'RECEIVED', 'RUNNING'] },
-      { kind: 'TERMINATION', targetStateName: 'ABORTED', sourceStateNames: ['SENT', 'RECEIVED', 'RUNNING'] }
-    ]
-  )
-  assert.equal(rows.filter(row => row.kind === 'MAIN').length, 3)
-  assert.equal(rows.filter(row => row.kind === 'FAILURE').length, 3)
-  assert.equal(rows.filter(row => row.kind === 'TERMINATION').length, 3)
+  const rows = lifecycle.buildLifecycleRuleRows([
+    { kind: 'MAIN', fromStateName: 'SENT', toStateName: 'RUNNING', triggerPolicy: 'REQUIRED' },
+    { kind: 'MAIN', fromStateName: 'RUNNING', toStateName: 'COMPLETED', triggerPolicy: 'REQUIRED' },
+    { kind: 'FAILURE', fromStateName: 'RUNNING', toStateName: 'FAILED', triggerPolicy: 'REQUIRED' },
+    { kind: 'TERMINATION', fromStateName: 'ABORTING', toStateName: 'ABORTED', triggerPolicy: 'REQUIRED' }
+  ])
+  assert.deepEqual(rows.map(row => [row.fromStateName, row.toStateName]), [
+    ['SENT', 'RUNNING'],
+    ['RUNNING', 'COMPLETED'],
+    ['RUNNING', 'FAILED'],
+    ['ABORTING', 'ABORTED']
+  ])
 })
 
 test('preserves adapter command and operation event domains even when names look similar', () => {
@@ -161,7 +185,7 @@ test('normalizing a model contract rejects every adapter-internal parameter repr
 })
 
 test('opening an editor requires complete model metadata instead of rendering local fallbacks', async () => {
-  constants.executionLifecycleMainPath.splice(0)
+  constants.deviceCommandTransitionRequirements.splice(0)
   constants.systemTransitions.splice(0)
   let loadCount = 0
   await constants.ensureProtocolMetadataLoaded(async () => {
@@ -176,9 +200,8 @@ test('opening an editor requires complete model metadata instead of rendering lo
           interfaceType: 'WORKFLOW',
           allowedSignals: ['WF_EXECUTE_START', 'WF_EXECUTE_ABORT']
         }],
-        executionLifecycleMainPath: [
-          { fromStateName: 'IDLE', toStateName: 'SENT', triggerPolicy: 'SYSTEM' },
-          { fromStateName: 'SENT', toStateName: 'RECEIVED', triggerPolicy: 'OPTIONAL' }
+        deviceCommandTransitionRequirements: [
+          { kind: 'MAIN', fromStateName: 'SENT', toStateName: 'RUNNING', triggerPolicy: 'REQUIRED' }
         ],
         systemTransitions: [
           { stateSpace: 'CMD', fromStateName: 'IDLE', toStateName: 'SENT', trigger: { interfaceName: 'Interface_workflow_in', signalName: 'WF_EXECUTE_START' }, actions: [] }
@@ -187,6 +210,6 @@ test('opening an editor requires complete model metadata instead of rendering lo
     })
   })
   assert.equal(loadCount, 1)
-  assert.equal(constants.executionLifecycleMainPath.length, 2)
+  assert.equal(constants.deviceCommandTransitionRequirements.length, 1)
   assert.equal(constants.systemTransitions.length, 1)
 })

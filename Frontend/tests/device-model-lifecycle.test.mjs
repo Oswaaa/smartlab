@@ -3,68 +3,67 @@ import { test } from 'node:test'
 
 const lifecycle = await import('../src/views/device/components/deviceModel/deviceModelLifecycle.js')
 
-const mainPath = [
-  { fromStateName: 'IDLE', toStateName: 'SENT', triggerPolicy: 'SYSTEM' },
-  { fromStateName: 'SENT', toStateName: 'RECEIVED', triggerPolicy: 'OPTIONAL' },
-  { fromStateName: 'RECEIVED', toStateName: 'RUNNING', triggerPolicy: 'OPTIONAL' },
-  { fromStateName: 'RUNNING', toStateName: 'COMPLETED', triggerPolicy: 'REQUIRED' }
+const requirements = [
+  { kind: 'MAIN', fromStateName: 'SENT', toStateName: 'RUNNING', triggerPolicy: 'REQUIRED' },
+  { kind: 'MAIN', fromStateName: 'RUNNING', toStateName: 'COMPLETED', triggerPolicy: 'REQUIRED' },
+  { kind: 'FAILURE', fromStateName: 'RUNNING', toStateName: 'FAILED', triggerPolicy: 'REQUIRED' },
+  { kind: 'TERMINATION', fromStateName: 'ABORTING', toStateName: 'ABORTED', triggerPolicy: 'REQUIRED' }
 ]
 
-test('builds normal lifecycle rows and an independent failure row for each active state', () => {
-  const rows = lifecycle.buildLifecycleRuleRows(mainPath)
+test('builds exactly the four adapter-driven command lifecycle transitions from the final contract', () => {
+  const rows = lifecycle.buildLifecycleRuleRows(requirements)
   assert.deepEqual(rows.map(row => row.key), [
-    'main:SENT:RECEIVED',
-    'main:RECEIVED:RUNNING',
+    'main:SENT:RUNNING',
     'main:RUNNING:COMPLETED',
-    'failure:SENT:FAILED',
-    'failure:RECEIVED:FAILED',
-    'failure:RUNNING:FAILED'
+    'failure:RUNNING:FAILED',
+    'termination:ABORTING:ABORTED'
   ])
 })
 
-test('optional stages without events serialize as CMD automatic transitions', () => {
-  const rows = lifecycle.buildLifecycleRuleRows(mainPath)
+test('serializes every adapter-driven command transition with its real cmdEvent', () => {
+  const rows = lifecycle.buildLifecycleRuleRows(requirements)
   const bindings = {
-    'main:RUNNING:COMPLETED': 'DONE'
+    'main:SENT:RUNNING': 'STARTED',
+    'main:RUNNING:COMPLETED': 'DONE',
+    'failure:RUNNING:FAILED': 'FAILED',
+    'termination:ABORTING:ABORTED': 'ABORTED'
   }
   const transitions = lifecycle.serializeLifecycleTransitions(rows, bindings, 'Interface_adapter_in')
-  assert.equal(transitions[0].trigger, null)
-  assert.equal(transitions[1].trigger, null)
-  assert.deepEqual(transitions[2].trigger, {
-    interfaceName: 'Interface_adapter_in',
-    signalName: 'DONE'
-  })
+  assert.deepEqual(
+    transitions.map(row => [row.fromStateName, row.toStateName, row.trigger.signalName]),
+    [
+      ['SENT', 'RUNNING', 'STARTED'],
+      ['RUNNING', 'COMPLETED', 'DONE'],
+      ['RUNNING', 'FAILED', 'FAILED'],
+      ['ABORTING', 'ABORTED', 'ABORTED']
+    ]
+  )
 })
 
-test('required lifecycle stages reject missing events', () => {
-  const rows = lifecycle.buildLifecycleRuleRows(mainPath)
+test('rejects saving when any required adapter lifecycle event is missing', () => {
+  const rows = lifecycle.buildLifecycleRuleRows(requirements)
   assert.throws(
     () => lifecycle.serializeLifecycleTransitions(rows, {}, 'Interface_adapter_in'),
-    /RUNNING → COMPLETED 必须绑定 Adapter cmdEvent/
+    /SENT → RUNNING 必须绑定 Adapter cmdEvent/
   )
 })
 
-test('failure branches use independent events and blank branches are omitted', () => {
-  const rows = lifecycle.buildLifecycleRuleRows(mainPath)
-  const transitions = lifecycle.serializeLifecycleTransitions(rows, {
-    'main:RUNNING:COMPLETED': 'DONE',
-    'failure:SENT:FAILED': 'REJECTED',
-    'failure:RUNNING:FAILED': 'FAILED'
-  }, 'Interface_adapter_in')
-  assert.deepEqual(
-    transitions.filter(row => row.toStateName === 'FAILED').map(row => [row.fromStateName, row.trigger.signalName]),
-    [['SENT', 'REJECTED'], ['RUNNING', 'FAILED']]
-  )
+test('does not create SENT failure or direct SENT/RUNNING to ABORTED transitions', () => {
+  const rows = lifecycle.buildLifecycleRuleRows(requirements)
+  assert.equal(rows.some(row => row.fromStateName === 'SENT' && row.toStateName === 'FAILED'), false)
+  assert.equal(rows.some(row => ['SENT', 'RUNNING'].includes(row.fromStateName) && row.toStateName === 'ABORTED'), false)
 })
 
-test('hydrates each transition binding without collapsing failure events', () => {
-  const rows = lifecycle.buildLifecycleRuleRows(mainPath)
+test('hydrates each final lifecycle event binding by its from and to state', () => {
+  const rows = lifecycle.buildLifecycleRuleRows(requirements)
   const bindings = lifecycle.hydrateLifecycleBindings([
+    { stateSpace: 'CMD', fromStateName: 'SENT', toStateName: 'RUNNING', trigger: { signalName: 'STARTED' } },
     { stateSpace: 'CMD', fromStateName: 'RUNNING', toStateName: 'COMPLETED', trigger: { signalName: 'DONE' } },
-    { stateSpace: 'CMD', fromStateName: 'SENT', toStateName: 'FAILED', trigger: { signalName: 'REJECTED' } },
-    { stateSpace: 'CMD', fromStateName: 'RUNNING', toStateName: 'FAILED', trigger: { signalName: 'FAILED' } }
+    { stateSpace: 'CMD', fromStateName: 'RUNNING', toStateName: 'FAILED', trigger: { signalName: 'FAILED' } },
+    { stateSpace: 'CMD', fromStateName: 'ABORTING', toStateName: 'ABORTED', trigger: { signalName: 'ABORTED' } }
   ], rows)
+  assert.equal(bindings['main:SENT:RUNNING'], 'STARTED')
   assert.equal(bindings['main:RUNNING:COMPLETED'], 'DONE')
-  assert.equal(bindings['failure:SENT:FAILED'], 'REJECTED')
   assert.equal(bindings['failure:RUNNING:FAILED'], 'FAILED')
+  assert.equal(bindings['termination:ABORTING:ABORTED'], 'ABORTED')
 })

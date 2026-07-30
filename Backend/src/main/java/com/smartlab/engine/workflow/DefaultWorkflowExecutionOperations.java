@@ -6,9 +6,11 @@ import com.smartlab.engine.statemachine.StateMachineEngine;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.workflow.WorkflowDetailResponse;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
+import com.smartlab.management.entity.resource.device.DeviceTwinStates;
 import com.smartlab.management.entity.workflow.FlowNode;
 import com.smartlab.management.entity.workflow.Task;
 import com.smartlab.management.entity.workflow.TaskStep;
+import com.smartlab.management.service.db.resource.device.DeviceTwinStateService;
 import com.smartlab.management.service.db.workflow.WorkflowRuntimeService;
 import com.smartlab.management.service.db.workflow.WorkflowService;
 import com.smartlab.management.service.db.workflow.WorkflowTaskResourceService;
@@ -24,15 +26,39 @@ public class DefaultWorkflowExecutionOperations implements WorkflowExecutionOper
     private final WorkflowTaskResourceService taskResourceService;
     private final StateMachineEngine stateMachineEngine;
     private final WorkflowService workflowService;
+    private final DeviceTwinStateService twinStateService;
 
     public DefaultWorkflowExecutionOperations(WorkflowRuntimeService runtime,
                                               WorkflowTaskResourceService taskResourceService,
                                               StateMachineEngine stateMachineEngine,
-                                              WorkflowService workflowService) {
+                                              WorkflowService workflowService,
+                                              DeviceTwinStateService twinStateService) {
         this.runtime = runtime;
         this.taskResourceService = taskResourceService;
         this.stateMachineEngine = stateMachineEngine;
         this.workflowService = workflowService;
+        this.twinStateService = twinStateService;
+    }
+
+    @Override
+    public ObjectNode resolveMappedVariables(Task task, TaskStep step, FlowNode node) {
+        ObjectNode result = JsonNodeSupport.objectNode();
+        if (!"DEV_NODE".equals(node.getNodeType()) || node.getInVariables() == null || !node.getInVariables().isArray()) {
+            return result;
+        }
+        DeviceInstances instance = taskResourceService.resolveDeviceInstance(task, step, node);
+        DeviceTwinStates twin = twinStateService.getByInstanceId(instance.getId());
+        JsonNode attributes = twin == null ? null : twin.getCurrentAttr();
+        if (attributes == null || !attributes.isObject()) return result;
+        for (JsonNode variable : node.getInVariables()) {
+            String variableName = variable.path("name").asText("").trim();
+            String attributeName = variable.path("attributesMapping").asText("").trim();
+            if (variableName.isBlank() || attributeName.isBlank() || !attributes.has(attributeName)) continue;
+            JsonNode value = attributes.get(attributeName);
+            requireCompatibleType(variableName, attributeName, variable.path("dataType").asText(""), value);
+            result.set(variableName, value.deepCopy());
+        }
+        return result;
     }
 
     @Override
@@ -83,6 +109,21 @@ public class DefaultWorkflowExecutionOperations implements WorkflowExecutionOper
         context.put("taskStepId", step.getId());
         if (stateMachineEngine.dispatchSignal(deviceInstanceId, route.deviceInputInterfaceName(), "WF_EXECUTE_ABORT", context).isEmpty()) {
             throw new IllegalStateException("设备状态机未接受WF_EXECUTE_ABORT");
+        }
+    }
+
+    private void requireCompatibleType(String variableName, String attributeName, String dataType, JsonNode value) {
+        boolean valid = value != null && !value.isNull() && switch (dataType) {
+            case "INTEGER" -> value.isIntegralNumber();
+            case "DOUBLE" -> value.isNumber();
+            case "STRING" -> value.isTextual();
+            case "BOOLEAN" -> value.isBoolean();
+            case "JSON" -> value.isObject() || value.isArray();
+            default -> throw new IllegalArgumentException("变量" + variableName + "声明了不支持的数据类型" + dataType);
+        };
+        if (!valid) {
+            throw new IllegalArgumentException("变量" + variableName + "要求" + dataType
+                    + "，设备属性" + attributeName + "的实际类型不一致");
         }
     }
 

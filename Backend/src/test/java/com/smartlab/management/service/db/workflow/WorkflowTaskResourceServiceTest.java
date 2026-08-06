@@ -295,5 +295,3 @@ class WorkflowTaskResourceServiceTest {
         return result;
     }
 }
-
-

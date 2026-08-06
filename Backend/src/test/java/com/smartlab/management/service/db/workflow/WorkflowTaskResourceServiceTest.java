@@ -29,11 +29,15 @@ class WorkflowTaskResourceServiceTest {
         WorkflowService workflows = mock(WorkflowService.class);
         WorkflowTaskResourceService service = new WorkflowTaskResourceService(workflows, mock(DeviceInstancesMapper.class), mock(DeviceModelsMapper.class), mock(TaskStepMapper.class), mock(FlowNodeMapper.class));
         WorkflowDetailResponse detail = new WorkflowDetailResponse(); detail.setId(1L); detail.setName("root"); detail.setVersion(1);
-        ObjectNode before = JsonNodeSupport.objectNode(); before.put("name", "heat"); before.put("nodeType", "DEV_NODE"); before.put("deviceModelId", 7L);
-        ObjectNode after = before.deepCopy(); after.put("name", "renamedHeat");
+        ObjectNode heat = JsonNodeSupport.objectNode(); heat.put("name", "heat"); heat.put("nodeType", "DEV_NODE"); heat.put("deviceModelId", 7L);
+        ObjectNode cool = JsonNodeSupport.objectNode(); cool.put("name", "cool"); cool.put("nodeType", "DEV_NODE"); cool.put("deviceModelId", 8L);
+        Map<Long, JsonNode> before = new java.util.LinkedHashMap<>(); before.put(12L, heat); before.put(18L, cool);
+        ObjectNode renamedHeat = heat.deepCopy(); renamedHeat.put("name", "renamedHeat"); ObjectNode renamedCool = cool.deepCopy(); renamedCool.put("name", "renamedCool");
+        Map<Long, JsonNode> after = new java.util.LinkedHashMap<>(); after.put(18L, renamedCool); after.put(12L, renamedHeat);
         when(workflows.getDefinition(1L)).thenReturn(detail);
-        when(workflows.compileDefinition(1L)).thenReturn(new WorkflowDefinitionCompiler.CompiledWorkflow(Map.of(12L, before), Map.of(), Map.of(), Map.of("heat", 12L), 12L, 12L), new WorkflowDefinitionCompiler.CompiledWorkflow(Map.of(12L, after), Map.of(), Map.of(), Map.of("renamedHeat", 12L), 12L, 12L));
-        assertEquals(service.requirements(1L).bindings().getFirst().slotId(), service.requirements(1L).bindings().getFirst().slotId());
+        when(workflows.compileDefinition(1L)).thenReturn(new WorkflowDefinitionCompiler.CompiledWorkflow(before, Map.of(), Map.of(), Map.of("heat", 12L, "cool", 18L), 12L, 18L), new WorkflowDefinitionCompiler.CompiledWorkflow(after, Map.of(), Map.of(), Map.of("renamedHeat", 12L, "renamedCool", 18L), 12L, 18L));
+        assertEquals(List.of("1:12", "1:18"), service.requirements(1L).bindings().stream().map(DeviceBindingRequirement::slotId).toList());
+        assertEquals(List.of("1:12", "1:18"), service.requirements(1L).bindings().stream().map(DeviceBindingRequirement::slotId).toList());
     }
 
     @Test
@@ -290,3 +294,4 @@ class WorkflowTaskResourceServiceTest {
         return result;
     }
 }
+

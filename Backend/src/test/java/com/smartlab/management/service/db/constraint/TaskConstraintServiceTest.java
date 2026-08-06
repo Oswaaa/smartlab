@@ -1,5 +1,6 @@
 package com.smartlab.management.service.db.constraint;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.global.util.JsonNodeSupport;
@@ -16,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -102,4 +104,25 @@ class TaskConstraintServiceTest {
         task.setResourceMap(map);
         return task;
     }
-}
+
+    @Test
+    void inspectReportsInvalidRuleDefinitionWithoutMutatingInput() {
+        ConstraintRuleService ruleService = mock(ConstraintRuleService.class);
+        WorkflowTaskResourceService resources = mock(WorkflowTaskResourceService.class);
+        when(resources.boundDeviceInstanceIds(any())).thenReturn(Set.of());
+        when(resources.workflowModelIds(3L)).thenReturn(Set.of(3L));
+        doThrow(new IllegalArgumentException("规则名称不能为空")).when(ruleService).validateTaskDefinition(any());
+        TaskConstraintService service = new TaskConstraintService(ruleService, resources, mock(TaskMapper.class));
+        ArrayNode input = JsonNodeSupport.arrayNode();
+        ObjectNode rule = input.addObject();
+        rule.put("expression", "true");
+        rule.putObject("bindings");
+        rule.putArray("violationActions");
+        JsonNode snapshot = input.deepCopy();
+
+        java.util.List<WorkflowIssue> issues = service.inspect(3L, JsonNodeSupport.objectNode(), JsonNodeSupport.objectNode(), input);
+
+        assertEquals(java.util.List.of("TASK_CONSTRAINT_INVALID"), issues.stream().map(WorkflowIssue::code).toList());
+        assertEquals(snapshot, input);
+        verify(ruleService).validateTaskDefinition(any());
+    }}

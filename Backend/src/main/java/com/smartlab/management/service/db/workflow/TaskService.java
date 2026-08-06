@@ -244,8 +244,8 @@ public class TaskService extends ManagementCrudService<Task> {
                 request == null ? null : request.deviceBindings());
         addIssues(issues, resources.issues());
         inspectExecutableWorkflow(flowModelId, issues);
+        addIssues(issues, executionReadinessService.inspect(resources.resourceMap()));
         if (!resources.blocked()) {
-            addIssues(issues, executionReadinessService.inspect(resources.resourceMap()));
             addIssues(issues, taskConstraintService.inspect(flowModelId,
                     request == null ? null : request.taskVariables(), resources.resourceMap(),
                     request == null ? null : request.taskConstraints()));

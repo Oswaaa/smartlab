@@ -17,3 +17,9 @@ Completed. Task creation accepts structured `deviceBindings` and builds the inte
 
 ## Concerns
 - Existing frontend task UI still uses legacy internal `resourceMap`/`bindingKey` fields. Per task coordination this belongs to the later frontend scope; this backend change exposes `requirements.slotId` plus `deviceBindings` so that UI can migrate without using internal resource-map structure.
+## Review remediation
+- Preflight now reports readiness for resolved bindings even when other slots are missing.
+- Constraint inspection validates deep-copied rules with the same normalization and definition validator before persistence.
+- Readiness issues use deviceBindings[slotId] paths and slot element IDs.
+- Added MockMvc preflight response coverage and blocking-create non-insertion coverage.
+- Final focused suite: 26 tests passed, 0 failures, 0 errors.

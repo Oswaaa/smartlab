@@ -229,7 +229,16 @@ public class WorkflowTaskResourceService {
         return Set.copyOf(result);
     }
 
-    public Set<Long> workflowModelIds(Long rootFlowModelId) {
+    public List<BoundDeviceBinding> boundDeviceBindings(JsonNode resourceMap) {
+        JsonNode deviceBindings = bindings(resourceMap);
+        List<BoundDeviceBinding> result = new ArrayList<>();
+        deviceBindings.fields().forEachRemaining(entry -> {
+            long instanceId = entry.getValue().path("deviceInstanceId").asLong(0);
+            if (instanceId > 0) result.add(new BoundDeviceBinding(entry.getKey(), instanceId));
+        });
+        result.sort(Comparator.comparing(BoundDeviceBinding::slotId));
+        return List.copyOf(result);
+    }    public Set<Long> workflowModelIds(Long rootFlowModelId) {
         Set<Long> result = new LinkedHashSet<>();
         collectWorkflowModelIds(rootFlowModelId, result);
         return Set.copyOf(result);
@@ -427,6 +436,8 @@ public class WorkflowTaskResourceService {
     private Iterable<JsonNode> iterable(JsonNode node) {
         return node != null && node.isArray() ? node : java.util.List.of();
     }
+
+    public record BoundDeviceBinding(String slotId, Long deviceInstanceId) {}
 
     public record PreparedTaskResources(JsonNode resourceMap, List<WorkflowIssue> issues) {
         public boolean blocked() { return issues.stream().anyMatch(WorkflowIssue::blocking); }

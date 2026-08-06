@@ -70,6 +70,8 @@ class WorkflowExecutionReadinessServiceTest {
         assertEquals(java.util.List.of("ADAPTER_UNREGISTERED", "DEVICE_OFFLINE"),
                 issues.stream().map(WorkflowIssue::code).sorted().toList());
         assertTrue(issues.get(0).blocking());
+        assertEquals("deviceBindings[slot-7]", issues.get(0).path());
+        assertEquals("slot-7", issues.get(0).elementId());
     }
 
     private Fixture fixture() {
@@ -80,7 +82,7 @@ class WorkflowExecutionReadinessServiceTest {
         instance.setId(7L);
         instance.setInstanceName("heater");
         instance.setBoundAdapterName("adapter-a");
-        when(resources.boundDeviceInstanceIds(null)).thenReturn(Set.of(7L));
+        when(resources.boundDeviceBindings(null)).thenReturn(java.util.List.of(new WorkflowTaskResourceService.BoundDeviceBinding("slot-7", 7L)));
         when(resources.requireUsableInstance(7L)).thenReturn(instance);
         return new Fixture(new WorkflowExecutionReadinessService(resources, twins, adapters, 30), twins, adapters);
     }

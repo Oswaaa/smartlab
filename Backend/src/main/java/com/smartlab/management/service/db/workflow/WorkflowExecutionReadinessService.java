@@ -47,30 +47,31 @@ public class WorkflowExecutionReadinessService {
 
     public List<WorkflowIssue> inspect(JsonNode resourceMap) {
         List<WorkflowIssue> issues = new ArrayList<>();
-        for (Long instanceId : resourceService.boundDeviceInstanceIds(resourceMap).stream().sorted().toList()) {
+        for (WorkflowTaskResourceService.BoundDeviceBinding binding : resourceService.boundDeviceBindings(resourceMap)) {
+            Long instanceId = binding.deviceInstanceId();
             DeviceInstances instance;
             try { instance = resourceService.requireUsableInstance(instanceId); }
             catch (RuntimeException error) {
-                issues.add(issue("DEVICE_UNAVAILABLE", instanceId, error.getMessage(), "选择可用设备实例"));
+                issues.add(issue("DEVICE_UNAVAILABLE", binding.slotId(), instanceId, error.getMessage(), "选择可用设备实例"));
                 continue;
             }
             try { requireDeviceOnline(instance); }
-            catch (RuntimeException error) { issues.add(issue("DEVICE_OFFLINE", instanceId, error.getMessage(), "等待设备上线后重试")); }
+            catch (RuntimeException error) { issues.add(issue("DEVICE_OFFLINE", binding.slotId(), instanceId, error.getMessage(), "等待设备上线后重试")); }
             try { requireAdapterOnline(instance); }
             catch (RuntimeException error) {
                 String message = error.getMessage();
                 String code = message != null && message.contains("心跳") ? "ADAPTER_HEARTBEAT_STALE"
                         : message != null && message.contains("尚未绑定") ? "DEVICE_ADAPTER_MISSING"
                         : message != null && message.contains("未注册") ? "ADAPTER_UNREGISTERED" : "ADAPTER_OFFLINE";
-                issues.add(issue(code, instanceId, message, "检查 Adapter 连接和心跳"));
+                issues.add(issue(code, binding.slotId(), instanceId, message, "检查 Adapter 连接和心跳"));
             }
         }
         return List.copyOf(issues);
     }
 
-    private WorkflowIssue issue(String code, Long instanceId, String message, String suggestion) {
+    private WorkflowIssue issue(String code, String slotId, Long instanceId, String message, String suggestion) {
         String id = instanceId == null ? "" : String.valueOf(instanceId);
-        return new WorkflowIssue(code, "READINESS", "resourceMap.deviceBindings", "deviceInstance", id,
+        return new WorkflowIssue(code, "READINESS", "deviceBindings[" + slotId + "]", "deviceBinding", slotId,
                 true, message == null ? "设备执行就绪检查失败" : message, suggestion);
     }
 

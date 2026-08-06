@@ -75,36 +75,53 @@ public class TaskConstraintService {
             issues.add(constraintIssue("taskConstraints", error.getMessage()));
             return List.copyOf(issues);
         }
+        Task inspectionTask = new Task();
+        inspectionTask.setId(0L);
         for (int ruleIndex = 0; ruleIndex < sourceRules.size(); ruleIndex++) {
-            JsonNode rule = sourceRules.get(ruleIndex);
+            JsonNode sourceRule = sourceRules.get(ruleIndex);
             String rulePath = "taskConstraints[" + ruleIndex + "]";
-            if (!rule.isObject()) {
-                issues.add(constraintIssue(rulePath, "taskConstraints[" + ruleIndex + "]必须是对象"));
+            if (!sourceRule.isObject()) {
+                issues.add(constraintIssue(rulePath, rulePath + "必须是对象"));
                 continue;
             }
-            JsonNode bindings = rule.path("bindings");
+            int issueCount = issues.size();
+            JsonNode bindings = sourceRule.path("bindings");
             if (bindings.isObject()) bindings.fields().forEachRemaining(entry -> {
                 JsonNode source = entry.getValue().path("source");
                 String sourceType = source.path("sourceType").asText();
                 String path = rulePath + ".bindings." + entry.getKey();
                 if (DEVICE_SOURCES.contains(sourceType)) {
                     long instanceId = source.path("deviceInstanceId").asLong(0);
-                    if (instanceId <= 0 || !boundInstances.contains(instanceId)) issues.add(constraintIssue(path, "约束设备实例不属于当前任务绑定"));
+                    if (instanceId <= 0 || !boundInstances.contains(instanceId)) {
+                        issues.add(constraintIssue(path, "约束设备实例不属于当前任务绑定"));
+                    }
                 } else if (NODE_SOURCES.contains(sourceType)) {
                     long modelId = source.path("workflowTemplateId").asLong(0);
                     String nodeName = source.path("nodeName").asText("");
-                    if (!workflowModelIds.contains(modelId) || !resourceService.containsNode(modelId, nodeName))
+                    if (!workflowModelIds.contains(modelId) || !resourceService.containsNode(modelId, nodeName)) {
                         issues.add(constraintIssue(path, "任务约束引用了任务工作流之外的节点"));
+                    }
                 }
             });
-            JsonNode actions = rule.path("violationActions");
+            JsonNode actions = sourceRule.path("violationActions");
             if (actions.isArray()) for (int actionIndex = 0; actionIndex < actions.size(); actionIndex++) {
                 JsonNode action = actions.get(actionIndex);
                 if ("DEVICE_CAPABILITY".equals(action.path("actionType").asText())) {
                     long instanceId = action.path("deviceInstanceId").asLong(0);
-                    if (instanceId <= 0 || !boundInstances.contains(instanceId))
+                    if (instanceId <= 0 || !boundInstances.contains(instanceId)) {
                         issues.add(constraintIssue(rulePath + ".violationActions[" + actionIndex + "]", "约束设备动作不属于当前任务绑定"));
+                    }
                 }
+            }
+            if (issues.size() != issueCount) continue;
+            try {
+                ObjectNode ruleNode = (ObjectNode) sourceRule.deepCopy();
+                if (!ruleNode.has("isEnabled")) ruleNode.put("isEnabled", true);
+                normalizeBindings(inspectionTask, ruleNode.path("bindings"), boundInstances, workflowModelIds, ruleIndex);
+                normalizeActions(inspectionTask, ruleNode.path("violationActions"), boundInstances, ruleIndex);
+                ruleService.validateTaskDefinition(toRule(ruleNode));
+            } catch (RuntimeException error) {
+                issues.add(constraintIssue(rulePath, error.getMessage()));
             }
         }
         return List.copyOf(issues);

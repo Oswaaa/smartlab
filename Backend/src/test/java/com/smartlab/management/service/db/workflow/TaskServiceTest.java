@@ -95,4 +95,19 @@ class TaskServiceTest {
         verify(taskMapper, never()).updateById(any(Task.class));
         verifyNoInteractions(logService, publisher);
     }
-}
+
+    @Test
+    void createDoesNotInsertWhenPreflightConstraintIsBlocking() {
+        TaskMapper mapper = mock(TaskMapper.class);
+        WorkflowTaskResourceService resources = mock(WorkflowTaskResourceService.class);
+        var map = JsonNodeSupport.objectNode();
+        when(resources.prepare(11L, java.util.List.of())).thenReturn(new WorkflowTaskResourceService.PreparedTaskResources(map, java.util.List.of()));
+        TaskConstraintService constraints = mock(TaskConstraintService.class);
+        when(constraints.inspect(org.mockito.ArgumentMatchers.eq(11L), any(), org.mockito.ArgumentMatchers.eq(map), any())).thenReturn(java.util.List.of(
+                new WorkflowIssue("TASK_CONSTRAINT_INVALID", "CONSTRAINT", "taskConstraints[0]", "taskConstraint", "", true, "非法规则", "修正")));
+        com.smartlab.management.dto.workflow.TaskCreateRequest request = new com.smartlab.management.dto.workflow.TaskCreateRequest();
+        request.setTaskName("task"); request.setFlowModelId(11L); request.setDeviceBindings(java.util.List.of()); request.setTaskVariables(JsonNodeSupport.objectNode()); request.setTaskConstraints(JsonNodeSupport.arrayNode());
+        TaskService service = new TaskService(mapper, mock(TaskStepMapper.class), mock(ExecutionLogService.class), mock(WorkflowService.class), resources, mock(WorkflowExecutionReadinessService.class), constraints, mock(ApplicationEventPublisher.class));
+        assertThrows(IllegalStateException.class, () -> service.create(request));
+        verify(mapper, never()).insert(any(Task.class));
+    }}

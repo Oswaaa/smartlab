@@ -37,8 +37,10 @@ public class WorkflowController {
     }
 
     @PostMapping("/save")
-    public ApiResponse<WorkflowPreparationResponse> save(@Valid @RequestBody WorkflowSaveRequest request) {
-        return publish(request);
+    public ApiResponse<Map<String, Long>> save(@Valid @RequestBody WorkflowSaveRequest request) {
+        WorkflowPreparationResponse published = workflowService.publish(request);
+        Long workflowId = published.definition() == null ? null : published.definition().getId();
+        return workflowId == null ? ApiResponse.fail("流程模型未发布") : ApiResponse.ok(Map.of("workflowId", workflowId));
     }
     @DeleteMapping("/delete/{id}")
     public ApiResponse<String> delete(@PathVariable Long id) {

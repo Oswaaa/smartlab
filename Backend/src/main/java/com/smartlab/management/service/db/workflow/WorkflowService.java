@@ -143,13 +143,21 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
 
     @Transactional(rollbackFor = Exception.class)
     public com.smartlab.management.dto.workflow.WorkflowPreparationResponse publish(WorkflowSaveRequest request) {
+        FlowModels existing = request == null || request.getId() == null ? null : modelMapper.selectById(request.getId());
+        if (existing != null && "ACTIVE".equalsIgnoreCase(existing.getStatus())) return saveDraft(request);
         com.smartlab.engine.workflow.WorkflowPreparation prepared = compiler.prepare(request, com.smartlab.engine.workflow.WorkflowPreparation.Mode.PUBLISH);
         if (!prepared.executable()) return new com.smartlab.management.dto.workflow.WorkflowPreparationResponse(toDetailResponse(prepared.normalized()), prepared.issues(), false, false);
-        validateDeviceConfiguration(prepared.normalized());
-        validateSubFlowReferences(prepared.normalized(), prepared.compiled());
+        try {
+            validateDeviceConfiguration(prepared.normalized());
+            validateSubFlowReferences(prepared.normalized(), prepared.compiled());
+        } catch (IllegalArgumentException exception) {
+            java.util.List<com.smartlab.management.dto.workflow.WorkflowIssue> issues = new java.util.ArrayList<>(prepared.issues());
+            issues.add(new com.smartlab.management.dto.workflow.WorkflowIssue("WORKFLOW_PUBLISH_VALIDATION_FAILED", "PUBLISH", "", "workflow", "", true,
+                    exception.getMessage(), "请修正发布阻断问题后重试"));
+            return new com.smartlab.management.dto.workflow.WorkflowPreparationResponse(toDetailResponse(prepared.normalized()), List.copyOf(issues), false, false);
+        }
         return persistPrepared(prepared, "ACTIVE", true);
     }
-
     private com.smartlab.management.dto.workflow.WorkflowPreparationResponse persistPrepared(com.smartlab.engine.workflow.WorkflowPreparation prepared, String status, boolean published) {
         WorkflowSaveRequest normalized = prepared.normalized();
         if (normalized == null) throw new IllegalArgumentException("工作流定义不能为空");
@@ -166,7 +174,7 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
         model.setInterfaceConnection(nonNullArray(normalized.getInterfaceConnections()));
         model.setPortConnection(nonNullArray(normalized.getPortConnections()));
         ArrayNode definitions = nonNullArray(normalized.getNodesDef());
-        assignNodeRefs(definitions, successor ? null : existing);
+        assignNodeRefs(definitions, existing);
         ArrayNode refs = JsonNodeSupport.arrayNode();
         for (JsonNode node : definitions) refs.addObject().put("nodeIdRef", node.path("nodeIdRef").asLong()).put("nodeName", node.path("name").asText());
         model.setNodes(refs);

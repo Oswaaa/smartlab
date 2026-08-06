@@ -6,6 +6,13 @@ import com.smartlab.management.dto.workflow.WorkflowPreparationResponse;
 import com.smartlab.management.dto.workflow.WorkflowSaveRequest;
 import com.smartlab.management.service.db.workflow.WorkflowService;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.MediaType;
+import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.util.List;
 
@@ -36,16 +43,30 @@ class WorkflowControllerTest {
         WorkflowPreparationResponse expected = response("ACTIVE", true, true);
         when(service.publish(any(WorkflowSaveRequest.class))).thenReturn(expected);
 
-        ApiResponse<WorkflowPreparationResponse> result = new WorkflowController(service).save(request());
+        ApiResponse<java.util.Map<String, Long>> result = new WorkflowController(service).save(request());
 
         assertTrue(result.isSuccess());
-        assertEquals("ACTIVE", result.getData().definition().getStatus());
-        assertTrue(result.getData().published());
+        assertEquals(42L, result.getData().get("workflowId"));
     }
 
+    @Test
+    void httpRoutesKeepLegacyIdShapeAndExposePreparationRoutes() throws Exception {
+        WorkflowService service = mock(WorkflowService.class);
+        when(service.publish(any(WorkflowSaveRequest.class))).thenReturn(response("ACTIVE", true, true));
+        when(service.saveDraft(any(WorkflowSaveRequest.class))).thenReturn(response("DRAFT", false, false));
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new WorkflowController(service)).build();
+
+        mvc.perform(post("/api/workflow/save").contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"workflow\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.workflowId").value(42));
+        mvc.perform(post("/api/workflow/draft").contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"workflow\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.definition.status").value("DRAFT"));
+        mvc.perform(post("/api/workflow/publish").contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"workflow\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.data.definition.status").value("ACTIVE"));
+    }
     private WorkflowPreparationResponse response(String status, boolean executable, boolean published) {
         WorkflowDetailResponse definition = new WorkflowDetailResponse();
         definition.setStatus(status);
+        definition.setId("ACTIVE".equals(status) ? 42L : 0L);
         return new WorkflowPreparationResponse(definition, List.of(), executable, published);
     }
 

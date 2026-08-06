@@ -73,6 +73,59 @@ class WorkflowServiceTest {
 
 
     @Test
+    void activeDraftKeepsSparseNodeRefsAcrossRenameAndReorder() {
+        DraftLifecycleFixture fixture = draftLifecycleFixture();
+        FlowModels active = new FlowModels();
+        active.setId(7L);
+        active.setStatus("ACTIVE");
+        active.setVersion(2);
+        active.setNodes(JsonNodeSupport.MAPPER.createArrayNode()
+                .add(JsonNodeSupport.objectNode().put("nodeIdRef", 10).put("nodeName", "first"))
+                .add(JsonNodeSupport.objectNode().put("nodeIdRef", 30).put("nodeName", "second")));
+        fixture.models().put(7L, active);
+        WorkflowSaveRequest edit = incompleteRequest();
+        edit.setId(7L);
+        edit.setNodesDef(JsonNodeSupport.MAPPER.createArrayNode()
+                .add(JsonNodeSupport.objectNode().put("name", "renamed").put("nodeIdRef", 30))
+                .add(JsonNodeSupport.objectNode().put("name", "first").put("nodeIdRef", 10))
+                .add(JsonNodeSupport.objectNode().put("name", "new")));
+
+        fixture.service().saveDraft(edit);
+
+        assertEquals(List.of(30L, 10L, 31L), fixture.savedNodes().stream().map(FlowNode::getNodeIdRef).toList());
+    }
+
+    @Test
+    void publishingAnActiveModelFirstCreatesDraftSuccessor() {
+        DraftLifecycleFixture fixture = draftLifecycleFixture();
+        FlowModels active = new FlowModels();
+        active.setId(7L);
+        active.setStatus("ACTIVE");
+        active.setVersion(2);
+        active.setNodes(JsonNodeSupport.arrayNode());
+        fixture.models().put(7L, active);
+        WorkflowSaveRequest edit = incompleteRequest();
+        edit.setId(7L);
+
+        WorkflowPreparationResponse saved = fixture.service().publish(edit);
+
+        assertEquals("DRAFT", saved.definition().getStatus());
+        assertFalse(saved.published());
+        assertEquals(7L, fixture.savedModel().get().getPredecessorId());
+    }
+    @Test
+    void publishReturnsStructuredIssueWithoutPersistingWhenSubflowIsMissing() throws Exception {
+        DraftLifecycleFixture fixture = draftLifecycleFixture();
+
+        WorkflowPreparationResponse result = fixture.service().publish(validSubflowWorkflow());
+
+        assertFalse(result.published());
+        assertFalse(result.executable());
+        assertTrue(result.issues().stream().anyMatch(issue -> issue.blocking()
+                && issue.code().equals("WORKFLOW_PUBLISH_VALIDATION_FAILED")));
+        assertEquals(null, fixture.savedModel().get());
+    }
+    @Test
     void rejectsDraftWorkflowAsNonExecutable() {
         FlowModelsMapper models = mock(FlowModelsMapper.class);
         FlowNodeMapper nodes = mock(FlowNodeMapper.class);

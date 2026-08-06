@@ -125,4 +125,20 @@ class TaskConstraintServiceTest {
         assertEquals(java.util.List.of("TASK_CONSTRAINT_INVALID"), issues.stream().map(WorkflowIssue::code).toList());
         assertEquals(snapshot, input);
         verify(ruleService).validateTaskDefinition(any());
+    }
+    @Test
+    void inspectAcceptsTaskLifecycleAndSystemAbortWithoutMutatingInput() {
+        WorkflowTaskResourceService resources = mock(WorkflowTaskResourceService.class);
+        when(resources.boundDeviceInstanceIds(any())).thenReturn(Set.of());
+        when(resources.workflowModelIds(3L)).thenReturn(Set.of(3L));
+        TaskConstraintService service = new TaskConstraintService(mock(ConstraintRuleService.class), resources, mock(TaskMapper.class));
+        ArrayNode input = JsonNodeSupport.arrayNode();
+        ObjectNode rule = input.addObject();
+        rule.put("ruleName", "lifecycle"); rule.put("expression", "true");
+        rule.putObject("bindings").putObject("state").put("bindingType", "OBSERVABLE").putObject("source").put("sourceType", "TASK_LIFECYCLE_STATE");
+        rule.putArray("violationActions").addObject().put("actionType", "SYSTEM").put("action", "ABORT");
+        JsonNode snapshot = input.deepCopy();
+
+        assertEquals(java.util.List.of(), service.inspect(3L, JsonNodeSupport.objectNode(), JsonNodeSupport.objectNode(), input));
+        assertEquals(snapshot, input);
     }}

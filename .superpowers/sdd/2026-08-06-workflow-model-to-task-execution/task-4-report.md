@@ -25,3 +25,5 @@ Completed. Task creation accepts structured `deviceBindings` and builds the inte
 - Final focused suite: 26 tests passed, 0 failures, 0 errors.
 
 - Added explicit paused-task resume blocking test: mapper update is not invoked and status/start time remain unchanged. Final clean focused suite: 27 passed.
+
+- Inspection uses positive INSPECTION_TASK_ID; lifecycle/system-abort rules stay non-blocking without mutating caller JSON. MockMvc now captures deserialized bindings and checks the complete issue schema/no legacy fields. Final clean suite: 28 passed.

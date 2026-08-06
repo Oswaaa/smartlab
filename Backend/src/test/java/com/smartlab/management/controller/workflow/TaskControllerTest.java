@@ -13,6 +13,7 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -31,7 +32,17 @@ class TaskControllerTest {
         mvc.perform(post("/api/task/preflight").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"flowModelId\":11,\"deviceBindings\":[{\"slotId\":\"slot-a\",\"deviceInstanceId\":7}]}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.data.ready").value(false)).andExpect(jsonPath("$.data.issues[0].code").value("TASK_BINDING_MISSING"));
-        verify(service).preflight(any(TaskPreflightRequest.class));
+                .andExpect(jsonPath("$.data.ready").value(false)).andExpect(jsonPath("$.data.issues[0].code").value("TASK_BINDING_MISSING"))
+                .andExpect(jsonPath("$.data.issues[0].path").value("deviceBindings[slot-a]"))
+                .andExpect(jsonPath("$.data.issues[0].elementType").value("DEV_NODE"))
+                .andExpect(jsonPath("$.data.issues[0].elementId").value("slot-a"))
+                .andExpect(jsonPath("$.data.issues[0].blocking").value(true))
+                .andExpect(jsonPath("$.data.issues[0].message").value("缺少绑定"))
+                .andExpect(jsonPath("$.data.issues[0].suggestion").value("绑定设备"))
+                .andExpect(jsonPath("$.data.resourceMap").doesNotExist()).andExpect(jsonPath("$.data.bindingKey").doesNotExist());
+        var captor = forClass(TaskPreflightRequest.class);
+        verify(service).preflight(captor.capture());
+        org.junit.jupiter.api.Assertions.assertEquals("slot-a", captor.getValue().deviceBindings().get(0).slotId());
+        org.junit.jupiter.api.Assertions.assertEquals(7L, captor.getValue().deviceBindings().get(0).deviceInstanceId());
     }
 }

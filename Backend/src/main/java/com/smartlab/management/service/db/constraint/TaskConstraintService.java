@@ -24,6 +24,7 @@ public class TaskConstraintService {
             "DEVICE_ATTRIBUTE", "DEVICE_OPERATION_STATE", "DEVICE_COMMAND_LIFECYCLE");
     private static final Set<String> NODE_SOURCES = Set.of("NODE_LIFECYCLE_STATE", "NODE_INTERNAL_VARIABLE");
     private static final Set<String> ACTIVE_STATES = Set.of("RUNNING", "PAUSED", "TERMINATING");
+    private static final long INSPECTION_TASK_ID = 1L;
 
     private final ConstraintRuleService ruleService;
     private final WorkflowTaskResourceService resourceService;
@@ -76,7 +77,7 @@ public class TaskConstraintService {
             return List.copyOf(issues);
         }
         Task inspectionTask = new Task();
-        inspectionTask.setId(0L);
+        inspectionTask.setId(INSPECTION_TASK_ID);
         for (int ruleIndex = 0; ruleIndex < sourceRules.size(); ruleIndex++) {
             JsonNode sourceRule = sourceRules.get(ruleIndex);
             String rulePath = "taskConstraints[" + ruleIndex + "]";

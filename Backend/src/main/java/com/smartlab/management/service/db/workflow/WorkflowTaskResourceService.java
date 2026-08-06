@@ -316,11 +316,17 @@ public class WorkflowTaskResourceService {
     }
 
     private JsonNode binding(JsonNode bindings, String... bindingKeys) {
+        JsonNode resolved = null;
+        String canonicalKey = bindingKeys.length == 0 ? "" : bindingKeys[0];
         for (String bindingKey : bindingKeys) {
-            JsonNode result = bindings.path(bindingKey);
-            if (result.isObject()) return result;
+            JsonNode candidate = bindings.path(bindingKey);
+            if (!candidate.isObject()) continue;
+            if (resolved != null && !resolved.equals(candidate)) {
+                throw new IllegalStateException("同一设备绑定槽位存在不一致的别名值: " + canonicalKey);
+            }
+            resolved = candidate;
         }
-        return JsonNodeSupport.objectNode();
+        return resolved == null ? JsonNodeSupport.objectNode() : resolved;
     }
 
     private Map<Long, String> namesByRef(WorkflowDefinitionCompiler.CompiledWorkflow compiled) {
@@ -377,6 +383,7 @@ public class WorkflowTaskResourceService {
     private record DeviceRoute(String deviceInputInterfaceName, String deviceOutputInterfaceName) {
     }
 }
+
 
 
 

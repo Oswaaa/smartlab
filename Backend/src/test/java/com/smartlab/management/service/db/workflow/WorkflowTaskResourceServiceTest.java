@@ -25,6 +25,33 @@ import static org.mockito.Mockito.when;
 
 class WorkflowTaskResourceServiceTest {
     @Test
+    void rejectsConflictingSlotAndLegacyBindings() {
+        WorkflowService workflows = mock(WorkflowService.class);
+        DeviceInstancesMapper instances = mock(DeviceInstancesMapper.class);
+        WorkflowTaskResourceService service = new WorkflowTaskResourceService(workflows, instances, mock(DeviceModelsMapper.class),
+                mock(TaskStepMapper.class), mock(FlowNodeMapper.class));
+        stubWorkflow(workflows, 3L, 7L);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> service.resolveDeviceInstance(3L, "heat", resourceMapWithBindings("3:1", 7L, 55L, "root/heat", 7L, 56L)));
+
+        assertEquals("同一设备绑定槽位存在不一致的别名值: 3:1", error.getMessage());
+    }
+
+    @Test
+    void acceptsMatchingSlotAndLegacyBindingsWithoutDuplicatingBoundInstances() {
+        WorkflowService workflows = mock(WorkflowService.class);
+        DeviceInstancesMapper instances = mock(DeviceInstancesMapper.class);
+        WorkflowTaskResourceService service = new WorkflowTaskResourceService(workflows, instances, mock(DeviceModelsMapper.class),
+                mock(TaskStepMapper.class), mock(FlowNodeMapper.class));
+        stubWorkflow(workflows, 3L, 7L);
+        when(instances.selectById(55L)).thenReturn(instance(55L, 7L, "使用中"));
+        ObjectNode map = resourceMapWithBindings("3:1", 7L, 55L, "root/heat", 7L, 55L);
+
+        assertEquals(55L, service.resolveDeviceInstance(3L, "heat", map).getId());
+        assertEquals(java.util.Set.of(55L), service.boundDeviceInstanceIds(map));
+    }
+    @Test
     void requirementsUseNodeRefsForIdentityAndNamesOnlyForDisplay() {
         WorkflowService workflows = mock(WorkflowService.class);
         WorkflowTaskResourceService service = new WorkflowTaskResourceService(
@@ -127,6 +154,14 @@ class WorkflowTaskResourceServiceTest {
         return result;
     }
 
+    private ObjectNode resourceMapWithBindings(String firstKey, long firstModelId, long firstInstanceId,
+                                               String secondKey, long secondModelId, long secondInstanceId) {
+        ObjectNode result = resourceMap(firstKey, firstModelId, firstInstanceId);
+        ObjectNode binding = result.path("deviceBindings").withObject(secondKey);
+        binding.put("deviceModelId", secondModelId);
+        binding.put("deviceInstanceId", secondInstanceId);
+        return result;
+    }
     private void stubWorkflow(WorkflowService workflows, long flowModelId, long deviceModelId) {
         WorkflowDetailResponse detail = new WorkflowDetailResponse();
         detail.setId(flowModelId);
@@ -230,4 +265,5 @@ class WorkflowTaskResourceServiceTest {
         return result;
     }
 }
+
 

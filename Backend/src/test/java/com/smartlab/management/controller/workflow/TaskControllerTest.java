@@ -33,6 +33,7 @@ class TaskControllerTest {
                         .content("{\"flowModelId\":11,\"deviceBindings\":[{\"slotId\":\"slot-a\",\"deviceInstanceId\":7}]}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.success").value(true))
                 .andExpect(jsonPath("$.data.ready").value(false)).andExpect(jsonPath("$.data.issues[0].code").value("TASK_BINDING_MISSING"))
+                .andExpect(jsonPath("$.data.issues[0].stage").value("BINDING"))
                 .andExpect(jsonPath("$.data.issues[0].path").value("deviceBindings[slot-a]"))
                 .andExpect(jsonPath("$.data.issues[0].elementType").value("DEV_NODE"))
                 .andExpect(jsonPath("$.data.issues[0].elementId").value("slot-a"))

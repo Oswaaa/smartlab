@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.workflow.WorkflowIssue;
+import com.smartlab.management.entity.constraint.ConstraintRule;
 import com.smartlab.management.entity.workflow.Task;
 import com.smartlab.management.mapper.workflow.TaskMapper;
 import com.smartlab.management.service.db.workflow.WorkflowTaskResourceService;
@@ -16,6 +17,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
@@ -131,14 +133,19 @@ class TaskConstraintServiceTest {
         WorkflowTaskResourceService resources = mock(WorkflowTaskResourceService.class);
         when(resources.boundDeviceInstanceIds(any())).thenReturn(Set.of());
         when(resources.workflowModelIds(3L)).thenReturn(Set.of(3L));
-        TaskConstraintService service = new TaskConstraintService(mock(ConstraintRuleService.class), resources, mock(TaskMapper.class));
+        ConstraintRuleService ruleService = mock(ConstraintRuleService.class);
+        TaskConstraintService service = new TaskConstraintService(ruleService, resources, mock(TaskMapper.class));
         ArrayNode input = JsonNodeSupport.arrayNode();
         ObjectNode rule = input.addObject();
         rule.put("ruleName", "lifecycle"); rule.put("expression", "true");
-        rule.putObject("bindings").putObject("state").put("bindingType", "OBSERVABLE").putObject("source").put("sourceType", "TASK_LIFECYCLE_STATE");
+        rule.putObject("bindings").putObject("state").put("bindingType", "OBSERVABLE").putObject("source").put("sourceType", "TASK_LIFECYCLE_STATE").put("dataType", "STRING");
         rule.putArray("violationActions").addObject().put("actionType", "SYSTEM").put("action", "ABORT");
         JsonNode snapshot = input.deepCopy();
 
         assertEquals(java.util.List.of(), service.inspect(3L, JsonNodeSupport.objectNode(), JsonNodeSupport.objectNode(), input));
+        var captor = forClass(ConstraintRule.class);
+        verify(ruleService).validateTaskDefinition(captor.capture());
+        assertTrue(captor.getValue().getBindings().path("state").path("source").path("taskId").asLong() > 0);
+        assertTrue(captor.getValue().getViolationActions().path(0).path("targetTaskId").asLong() > 0);
         assertEquals(snapshot, input);
     }}

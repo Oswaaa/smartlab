@@ -2,6 +2,7 @@ package com.smartlab.management.controller.workflow;
 
 import com.smartlab.management.dto.common.ApiResponse;
 import com.smartlab.management.dto.workflow.WorkflowDetailResponse;
+import com.smartlab.management.dto.workflow.WorkflowPreparationResponse;
 import com.smartlab.management.dto.workflow.WorkflowSaveRequest;
 import com.smartlab.management.entity.workflow.FlowModels;
 import com.smartlab.management.service.db.workflow.WorkflowService;
@@ -25,16 +26,20 @@ public class WorkflowController {
         return ApiResponse.ok(workflowService.list());
     }
 
-    @PostMapping("/save")
-    public ApiResponse<Map<String, Long>> save(@Valid @RequestBody WorkflowSaveRequest request) {
-        try {
-            WorkflowDetailResponse saved = workflowService.saveDefinition(request);
-            return ApiResponse.ok(Map.of("workflowId", saved.getId()));
-        } catch (Exception e) {
-            return ApiResponse.fail(e.getMessage());
-        }
+    @PostMapping("/draft")
+    public ApiResponse<WorkflowPreparationResponse> saveDraft(@Valid @RequestBody WorkflowSaveRequest request) {
+        return ApiResponse.ok(workflowService.saveDraft(request));
     }
 
+    @PostMapping("/publish")
+    public ApiResponse<WorkflowPreparationResponse> publish(@Valid @RequestBody WorkflowSaveRequest request) {
+        return ApiResponse.ok(workflowService.publish(request));
+    }
+
+    @PostMapping("/save")
+    public ApiResponse<WorkflowPreparationResponse> save(@Valid @RequestBody WorkflowSaveRequest request) {
+        return publish(request);
+    }
     @DeleteMapping("/delete/{id}")
     public ApiResponse<String> delete(@PathVariable Long id) {
         try {

@@ -11,6 +11,7 @@ public class WorkflowDetailResponse {
     private String name;
     private String description;
     private Integer version;
+    private Long predecessorId;
     private String status;
     private JsonNode nodeIdRefs;
     private JsonNode nodesDef;

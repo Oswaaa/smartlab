@@ -64,6 +64,7 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
         response.setDescription(model.getDescription());
         response.setVersion(model.getVersion());
         response.setStatus(model.getStatus());
+        response.setPredecessorId(model.getPredecessorId());
         response.setNodeIdRefs(model.getNodes());
         response.setNodesDef(JsonNodeSupport.toNode(nodes.stream().map(node -> toDefinition(node, nodeNames(model.getNodes()).get(node.getNodeIdRef()))).toList()));
         response.setInterfaceConnections(model.getInterfaceConnection());
@@ -75,6 +76,42 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
 
     public WorkflowDetailResponse getDefinition(String id) {
         return getDefinition(parseId(id));
+    }
+
+    /**
+     * 返回可用于创建/启动任务的工作流定义。
+     *
+     * 工作流状态是执行边界的一部分，不能只在前端用下拉框过滤；这里同时检查
+     * 根流程和所有递归引用的子流程，避免 ACTIVE 根流程间接执行 DRAFT 子流程。
+     */
+    public WorkflowDetailResponse requireExecutableDefinition(Long id) {
+        return requireExecutableDefinition(id, new HashSet<>());
+    }
+
+    private WorkflowDetailResponse requireExecutableDefinition(Long id, Set<Long> visiting) {
+        if (id == null) throw new IllegalArgumentException("工作流模型ID不能为空");
+        if (!visiting.add(id)) throw new IllegalStateException("工作流存在循环子流程引用: " + id);
+        try {
+            FlowModels model = modelMapper.selectById(id);
+            if (model == null) throw new IllegalArgumentException("工作流模型不存在: " + id);
+            String status = model.getStatus() == null ? "" : model.getStatus().trim();
+            if (!"ACTIVE".equalsIgnoreCase(status)) {
+                throw new IllegalStateException("工作流“" + model.getFlowName() + "”当前为"
+                        + (status.isBlank() ? "未设置状态" : status) + "，只有ACTIVE工作流可以创建或启动任务");
+            }
+            WorkflowDetailResponse detail = getDefinition(id);
+            WorkflowDefinitionCompiler.CompiledWorkflow compiled = compileDefinition(id);
+            for (JsonNode node : compiled.nodes().values()) {
+                if ("SUBFLOW_NODE".equals(node.path("nodeType").asText())) {
+                    long subFlowId = node.path("subFlowModelId").asLong(0);
+                    if (subFlowId <= 0) throw new IllegalStateException("SUBFLOW_NODE缺少subFlowModelId");
+                    requireExecutableDefinition(subFlowId, visiting);
+                }
+            }
+            return detail;
+        } finally {
+            visiting.remove(id);
+        }
     }
 
     public WorkflowDefinitionCompiler.CompiledWorkflow compileDefinition(Long id) {
@@ -99,6 +136,68 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
     }
 
     @Transactional(rollbackFor = Exception.class)
+    public com.smartlab.management.dto.workflow.WorkflowPreparationResponse saveDraft(WorkflowSaveRequest request) {
+        com.smartlab.engine.workflow.WorkflowPreparation prepared = compiler.prepare(request, com.smartlab.engine.workflow.WorkflowPreparation.Mode.DRAFT);
+        return persistPrepared(prepared, "DRAFT", false);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public com.smartlab.management.dto.workflow.WorkflowPreparationResponse publish(WorkflowSaveRequest request) {
+        com.smartlab.engine.workflow.WorkflowPreparation prepared = compiler.prepare(request, com.smartlab.engine.workflow.WorkflowPreparation.Mode.PUBLISH);
+        if (!prepared.executable()) return new com.smartlab.management.dto.workflow.WorkflowPreparationResponse(toDetailResponse(prepared.normalized()), prepared.issues(), false, false);
+        validateDeviceConfiguration(prepared.normalized());
+        validateSubFlowReferences(prepared.normalized(), prepared.compiled());
+        return persistPrepared(prepared, "ACTIVE", true);
+    }
+
+    private com.smartlab.management.dto.workflow.WorkflowPreparationResponse persistPrepared(com.smartlab.engine.workflow.WorkflowPreparation prepared, String status, boolean published) {
+        WorkflowSaveRequest normalized = prepared.normalized();
+        if (normalized == null) throw new IllegalArgumentException("工作流定义不能为空");
+        FlowModels existing = normalized.getId() == null ? null : modelMapper.selectById(normalized.getId());
+        if (normalized.getId() != null && existing == null) throw new IllegalArgumentException("流程模型不存在: " + normalized.getId());
+        boolean successor = existing != null && "ACTIVE".equalsIgnoreCase(existing.getStatus());
+        FlowModels model = successor || existing == null ? new FlowModels() : existing;
+        if (successor) { model.setPredecessorId(existing.getId()); model.setVersion((existing.getVersion() == null ? 0 : existing.getVersion()) + 1); }
+        model.setFlowName(normalized.getName() == null ? "" : normalized.getName().trim());
+        if (normalized.getDescription() != null || model.getId() == null) model.setDescription(normalized.getDescription());
+        if (!successor && normalized.getVersion() != null) model.setVersion(normalized.getVersion()); else if (model.getVersion() == null) model.setVersion(1);
+        model.setStatus(status);
+        if (normalized.getCreatorId() != null || model.getId() == null) model.setCreatorId(normalized.getCreatorId());
+        model.setInterfaceConnection(nonNullArray(normalized.getInterfaceConnections()));
+        model.setPortConnection(nonNullArray(normalized.getPortConnections()));
+        ArrayNode definitions = nonNullArray(normalized.getNodesDef());
+        assignNodeRefs(definitions, successor ? null : existing);
+        ArrayNode refs = JsonNodeSupport.arrayNode();
+        for (JsonNode node : definitions) refs.addObject().put("nodeIdRef", node.path("nodeIdRef").asLong()).put("nodeName", node.path("name").asText());
+        model.setNodes(refs);
+        if (model.getId() == null) { model.setCreateTime(OffsetDateTime.now()); modelMapper.insert(model); }
+        else { modelMapper.updateById(model); nodeMapper.delete(Wrappers.<FlowNode>lambdaQuery().eq(FlowNode::getFlowModelId, model.getId())); }
+        for (JsonNode node : definitions) nodeMapper.insert(toEntity(model.getId(), node));
+        return new com.smartlab.management.dto.workflow.WorkflowPreparationResponse(getDefinition(model.getId()), prepared.issues(), prepared.executable(), published);
+    }
+
+    private void assignNodeRefs(ArrayNode definitions, FlowModels existing) {
+        Map<String, Long> existingByName = new LinkedHashMap<>();
+        long next = 1;
+        if (existing != null && existing.getNodes() != null) for (JsonNode ref : existing.getNodes()) { long value = ref.path("nodeIdRef").asLong(); existingByName.put(ref.path("nodeName").asText(), value); next = Math.max(next, value + 1); }
+        Set<Long> used = new HashSet<>();
+        for (JsonNode node : definitions) if (node instanceof ObjectNode object) {
+            long requested = object.path("nodeIdRef").asLong();
+            long assigned = requested > 0 && existingByName.containsValue(requested) && used.add(requested) ? requested : existingByName.getOrDefault(object.path("name").asText(), 0L);
+            if (assigned > 0 && !used.contains(assigned)) used.add(assigned);
+            if (assigned <= 0) { while (used.contains(next)) next++; assigned = next++; used.add(assigned); }
+            object.put("nodeIdRef", assigned);
+        }
+    }
+
+    private WorkflowDetailResponse toDetailResponse(WorkflowSaveRequest request) {
+        WorkflowDetailResponse detail = new WorkflowDetailResponse();
+        if (request == null) return detail;
+        detail.setId(request.getId()); detail.setName(request.getName()); detail.setDescription(request.getDescription()); detail.setVersion(request.getVersion()); detail.setStatus(request.getStatus());
+        detail.setNodesDef(nonNullArray(request.getNodesDef())); detail.setInterfaceConnections(nonNullArray(request.getInterfaceConnections())); detail.setPortConnections(nonNullArray(request.getPortConnections())); detail.setCreatorId(request.getCreatorId());
+        return detail;
+    }
+    @Transactional(rollbackFor = Exception.class)
     public WorkflowDetailResponse saveDefinition(WorkflowSaveRequest request) {
         if (request == null || request.getNodesDef() == null || !request.getNodesDef().isArray()) {
             throw new IllegalArgumentException("nodesDef 必须是数组");
@@ -119,7 +218,13 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
         if (request.getDescription() != null || model.getId() == null) model.setDescription(request.getDescription());
         if (request.getVersion() != null) model.setVersion(request.getVersion());
         else if (model.getVersion() == null) model.setVersion(1);
-        if (request.getStatus() != null && !request.getStatus().isBlank()) model.setStatus(request.getStatus());
+        if (request.getStatus() != null && !request.getStatus().isBlank()) {
+            String requestedStatus = request.getStatus().trim().toUpperCase();
+            if (!Set.of("DRAFT", "ACTIVE").contains(requestedStatus)) {
+                throw new IllegalArgumentException("工作流状态只能是DRAFT或ACTIVE");
+            }
+            model.setStatus(requestedStatus);
+        }
         else if (model.getStatus() == null) model.setStatus("DRAFT");
         if (request.getCreatorId() != null || model.getId() == null) model.setCreatorId(request.getCreatorId());
         model.setInterfaceConnection(nonNullArray(request.getInterfaceConnections()));

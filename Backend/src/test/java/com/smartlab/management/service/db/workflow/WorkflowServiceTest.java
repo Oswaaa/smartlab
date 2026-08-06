@@ -2,6 +2,8 @@ package com.smartlab.management.service.db.workflow;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.engine.workflow.WorkflowDefinitionCompiler;
+import com.smartlab.management.dto.workflow.WorkflowIssue;
+import com.smartlab.management.dto.workflow.WorkflowPreparationResponse;
 import com.smartlab.global.contract.WorkflowNodeSystemContract;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.workflow.WorkflowDetailResponse;
@@ -20,9 +22,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -32,6 +37,60 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class WorkflowServiceTest {
+
+    @Test
+    void savesIncompleteDraftButDoesNotMakeItExecutable() {
+        DraftLifecycleFixture fixture = draftLifecycleFixture();
+
+        WorkflowPreparationResponse saved = fixture.service().saveDraft(incompleteRequest());
+
+        assertEquals("DRAFT", saved.definition().getStatus());
+        assertFalse(saved.executable());
+        assertTrue(saved.issues().stream().noneMatch(WorkflowIssue::blocking));
+        assertEquals(0, fixture.savedNodes().size());
+    }
+    @Test
+    void editingActiveModelCreatesSuccessorDraft() {
+        DraftLifecycleFixture fixture = draftLifecycleFixture();
+        FlowModels active = new FlowModels();
+        active.setId(7L);
+        active.setFlowName("published-flow");
+        active.setStatus("ACTIVE");
+        active.setVersion(2);
+        active.setNodes(JsonNodeSupport.arrayNode());
+        fixture.models().put(7L, active);
+
+        WorkflowSaveRequest edit = incompleteRequest();
+        edit.setId(7L);
+        edit.setName("published-flow-v3");
+        WorkflowPreparationResponse saved = fixture.service().saveDraft(edit);
+
+        assertNotEquals(7L, saved.definition().getId());
+        assertEquals(7L, fixture.savedModel().get().getPredecessorId());
+        assertEquals(3, saved.definition().getVersion());
+        assertEquals("DRAFT", saved.definition().getStatus());
+    }
+
+
+    @Test
+    void rejectsDraftWorkflowAsNonExecutable() {
+        FlowModelsMapper models = mock(FlowModelsMapper.class);
+        FlowNodeMapper nodes = mock(FlowNodeMapper.class);
+        TaskMapper tasks = mock(TaskMapper.class);
+        WorkflowDefinitionCompiler compiler = mock(WorkflowDefinitionCompiler.class);
+        DeviceModelService deviceModels = mock(DeviceModelService.class);
+        FlowModels draft = new FlowModels();
+        draft.setId(1L);
+        draft.setFlowName("draft-flow");
+        draft.setStatus("DRAFT");
+        when(models.selectById(1L)).thenReturn(draft);
+
+        WorkflowService service = new WorkflowService(models, nodes, tasks, compiler, deviceModels);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> service.requireExecutableDefinition(1L));
+        assertTrue(error.getMessage().contains("只有ACTIVE工作流"));
+    }
 
     @Test
     void rejectsUpdatingASubflowReferencedByAnExistingTaskRoot() {
@@ -193,5 +252,42 @@ class WorkflowServiceTest {
     }
 
     private record ServiceFixture(WorkflowService service) {
+}
+    private DraftLifecycleFixture draftLifecycleFixture() {
+        Map<Long, FlowModels> models = new LinkedHashMap<>();
+        List<FlowNode> savedNodes = new ArrayList<>();
+        AtomicReference<FlowModels> savedModel = new AtomicReference<>();
+        FlowModelsMapper modelMapper = mock(FlowModelsMapper.class);
+        FlowNodeMapper nodeMapper = mock(FlowNodeMapper.class);
+        TaskMapper taskMapper = mock(TaskMapper.class);
+        DeviceModelService deviceModels = mock(DeviceModelService.class);
+        when(modelMapper.selectById(any())).thenAnswer(invocation -> models.get(((Number) invocation.getArgument(0)).longValue()));
+        doAnswer(invocation -> {
+            FlowModels model = invocation.getArgument(0);
+            model.setId(1L);
+            models.put(model.getId(), model);
+            savedModel.set(model);
+            return 1;
+        }).when(modelMapper).insert(any(FlowModels.class));
+        doAnswer(invocation -> {
+            savedNodes.add(invocation.getArgument(0));
+            return 1;
+        }).when(nodeMapper).insert(any(FlowNode.class));
+        when(nodeMapper.selectList(any())).thenAnswer(invocation -> List.copyOf(savedNodes));
+        WorkflowService service = new WorkflowService(modelMapper, nodeMapper, taskMapper,
+                new WorkflowDefinitionCompiler(), deviceModels);
+        return new DraftLifecycleFixture(service, models, savedModel, savedNodes);
     }
+
+    private WorkflowSaveRequest incompleteRequest() {
+        WorkflowSaveRequest request = new WorkflowSaveRequest();
+        request.setName("incomplete");
+        request.setNodesDef(JsonNodeSupport.arrayNode());
+        request.setInterfaceConnections(JsonNodeSupport.arrayNode());
+        request.setPortConnections(JsonNodeSupport.arrayNode());
+        return request;
+    }
+
+    private record DraftLifecycleFixture(WorkflowService service, Map<Long, FlowModels> models,
+                                         AtomicReference<FlowModels> savedModel, List<FlowNode> savedNodes) {}
 }

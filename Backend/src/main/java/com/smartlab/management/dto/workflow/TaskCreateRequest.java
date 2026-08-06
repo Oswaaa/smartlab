@@ -5,6 +5,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import lombok.Data;
 
+import java.util.List;
+
 @Data
 public class TaskCreateRequest {
     @NotBlank
@@ -15,6 +17,7 @@ public class TaskCreateRequest {
     private Long parentTaskId;
     private JsonNode taskVariables;
     private JsonNode resourceMap;
+    private List<TaskDeviceBindingRequest> deviceBindings;
     private JsonNode taskConstraints;
     private Long creatorId;
 }

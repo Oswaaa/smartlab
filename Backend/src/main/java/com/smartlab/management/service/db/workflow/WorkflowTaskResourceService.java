@@ -1,9 +1,12 @@
 package com.smartlab.management.service.db.workflow;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.engine.workflow.WorkflowDefinitionCompiler;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.workflow.DeviceBindingRequirement;
+import com.smartlab.management.dto.workflow.TaskDeviceBindingRequest;
+import com.smartlab.management.dto.workflow.WorkflowIssue;
 import com.smartlab.management.dto.workflow.WorkflowDetailResponse;
 import com.smartlab.management.dto.workflow.WorkflowResourceRequirementsResponse;
 import com.smartlab.management.entity.resource.device.DeviceInstanceLifecycle;
@@ -23,6 +26,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -55,6 +59,56 @@ public class WorkflowTaskResourceService {
         List<DeviceBindingRequirement> bindings = new ArrayList<>();
         collectBindingRequirements(rootFlowModelId, rootDefinition.getName(), List.of(), new LinkedHashSet<>(), bindings);
         return new WorkflowResourceRequirementsResponse(rootFlowModelId, rootDefinition.getVersion(), List.copyOf(bindings));
+    }
+    public PreparedTaskResources prepare(Long flowModelId, List<TaskDeviceBindingRequest> deviceBindings) {
+        ObjectNode resourceMap = JsonNodeSupport.objectNode();
+        resourceMap.put("formatVersion", RESOURCE_MAP_FORMAT_VERSION);
+        ObjectNode canonicalBindings = resourceMap.putObject("deviceBindings");
+        List<WorkflowIssue> issues = new ArrayList<>();
+        if (flowModelId == null) {
+            issues.add(bindingIssue("TASK_BINDING_FLOW_MISSING", "", "任务引用的工作流模型不能为空", "请选择工作流模型"));
+            return new PreparedTaskResources(resourceMap, List.copyOf(issues));
+        }
+        List<DeviceBindingRequirement> requirements;
+        try { requirements = requirements(flowModelId).bindings(); }
+        catch (RuntimeException error) {
+            issues.add(bindingIssue("TASK_BINDING_REQUIREMENTS_INVALID", "", error.getMessage(), "修复工作流设备节点定义"));
+            return new PreparedTaskResources(resourceMap, List.copyOf(issues));
+        }
+        Map<String, TaskDeviceBindingRequest> supplied = new LinkedHashMap<>();
+        if (deviceBindings != null) for (TaskDeviceBindingRequest binding : deviceBindings) {
+            String slotId = binding == null ? null : binding.slotId();
+            if (slotId == null || slotId.isBlank()) {
+                issues.add(bindingIssue("TASK_BINDING_SLOT_INVALID", "", "设备绑定缺少slotId", "使用工作流 requirements 返回的 slotId"));
+                continue;
+            }
+            TaskDeviceBindingRequest previous = supplied.putIfAbsent(slotId, binding);
+            if (previous != null && !java.util.Objects.equals(previous.deviceInstanceId(), binding.deviceInstanceId()))
+                issues.add(bindingIssue("TASK_BINDING_CONFLICT", slotId, "同一设备绑定槽位存在不一致的实例值", "每个 slotId 只提交一个设备实例"));
+        }
+        Set<String> expected = new LinkedHashSet<>();
+        for (DeviceBindingRequirement requirement : requirements) expected.add(requirement.slotId());
+        supplied.keySet().stream().filter(slotId -> !expected.contains(slotId)).sorted().forEach(slotId ->
+                issues.add(bindingIssue("TASK_BINDING_UNKNOWN", slotId, "设备绑定槽位不属于当前工作流", "刷新工作流 requirements 后重新绑定")));
+        for (DeviceBindingRequirement requirement : requirements) {
+            TaskDeviceBindingRequest suppliedBinding = supplied.get(requirement.slotId());
+            if (suppliedBinding == null || suppliedBinding.deviceInstanceId() == null || suppliedBinding.deviceInstanceId() <= 0) {
+                issues.add(bindingIssue("TASK_BINDING_MISSING", requirement.slotId(), "DEV_NODE缺少任务设备实例绑定", "为该槽位选择一个可用设备实例"));
+                continue;
+            }
+            ObjectNode binding = canonicalBindings.putObject(requirement.slotId());
+            binding.put("deviceModelId", requirement.deviceModelId());
+            binding.put("deviceInstanceId", suppliedBinding.deviceInstanceId());
+        }
+        if (issues.stream().noneMatch(WorkflowIssue::blocking)) try { validate(flowModelId, resourceMap); }
+        catch (RuntimeException error) { issues.add(bindingIssue("TASK_BINDING_INVALID", "", error.getMessage(), "检查设备实例、模型和设备接口")); }
+        return new PreparedTaskResources(resourceMap, List.copyOf(issues));
+    }
+
+    private WorkflowIssue bindingIssue(String code, String slotId, String message, String suggestion) {
+        String path = slotId == null || slotId.isBlank() ? "deviceBindings" : "deviceBindings." + slotId;
+        return new WorkflowIssue(code, "BINDING", path, "DEV_NODE", slotId == null ? "" : slotId, true,
+                message == null ? "任务设备绑定无效" : message, suggestion);
     }
     public void validate(Long flowModelId, JsonNode resourceMap) {
         JsonNode bindings = bindings(resourceMap);
@@ -372,6 +426,10 @@ public class WorkflowTaskResourceService {
 
     private Iterable<JsonNode> iterable(JsonNode node) {
         return node != null && node.isArray() ? node : java.util.List.of();
+    }
+
+    public record PreparedTaskResources(JsonNode resourceMap, List<WorkflowIssue> issues) {
+        public boolean blocked() { return issues.stream().anyMatch(WorkflowIssue::blocking); }
     }
 
     public record DeviceBindingSlot(String bindingKey, Long flowModelId, String flowName, String nodeName,

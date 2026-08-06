@@ -4,6 +4,8 @@ import com.smartlab.engine.workflow.WorkflowTaskControlService;
 import com.smartlab.management.dto.common.ApiResponse;
 import com.smartlab.management.dto.common.PageResult;
 import com.smartlab.management.dto.workflow.TaskCreateRequest;
+import com.smartlab.management.dto.workflow.TaskPreflightRequest;
+import com.smartlab.management.dto.workflow.TaskPreflightResponse;
 import com.smartlab.management.dto.workflow.TaskMonitorSummary;
 import com.smartlab.management.entity.workflow.ExecutionLog;
 import com.smartlab.management.entity.workflow.Task;
@@ -50,6 +52,11 @@ public class TaskController {
     public ApiResponse<Map<String, Long>> create(@Valid @RequestBody TaskCreateRequest request) {
         try { return ApiResponse.ok(Map.of("taskId", taskService.create(request).getId())); }
         catch (Exception e) { return ApiResponse.fail(e.getMessage()); }
+    }
+
+    @PostMapping("/preflight")
+    public ApiResponse<TaskPreflightResponse> preflight(@RequestBody TaskPreflightRequest request) {
+        return ApiResponse.ok(taskService.preflight(request));
     }
 
     @PostMapping("/start/{id}")

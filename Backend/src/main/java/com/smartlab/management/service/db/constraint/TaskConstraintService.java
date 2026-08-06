@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.entity.constraint.ConstraintRule;
+import com.smartlab.management.dto.workflow.WorkflowIssue;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
 import com.smartlab.management.entity.workflow.Task;
 import com.smartlab.management.mapper.workflow.TaskMapper;
@@ -58,6 +59,61 @@ public class TaskConstraintService {
         return result;
     }
 
+    public List<WorkflowIssue> inspect(Long flowModelId, JsonNode taskVariables, JsonNode resourceMap, JsonNode sourceRules) {
+        if (sourceRules == null || sourceRules.isNull()) return List.of();
+        List<WorkflowIssue> issues = new ArrayList<>();
+        if (!sourceRules.isArray()) {
+            issues.add(constraintIssue("taskConstraints", "taskConstraints必须是数组"));
+            return List.copyOf(issues);
+        }
+        Set<Long> boundInstances;
+        Set<Long> workflowModelIds;
+        try {
+            boundInstances = resourceService.boundDeviceInstanceIds(resourceMap);
+            workflowModelIds = resourceService.workflowModelIds(flowModelId);
+        } catch (RuntimeException error) {
+            issues.add(constraintIssue("taskConstraints", error.getMessage()));
+            return List.copyOf(issues);
+        }
+        for (int ruleIndex = 0; ruleIndex < sourceRules.size(); ruleIndex++) {
+            JsonNode rule = sourceRules.get(ruleIndex);
+            String rulePath = "taskConstraints[" + ruleIndex + "]";
+            if (!rule.isObject()) {
+                issues.add(constraintIssue(rulePath, "taskConstraints[" + ruleIndex + "]必须是对象"));
+                continue;
+            }
+            JsonNode bindings = rule.path("bindings");
+            if (bindings.isObject()) bindings.fields().forEachRemaining(entry -> {
+                JsonNode source = entry.getValue().path("source");
+                String sourceType = source.path("sourceType").asText();
+                String path = rulePath + ".bindings." + entry.getKey();
+                if (DEVICE_SOURCES.contains(sourceType)) {
+                    long instanceId = source.path("deviceInstanceId").asLong(0);
+                    if (instanceId <= 0 || !boundInstances.contains(instanceId)) issues.add(constraintIssue(path, "约束设备实例不属于当前任务绑定"));
+                } else if (NODE_SOURCES.contains(sourceType)) {
+                    long modelId = source.path("workflowTemplateId").asLong(0);
+                    String nodeName = source.path("nodeName").asText("");
+                    if (!workflowModelIds.contains(modelId) || !resourceService.containsNode(modelId, nodeName))
+                        issues.add(constraintIssue(path, "任务约束引用了任务工作流之外的节点"));
+                }
+            });
+            JsonNode actions = rule.path("violationActions");
+            if (actions.isArray()) for (int actionIndex = 0; actionIndex < actions.size(); actionIndex++) {
+                JsonNode action = actions.get(actionIndex);
+                if ("DEVICE_CAPABILITY".equals(action.path("actionType").asText())) {
+                    long instanceId = action.path("deviceInstanceId").asLong(0);
+                    if (instanceId <= 0 || !boundInstances.contains(instanceId))
+                        issues.add(constraintIssue(rulePath + ".violationActions[" + actionIndex + "]", "约束设备动作不属于当前任务绑定"));
+                }
+            }
+        }
+        return List.copyOf(issues);
+    }
+
+    private WorkflowIssue constraintIssue(String path, String message) {
+        return new WorkflowIssue("TASK_CONSTRAINT_INVALID", "CONSTRAINT", path, "taskConstraint", "", true,
+                message == null ? "任务约束无效" : message, "修正约束引用后重试");
+    }
     public List<ConstraintRule> rulesForTask(Task task) {
         if (task == null || task.getId() == null || task.getTaskConstraints() == null || !task.getTaskConstraints().isArray()) {
             return List.of();

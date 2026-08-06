@@ -3,6 +3,7 @@ package com.smartlab.management.service.db.constraint;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.global.util.JsonNodeSupport;
+import com.smartlab.management.dto.workflow.WorkflowIssue;
 import com.smartlab.management.entity.workflow.Task;
 import com.smartlab.management.mapper.workflow.TaskMapper;
 import com.smartlab.management.service.db.workflow.WorkflowTaskResourceService;
@@ -12,6 +13,7 @@ import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -71,6 +73,24 @@ class TaskConstraintServiceTest {
         task.setTaskStatus("TERMINATING");
 
         assertEquals(true, TaskConstraintService.isActive(task));
+    }
+
+    @Test
+    void inspectsDeviceActionOutsideBoundResourcesWithoutMutatingTask() {
+        WorkflowTaskResourceService resources = mock(WorkflowTaskResourceService.class);
+        when(resources.boundDeviceInstanceIds(any())).thenReturn(Set.of(55L));
+        TaskConstraintService service = new TaskConstraintService(mock(ConstraintRuleService.class), resources, mock(TaskMapper.class));
+        ArrayNode input = JsonNodeSupport.arrayNode();
+        ObjectNode rule = input.addObject();
+        rule.put("ruleName", "越权设备动作");
+        rule.put("expression", "true");
+        rule.putObject("bindings");
+        rule.putArray("violationActions").addObject().put("actionType", "DEVICE_CAPABILITY").put("deviceInstanceId", 99L);
+
+        java.util.List<WorkflowIssue> issues = service.inspect(3L, JsonNodeSupport.objectNode(), JsonNodeSupport.objectNode(), input);
+
+        assertEquals(java.util.List.of("TASK_CONSTRAINT_INVALID"), issues.stream().map(WorkflowIssue::code).toList());
+        assertTrue(issues.get(0).path().contains("violationActions[0]"));
     }
 
     private Task task() {

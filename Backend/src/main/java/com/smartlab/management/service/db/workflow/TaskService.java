@@ -9,6 +9,9 @@ import com.smartlab.global.event.TaskLifecycleObservationEvent;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.common.PageResult;
 import com.smartlab.management.dto.workflow.TaskCreateRequest;
+import com.smartlab.management.dto.workflow.TaskPreflightRequest;
+import com.smartlab.management.dto.workflow.TaskPreflightResponse;
+import com.smartlab.management.dto.workflow.WorkflowIssue;
 import com.smartlab.management.dto.workflow.TaskMonitorSummary;
 import com.smartlab.management.entity.workflow.ExecutionLog;
 import com.smartlab.management.entity.workflow.Task;
@@ -22,6 +25,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,12 +41,15 @@ public class TaskService extends ManagementCrudService<Task> {
     private final ExecutionLogService executionLogService;
     private final WorkflowService workflowService;
     private final WorkflowTaskResourceService resourceService;
+    private final WorkflowExecutionReadinessService executionReadinessService;
     private final TaskConstraintService taskConstraintService;
     private final ApplicationEventPublisher eventPublisher;
 
     public TaskService(TaskMapper taskMapper, TaskStepMapper taskStepMapper,
                        ExecutionLogService executionLogService, WorkflowService workflowService,
-                       WorkflowTaskResourceService resourceService, TaskConstraintService taskConstraintService,
+                       WorkflowTaskResourceService resourceService,
+                       WorkflowExecutionReadinessService executionReadinessService,
+                       TaskConstraintService taskConstraintService,
                        ApplicationEventPublisher eventPublisher) {
         super(taskMapper);
         this.taskMapper = taskMapper;
@@ -50,6 +57,7 @@ public class TaskService extends ManagementCrudService<Task> {
         this.executionLogService = executionLogService;
         this.workflowService = workflowService;
         this.resourceService = resourceService;
+        this.executionReadinessService = executionReadinessService;
         this.taskConstraintService = taskConstraintService;
         this.eventPublisher = eventPublisher;
     }
@@ -77,11 +85,20 @@ public class TaskService extends ManagementCrudService<Task> {
         if (request == null || request.getTaskName() == null || request.getTaskName().isBlank()) {
             throw new IllegalArgumentException("任务名称不能为空");
         }
-        if (request.getFlowModelId() == null || workflowService.getDefinition(request.getFlowModelId()) == null) {
-            throw new IllegalArgumentException("任务引用的工作流模型不存在");
+        JsonNode resourceMap;
+        if (request.getDeviceBindings() != null) {
+            TaskPreflightResponse preflight = preflight(TaskPreflightRequest.from(request));
+            requireReady(preflight);
+            resourceMap = resourceService.prepare(request.getFlowModelId(), request.getDeviceBindings()).resourceMap();
+        } else {
+            resourceMap = nonNullObject(request.getResourceMap());
+            requireReady(inspect(request.getFlowModelId(), request.getTaskVariables(), resourceMap,
+                    request.getTaskConstraints()));
         }
-        JsonNode resourceMap = nonNullObject(request.getResourceMap());
-        resourceService.validate(request.getFlowModelId(), resourceMap);
+        return persistPendingTask(request, resourceMap);
+    }
+
+    private Task persistPendingTask(TaskCreateRequest request, JsonNode resourceMap) {
         Task task = new Task();
         task.setFlowModelId(request.getFlowModelId());
         task.setTaskName(request.getTaskName().trim());
@@ -104,7 +121,8 @@ public class TaskService extends ManagementCrudService<Task> {
     public Task start(Long taskId) {
         Task task = requireTask(taskId);
         requireStatus(task, TaskLifecycleState.PENDING);
-        resourceService.validate(task.getFlowModelId(), task.getResourceMap());
+        requireReady(inspect(task.getFlowModelId(), task.getTaskVariables(), task.getResourceMap(),
+                task.getTaskConstraints()));
         task.setTaskConstraints(taskConstraintService.normalizeAndValidate(task, task.getTaskConstraints()));
         task.setTaskStatus(TaskLifecycleState.RUNNING.name());
         task.setStartTime(OffsetDateTime.now());
@@ -133,6 +151,8 @@ public class TaskService extends ManagementCrudService<Task> {
     public Task resume(Long taskId) {
         Task task = requireTask(taskId);
         requireStatus(task, TaskLifecycleState.PAUSED);
+        requireReady(inspect(task.getFlowModelId(), task.getTaskVariables(), task.getResourceMap(),
+                task.getTaskConstraints()));
         task.setTaskStatus(TaskLifecycleState.RUNNING.name());
         taskMapper.updateById(task);
         executionLogService.append("TASK", taskId, null, null, "INFO", "任务已恢复");
@@ -217,6 +237,65 @@ public class TaskService extends ManagementCrudService<Task> {
         taskMapper.deleteById(id);
     }
 
+    public TaskPreflightResponse preflight(TaskPreflightRequest request) {
+        Long flowModelId = request == null ? null : request.flowModelId();
+        List<WorkflowIssue> issues = new ArrayList<>();
+        WorkflowTaskResourceService.PreparedTaskResources resources = resourceService.prepare(flowModelId,
+                request == null ? null : request.deviceBindings());
+        addIssues(issues, resources.issues());
+        inspectExecutableWorkflow(flowModelId, issues);
+        if (!resources.blocked()) {
+            addIssues(issues, executionReadinessService.inspect(resources.resourceMap()));
+            addIssues(issues, taskConstraintService.inspect(flowModelId,
+                    request == null ? null : request.taskVariables(), resources.resourceMap(),
+                    request == null ? null : request.taskConstraints()));
+        }
+        return new TaskPreflightResponse(issues.stream().noneMatch(WorkflowIssue::blocking), List.copyOf(issues));
+    }
+
+    private TaskPreflightResponse inspect(Long flowModelId, JsonNode taskVariables, JsonNode resourceMap,
+                                          JsonNode taskConstraints) {
+        List<WorkflowIssue> issues = new ArrayList<>();
+        inspectExecutableWorkflow(flowModelId, issues);
+        boolean validResources = true;
+        try {
+            resourceService.validate(flowModelId, resourceMap);
+        } catch (RuntimeException error) {
+            validResources = false;
+            issues.add(issue("TASK_BINDING_INVALID", "BINDING", "resourceMap", "resourceMap", "",
+                    error.getMessage(), "检查任务设备绑定"));
+        }
+        if (validResources) {
+            addIssues(issues, executionReadinessService.inspect(resourceMap));
+            addIssues(issues, taskConstraintService.inspect(flowModelId, taskVariables, resourceMap, taskConstraints));
+        }
+        return new TaskPreflightResponse(issues.stream().noneMatch(WorkflowIssue::blocking), List.copyOf(issues));
+    }
+
+    private void inspectExecutableWorkflow(Long flowModelId, List<WorkflowIssue> issues) {
+        try {
+            if (flowModelId == null) throw new IllegalArgumentException("任务引用的工作流模型不能为空");
+            workflowService.requireExecutableDefinition(flowModelId);
+        } catch (RuntimeException error) {
+            issues.add(issue("WORKFLOW_NOT_EXECUTABLE", "MODEL", "flowModelId", "workflow", "",
+                    error.getMessage(), "修复工作流定义后重试"));
+        }
+    }
+
+    private WorkflowIssue issue(String code, String stage, String path, String elementType, String elementId,
+                                String message, String suggestion) {
+        return new WorkflowIssue(code, stage, path, elementType, elementId, true,
+                message == null ? "任务预检失败" : message, suggestion);
+    }
+
+    private void addIssues(List<WorkflowIssue> target, List<WorkflowIssue> source) {
+        if (source != null) target.addAll(source);
+    }
+
+    private void requireReady(TaskPreflightResponse response) {
+        response.issues().stream().filter(WorkflowIssue::blocking).findFirst()
+                .ifPresent(issue -> { throw new IllegalStateException(issue.message()); });
+    }
     private boolean hasRunningDeviceStep(Long taskId) {
         return taskStepMapper.selectList(Wrappers.<TaskStep>lambdaQuery()
                         .eq(TaskStep::getTaskId, taskId).eq(TaskStep::getNodeStatus, "RUNNING"))

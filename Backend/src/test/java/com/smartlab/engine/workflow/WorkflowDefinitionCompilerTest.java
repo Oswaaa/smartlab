@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.global.contract.WorkflowNodeSystemContract;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.workflow.WorkflowSaveRequest;
+import com.smartlab.management.dto.workflow.WorkflowIssue;
 import org.junit.jupiter.api.Test;
 import java.util.List;
 
@@ -98,14 +99,12 @@ class WorkflowDefinitionCompilerTest {
     }
 
     @Test
-    void rejectsBranchWithoutFalseOutput() throws Exception {
+    void restoresMissingBranchSystemOutput() throws Exception {
         WorkflowSaveRequest request = validBranchDefinition();
         ObjectNode branch = (ObjectNode) request.getNodesDef().get(1);
         removeNamedItem(branch.withArray("interfaces"), "Interface_false_out");
 
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> compiler.compile(request));
-        assertTrue(error.getMessage().contains("节点branch"));
-        assertTrue(error.getMessage().contains("Interface_false_out"));
+        assertDoesNotThrow(() -> compiler.compile(request));
     }
 
     @Test
@@ -128,6 +127,31 @@ class WorkflowDefinitionCompilerTest {
     @Test void compilerRejectsTamperedBackendSystemItem() { ObjectNode n = node(new NodeCase("DEV_NODE", null)); ((ObjectNode)n.withArray("interfaces").get(1)).putArray("allowedSignals").add("UNKNOWN"); assertThrows(IllegalArgumentException.class, () -> compiler.compile(requestWith(n))); }
 
     private List<NodeCase> cases() { return List.of(new NodeCase("FUNC_NODE", "START"), new NodeCase("FUNC_NODE", "END"), new NodeCase("FUNC_NODE", "BRANCH"), new NodeCase("FUNC_NODE", "AGGREGATE"), new NodeCase("DEV_NODE", null), new NodeCase("SUBFLOW_NODE", null)); }
+    @Test
+    void draftPreparationRestoresSystemContractAndPreservesBusinessItems() {
+        WorkflowSaveRequest request = markerlessAggregateWithCustomUpdate();
+
+        WorkflowPreparation result = compiler.prepare(request, WorkflowPreparation.Mode.DRAFT);
+
+        JsonNode node = result.normalized().getNodesDef().get(1);
+        assertEquals("aggregate.lifecycle", node.path("lifecycle").path("_systemKey").asText());
+        assertEquals("setCounter", node.path("actions").get(1).path("actionName").asText());
+        assertEquals("counter", node.path("internalVariables").get(0).path("name").asText());
+        assertEquals("counterOut", node.path("ports").get(0).path("name").asText());
+        assertEquals("setCounter", node.path("interfaces").get(0).path("bindingTriggers").get(1).path("action").asText());
+        assertTrue(result.issues().stream().noneMatch(WorkflowIssue::blocking));
+    }
+
+    @Test
+    void publishPreparationRejectsBusinessItemUsingReservedSystemIdentity() {
+        WorkflowSaveRequest request = definitionWithCustomActionNamed("emitActive");
+
+        WorkflowPreparation result = compiler.prepare(request, WorkflowPreparation.Mode.PUBLISH);
+
+        assertTrue(result.issues().stream().anyMatch(issue ->
+                issue.code().equals("WORKFLOW_SYSTEM_NAME_RESERVED") && issue.blocking()));
+    }
+
     private ObjectNode node(NodeCase c) { ObjectNode n=WorkflowNodeSystemContract.template(c.type(),c.function()).deepCopy(); n.put("name","candidate"); n.put("nodeType",c.type()); n.putArray("internalVariables"); n.putArray("ports"); if(c.function()!=null)n.put("functionType",c.function()); if("BRANCH".equals(c.function()))n.put("expression","x > 1"); if("DEV_NODE".equals(c.type())){n.put("deviceModelId",1);n.putObject("capability").put("capabilityName","mix");} if("SUBFLOW_NODE".equals(c.type()))n.put("subFlowModelId",2); return n; }
     private WorkflowSaveRequest requestWith(NodeCase c) { return requestWith(node(c)); }
     private WorkflowSaveRequest requestWith(ObjectNode n) { WorkflowSaveRequest r=new WorkflowSaveRequest(); r.setName("contract"); ObjectNode s=node(new NodeCase("FUNC_NODE","START")); s.put("name","start"); ObjectNode e=node(new NodeCase("FUNC_NODE","END")); e.put("name","end"); ArrayNode ns=JsonNodeSupport.arrayNode().add(s).add(n).add(e); ArrayNode cs=JsonNodeSupport.arrayNode(); if("START".equals(n.path("functionType").asText())||"END".equals(n.path("functionType").asText())){ns.remove(1); link(cs,"start","end");} else if ("AGGREGATE".equals(n.path("functionType").asText())) { ObjectNode relay=node(new NodeCase("SUBFLOW_NODE",null)); relay.put("name","relay"); ns.insert(1,relay); link(cs,"start","candidate"); link(cs,"start","relay"); link(cs,"relay","candidate"); link(cs,"candidate","end"); } else {link(cs,"start","candidate"); if ("BRANCH".equals(n.path("functionType").asText())) linkNamed(cs,"candidate","Interface_true_out","end"); else link(cs,"candidate","end");} if ("DEV_NODE".equals(n.path("nodeType").asText())) { ObjectNode x=cs.addObject(); x.put("connectionType","NODE_TO_DEVICE"); x.putObject("source").put("nodeName","candidate").put("interfaceName","Interface_state_out"); x.putObject("target").put("deviceModelId",1).put("interfaceName","Interface_workflow_in"); x=cs.addObject(); x.put("connectionType","DEVICE_TO_NODE"); x.putObject("source").put("deviceModelId",1).put("interfaceName","Interface_state_out"); x.putObject("target").put("nodeName","candidate").put("interfaceName","Interface_state_in"); } r.setNodesDef(ns);r.setInterfaceConnections(cs);r.setPortConnections(JsonNodeSupport.arrayNode());return r; }
@@ -135,6 +159,57 @@ class WorkflowDefinitionCompilerTest {
         private void link(ArrayNode cs,String from,String to){ObjectNode c=cs.addObject();c.put("connectionType","NODE_TO_NODE");c.putObject("source").put("nodeName",from).put("interfaceName","Interface_workflow_out");c.putObject("target").put("nodeName",to).put("interfaceName","Interface_workflow_in");}
     private record NodeCase(String type,String function) {}
 
+
+    private WorkflowSaveRequest markerlessAggregateWithCustomUpdate() {
+        ObjectNode aggregate = node(new NodeCase("FUNC_NODE", "AGGREGATE"));
+        aggregate.withArray("internalVariables").addObject()
+                .put("name", "counter")
+                .put("dataType", "INTEGER");
+        aggregate.withArray("ports").addObject()
+                .put("name", "counterOut")
+                .put("direction", "OUT")
+                .put("internalVariableName", "counter");
+        aggregate.withArray("actions").addObject()
+                .put("actionName", "setCounter")
+                .put("actionType", "UPDATE")
+                .put("internalVariableName", "counter")
+                .put("valueExpression", "1");
+        ((ObjectNode) aggregate.withArray("interfaces").get(0)).withArray("bindingTriggers").addObject()
+                .put("action", "setCounter")
+                .putObject("condition")
+                .put("object", "inputSignalName")
+                .put("operator", "=")
+                .put("threshold", "OTHER");
+        removeSystemMarkers(aggregate);
+        ((ObjectNode) aggregate.path("lifecycle")).put("initialStateName", "BROKEN");
+
+        WorkflowSaveRequest request = requestWith(aggregate);
+        ArrayNode nodes = (ArrayNode) request.getNodesDef();
+        JsonNode relay = nodes.remove(1);
+        nodes.insert(2, relay);
+        return request;
+    }
+
+    private WorkflowSaveRequest definitionWithCustomActionNamed(String actionName) {
+        WorkflowSaveRequest request = markerlessAggregateWithCustomUpdate();
+        ObjectNode aggregate = (ObjectNode) request.getNodesDef().get(1);
+        ((ArrayNode) aggregate.path("actions")).removeAll();
+        aggregate.withArray("actions").addObject()
+                .put("actionName", actionName)
+                .put("actionType", "UPDATE")
+                .put("internalVariableName", "counter")
+                .put("valueExpression", "1");
+        return request;
+    }
+
+    private void removeSystemMarkers(JsonNode node) {
+        if (node.isObject()) {
+            ((ObjectNode) node).remove(List.of("_system", "_systemKey"));
+            node.elements().forEachRemaining(this::removeSystemMarkers);
+        } else if (node.isArray()) {
+            node.elements().forEachRemaining(this::removeSystemMarkers);
+        }
+    }
     private WorkflowSaveRequest validDefinition() throws Exception {
         WorkflowSaveRequest request = new WorkflowSaveRequest();
         request.setName("port-workflow");

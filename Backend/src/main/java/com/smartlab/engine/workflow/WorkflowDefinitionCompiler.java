@@ -9,6 +9,7 @@ import com.smartlab.global.contract.WorkflowNodeFunctionType;
 import com.smartlab.global.contract.WorkflowNodeSystemContract;
 import com.smartlab.global.contract.WorkflowNodeType;
 import com.smartlab.management.dto.workflow.WorkflowSaveRequest;
+import com.smartlab.management.dto.workflow.WorkflowIssue;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayDeque;
@@ -29,7 +30,9 @@ public class WorkflowDefinitionCompiler {
     private static final Set<String> ACTION_TYPES = enumNames(WorkflowNodeActionType.values());
     private static final Set<String> DATA_TYPES = enumNames(DataType.values());
 
-    public CompiledWorkflow compile(WorkflowSaveRequest request) {
+
+    private final WorkflowDefinitionCanonicalizer canonicalizer = new WorkflowDefinitionCanonicalizer();
+    private CompiledWorkflow compileStrict(WorkflowSaveRequest request) {
         if (request == null || request.getName() == null || request.getName().isBlank()) {
             throw new IllegalArgumentException("flowModelName不能为空");
         }
@@ -72,6 +75,39 @@ public class WorkflowDefinitionCompiler {
         validateTopology(nodes, outgoing, incoming, startRef, endRef);
         validateAcyclic(nodes.keySet(), outgoing);
         return new CompiledWorkflow(Map.copyOf(nodes), immutable(outgoing), immutable(incoming), Map.copyOf(refsByName), startRef, endRef);
+    }
+
+    public CompiledWorkflow compile(WorkflowSaveRequest request) {
+        WorkflowPreparation prepared = prepare(request, WorkflowPreparation.Mode.PUBLISH);
+        if (!prepared.executable()) throw new IllegalArgumentException(firstBlockingMessage(prepared.issues()));
+        return prepared.compiled();
+    }
+
+    public WorkflowPreparation prepare(WorkflowSaveRequest request, WorkflowPreparation.Mode mode) {
+        WorkflowPreparation.Mode effectiveMode = mode == null ? WorkflowPreparation.Mode.PUBLISH : mode;
+        WorkflowDefinitionCanonicalizer.CanonicalizationResult canonical = canonicalizer.canonicalize(request);
+        List<WorkflowIssue> issues = new ArrayList<>();
+        for (WorkflowIssue issue : canonical.issues()) {
+            issues.add(withBlocking(issue, effectiveMode == WorkflowPreparation.Mode.PUBLISH));
+        }
+        CompiledWorkflow compiled = null;
+        try {
+            compiled = compileStrict(canonical.normalized());
+        } catch (IllegalArgumentException error) {
+            issues.add(new WorkflowIssue("WORKFLOW_DEFINITION_INVALID", "COMPILATION", "", "workflow", "", effectiveMode == WorkflowPreparation.Mode.PUBLISH,
+                    error.getMessage(), "请修正工作流定义后重试"));
+        }
+        return new WorkflowPreparation(canonical.normalized(), List.copyOf(issues), compiled);
+    }
+
+    private WorkflowIssue withBlocking(WorkflowIssue issue, boolean blocking) {
+        return new WorkflowIssue(issue.code(), issue.stage(), issue.path(), issue.elementType(), issue.elementId(),
+                blocking, issue.message(), issue.suggestion());
+    }
+
+    private String firstBlockingMessage(List<WorkflowIssue> issues) {
+        return issues.stream().filter(WorkflowIssue::blocking).map(WorkflowIssue::message).findFirst()
+                .orElse("工作流定义不可执行");
     }
 
     private NodeIndex validateAndIndexNode(JsonNode node, String path) {
@@ -474,7 +510,12 @@ public class WorkflowDefinitionCompiler {
                 && actual.path("_system").asBoolean()
                 && actual.path("_systemKey").isTextual()
                 && !actual.path("_systemKey").asText().isBlank()
-                && expected.path("_systemKey").asText().equals(actual.path("_systemKey").asText());
+                && systemKeyMatches(expected.path("_systemKey").asText(), actual.path("_systemKey").asText());
+    }
+
+    private boolean systemKeyMatches(String expectedKey, String actualKey) {
+        return expectedKey.equals(actualKey)
+                || ("lifecycle".equals(expectedKey) && actualKey.endsWith(".lifecycle"));
     }
 
     private boolean claimsSystemIdentity(JsonNode item) {

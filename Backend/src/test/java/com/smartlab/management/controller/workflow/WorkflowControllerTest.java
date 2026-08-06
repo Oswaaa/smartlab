@@ -3,13 +3,16 @@ package com.smartlab.management.controller.workflow;
 import com.smartlab.management.dto.common.ApiResponse;
 import com.smartlab.management.dto.workflow.WorkflowDetailResponse;
 import com.smartlab.management.dto.workflow.WorkflowPreparationResponse;
+import com.smartlab.management.dto.workflow.WorkflowResourceRequirementsResponse;
 import com.smartlab.management.dto.workflow.WorkflowSaveRequest;
+import com.smartlab.management.service.db.workflow.WorkflowTaskResourceService;
 import com.smartlab.management.service.db.workflow.WorkflowService;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -30,7 +33,7 @@ class WorkflowControllerTest {
         WorkflowPreparationResponse expected = response("DRAFT", false, false);
         when(service.saveDraft(any(WorkflowSaveRequest.class))).thenReturn(expected);
 
-        ApiResponse<WorkflowPreparationResponse> result = new WorkflowController(service).saveDraft(request());
+        ApiResponse<WorkflowPreparationResponse> result = new WorkflowController(service, mock(WorkflowTaskResourceService.class)).saveDraft(request());
 
         assertTrue(result.isSuccess());
         assertEquals("DRAFT", result.getData().definition().getStatus());
@@ -43,7 +46,7 @@ class WorkflowControllerTest {
         WorkflowPreparationResponse expected = response("ACTIVE", true, true);
         when(service.publish(any(WorkflowSaveRequest.class))).thenReturn(expected);
 
-        ApiResponse<java.util.Map<String, Long>> result = new WorkflowController(service).save(request());
+        ApiResponse<java.util.Map<String, Long>> result = new WorkflowController(service, mock(WorkflowTaskResourceService.class)).save(request());
 
         assertTrue(result.isSuccess());
         assertEquals(42L, result.getData().get("workflowId"));
@@ -54,7 +57,7 @@ class WorkflowControllerTest {
         WorkflowService service = mock(WorkflowService.class);
         when(service.publish(any(WorkflowSaveRequest.class))).thenReturn(response("ACTIVE", true, true));
         when(service.saveDraft(any(WorkflowSaveRequest.class))).thenReturn(response("DRAFT", false, false));
-        MockMvc mvc = MockMvcBuilders.standaloneSetup(new WorkflowController(service)).build();
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new WorkflowController(service, mock(WorkflowTaskResourceService.class))).build();
 
         mvc.perform(post("/api/workflow/save").contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"workflow\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.workflowId").value(42));
@@ -69,7 +72,7 @@ class WorkflowControllerTest {
         when(service.publish(any(WorkflowSaveRequest.class))).thenReturn(
                 responseWithId("DRAFT", false, false, 7L),
                 responseWithId("DRAFT", false, false, 8L));
-        MockMvc mvc = MockMvcBuilders.standaloneSetup(new WorkflowController(service)).build();
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new WorkflowController(service, mock(WorkflowTaskResourceService.class))).build();
 
         mvc.perform(post("/api/workflow/save").contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"workflow\",\"id\":7}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.success").value(false)).andExpect(jsonPath("$.data").doesNotExist());
@@ -95,3 +98,5 @@ class WorkflowControllerTest {
         return request;
     }
 }
+
+

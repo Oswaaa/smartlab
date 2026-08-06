@@ -3,7 +3,9 @@ package com.smartlab.management.service.db.workflow;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.smartlab.engine.workflow.WorkflowDefinitionCompiler;
 import com.smartlab.global.util.JsonNodeSupport;
+import com.smartlab.management.dto.workflow.DeviceBindingRequirement;
 import com.smartlab.management.dto.workflow.WorkflowDetailResponse;
+import com.smartlab.management.dto.workflow.WorkflowResourceRequirementsResponse;
 import com.smartlab.management.entity.resource.device.DeviceInstanceLifecycle;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
 import com.smartlab.management.entity.resource.device.DeviceModels;
@@ -46,21 +48,35 @@ public class WorkflowTaskResourceService {
         this.flowNodeMapper = flowNodeMapper;
     }
 
+    public WorkflowResourceRequirementsResponse requirements(Long rootFlowModelId) {
+        if (rootFlowModelId == null) throw new IllegalArgumentException("工作流模型ID不能为空");
+        WorkflowDetailResponse rootDefinition = workflowService.getDefinition(rootFlowModelId);
+        if (rootDefinition == null) throw new IllegalArgumentException("工作流模型不存在: " + rootFlowModelId);
+        List<DeviceBindingRequirement> bindings = new ArrayList<>();
+        collectBindingRequirements(rootFlowModelId, rootDefinition.getName(), List.of(), new LinkedHashSet<>(), bindings);
+        return new WorkflowResourceRequirementsResponse(rootFlowModelId, rootDefinition.getVersion(), List.copyOf(bindings));
+    }
     public void validate(Long flowModelId, JsonNode resourceMap) {
         JsonNode bindings = bindings(resourceMap);
+        List<DeviceBindingSlot> legacySlots = deviceBindingSlots(flowModelId);
+        List<DeviceBindingRequirement> requirements = requirements(flowModelId).bindings();
+        if (legacySlots.size() != requirements.size()) throw new IllegalStateException("工作流设备绑定要求不一致");
         Set<String> expectedKeys = new LinkedHashSet<>();
-        for (DeviceBindingSlot slot : deviceBindingSlots(flowModelId)) {
+        for (int index = 0; index < legacySlots.size(); index++) {
+            DeviceBindingSlot slot = legacySlots.get(index);
+            DeviceBindingRequirement requirement = requirements.get(index);
             expectedKeys.add(slot.bindingKey());
-            JsonNode taskBinding = binding(bindings, slot.bindingKey());
+            expectedKeys.add(requirement.slotId());
+            JsonNode taskBinding = binding(bindings, requirement.slotId(), slot.bindingKey());
             long declaredModelId = taskBinding.path("deviceModelId").asLong(0);
             if (declaredModelId != slot.deviceModelId()) {
-                throw new IllegalStateException("任务绑定的deviceModelId与DEV_NODE不一致: " + slot.bindingKey());
+                throw new IllegalStateException("任务绑定的deviceModelId与DEV_NODE不一致: " + requirement.slotId());
             }
             long instanceId = taskBinding.path("deviceInstanceId").asLong(0);
-            if (instanceId <= 0) throw new IllegalStateException("DEV_NODE缺少任务设备实例绑定: " + slot.bindingKey());
+            if (instanceId <= 0) throw new IllegalStateException("DEV_NODE缺少任务设备实例绑定: " + requirement.slotId());
             DeviceInstances instance = requireUsableInstance(instanceId);
             if (!Long.valueOf(slot.deviceModelId()).equals(instance.getDeviceModelId())) {
-                throw new IllegalStateException("任务绑定设备实例的模型与DEV_NODE.deviceModelId不匹配: " + slot.bindingKey());
+                throw new IllegalStateException("任务绑定设备实例的模型与DEV_NODE.deviceModelId不匹配: " + requirement.slotId());
             }
             validateModelInterfaces(workflowService.getDefinition(slot.flowModelId()), slot.nodeName(), slot.deviceModelId());
         }
@@ -87,7 +103,7 @@ public class WorkflowTaskResourceService {
         if (node == null || !"DEV_NODE".equals(node.path("nodeType").asText())) {
             throw new IllegalArgumentException("工作流不存在DEV_NODE: " + key);
         }
-        JsonNode taskBinding = binding(bindings(resourceMap), key);
+        JsonNode taskBinding = binding(bindings(resourceMap), slotId(List.of(new BindingOccurrence(flowModelId, nodeRef, nodeName))), key);
         long declaredModelId = taskBinding.path("deviceModelId").asLong(0);
         long expectedModelId = node.path("deviceModelId").asLong(0);
         if (declaredModelId != expectedModelId) {
@@ -107,6 +123,7 @@ public class WorkflowTaskResourceService {
             throw new IllegalArgumentException("任务步骤设备绑定上下文不完整");
         }
         List<String> subFlowPath = new ArrayList<>();
+        List<BindingOccurrence> subFlowOccurrences = new ArrayList<>();
         Set<Long> visitedSteps = new HashSet<>();
         Long parentStepId = step.getParentStepId();
         while (parentStepId != null) {
@@ -120,17 +137,21 @@ public class WorkflowTaskResourceService {
             if (parentNode == null || !"SUBFLOW_NODE".equals(parentNode.getNodeType())) {
                 throw new IllegalStateException("子流程父步骤没有引用SUBFLOW_NODE: " + parentStepId);
             }
-            subFlowPath.add(0, nodeName(parentNode.getFlowModelId(), parentNode.getNodeIdRef()));
+            String parentNodeName = nodeName(parentNode.getFlowModelId(), parentNode.getNodeIdRef());
+            subFlowPath.add(0, parentNodeName);
+            subFlowOccurrences.add(0, new BindingOccurrence(parentNode.getFlowModelId(), parentNode.getNodeIdRef(), parentNodeName));
             parentStepId = parentStep.getParentStepId();
         }
         String nodeName = nodeName(node.getFlowModelId(), node.getNodeIdRef());
         String key = bindingKey(subFlowPath, nodeName);
-        return resolveBinding(key, node.getDeviceModelId(), task.getResourceMap());
+        subFlowOccurrences.add(new BindingOccurrence(node.getFlowModelId(), node.getNodeIdRef(), nodeName));
+        return resolveBinding(node.getDeviceModelId(), task.getResourceMap(), slotId(subFlowOccurrences), key);
     }
 
-    private DeviceInstances resolveBinding(String key, Long expectedModelId, JsonNode resourceMap) {
+    private DeviceInstances resolveBinding(Long expectedModelId, JsonNode resourceMap, String... bindingKeys) {
+        String key = bindingKeys.length == 0 ? "" : bindingKeys[0];
         if (expectedModelId == null || expectedModelId <= 0) throw new IllegalStateException("DEV_NODE缺少deviceModelId: " + key);
-        JsonNode taskBinding = binding(bindings(resourceMap), key);
+        JsonNode taskBinding = binding(bindings(resourceMap), bindingKeys);
         long declaredModelId = taskBinding.path("deviceModelId").asLong(0);
         if (declaredModelId != expectedModelId) {
             throw new IllegalStateException("任务绑定的deviceModelId与DEV_NODE不一致: " + key);
@@ -196,6 +217,50 @@ public class WorkflowTaskResourceService {
         return value.replace("~", "~0").replace("/", "~1");
     }
 
+    private void collectBindingRequirements(Long flowModelId, String rootFlowName, List<BindingOccurrence> ancestors,
+                                            Set<Long> visitedModels, List<DeviceBindingRequirement> result) {
+        if (!visitedModels.add(flowModelId)) {
+            throw new IllegalStateException("工作流存在循环子流程引用: " + flowModelId);
+        }
+        try {
+            WorkflowDetailResponse definition = workflowService.getDefinition(flowModelId);
+            if (definition == null) throw new IllegalArgumentException("工作流模型不存在: " + flowModelId);
+            WorkflowDefinitionCompiler.CompiledWorkflow compiled = workflowService.compileDefinition(flowModelId);
+            Map<Long, String> namesByRef = namesByRef(compiled);
+            compiled.nodes().entrySet().stream().sorted(Comparator.comparingLong(Map.Entry::getKey)).forEach(entry -> {
+                long nodeIdRef = entry.getKey();
+                JsonNode node = entry.getValue();
+                String nodeName = namesByRef.get(nodeIdRef);
+                String nodeType = node.path("nodeType").asText();
+                List<BindingOccurrence> occurrence = new ArrayList<>(ancestors);
+                occurrence.add(new BindingOccurrence(flowModelId, nodeIdRef, nodeName));
+                if ("DEV_NODE".equals(nodeType)) {
+                    long deviceModelId = node.path("deviceModelId").asLong(0);
+                    if (deviceModelId <= 0) throw new IllegalStateException("DEV_NODE缺少deviceModelId: " + nodeName);
+                    result.add(new DeviceBindingRequirement(slotId(occurrence), occurrencePath(rootFlowName, occurrence),
+                            flowModelId, definition.getVersion(), nodeIdRef, definition.getName(), nodeName,
+                            deviceModelId, node.path("capability").path("capabilityName").asText("")));
+                } else if ("SUBFLOW_NODE".equals(nodeType)) {
+                    long subFlowModelId = node.path("subFlowModelId").asLong(0);
+                    if (subFlowModelId <= 0) throw new IllegalStateException("SUBFLOW_NODE缺少subFlowModelId");
+                    collectBindingRequirements(subFlowModelId, rootFlowName, List.copyOf(occurrence), visitedModels, result);
+                }
+            });
+        } finally {
+            visitedModels.remove(flowModelId);
+        }
+    }
+
+    private static String slotId(List<BindingOccurrence> occurrence) {
+        return occurrence.stream().map(item -> item.flowModelId() + ":" + item.nodeIdRef()).collect(java.util.stream.Collectors.joining("/"));
+    }
+
+    private static String occurrencePath(String rootFlowName, List<BindingOccurrence> occurrence) {
+        List<String> names = new ArrayList<>();
+        names.add(rootFlowName == null || rootFlowName.isBlank() ? "root" : rootFlowName);
+        occurrence.forEach(item -> names.add(item.nodeName()));
+        return String.join(" / ", names);
+    }
     private void collectBindingSlots(Long flowModelId, List<String> subFlowPath, Set<Long> ancestors,
                                      List<DeviceBindingSlot> result) {
         if (!ancestors.add(flowModelId)) {
@@ -250,9 +315,12 @@ public class WorkflowTaskResourceService {
         return resourceMap.path("deviceBindings");
     }
 
-    private JsonNode binding(JsonNode bindings, String bindingKey) {
-        JsonNode result = bindings.path(bindingKey);
-        return result.isObject() ? result : JsonNodeSupport.objectNode();
+    private JsonNode binding(JsonNode bindings, String... bindingKeys) {
+        for (String bindingKey : bindingKeys) {
+            JsonNode result = bindings.path(bindingKey);
+            if (result.isObject()) return result;
+        }
+        return JsonNodeSupport.objectNode();
     }
 
     private Map<Long, String> namesByRef(WorkflowDefinitionCompiler.CompiledWorkflow compiled) {
@@ -304,6 +372,16 @@ public class WorkflowTaskResourceService {
                                     long deviceModelId, String capabilityName, List<String> subFlowPath) {
     }
 
+    private record BindingOccurrence(Long flowModelId, long nodeIdRef, String nodeName) {}
+
     private record DeviceRoute(String deviceInputInterfaceName, String deviceOutputInterfaceName) {
     }
 }
+
+
+
+
+
+
+
+

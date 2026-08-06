@@ -3,6 +3,7 @@ package com.smartlab.management.service.db.workflow;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.engine.workflow.WorkflowDefinitionCompiler;
 import com.smartlab.global.util.JsonNodeSupport;
+import com.smartlab.management.dto.workflow.DeviceBindingRequirement;
 import com.smartlab.management.dto.workflow.WorkflowDetailResponse;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
 import com.smartlab.management.entity.workflow.FlowNode;
@@ -23,6 +24,21 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class WorkflowTaskResourceServiceTest {
+    @Test
+    void requirementsUseNodeRefsForIdentityAndNamesOnlyForDisplay() {
+        WorkflowService workflows = mock(WorkflowService.class);
+        WorkflowTaskResourceService service = new WorkflowTaskResourceService(
+                workflows, mock(DeviceInstancesMapper.class), mock(DeviceModelsMapper.class),
+                mock(TaskStepMapper.class), mock(FlowNodeMapper.class));
+        stubRequirementsWithRepeatedSubFlow(workflows);
+
+        List<DeviceBindingRequirement> result = service.requirements(1L).bindings();
+
+        assertEquals(List.of("1:12/2:31", "1:18/2:31"),
+                result.stream().map(DeviceBindingRequirement::slotId).toList());
+        assertEquals(List.of("主流程 / 加热A / 温控", "主流程 / 加热B / 温控"),
+                result.stream().map(DeviceBindingRequirement::occurrencePath).toList());
+    }
     @Test
     void keepsSeparateBindingPathsWhenTheSameSubFlowModelAppearsTwice() {
         WorkflowService workflows = mock(WorkflowService.class);
@@ -156,6 +172,38 @@ class WorkflowTaskResourceServiceTest {
         when(workflows.compileDefinition(20L)).thenReturn(child);
     }
 
+    private void stubRequirementsWithRepeatedSubFlow(WorkflowService workflows) {
+        ObjectNode first = JsonNodeSupport.objectNode();
+        first.put("name", "加热A");
+        first.put("nodeType", "SUBFLOW_NODE");
+        first.put("subFlowModelId", 2L);
+        ObjectNode second = first.deepCopy();
+        second.put("name", "加热B");
+        WorkflowDefinitionCompiler.CompiledWorkflow root = new WorkflowDefinitionCompiler.CompiledWorkflow(
+                Map.of(12L, first, 18L, second), Map.of(), Map.of(),
+                Map.of("加热A", 12L, "加热B", 18L), 12L, 18L);
+
+        ObjectNode temperature = JsonNodeSupport.objectNode();
+        temperature.put("name", "温控");
+        temperature.put("nodeType", "DEV_NODE");
+        temperature.put("deviceModelId", 7L);
+        temperature.putObject("capability").put("capabilityName", "TEMPERATURE_CONTROL");
+        WorkflowDefinitionCompiler.CompiledWorkflow child = new WorkflowDefinitionCompiler.CompiledWorkflow(
+                Map.of(31L, temperature), Map.of(), Map.of(), Map.of("温控", 31L), 31L, 31L);
+
+        WorkflowDetailResponse rootDetail = new WorkflowDetailResponse();
+        rootDetail.setId(1L);
+        rootDetail.setName("主流程");
+        rootDetail.setVersion(3);
+        WorkflowDetailResponse childDetail = new WorkflowDetailResponse();
+        childDetail.setId(2L);
+        childDetail.setName("加热子流程");
+        childDetail.setVersion(4);
+        when(workflows.getDefinition(1L)).thenReturn(rootDetail);
+        when(workflows.getDefinition(2L)).thenReturn(childDetail);
+        when(workflows.compileDefinition(1L)).thenReturn(root);
+        when(workflows.compileDefinition(2L)).thenReturn(child);
+    }
     private FlowNode flowNode(long id, long flowModelId, long nodeIdRef, String nodeType, Long deviceModelId) {
         FlowNode result = new FlowNode();
         result.setId(id);
@@ -182,3 +230,4 @@ class WorkflowTaskResourceServiceTest {
         return result;
     }
 }
+

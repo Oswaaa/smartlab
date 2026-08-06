@@ -3,8 +3,10 @@ package com.smartlab.management.controller.workflow;
 import com.smartlab.management.dto.common.ApiResponse;
 import com.smartlab.management.dto.workflow.WorkflowDetailResponse;
 import com.smartlab.management.dto.workflow.WorkflowPreparationResponse;
+import com.smartlab.management.dto.workflow.WorkflowResourceRequirementsResponse;
 import com.smartlab.management.dto.workflow.WorkflowSaveRequest;
 import com.smartlab.management.entity.workflow.FlowModels;
+import com.smartlab.management.service.db.workflow.WorkflowTaskResourceService;
 import com.smartlab.management.service.db.workflow.WorkflowService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
@@ -16,9 +18,11 @@ import java.util.Map;
 @RequestMapping("/api/workflow")
 public class WorkflowController {
     private final WorkflowService workflowService;
+    private final WorkflowTaskResourceService resourceService;
 
-    public WorkflowController(WorkflowService workflowService) {
+    public WorkflowController(WorkflowService workflowService, WorkflowTaskResourceService resourceService) {
         this.workflowService = workflowService;
+        this.resourceService = resourceService;
     }
 
     @GetMapping("/list")
@@ -57,9 +61,15 @@ public class WorkflowController {
         }
     }
 
+    @GetMapping("/{id}/requirements")
+    public ApiResponse<WorkflowResourceRequirementsResponse> requirements(@PathVariable Long id) {
+        workflowService.requireExecutableDefinition(id);
+        return ApiResponse.ok(resourceService.requirements(id));
+    }
     @GetMapping({"/export/{id}", "/detail/{id}"})
     public ApiResponse<WorkflowDetailResponse> detail(@PathVariable Long id) {
         WorkflowDetailResponse definition = workflowService.getDefinition(id);
         return definition == null ? ApiResponse.fail("流程模型不存在: " + id) : ApiResponse.ok(definition);
     }
 }
+

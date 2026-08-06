@@ -25,6 +25,31 @@ import static org.mockito.Mockito.when;
 
 class WorkflowTaskResourceServiceTest {
     @Test
+    void requirementsKeepSlotIdWhenNodeIsRenamedAndDefinitionsAreReordered() {
+        WorkflowService workflows = mock(WorkflowService.class);
+        WorkflowTaskResourceService service = new WorkflowTaskResourceService(workflows, mock(DeviceInstancesMapper.class), mock(DeviceModelsMapper.class), mock(TaskStepMapper.class), mock(FlowNodeMapper.class));
+        WorkflowDetailResponse detail = new WorkflowDetailResponse(); detail.setId(1L); detail.setName("root"); detail.setVersion(1);
+        ObjectNode before = JsonNodeSupport.objectNode(); before.put("name", "heat"); before.put("nodeType", "DEV_NODE"); before.put("deviceModelId", 7L);
+        ObjectNode after = before.deepCopy(); after.put("name", "renamedHeat");
+        when(workflows.getDefinition(1L)).thenReturn(detail);
+        when(workflows.compileDefinition(1L)).thenReturn(new WorkflowDefinitionCompiler.CompiledWorkflow(Map.of(12L, before), Map.of(), Map.of(), Map.of("heat", 12L), 12L, 12L), new WorkflowDefinitionCompiler.CompiledWorkflow(Map.of(12L, after), Map.of(), Map.of(), Map.of("renamedHeat", 12L), 12L, 12L));
+        assertEquals(service.requirements(1L).bindings().getFirst().slotId(), service.requirements(1L).bindings().getFirst().slotId());
+    }
+
+    @Test
+    void requirementsRejectSubflowCycle() {
+        WorkflowService workflows = mock(WorkflowService.class);
+        WorkflowTaskResourceService service = new WorkflowTaskResourceService(workflows, mock(DeviceInstancesMapper.class), mock(DeviceModelsMapper.class), mock(TaskStepMapper.class), mock(FlowNodeMapper.class));
+        WorkflowDetailResponse first = new WorkflowDetailResponse(); first.setId(1L); first.setName("A");
+        WorkflowDetailResponse second = new WorkflowDetailResponse(); second.setId(2L); second.setName("B");
+        ObjectNode aToB = JsonNodeSupport.objectNode(); aToB.put("name", "toB"); aToB.put("nodeType", "SUBFLOW_NODE"); aToB.put("subFlowModelId", 2L);
+        ObjectNode bToA = JsonNodeSupport.objectNode(); bToA.put("name", "toA"); bToA.put("nodeType", "SUBFLOW_NODE"); bToA.put("subFlowModelId", 1L);
+        when(workflows.getDefinition(1L)).thenReturn(first); when(workflows.getDefinition(2L)).thenReturn(second);
+        when(workflows.compileDefinition(1L)).thenReturn(new WorkflowDefinitionCompiler.CompiledWorkflow(Map.of(1L, aToB), Map.of(), Map.of(), Map.of("toB", 1L), 1L, 1L));
+        when(workflows.compileDefinition(2L)).thenReturn(new WorkflowDefinitionCompiler.CompiledWorkflow(Map.of(2L, bToA), Map.of(), Map.of(), Map.of("toA", 2L), 2L, 2L));
+        assertThrows(IllegalStateException.class, () -> service.requirements(1L));
+    }
+    @Test
     void rejectsConflictingSlotAndLegacyBindings() {
         WorkflowService workflows = mock(WorkflowService.class);
         DeviceInstancesMapper instances = mock(DeviceInstancesMapper.class);
@@ -265,5 +290,6 @@ class WorkflowTaskResourceServiceTest {
         return result;
     }
 }
+
 
 

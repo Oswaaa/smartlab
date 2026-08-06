@@ -383,12 +383,3 @@ public class WorkflowTaskResourceService {
     private record DeviceRoute(String deviceInputInterfaceName, String deviceOutputInterfaceName) {
     }
 }
-
-
-
-
-
-
-
-
-

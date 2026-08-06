@@ -63,6 +63,19 @@ class WorkflowControllerTest {
         mvc.perform(post("/api/workflow/publish").contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"workflow\"}"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.data.definition.status").value("ACTIVE"));
     }
+    @Test
+    void legacySaveDoesNotReportDraftSuccessOrBlockingPublishSuccess() throws Exception {
+        WorkflowService service = mock(WorkflowService.class);
+        when(service.publish(any(WorkflowSaveRequest.class))).thenReturn(
+                responseWithId("DRAFT", false, false, 7L),
+                responseWithId("DRAFT", false, false, 8L));
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new WorkflowController(service)).build();
+
+        mvc.perform(post("/api/workflow/save").contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"workflow\",\"id\":7}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.success").value(false)).andExpect(jsonPath("$.data").doesNotExist());
+        mvc.perform(post("/api/workflow/save").contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"workflow\",\"id\":8}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.success").value(false)).andExpect(jsonPath("$.data").doesNotExist());
+    }
     private WorkflowPreparationResponse response(String status, boolean executable, boolean published) {
         WorkflowDetailResponse definition = new WorkflowDetailResponse();
         definition.setStatus(status);
@@ -70,6 +83,12 @@ class WorkflowControllerTest {
         return new WorkflowPreparationResponse(definition, List.of(), executable, published);
     }
 
+    private WorkflowPreparationResponse responseWithId(String status, boolean executable, boolean published, Long id) {
+        WorkflowDetailResponse definition = new WorkflowDetailResponse();
+        definition.setStatus(status);
+        definition.setId(id);
+        return new WorkflowPreparationResponse(definition, List.of(), executable, published);
+    }
     private WorkflowSaveRequest request() {
         WorkflowSaveRequest request = new WorkflowSaveRequest();
         request.setName("workflow");

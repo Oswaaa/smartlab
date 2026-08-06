@@ -39,6 +39,11 @@ public class WorkflowController {
     @PostMapping("/save")
     public ApiResponse<Map<String, Long>> save(@Valid @RequestBody WorkflowSaveRequest request) {
         WorkflowPreparationResponse published = workflowService.publish(request);
+        if (!published.published()) {
+            String message = published.issues().stream().filter(issue -> issue.blocking()).map(issue -> issue.message()).findFirst()
+                    .orElse("流程模型未发布");
+            return ApiResponse.fail(message);
+        }
         Long workflowId = published.definition() == null ? null : published.definition().getId();
         return workflowId == null ? ApiResponse.fail("流程模型未发布") : ApiResponse.ok(Map.of("workflowId", workflowId));
     }

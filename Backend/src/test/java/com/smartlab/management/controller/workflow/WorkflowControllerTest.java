@@ -26,6 +26,18 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class WorkflowControllerTest {
+    @Test
+    void requirementsHttpEndpointExposesOnlyBindingRequirementFields() throws Exception {
+        WorkflowService workflows = mock(WorkflowService.class);
+        WorkflowTaskResourceService resources = mock(WorkflowTaskResourceService.class);
+        com.smartlab.management.dto.workflow.DeviceBindingRequirement binding = new com.smartlab.management.dto.workflow.DeviceBindingRequirement("1:12", "主流程 / 温控", 1L, 3, 12L, "主流程", "温控", 7L, "TEMP");
+        when(resources.requirements(1L)).thenReturn(new WorkflowResourceRequirementsResponse(1L, 3, List.of(binding)));
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new WorkflowController(workflows, resources)).build();
+        mvc.perform(get("/api/workflow/1/requirements")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.data.workflowId").value(1)).andExpect(jsonPath("$.data.bindings[0].slotId").value("1:12"))
+                .andExpect(jsonPath("$.data.resourceMap").doesNotExist()).andExpect(jsonPath("$.data.bindings[0].bindingKey").doesNotExist())
+                .andExpect(jsonPath("$.data.bindings[0].NODE_TO_DEVICE").doesNotExist());
+    }
 
     @Test
     void draftEndpointReturnsNormalizedPreparation() {
@@ -98,5 +110,6 @@ class WorkflowControllerTest {
         return request;
     }
 }
+
 
 

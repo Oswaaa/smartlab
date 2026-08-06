@@ -23,3 +23,5 @@ Completed. Task creation accepts structured `deviceBindings` and builds the inte
 - Readiness issues use deviceBindings[slotId] paths and slot element IDs.
 - Added MockMvc preflight response coverage and blocking-create non-insertion coverage.
 - Final focused suite: 26 tests passed, 0 failures, 0 errors.
+
+- Added explicit paused-task resume blocking test: mapper update is not invoked and status/start time remain unchanged. Final clean focused suite: 27 passed.

@@ -110,4 +110,30 @@ class TaskServiceTest {
         TaskService service = new TaskService(mapper, mock(TaskStepMapper.class), mock(ExecutionLogService.class), mock(WorkflowService.class), resources, mock(WorkflowExecutionReadinessService.class), constraints, mock(ApplicationEventPublisher.class));
         assertThrows(IllegalStateException.class, () -> service.create(request));
         verify(mapper, never()).insert(any(Task.class));
+    }
+    @Test
+    void resumingTaskRejectsBlockingIssueWithoutLifecycleMutation() {
+        TaskMapper mapper = mock(TaskMapper.class);
+        Task task = new Task();
+        task.setId(8L);
+        task.setFlowModelId(11L);
+        task.setTaskStatus("PAUSED");
+        task.setStartTime(java.time.OffsetDateTime.parse("2026-08-06T09:30:00+08:00"));
+        task.setResourceMap(JsonNodeSupport.objectNode());
+        task.setTaskConstraints(JsonNodeSupport.arrayNode());
+        when(mapper.selectById(8L)).thenReturn(task);
+        WorkflowExecutionReadinessService readiness = mock(WorkflowExecutionReadinessService.class);
+        when(readiness.inspect(task.getResourceMap())).thenReturn(java.util.List.of(new WorkflowIssue(
+                "DEVICE_OFFLINE", "READINESS", "deviceBindings[slot-a]", "deviceBinding", "slot-a", true, "设备离线", "等待设备上线")));
+        TaskService service = new TaskService(mapper, mock(TaskStepMapper.class), mock(ExecutionLogService.class),
+                mock(WorkflowService.class), mock(WorkflowTaskResourceService.class), readiness,
+                mock(TaskConstraintService.class), mock(ApplicationEventPublisher.class));
+        java.time.OffsetDateTime startTime = task.getStartTime();
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> service.resume(8L));
+
+        assertEquals("设备离线", error.getMessage());
+        assertEquals("PAUSED", task.getTaskStatus());
+        assertEquals(startTime, task.getStartTime());
+        verify(mapper, never()).updateById(any(Task.class));
     }}

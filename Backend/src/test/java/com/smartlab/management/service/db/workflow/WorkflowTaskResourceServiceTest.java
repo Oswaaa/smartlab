@@ -1,5 +1,6 @@
 package com.smartlab.management.service.db.workflow;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.engine.workflow.WorkflowDefinitionCompiler;
 import com.smartlab.global.util.JsonNodeSupport;
@@ -294,4 +295,5 @@ class WorkflowTaskResourceServiceTest {
         return result;
     }
 }
+
 

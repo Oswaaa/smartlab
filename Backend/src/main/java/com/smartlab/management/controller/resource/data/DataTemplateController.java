@@ -54,7 +54,7 @@ public class DataTemplateController {
     @PostMapping("/save-structured")
     public ApiResponse<DataTemplateMain> saveStructured(@RequestBody DataTemplateSaveDTO dto) {
         try {
-            return ApiResponse.ok(dataTemplateService.saveTemplate(dto));
+            return ApiResponse.ok(dataTemplateService.saveCustomTemplate(dto));
         } catch (Exception e) {
             return ApiResponse.fail(e.getMessage());
         }

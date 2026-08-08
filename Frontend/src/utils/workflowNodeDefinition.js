@@ -132,7 +132,7 @@ export function createDeviceNode(model, name) {
     capability: model.capabilities?.[0]
       ? { capabilityName: model.capabilities[0].capabilityName, capabilityParameters: {} }
       : null,
-    _capabilityParameterTypes: Object.fromEntries((model.capabilities?.[0]?.parameters ?? []).map(parameter => [parameter.parameterName, parameter.dataType])),
+    _capabilityParameterTypes: Object.fromEntries((model.capabilities?.[0]?.parameters ?? []).map(parameter => [parameter.name, parameter.dataType])),
     internalVariables: [],
     ...templateCopy('DEV_NODE'),
     ports: []
@@ -152,9 +152,9 @@ export function createSubflowNode(workflow, name) {
 
 export function replaceCapability(node, capability, previousCapability) {
   const oldValues = node.capability?.capabilityParameters ?? {}
-  const oldTypes = Object.fromEntries((previousCapability?.parameters ?? []).map(parameter => [parameter.parameterName, parameter.dataType]))
+  const oldTypes = Object.fromEntries((previousCapability?.parameters ?? []).map(parameter => [parameter.name, parameter.dataType]))
   const resolvedOldTypes = Object.keys(oldTypes).length ? oldTypes : (node._capabilityParameterTypes ?? {})
-  const nextTypes = Object.fromEntries((capability.parameters ?? []).map(parameter => [parameter.parameterName, parameter.dataType]))
+  const nextTypes = Object.fromEntries((capability.parameters ?? []).map(parameter => [parameter.name, parameter.dataType]))
   const capabilityParameters = Object.fromEntries(Object.entries(nextTypes)
     .filter(([name, type]) => resolvedOldTypes[name] === type && Object.hasOwn(oldValues, name))
     .map(([name]) => [name, oldValues[name]]))
@@ -195,7 +195,6 @@ export function validateNodeDefinition(node, context = {}) {
   uniqueErrors(errors, node.interfaces, 'name', 'interfaces')
   uniqueErrors(errors, node.actions, 'actionName', 'actions')
   validateVariables(node, errors)
-  validateSystemSkeleton(node, errors)
   validatePorts(node, errors)
   validateActions(node, errors)
   validateTriggers(node, errors)
@@ -215,56 +214,6 @@ function validateVariables(node, errors) {
   const allowed = new Set(['INTEGER', 'DOUBLE', 'BOOLEAN', 'STRING', 'JSON'])
   ;(node.internalVariables ?? []).forEach((variable, index) => {
     if (!allowed.has(variable.dataType)) errors.push({ path: `internalVariables[${index}].dataType`, message: '变量类型无效' })
-  })
-}
-
-function validateSystemSkeleton(node, errors) {
-  let expected
-  try {
-    expected = expectedSystemSkeleton(node)
-  } catch (error) {
-    errors.push({ path: 'systemTemplate', message: error.message })
-    return
-  }
-  if (!expected) return
-  validateSystemValue(node.lifecycle, expected.lifecycle, 'lifecycle', errors)
-  validateSystemCollection(node.interfaces, expected.interfaces, 'interfaces', errors)
-  validateSystemCollection(node.actions, expected.actions, 'actions', errors)
-}
-
-function expectedSystemSkeleton(node) {
-  if (node.nodeType === 'DEV_NODE') return createDeviceNode({ id: node.deviceModelId, capabilities: [] }, node.name)
-  if (node.nodeType === 'SUBFLOW_NODE') return createSubflowNode({ id: node.subFlowModelId }, node.name)
-  if (node.nodeType === 'FUNC_NODE') return createFunctionNode(node.functionType, node.name)
-  return null
-}
-
-function validateSystemCollection(actual = [], expected = [], path, errors) {
-  const expectedByKey = new Map(expected.map(item => [item._systemKey, item]))
-  for (const expectedItem of expected) {
-    const actualItem = actual.find(item => item?._systemKey === expectedItem._systemKey)
-    validateSystemValue(actualItem, expectedItem, path, errors)
-  }
-  actual.filter(isSystemItem).forEach(item => {
-    if (!expectedByKey.has(item._systemKey)) errors.push({ path, message: `不允许的系统项${item._systemKey}` })
-  })
-}
-
-function validateSystemValue(actual, expected, path, errors) {
-  if (!actual || !isSystemItem(actual) || !sameSystemValue(actual, expected, path)) {
-    errors.push({ path, message: `系统项${expected._systemKey}缺失或已篡改` })
-  }
-}
-
-function sameSystemValue(actual, expected, path) {
-  if (path !== 'interfaces') return JSON.stringify(actual) === JSON.stringify(expected)
-  const { bindingTriggers: actualTriggers = [], ...actualInterface } = actual
-  const { bindingTriggers: expectedTriggers = [], ...expectedInterface } = expected
-  if (JSON.stringify(actualInterface) !== JSON.stringify(expectedInterface)) return false
-  const expectedByKey = new Map(expectedTriggers.filter(isSystemItem).map(item => [item._systemKey, item]))
-  return [...expectedByKey].every(([key, trigger]) => {
-    const actualTrigger = actualTriggers.find(item => item?._systemKey === key)
-    return isSystemItem(actualTrigger) && triggerBusinessIdentity(actualTrigger) === triggerBusinessIdentity(trigger)
   })
 }
 
@@ -313,7 +262,7 @@ function validateDeviceConfiguration(node, model, errors) {
     errors.push({ path: 'capability', message: '设备能力不存在' })
     return
   }
-  const definitions = new Map((capability.parameters ?? []).map(item => [item.parameterName, item.dataType]))
+  const definitions = new Map((capability.parameters ?? []).map(item => [item.name, item.dataType]))
   Object.entries(node.capability?.capabilityParameters ?? {}).forEach(([name, value]) => {
     if (!sameParameterType(value, definitions.get(name))) errors.push({ path: `capability.capabilityParameters.${name}`, message: '能力参数类型不匹配' })
   })

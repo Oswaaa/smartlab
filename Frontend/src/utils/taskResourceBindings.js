@@ -115,3 +115,42 @@ export function applyInheritedBinding(routes, currentBindings, sourceRoute, devi
   }
   return next
 }
+
+
+// --- Backend-requirement-based helpers (Task 7) ---
+
+export function buildDeviceBindings(requirements, selections) {
+  if (!Array.isArray(requirements)) return []
+  return requirements
+    .filter(item => selections[item.slotId] != null && selections[item.slotId] !== '')
+    .map(item => ({ slotId: item.slotId, deviceInstanceId: Number(selections[item.slotId]) }))
+}
+
+export function groupRequirementsByFlow(requirements) {
+  if (!Array.isArray(requirements)) return []
+  const groups = new Map()
+  for (const req of requirements) {
+    const key = String(req.flowModelId || 'unknown')
+    if (!groups.has(key)) {
+      groups.set(key, {
+        flowModelId: req.flowModelId,
+        flowName: req.flowName || ('流程#' + key),
+        count: 0,
+        slots: []
+      })
+    }
+    const group = groups.get(key)
+    group.count++
+    group.slots.push(req)
+  }
+  return Array.from(groups.values())
+}
+
+export function compatibleInstances(requirement, instances, models) {
+  if (!Array.isArray(instances)) return []
+  const targetModelId = Number(requirement.deviceModelId)
+  return instances.filter(instance => {
+    const instanceModelId = Number(instance.deviceModelId || instance.modelId)
+    return instanceModelId === targetModelId && String(instance.lifecycleStatus || '').toUpperCase() !== 'RETIRED'
+  })
+}

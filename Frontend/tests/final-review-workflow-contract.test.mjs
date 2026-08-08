@@ -1,5 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 import { sanitizeWorkflowPayload } from '../src/utils/workflowCanvas.js'
 import {
   configureWorkflowNodeTemplates,
@@ -113,4 +115,14 @@ test('custom triggers can target only custom UPDATE actions', () => {
   node.interfaces[0].bindingTriggers.pop()
   node.actions.push({ actionName: 'customEmit', actionType: 'EMIT', targetInterfaceName: 'Interface_workflow_out', signalName: 'ACTIVE' })
   assert.ok(validateNodeDefinition(node).some(error => error.path === 'actions[2].actionType'))
+})
+
+test('designer adopts normalized server definitions for drafts and publishing', () => {
+  const designer = readFileSync(fileURLToPath(new URL('../src/views/task/WorkflowDesigner.vue', import.meta.url)), 'utf8')
+
+  assert.match(designer, /workflowApi\.saveDraft/)
+  assert.match(designer, /workflowApi\.publish/)
+  assert.match(designer, /adoptPreparedWorkflow/)
+  assert.match(designer, /indexWorkflowIssues/)
+  assert.doesNotMatch(designer, /rehydrateWorkflowNodes/)
 })

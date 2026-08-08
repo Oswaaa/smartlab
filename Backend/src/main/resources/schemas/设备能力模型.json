@@ -46,7 +46,20 @@
           "capabilityName": { "type": "string", "description": "操作能力唯一标识名" },
           "adapterCommandName": { "type": "string", "description": "映射并指向adapterContract.commands中的commandName" },
           "displayName": { "type": "string" },
-          "isAbort": { "type": "boolean", "default": false, "description": "标记此能力是否为中止操作当状态机收到中止信号进入ABORTING时，引擎从capabilities中找到isAbort为true的条目，将其adapterCommandName作为中止指令发送给adapter" },
+          "abortCapabilityName": {
+            "type": [ "string", "null" ],
+            "description": "普通能力对应的终止能力名，引用capabilities[].capabilityName；没有对应终止能力时为null。终止能力该字段的值为null"
+          },
+          "isAbort": {
+            "type": "boolean",
+            "default": false,
+            "description": "标记此能力是否为终止操作；普通能力为false，终止能力和急停能力为true"
+          },
+          "scope": {
+            "type": "array",
+            "description": "当isAbort=true时供终止能力配置影响范围，元素引用普通能力的capabilities[].capabilityName；终止能力执行完成且Adapter未返回受影响命令的明确终态时，系统默认将匹配的活动命令转为ABORTED",
+            "items": { "type": "string" }
+          },
           "parameters": {
             "type": "array",
             "description": "capability对外暴露的操作参数列表",
@@ -75,7 +88,7 @@
             }
           }
         },
-        "required": [ "capabilityName", "adapterCommandName", "displayName", "parameters", "parameterMapping" ]
+        "required": [ "capabilityName", "adapterCommandName", "displayName", "parameters", "parameterMapping", "isAbort", "abortCapabilityName"]
       }
     },
     "adapterContract": {
@@ -198,7 +211,7 @@
     },
     "intrinsicConstraints": {
       "type": "array",
-      "description": "设备内置约束，在运行期间由约束引擎持续检测",
+      "description": "设备内置约束，在运行期间由状态机内置约束监测器持续检测；违规时将violationStateName加入设备状态机EXCEPTION区域，条件恢复后保持锁存，直至人工解除且重新检测确认不再违规",
       "items": {
         "type": "object",
         "properties": {
@@ -213,7 +226,7 @@
             "description": "约束比较操作符（剔除BETWEEN与IN，确保单值boundaryValue）"
           },
           "boundaryValue": { "type": "number", "description": "内置约束阈值" },
-          "violationStateName": { "type": "string", "description": "对应状态机中的异常状态名" }
+          "violationStateName": { "type": "string", "description": "违规时激活的异常状态名，引用设备状态机模型regionType为EXCEPTION的区域states[].stateName" }
         },
         "required": [ "objectAttributeName", "operator", "boundaryValue", "violationStateName" ]
       }

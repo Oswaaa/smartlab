@@ -115,20 +115,16 @@ test('系统动作不能被业务删除', () => {
   assert.throws(() => removeAction(node, 'emitActive'), /系统动作emitActive不可删除/)
 })
 
-test('节点校验拒绝无效变量类型和缺失的START系统动作', () => {
+test('节点校验拒绝无效变量类型但由服务端校验START系统动作', () => {
   const node = createFunctionNode('START', 'start')
   node.internalVariables.push({ name: 'invalid', dataType: 'UNKNOWN' })
   node.actions = []
-  assert.deepEqual(validateNodeDefinition(node).map(error => error.path), [
-    'internalVariables[0].dataType', 'actions'
-  ])
+  assert.deepEqual(validateNodeDefinition(node).map(error => error.path), ['internalVariables[0].dataType'])
 })
-test('节点校验拒绝缺失的BRANCH系统动作', () => {
+test('节点校验仍拒绝触发器引用不存在的业务动作', () => {
   const node = createFunctionNode('BRANCH', 'branch')
   node.actions = [node.actions[0]]
-  assert.deepEqual(validateNodeDefinition(node).map(error => error.path), [
-    'actions', 'interfaces[0].bindingTriggers[1].action'
-  ])
+  assert.deepEqual(validateNodeDefinition(node).map(error => error.path), ['interfaces[0].bindingTriggers[1].action'])
 })
 test('START仅生成工作流出口及ACTIVE系统动作', () => {
   const node = createFunctionNode('START', 'start')
@@ -171,13 +167,11 @@ test('DEV_NODE生成工作流和状态机之间的两个系统触发器', () => 
   ])
 })
 
-test('节点校验拒绝删除或篡改DEV系统骨架', () => {
-  const node = createDeviceNode({ id: 7, capabilities: [] }, 'device')
+test('节点校验把DEV系统骨架完整性留给服务端', () => {
+  const model = { id: 7, capabilities: [{ capabilityName: 'heat', parameters: [] }] }
+  const node = createDeviceNode(model, 'device')
   node.interfaces = node.interfaces.filter(item => item.name !== 'Interface_state_in')
-  node.actions[0].signalName = 'OTHER'
-  const errors = validateNodeDefinition(node)
-  assert.ok(errors.some(error => error.path === 'interfaces' && /stateIn/.test(error.message)))
-  assert.ok(errors.some(error => error.path === 'actions' && /startDevice/.test(error.message)))
+  assert.deepEqual(validateNodeDefinition(node, { deviceModel: model }), [])
 })
 
 test('能力参数仅在编辑器类型映射相同的时候保留，INTEGER切DOUBLE会移除', () => {
@@ -321,4 +315,11 @@ test('触发器只能挂在IN接口且动作引用必须存在', () => {
   const messages = validateNodeDefinition(node).map(item => item.message)
   assert.ok(messages.some(message => message.includes('OUT接口不能声明bindingTriggers')))
   assert.ok(messages.some(message => message.includes('missingAction不存在')))
+})
+
+test('本地校验不把系统生命周期骨架当作发布条件', () => {
+  const node = createFunctionNode('START', 'start')
+  node.lifecycle = { _system: true, _systemKey: 'start.lifecycle', states: ['HACKED'] }
+
+  assert.deepEqual(validateNodeDefinition(node), [])
 })

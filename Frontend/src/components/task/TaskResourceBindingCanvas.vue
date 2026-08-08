@@ -5,7 +5,7 @@
         <div><strong>流程实例化视图</strong><span>每个路径代表一次真实的节点出现位置</span></div>
         <div class="canvas-summary"><el-tag type="success" effect="plain">已绑定{{ boundCount }}</el-tag><el-tag :type="unboundCount ? 'warning' : 'info'" effect="plain">待绑定{{ unboundCount }}</el-tag></div>
       </header>
-      <el-alert v-if="errors.length" type="error" :closable="false" title="流程模型的设备接口连接不完整"><template #default><div v-for="error in errors" :key="error">{{ error }}</div></template></el-alert>
+      <el-alert v-if="effectiveErrors.length" type="error" :closable="false" title="流程模型的设备接口连接不完整"><template #default><div v-for="error in effectiveErrors" :key="error">{{ error }}</div></template></el-alert>
       <div class="flow-groups">
         <article v-for="group in groups" :key="group.groupKey" class="flow-group" :style="{ marginLeft: Math.min(group.depth, 4) * 20 + 'px' }">
           <header class="flow-group-header"><div><el-tag size="small" effect="plain">{{ group.depth ? '子流程' : '主流程' }}</el-tag><strong>{{ group.flowName }}</strong></div><code>{{ group.occurrencePath }}</code></header>
@@ -48,22 +48,42 @@ import { computed, ref, watch } from 'vue'
 import { applyInheritedBinding } from '../../utils/taskResourceBindings.js'
 
 const props = defineProps<{
-  groups: any[]
-  routes: any[]
-  errors: string[]
+  groups?: any[]
+  routes?: any[]
+  errors?: string[]
+  requirements?: any[]
   modelValue: Record<string, number | null>
   instances: any[]
   models: any[]
 }>()
 const emit = defineEmits<{ (event: 'update:modelValue', value: Record<string, number | null>): void }>()
+const effectiveRoutes = computed(() => {
+  if (props.requirements?.length) {
+    return props.requirements.map(req => ({
+      bindingKey: req.slotId,
+      deviceModelId: Number(req.deviceModelId),
+      nodeName: req.nodeName,
+      flowName: req.flowName,
+      depth: 0,
+      occurrencePath: req.occurrencePath || req.slotId,
+      inheritanceKey: String(req.flowModelId) + ':' + String(req.nodeIdRef),
+      deviceInputInterfaceName: '',
+      deviceOutputInterfaceName: '',
+      interfaceValid: true
+    }))
+  }
+  return props.routes || []
+})
+const effectiveErrors = computed(() => props.errors || [])
+const effectiveGroups = computed(() => props.groups || [])
 const selectedKey = ref('')
+const selectedRoute = computed(() => effectiveRoutes.value.find(route => route.bindingKey === selectedKey.value) || null)
 const inheritRepeatedSubflows = ref(true)
-const selectedRoute = computed(() => props.routes.find(route => route.bindingKey === selectedKey.value) || null)
-const boundCount = computed(() => props.routes.filter(route => props.modelValue[route.bindingKey]).length)
-const unboundCount = computed(() => props.routes.length - boundCount.value)
+const boundCount = computed(() => effectiveRoutes.value.filter(route => props.modelValue[route.bindingKey]).length)
+const unboundCount = computed(() => effectiveRoutes.value.length - boundCount.value)
 const instancesForRoute = computed(() => selectedRoute.value == null ? [] : props.instances.filter(instance => Number(instance.deviceModelId ?? instance.modelId) === Number(selectedRoute.value.deviceModelId) && (!instance.lifecycleStatus || instance.lifecycleStatus === 'IN_USE')))
 
-watch(() => props.routes, routes => {
+watch(() => effectiveRoutes.value, routes => {
   if (!routes.some(route => route.bindingKey === selectedKey.value)) selectedKey.value = routes.find(route => !props.modelValue[route.bindingKey])?.bindingKey || routes[0]?.bindingKey || ''
 }, { immediate: true, deep: true })
 
@@ -75,7 +95,7 @@ function setBinding(value: number | null) {
   if (!selectedRoute.value) return
   if (value == null) { emit('update:modelValue', { ...props.modelValue, [selectedRoute.value.bindingKey]: null }); return }
   const next = inheritRepeatedSubflows.value && selectedRoute.value.depth > 0
-    ? applyInheritedBinding(props.routes, props.modelValue, selectedRoute.value, Number(value))
+    ? applyInheritedBinding(effectiveRoutes.value, props.modelValue, selectedRoute.value, Number(value))
     : { ...props.modelValue, [selectedRoute.value.bindingKey]: Number(value) }
   emit('update:modelValue', next)
 }
@@ -84,7 +104,7 @@ function applyToSameModel() {
   const value = props.modelValue[selectedRoute.value.bindingKey]
   if (!value) return
   const next = { ...props.modelValue }
-  for (const route of props.routes) if (Number(route.deviceModelId) === Number(selectedRoute.value.deviceModelId) && !next[route.bindingKey]) next[route.bindingKey] = value
+  for (const route of effectiveRoutes.value) if (Number(route.deviceModelId) === Number(selectedRoute.value.deviceModelId) && !next[route.bindingKey]) next[route.bindingKey] = value
   emit('update:modelValue', next)
 }
 </script>

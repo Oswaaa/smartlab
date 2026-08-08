@@ -1,6 +1,7 @@
 package com.smartlab.engine.statemachine.action;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.engine.statemachine.StateMachineModels;
 import com.smartlab.engine.statemachine.StateMachineSendActionEvent;
@@ -73,7 +74,7 @@ public class SendStateMachineActionExecutor implements StateMachineActionExecuto
         } else {
             payload.put("messageId", String.valueOf(messageId));
         }
-        payload.put("stateName", context.twinState().getCurrentCmdState());
+        payload.put("stateName", String.valueOf(execution.getOrDefault("stateName", context.twinState().getCurrentCmdState())));
         payload.put("timestamp", Instant.now().toEpochMilli());
         protocolDictionaryService.validateDefinition("CommandStatePayload", payload);
         return payload;
@@ -91,18 +92,34 @@ public class SendStateMachineActionExecutor implements StateMachineActionExecuto
         if (regionName.isBlank()) {
             throw new IllegalArgumentException("OP_STATE缺少regionName");
         }
-        String stateName = context.twinState().getCurrentOpState().path(regionName).asText("");
-        if (stateName.isBlank()) {
-            throw new IllegalArgumentException("OP_STATE找不到分区当前状态: " + regionName);
+        JsonNode currentState = context.twinState().getCurrentOpState().path(regionName);
+        if (!currentState.isArray()) throw new IllegalStateException("OP状态必须使用数组格式: " + regionName);
+        ArrayNode state = ((ArrayNode) currentState).deepCopy();
+        String regionType = operationRegionType(context.model().getOpState(), regionName);
+        if ("OPERATIONAL".equals(regionType) && state.size() != 1) {
+            throw new IllegalArgumentException("OPERATIONAL区域必须存在一个当前状态: " + regionName);
         }
         ObjectNode payload = JsonNodeSupport.objectNode();
         payload.put("deviceModelId", context.model().getId());
         payload.put("deviceInstanceId", context.instance().getId());
         payload.put("regionName", regionName);
-        payload.put("stateName", stateName);
+        payload.put("regionType", regionType);
+        payload.set("state", state);
         payload.put("timestamp", Instant.now().toEpochMilli());
         protocolDictionaryService.validateDefinition("OperationStatePayload", payload);
         return payload;
+    }
+
+    private String operationRegionType(JsonNode opState, String regionName) {
+        JsonNode regions = opState == null ? null : opState.path("regions");
+        if (regions != null && regions.isArray()) {
+            for (JsonNode region : regions) {
+                if (!regionName.equals(region.path("regionName").asText())) continue;
+                String type = region.path("regionType").asText("");
+                if ("OPERATIONAL".equals(type) || "EXCEPTION".equals(type)) return type;
+            }
+        }
+        throw new IllegalArgumentException("OP_STATE找不到分区定义: " + regionName);
     }
 
     private ObjectNode commandPayload(String signalName, Map<String, Object> execution) {

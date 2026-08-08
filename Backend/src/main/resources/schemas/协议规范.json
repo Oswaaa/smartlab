@@ -22,34 +22,34 @@
     "WorkflowControlSignal": {
       "type": "string",
       "enum": [ "WF_EXECUTE_START", "WF_EXECUTE_ABORT" ],
-      "description": "工作流引擎到状态机的控制信号WF_EXECUTE_START携带commandName与parameters；WF_EXECUTE_ABORT不携带业务载荷"
+      "description": "工作流引擎到设备实例状态机的控制信号；WF_EXECUTE_START携带capabilityName与parameters，状态机根据目标能力isAbort路由到普通指令状态机或可插队的终止状态机；WF_EXECUTE_ABORT不携带业务载荷，由目标设备实例当前普通指令上下文确定A并通过A.abortCapabilityName解析附属终止能力B"
     },
     "ManualControlSignal": {
       "type": "string",
       "enum": [ "MANUAL_EXECUTE_START", "MANUAL_EXECUTE_ABORT" ],
-      "description": "人工控制台到状态机的控制信号MANUAL_EXECUTE_START携带commandName与parameters；MANUAL_EXECUTE_ABORT不携带业务载荷"
+      "description": "人工控制台到设备实例状态机的控制信号；MANUAL_EXECUTE_START携带capabilityName与parameters，状态机根据目标能力isAbort路由到普通指令状态机或可插队的终止状态机；MANUAL_EXECUTE_ABORT不携带业务载荷，用于终止目标设备实例当前活动的普通指令"
     },
     "ConstraintControlSignal": {
       "type": "string",
       "enum": [ "CONSTRAINT_EXECUTE", "CONSTRAINT_ABORT" ],
-      "description": "约束引擎到状态机的控制信号CONSTRAINT_EXECUTE携带目标能力及参数；CONSTRAINT_ABORT不携带业务载荷，由路由上下文确定目标设备"
+      "description": "约束引擎到设备实例状态机的控制信号；CONSTRAINT_EXECUTE通过ConstraintExecutePayload保留目标capabilityName及parameters，状态机根据目标能力isAbort路由；CONSTRAINT_ABORT不携带业务载荷，仅用于终止目标设备实例当前活动的普通指令"
     },
     "AdapterOutboundSignal": {
       "type": "string",
       "enum": [ "CMD_START", "CMD_ABORT" ],
-      "description": "状态机到Adapter的标准下行信号CMD_START表示执行能力；CMD_ABORT表示状态机正在执行终止链路，状态机引擎据此查找isAbort为true的能力并构造命令报文"
+      "description": "状态机到Adapter的标准下行信号；CMD_START表示直接执行请求指定的能力，包括进入普通指令状态机的isAbort=false能力和进入可插队终止状态机的isAbort=true能力；CMD_ABORT表示执行状态机已经通过当前普通指令A的abortCapabilityName解析出的附属终止能力B，不得据此查找任意isAbort=true能力"
     },
     "StatusSignal": {
       "type": "string",
       "enum": [ "CMD_STATE", "OP_STATE" ],
-      "description": "状态机向系统总线广播的状态信号CMD_STATE的payload须符合CommandStatePayload；OP_STATE的payload须符合OperationStatePayload"
+      "description": "状态机对外广播的状态信号CMD_STATE的payload须符合CommandStatePayload；OP_STATE的payload须符合OperationStatePayload"
     },
     "SystemSignalFormat": {
       "type": "object",
       "description": "系统内部统一信号格式规范",
       "properties": {
         "signalName": { "type": "string", "description": "具体系统信号名，例如WF_EXECUTE_START、WF_EXECUTE_ABORT、MANUAL_EXECUTE_START、MANUAL_EXECUTE_ABORT、CONSTRAINT_EXECUTE、CONSTRAINT_ABORT、CMD_START、CMD_ABORT、CMD_STATE或OP_STATE" },
-        "payload": { "type": "object", "additionalProperties": true, "description": "可选信号数据WF_EXECUTE_START和MANUAL_EXECUTE_START携带commandName与parameters；CONSTRAINT_EXECUTE携带ConstraintExecutePayload；CMD_STATE和OP_STATE分别携带对应状态payload；ABORT不携带业务载荷" }
+        "payload": { "type": "object", "additionalProperties": true, "description": "可选信号数据；WF_EXECUTE_START和MANUAL_EXECUTE_START携带capabilityName与parameters；CONSTRAINT_EXECUTE携带保留目标capabilityName的ConstraintExecutePayload；CMD_STATE和OP_STATE分别携带对应状态payload；WF_EXECUTE_ABORT、MANUAL_EXECUTE_ABORT和CONSTRAINT_ABORT不携带业务载荷，由目标设备实例当前普通指令上下文解析附属终止能力" }
       },
       "required": [ "signalName" ]
     },
@@ -76,20 +76,20 @@
           "default": "INI"
         },
         "rawConfigContent": { "type": "string", "description": "完整的adapter原始配置信息" },
-        "timestamp": { "type": "integer" }
+        "timestamp": { "type": "number" }
       },
       "required": [ "adapterName", "rawConfigFormat", "rawConfigContent", "timestamp" ]
     },
     "CommandMessageFormat": {
       "type": "object",
-      "description": "commandTopic消息格式规范状态机引擎根据状态转移决定执行能力或isAbort为true的终止能力，并统一按本报文发送；不使用operation字段区分",
+      "description": "commandTopic消息格式规范；普通指令、通过abortCapabilityName触发的附属终止指令以及直接执行的isAbort=true指令均统一按本报文发送，不使用operation字段区分，每条实际下发的指令分别生成自己的messageId",
       "properties": {
-        "messageId": { "type": "string", "description": "唯一消息ID" },
+        "messageId": { "type": "string", "description": "当前这条实际下发指令的唯一消息ID；普通指令、附属终止指令和直接执行的isAbort=true指令各自使用自己的messageId" },
         "adapterName": { "type": "string", "description": "adapter标识名" },
         "devicePoint": { "type": "string", "description": "设备点" },
-        "commandName": { "type": "string", "description": "Adapter实际执行的能力映射命令名；终止时为isAbort为true的能力对应adapterCommandName" },
+        "commandName": { "type": "string", "description": "Adapter实际执行的能力映射命令名；普通指令使用目标能力的adapterCommandName，附属终止指令使用A.abortCapabilityName所引用B的adapterCommandName，直接执行isAbort=true能力时使用该目标能力自己的adapterCommandName" },
         "parameters": { "type": "object", "description": "指令参数键值对；终止能力无参数时发送空对象" },
-        "timestamp": { "type": "integer" }
+        "timestamp": { "type": "number" }
       },
       "required": [ "messageId", "adapterName", "devicePoint", "commandName", "parameters", "timestamp" ]
     },
@@ -97,7 +97,7 @@
       "type": "object",
       "description": "telemetryTopic消息格式规范",
       "properties": {
-        "timestamp": { "type": "integer" },
+        "timestamp": { "type": "number" },
         "adapterName": { "type": "string", "description": "adapter标识名" },
         "devicePoint": { "type": "string", "description": "设备点" },
         "telemetryData": { "type": "object", "description": "属性键值对" }
@@ -108,8 +108,8 @@
       "type": "object",
       "description": "eventTopic消息格式规范",
       "properties": {
-        "timestamp": { "type": "integer" },
-        "messageId": { "type": "string", "description": "指令生命周期事件必须回传对应command消息的messageId" },
+        "timestamp": { "type": "number" },
+        "messageId": { "type": "string", "description": "指令生命周期事件必须回传其实际对应command消息的messageId；附属终止指令或直接执行的isAbort=true指令事件使用各自的messageId，Adapter明确上报原普通指令终态时使用该普通指令原有的messageId" },
         "adapterName": { "type": "string", "description": "adapter标识名" },
         "devicePoint": { "type": "string", "description": "设备点" },
         "eventName": { "type": "string", "description": "事件名称代号" },
@@ -125,13 +125,13 @@
           "type": "string",
           "enum": [ "ALIVE" ]
         },
-        "timestamp": { "type": "integer" }
+        "timestamp": { "type": "number" }
       },
       "required": [ "status", "timestamp" ]
     },
     "ConstraintExecutePayload": {
       "type": "object",
-      "description": "CONSTRAINT_EXECUTE的payload格式",
+      "description": "CONSTRAINT_EXECUTE的payload格式；用于直接执行DEVICE_CAPABILITY动作指定的能力，capabilityName必须原样保留，状态机引擎根据目标能力isAbort决定进入普通指令状态机或可插队的终止状态机",
       "properties": {
         "deviceInstanceId": { "type": "integer", "description": "目标设备实例ID" },
         "capabilityName": { "type": "string", "description": "目标能力名，引用设备能力模型capabilities[].capabilityName" },
@@ -150,21 +150,22 @@
           "description": "关联指令消息ID；非指令关联状态允许为null"
         },
         "stateName": { "type": "string", "description": "CMD状态名，例如IDLE、SENT、RUNNING、COMPLETED、FAILED、ABORTING、ABORTED" },
-        "timestamp": { "type": "integer", "description": "状态变化时间戳" }
+        "timestamp": { "type": "number", "description": "状态变化时间戳" }
       },
       "required": [ "deviceModelId", "deviceInstanceId", "messageId", "stateName", "timestamp" ]
     },
     "OperationStatePayload": {
       "type": "object",
-      "description": "OP_STATE的payload格式，用于工作流引擎和约束引擎映射设备业务功能状态",
+      "description": "OP_STATE的payload格式，用于工作流引擎和约束引擎映射设备业务功能状态；每次广播携带指定区域当前完整的活动状态数组快照",
       "properties": {
         "deviceModelId": { "type": "integer", "description": "设备模型ID" },
         "deviceInstanceId": { "type": "integer", "description": "设备实例ID" },
         "regionName": { "type": "string", "description": "OP状态分区名，引用设备状态机模型opStateSpace.regions[].regionName" },
-        "stateName": { "type": "string", "description": "该分区当前状态名" },
-        "timestamp": { "type": "integer", "description": "状态变化时间戳" }
+        "regionType": { "type": "string", "enum": ["OPERATIONAL", "EXCEPTION"], "description": "区域类型，必须与regionName引用的设备状态机模型区域类型一致" },
+        "state": { "type": "array", "description": "该区域当前完整活动状态数组；OPERATIONAL区域必须有且仅有一个，EXCEPTION区域允许为空或包含多个且不得重复", "items": { "type": "string" } },
+        "timestamp": { "type": "number", "description": "状态变化时间戳" }
       },
-      "required": [ "deviceModelId", "deviceInstanceId", "regionName", "stateName", "timestamp" ]
+      "required": [ "deviceModelId", "deviceInstanceId", "regionName", "regionType", "state", "timestamp" ]
     }
   }
 }

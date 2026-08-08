@@ -92,6 +92,15 @@
                         </div>
                       </div>
                       <div class="param-chip-row">
+                        <span class="info-chip" :class="capability.isAbort ? 'abort-chip' : 'normal-chip'">
+                          <em>类型</em><b>{{ capability.isAbort ? '终止能力' : '普通能力' }}</b>
+                        </span>
+                        <span v-if="!capability.isAbort && capability.abortCapabilityName" class="info-chip relation-chip">
+                          <em>终止能力</em><b>{{ capabilityReferenceLabel(capability.abortCapabilityName) }}</b>
+                        </span>
+                        <span v-if="capability.isAbort" class="info-chip relation-chip">
+                          <em>影响范围</em><b>{{ capabilityScopeLabel(capability) || '未配置' }}</b>
+                        </span>
                         <span v-for="param in capability.parameters" :key="param.name || param.displayName" class="info-chip">
                           <em>参数</em><b>{{ param.displayName || '未命名参数' }}</b><i>{{ param.dataType || '-' }}</i>
                         </span>
@@ -244,7 +253,8 @@
                     <div v-for="region in selectedOpStateRegions" :key="region.regionName" class="region-token-panel" style="margin-bottom: 12px;">
                       <div class="region-title" style="margin-bottom: 8px; font-weight: bold; color: var(--el-text-color-regular);">
                         <el-tag size="small" effect="dark" style="margin-right: 8px;">{{ region.regionName }}</el-tag>
-                        <span style="font-size: 12px; color: var(--el-text-color-secondary);">初始状态: {{ region.initialStateName }}</span>
+                        <el-tag size="small" effect="plain" :type="region.regionType === 'EXCEPTION' ? 'danger' : 'success'" style="margin-right: 8px;">{{ region.regionType === 'EXCEPTION' ? '异常区域' : '功能区域' }}</el-tag>
+                        <span v-if="region.regionType !== 'EXCEPTION'" style="font-size: 12px; color: var(--el-text-color-secondary);">初始状态: {{ region.initialStateName }}</span>
                       </div>
                       <div class="state-token-panel">
                         <span v-for="state in region.states" :key="state.stateName" class="filled-state-token op-state-token">{{ state.stateName }}</span>
@@ -402,6 +412,15 @@ const selectedOpStateRegions = computed(() => asArray(props.model?.opState?.regi
 const selectedConstraints = computed(() => asArray(props.model?.intrinsicConstraints))
 const selectedComponentsBom = computed(() => asArray(props.model?.componentsBom))
 
+function capabilityReferenceLabel(capabilityName) {
+  const capability = selectedCapabilities.value.find(item => item.capabilityName === capabilityName || item.name === capabilityName)
+  return capability?.displayName || capabilityName || '-'
+}
+
+function capabilityScopeLabel(capability) {
+  return asArray(capability?.scope).map(capabilityReferenceLabel).join('、')
+}
+
 const capabilityModelJson = computed(() => props.modelBundle?.capabilityModel || {})
 const stateMachineModelJson = computed(() => props.modelBundle?.stateMachineModel || {})
 const selectedStateTransitions = computed(() => asArray(stateMachineModelJson.value?.transitions))
@@ -495,6 +514,11 @@ const selectedStateTransitions = computed(() => asArray(stateMachineModelJson.va
 .info-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 7px; border: 1px solid #bfdbfe; border-radius: 5px; background: #eff6ff; color: #1d4ed8; font-size: 13px; }
 .info-chip em, .info-chip i { padding: 1px 4px; border: 1px solid #dbe4ef; border-radius: 4px; background: #fff; color: #64748b; font-size: 11px; font-style: normal; font-weight: 700; }
 .info-chip b { color: #1d4ed8; font-weight: 700; }
+.info-chip.abort-chip { border-color: #fecaca; background: #fff1f2; color: #be123c; }
+.info-chip.abort-chip b { color: #be123c; }
+.info-chip.normal-chip { border-color: #bfdbfe; background: #eff6ff; }
+.info-chip.relation-chip { max-width: 100%; border-color: #cbd5e1; background: #f8fafc; }
+.info-chip.relation-chip b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .port-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 8px; }
 .port-tile { min-width: 0; border: 1px solid #dbe2ea; border-radius: 5px; background: #fbfdff; padding: 9px 10px; }
 .port-name { color: #0f172a; font-size: 14px; font-weight: 650; line-height: 1.35; }

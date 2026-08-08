@@ -183,7 +183,7 @@
               },
               "allowedSignals": {
                 "type": "array",
-                "description": "允许通过此接口的信号列表",
+                "description": "允许通过此接口的信号列表，STATE类型OUT接口信号须符合协议规范.json中WorkflowControlSignal定义；WORKFLOW类型接口信号须符合协议规范.json中WorkflowNodeSignal定义",
                 "items": { "type": "string" }
               },
               "bindingTriggers": {

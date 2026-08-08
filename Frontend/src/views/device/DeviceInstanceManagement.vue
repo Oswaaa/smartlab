@@ -23,8 +23,8 @@
           </div>
           <div class="actions">
             <el-select v-model="instanceLifecycleFilter" size="small" class="lifecycle-filter" @change="onLifecycleFilterChange">
-              <el-option label="使用中" value="使用中" />
-              <el-option label="已注销" value="已注销" />
+              <el-option label="使用中" value="IN_USE" />
+              <el-option label="已注销" value="RETIRED" />
               <el-option label="全部状态" value="" />
             </el-select>
             <el-input
@@ -83,12 +83,12 @@
             </el-table-column>
             <el-table-column label="生命周期" width="105" align="center">
               <template #default="{ row }">
-                <el-tag :type="row.lifecycleStatus === '已注销' ? 'info' : 'success'" size="small" effect="plain">{{ row.lifecycleStatus }}</el-tag>
+                <el-tag :type="row.lifecycleStatus === 'RETIRED' ? 'info' : 'success'" size="small" effect="plain">{{ row.lifecycleStatus }}</el-tag>
               </template>
             </el-table-column>
             <el-table-column label="在线状态" width="105" align="center">
               <template #default="{ row }">
-                <span v-if="row.lifecycleStatus === '已注销'" class="muted">-</span>
+                <span v-if="row.lifecycleStatus === 'RETIRED'" class="muted">-</span>
                 <el-tag v-else :type="row.isOnline ? 'success' : 'info'" size="small" effect="plain">{{ row.isOnline ? '在线' : '离线' }}</el-tag>
               </template>
             </el-table-column>
@@ -140,8 +140,8 @@
                 <span :class="['status-dot', activeInstance.isOnline ? 'online' : 'offline']"></span>
                 <span style="font-weight: 600; color: #334155;">{{ activeInstance.isOnline ? '在线' : '离线' }}</span>
               </template>
-              <span v-if="snapshot?.currentOperationState" class="divider">/</span>
-              <strong v-if="snapshot?.currentOperationState" style="color: #2563eb;">{{ snapshot.currentOperationState }}</strong>
+              <span v-if="operationStateSummary" class="divider">/</span>
+              <strong v-if="operationStateSummary" style="color: #2563eb;">{{ operationStateSummary }}</strong>
             </div>
           </div>
           <div class="header-meta">
@@ -186,7 +186,16 @@
                 <el-tag size="small" type="warning" effect="plain">{{ snapshot?.currentCommandState || '无历史指令' }}</el-tag>
               </el-descriptions-item>
               <el-descriptions-item label="当前功能状态">
-                <el-tag size="small" type="success" effect="plain">{{ snapshot?.currentOperationState || '已就绪' }}</el-tag>
+                <div v-if="operationStateRegions.length" style="display: flex; flex-wrap: wrap; gap: 6px;">
+                  <template v-for="region in operationStateRegions" :key="region.regionName">
+                    <el-tag v-for="state in region.states" :key="region.regionName + state" size="small" :type="region.regionType === 'EXCEPTION' ? 'danger' : 'success'" effect="plain">
+                      {{ region.regionName }}: {{ state }}
+                    </el-tag>
+                    <el-button v-if="region.regionType === 'EXCEPTION' && canControlActiveInstance" v-for="state in region.states" :key="'clear-' + region.regionName + state" link type="danger" size="small" :loading="clearingException === state" @click="clearException(state)">解除 {{ state }}</el-button>
+                  </template>
+                  <span v-if="!operationStateRegions.some(region => region.states.length)" class="muted">已就绪</span>
+                </div>
+                <span v-else class="muted">已就绪</span>
               </el-descriptions-item>
             </el-descriptions>
 
@@ -209,13 +218,13 @@
             <div class="control-tab-layout">
               <div class="control-left-form">
                 <el-form label-position="top" size="small" class="manual-control-form">
-                  <el-form-item label="选择设备功能 (Command)" required>
-                    <el-select v-model="controlCommandId" style="width: 100%" placeholder="选择模型定义的功能" @change="resetControlParams">
+                  <el-form-item label="选择设备能力" required>
+                    <el-select v-model="controlCapabilityName" style="width: 100%" placeholder="选择模型定义的能力" @change="resetControlParams">
                       <el-option
-                        v-for="cmd in activeInstanceCommands"
-                        :key="cmd.commandId"
-                        :label="`${cmd.commandName || cmd.commandId} / Adapter: ${cmd.adapterCommandName || '-'}`"
-                        :value="cmd.commandId"
+                        v-for="capability in activeInstanceCapabilities"
+                        :key="capability.capabilityName"
+                        :label="`${capability.displayName || capability.capabilityName} / Adapter: ${capability.adapterCommandName || '-'}`"
+                        :value="capability.capabilityName"
                       />
                     </el-select>
                   </el-form-item>
@@ -291,10 +300,10 @@
 
               <el-table-column label="操作" width="230" fixed="right">
                 <template #default="{ row }">
-                  <el-button v-if="canEditActiveInstance && row.status === '使用中'" link type="primary" size="small" @click="openComponentAction(row, 'configure')">配置</el-button>
-                  <el-button v-if="canEditActiveInstance && row.status === '使用中'" link type="warning" size="small" @click="markPendingReplacement(row)">标记待更换</el-button>
-                  <el-button v-if="canEditActiveInstance && row.status === '使用中'" link type="warning" size="small" @click="openComponentAction(row, 'replace')">直接更换</el-button>
-                  <el-button v-if="canEditActiveInstance && row.status === '待更换'" link type="primary" size="small" @click="openComponentAction(row, 'replace')">安装新组件</el-button>
+                  <el-button v-if="canEditActiveInstance && row.status === 'IN_USE'" link type="primary" size="small" @click="openComponentAction(row, 'configure')">配置</el-button>
+                  <el-button v-if="canEditActiveInstance && row.status === 'IN_USE'" link type="warning" size="small" @click="markPendingReplacement(row)">标记待更换</el-button>
+                  <el-button v-if="canEditActiveInstance && row.status === 'IN_USE'" link type="warning" size="small" @click="openComponentAction(row, 'replace')">直接更换</el-button>
+                  <el-button v-if="canEditActiveInstance && row.status === 'PENDING_REPLACEMENT'" link type="primary" size="small" @click="openComponentAction(row, 'replace')">安装新组件</el-button>
                   <el-button link size="small" @click="showComponentHistory(row)">历史</el-button>
                                   </template>
               </el-table-column>
@@ -536,7 +545,7 @@
             v-for="(row, idx) in componentHistoryRows"
             :key="idx"
             :timestamp="formatTime(row.installTime)"
-            :type="row.status === '使用中' ? 'primary' : 'info'"
+            :type="row.status === 'IN_USE' ? 'primary' : 'info'"
           >
             <h4 style="margin: 0; color: #1e293b;">插槽槽位: {{ row.componentName }}</h4>
             <p style="margin: 6px 0 0; font-size: 13px; color: #64748b; line-height: 1.6;">
@@ -684,10 +693,10 @@
                   </div>
 
                   <div class="preview-section">
-                    <span class="preview-label">继承的操作命令 (Commands)</span>
-                    <div class="preview-tags" v-if="wizardPreviewCommands.length">
-                      <el-tag v-for="cmd in wizardPreviewCommands" :key="cmd.commandId" size="small" type="warning" effect="plain">
-                        {{ cmd.commandName }}
+                    <span class="preview-label">继承的设备能力 (Capabilities)</span>
+                    <div class="preview-tags" v-if="wizardPreviewCapabilities.length">
+                      <el-tag v-for="capability in wizardPreviewCapabilities" :key="capability.capabilityName" size="small" type="warning" effect="plain">
+                        {{ capability.displayName }}
                       </el-tag>
                     </div>
                     <div v-else class="preview-empty">无操作命令定义</div>
@@ -725,6 +734,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import axios from 'axios'
 import { useAuthStore } from '../../stores/authStore'
 import DeviceModelTree from './components/DeviceModelTree.vue'
+import { normalizeManualControlCapabilities } from '../../utils/manualControlCapabilities.js'
 import {
   loadProtocolMetadata,
   manualControlSignals,
@@ -763,14 +773,14 @@ interface DeviceInstance {
   boundAdapterName?: string
   boundDevicePoint?: string
   instanceConfig?: any
-  lifecycleStatus: '使用中' | '已注销'
+  lifecycleStatus: 'IN_USE' | 'RETIRED'
   isOnline: boolean
 }
 
 interface DeviceSnapshot {
   instanceId: string
   currentCommandState?: string
-  currentOperationState?: string
+  currentOperationState?: Record<string, string[]>
   latestAttributes?: Record<string, any>
 }
 
@@ -802,12 +812,13 @@ const categoriesMap = ref<Record<string, string>>({})
 const selectedModelId = ref('')
 const sidebarKeyword = ref('')
 const instanceKeyword = ref('')
-const instanceLifecycleFilter = ref<'使用中' | '已注销' | ''>('使用中')
+const instanceLifecycleFilter = ref<'IN_USE' | 'RETIRED' | ''>('IN_USE')
 const loading = ref(false)
 const modelsLoading = ref(false)
 const saving = ref(false)
 const creating = ref(false)
 const sendingControl = ref(false)
+const clearingException = ref('')
 const adapterLoading = ref(false)
 const pointsLoading = ref(false)
 
@@ -825,7 +836,7 @@ let instanceLoadSeq = 0
 let instanceSearchTimer: any = null
 
 const localConstraints = ref<InstanceConstraint[]>([])
-const controlCommandId = ref('')
+const controlCapabilityName = ref('')
 const controlParamValues = ref<Record<string, any>>({})
 
 // 调试下发控制台日志数据
@@ -875,7 +886,7 @@ const canDeleteInstance = computed(() => authStore.hasPermission('device_instanc
 const canControlInstance = computed(() => authStore.hasPermission('device_instance:control'))
 const canCreateDataset = computed(() => authStore.hasPermission('data_dataset:create'))
 const canDeleteDataset = computed(() => authStore.hasPermission('data_dataset:delete'))
-const activeInstanceRetired = computed(() => activeInstance.value?.lifecycleStatus === '已注销')
+const activeInstanceRetired = computed(() => activeInstance.value?.lifecycleStatus === 'RETIRED')
 const canEditActiveInstance = computed(() => canEditInstance.value && !activeInstanceRetired.value)
 const canRetireActiveInstance = computed(() => canDeleteInstance.value && !activeInstanceRetired.value)
 const canControlActiveInstance = computed(() => canControlInstance.value && !activeInstanceRetired.value)
@@ -895,20 +906,27 @@ const selectedModelName = computed(() => {
 
 const snapshotAttributes = computed(() => snapshot.value?.latestAttributes || {})
 const activeInstanceModel = computed(() => activeInstance.value ? findModelById(activeInstance.value.modelId) : null)
+const operationStateRegions = computed(() => {
+  const current = snapshot.value?.currentOperationState
+  if (!current || typeof current !== 'object' || Array.isArray(current)) return []
+  const configured = asArray(activeInstanceModel.value?.opState?.regions)
+  return Object.entries(current).map(([regionName, value]) => ({
+    regionName,
+    regionType: configured.find((region: any) => region.regionName === regionName)?.regionType || 'OPERATIONAL',
+    states: Array.isArray(value) ? value.map(String).filter(Boolean) : []
+  }))
+})
+const operationStateSummary = computed(() => operationStateRegions.value
+  .filter(region => region.states.length)
+  .map(region => `${region.regionName}: ${region.states.join(', ')}`).join(' | '))
 
-const activeInstanceCommands = computed(() => {
+const activeInstanceCapabilities = computed(() => {
   const capabilities = asArray(activeInstanceModel.value?.capabilitySpec?.capabilities || activeInstanceModel.value?.capabilities)
-  return capabilities.map((cap: any) => ({
-    ...cap,
-    commandId: cap.name || cap.commandId || cap.adapterCommandName,
-    commandName: cap.displayName || cap.name || cap.commandId,
-    adapterCommandName: cap.adapterCommandName || cap.commandName || cap.name,
-    parameters: asArray(cap.parameters)
-  })).filter((cap: any) => cap.commandId)
+  return normalizeManualControlCapabilities(capabilities)
 })
 
-const activeControlCommand = computed(() => activeInstanceCommands.value.find((cmd: any) => cmd.commandId === controlCommandId.value) || null)
-const activeControlParams = computed(() => asArray(activeControlCommand.value?.parameters).filter((param: any) => !param.internal))
+const activeControlCapability = computed(() => activeInstanceCapabilities.value.find((capability: any) => capability.capabilityName === controlCapabilityName.value) || null)
+const activeControlParams = computed(() => asArray(activeControlCapability.value?.parameters).filter((param: any) => !param.internal))
 const activeMqttTopicRows = computed(() => mqttTopicRows(activeInstance.value?.boundAdapterName, activeInstance.value?.boundDevicePoint))
 
 // 大厂运行状态 - KPI 关键数据指标卡
@@ -1281,7 +1299,7 @@ const viewDetails = (instance: DeviceInstance) => {
     drawerDevicePointOptions.value = []
   }
   datasetCreateForm.value = { templateId: '', dataDesc: '' }
-  controlCommandId.value = activeInstanceCommands.value[0]?.commandId || ''
+  controlCapabilityName.value = activeInstanceCapabilities.value[0]?.capabilityName || ''
   resetControlParams()
   
   // 运行状态作为首选 Tab 展示
@@ -1448,6 +1466,29 @@ const fetchSnapshot = async () => {
   }
 }
 
+const clearException = async (violationStateName: string) => {
+  if (!activeInstance.value || !violationStateName || activeInstanceRetired.value) return
+  try {
+    await ElMessageBox.confirm(`确认解除异常状态“${violationStateName}”？系统会先复核当前遥测值。`, '解除异常', {
+      confirmButtonText: '解除',
+      cancelButtonText: '取消',
+      type: 'warning'
+    })
+    clearingException.value = violationStateName
+    const res = await axios.post(`/api/device/instance/${activeInstance.value.instanceId}/exception/clear`, { violationStateName })
+    if (!res.data?.success) {
+      ElMessage.error(res.data?.message || '解除异常失败')
+      return
+    }
+    ElMessage.success('异常已解除')
+    await fetchSnapshot()
+  } catch (error: any) {
+    if (error !== 'cancel' && error !== 'close') ElMessage.error(error.response?.data?.message || error.message || '解除异常失败')
+  } finally {
+    clearingException.value = ''
+  }
+}
+
 const startPolling = () => {
   stopPolling()
   fetchSnapshot()
@@ -1466,7 +1507,7 @@ const closeDrawer = () => {
   stopPolling()
   snapshot.value = null
   activeInstance.value = null
-  controlCommandId.value = ''
+  controlCapabilityName.value = ''
   controlParamValues.value = {}
   instanceDataSets.value = []
 }
@@ -1497,8 +1538,8 @@ const showComponentSpecification = (row: any) => {
 }
 
 const componentStatusType = (status?: string) => {
-  if (status === '使用中') return 'success'
-  if (status === '待更换') return 'warning'
+  if (status === 'IN_USE') return 'success'
+  if (status === 'PENDING_REPLACEMENT') return 'warning'
   if (status === '已更换') return 'info'
   return 'info'
 }
@@ -1580,7 +1621,7 @@ const onComponentModelSelect = async (modelId: string) => {
   if (!modelId) return
   try {
     const res = await axios.get('/api/device/instance/page', {
-      params: { pageNo: 1, pageSize: 100, modelId, lifecycleStatus: '使用中' }
+      params: { pageNo: 1, pageSize: 100, modelId, lifecycleStatus: 'IN_USE' }
     })
     if (res.data?.success) {
       componentCandidateInstances.value = (res.data.data?.records || []).map(normalizeInstance)
@@ -1934,12 +1975,10 @@ const wizardPreviewAttributes = computed(() => {
   return asArray(wizardModel.value?.capabilitySpec?.attributes || wizardModel.value?.attributes)
 })
 
-const wizardPreviewCommands = computed(() => {
-  return asArray(wizardModel.value?.capabilitySpec?.capabilities || wizardModel.value?.capabilities).map((cap: any) => ({
-    ...cap,
-    commandId: cap.name || cap.commandId,
-    commandName: cap.displayName || cap.name || cap.commandId
-  }))
+const wizardPreviewCapabilities = computed(() => {
+  return normalizeManualControlCapabilities(
+    asArray(wizardModel.value?.capabilitySpec?.capabilities || wizardModel.value?.capabilities)
+  )
 })
 
 const wizardPreviewStates = computed(() => {
@@ -1979,18 +2018,18 @@ const clearConsoleLogs = () => {
 
 // 发送手动指令并记录进反馈终端
 const sendManualCommand = async () => {
-  if (!activeInstance.value || activeInstanceRetired.value || !controlCommandId.value) return
+  if (!activeInstance.value || activeInstanceRetired.value || !controlCapabilityName.value) return
   sendingControl.value = true
   
-  const cmd = activeControlCommand.value
-  const cmdName = cmd?.commandName || controlCommandId.value
+  const capability = activeControlCapability.value
+  const capabilityLabel = capability?.displayName || controlCapabilityName.value
   const params = buildControlParameters()
   
-  appendConsoleLog('下发', 'send', `发送指令: ${cmdName}, 参数负载: ${JSON.stringify(params)}`)
+  appendConsoleLog('下发', 'send', `执行能力: ${capabilityLabel}, 参数负载: ${JSON.stringify(params)}`)
 
   try {
     const res = await axios.post(`/api/device/instance/control/${activeInstance.value.instanceId}`, {
-      commandId: controlCommandId.value,
+      capabilityName: controlCapabilityName.value,
       signalName: manualControlSignals[0] || 'MANUAL_EXECUTE_START',
       parameters: params
     })

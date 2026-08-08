@@ -260,7 +260,8 @@ public class ConstraintExpressionEvaluator {
             if (value.isNumber()) return value.decimalValue();
             if (value.isBoolean()) return value.booleanValue();
             if (value.isTextual()) return value.textValue();
-            throw new IllegalArgumentException("约束expression只支持number、string和boolean变量");
+            if (value.isArray() || value.isObject()) return value.deepCopy();
+            throw new IllegalArgumentException("约束expression不支持null变量");
         }
 
         private static boolean asBoolean(Object value) {
@@ -287,6 +288,19 @@ public class ConstraintExpressionEvaluator {
         private static boolean equal(Object left, Object right) {
             if (left instanceof BigDecimal || left instanceof Number || right instanceof BigDecimal || right instanceof Number) {
                 return decimal(left).compareTo(decimal(right)) == 0;
+            }
+            if (left instanceof JsonNode leftNode && leftNode.isArray() && !(right instanceof JsonNode rightNode && rightNode.isArray())) {
+                for (JsonNode item : leftNode) if (equal(unwrap(item), right)) return true;
+                return false;
+            }
+            if (right instanceof JsonNode rightNode && rightNode.isArray() && !(left instanceof JsonNode leftNode && leftNode.isArray())) {
+                for (JsonNode item : rightNode) if (equal(left, unwrap(item))) return true;
+                return false;
+            }
+            if (left instanceof JsonNode leftNode || right instanceof JsonNode) {
+                JsonNode leftNodeValue = left instanceof JsonNode node ? node : JsonNodeSupport.MAPPER.valueToTree(left);
+                JsonNode rightNodeValue = right instanceof JsonNode node ? node : JsonNodeSupport.MAPPER.valueToTree(right);
+                return leftNodeValue.equals(rightNodeValue);
             }
             return java.util.Objects.equals(left, right);
         }

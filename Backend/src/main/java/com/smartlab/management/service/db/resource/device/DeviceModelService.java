@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.global.contract.SystemExecutionContract;
+import com.smartlab.global.event.DeviceModelSavedEvent;
 import com.smartlab.global.protocol.ProtocolDictionaryService;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.common.PageResult;
@@ -21,6 +22,8 @@ import com.smartlab.management.service.db.common.ManagementCrudService;
 import com.smartlab.management.service.db.resource.adapter.AdapterIndexService;
 import com.smartlab.management.service.db.resource.data.DataTemplateService;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.Serializable;
@@ -50,6 +53,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
     private final ProtocolDictionaryService protocolDictionaryService;
     private final DataTemplateService dataTemplateService;
     private final AdapterIndexService adapterIndexService;
+    private ApplicationEventPublisher eventPublisher;
 
     public DeviceModelService(DeviceModelsMapper mapper,
             DeviceInstancesMapper deviceInstancesMapper,
@@ -66,6 +70,11 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         this.protocolDictionaryService = protocolDictionaryService;
         this.dataTemplateService = dataTemplateService;
         this.adapterIndexService = adapterIndexService;
+    }
+
+    @Autowired
+    void setEventPublisher(ApplicationEventPublisher eventPublisher) {
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -99,14 +108,14 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
     }
 
     public DeviceModels getById(String id) {
-        return mapper.selectById(parseId(id));
+        return normalizeLegacyAbortFields(mapper.selectById(parseId(id)));
     }
 
     public DeviceModels requireRuntimeReady(Long modelId) {
         if (modelId == null) {
             throw new IllegalArgumentException("deviceModelId不能为空");
         }
-        DeviceModels model = mapper.selectById(modelId);
+        DeviceModels model = normalizeLegacyAbortFields(mapper.selectById(modelId));
         if (model == null) {
             throw new IllegalArgumentException("设备模型不存在: " + modelId);
         }
@@ -115,8 +124,51 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
     }
 
     public DeviceModels requireRuntimeReadyForUpdate(Long modelId) {
-        DeviceModels model = lockExistingModel(modelId);
+        DeviceModels model = normalizeLegacyAbortFields(lockExistingModel(modelId));
         validateForPersistence(model);
+        return model;
+    }
+
+    private DeviceModels normalizeLegacyAbortFields(DeviceModels model) {
+        if (model == null || model.getCapabilities() == null || !model.getCapabilities().isArray()) {
+            return model;
+        }
+        ArrayNode capabilities = (ArrayNode) model.getCapabilities().deepCopy();
+        List<ObjectNode> abortCapabilitiesWithoutScope = new ArrayList<>();
+        for (JsonNode item : capabilities) {
+            if (!(item instanceof ObjectNode capability)) {
+                continue;
+            }
+            if (!capability.has("isAbort")) {
+                capability.put("isAbort", false);
+            }
+            if (!capability.has("abortCapabilityName")) {
+                capability.putNull("abortCapabilityName");
+            }
+            if (capability.path("isAbort").asBoolean(false) && !capability.has("scope")) {
+                abortCapabilitiesWithoutScope.add(capability);
+            }
+        }
+        if (abortCapabilitiesWithoutScope.size() == 1) {
+            ObjectNode legacyAbort = abortCapabilitiesWithoutScope.getFirst();
+            String abortCapabilityName = legacyAbort.path("capabilityName").asText("");
+            ArrayNode scope = legacyAbort.putArray("scope");
+            for (JsonNode item : capabilities) {
+                if (!(item instanceof ObjectNode capability)
+                        || capability.path("isAbort").asBoolean(false)) {
+                    continue;
+                }
+                String capabilityName = capability.path("capabilityName").asText("");
+                if (!capabilityName.isBlank()) {
+                    scope.add(capabilityName);
+                    if (!abortCapabilityName.isBlank()
+                            && capability.path("abortCapabilityName").isNull()) {
+                        capability.put("abortCapabilityName", abortCapabilityName);
+                    }
+                }
+            }
+        }
+        model.setCapabilities(capabilities);
         return model;
     }
 
@@ -230,21 +282,24 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             mapper.updateById(model);
         }
         saveDefaultDataTemplate(model.getId(), model.getModelName(), payload.getDefaultDataTemplate());
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(new DeviceModelSavedEvent(model.getId()));
+        }
         return model;
     }
 
     private void saveDefaultDataTemplate(Long modelId, String modelName, JsonNode templateNode) {
         if (modelId == null || templateNode == null || templateNode.isNull() || templateNode.isMissingNode()) {
-            return;
+            throw new IllegalArgumentException("设备模型必须配置默认数据模板");
         }
         if (templateNode.has("enabled") && !templateNode.path("enabled").asBoolean(true)) {
-            return;
+            throw new IllegalArgumentException("默认数据模板不能禁用");
         }
         JsonNode mainNode = templateNode.has("main") ? templateNode.path("main") : templateNode;
         JsonNode detailsNode = templateNode.has("details") ? templateNode.path("details")
                 : templateNode.path("columns");
         if (detailsNode == null || !detailsNode.isArray() || detailsNode.size() == 0) {
-            return;
+            throw new IllegalArgumentException("默认数据模板至少需要一个字段");
         }
 
         DataTemplateMain existing = dataTemplateService.findDefaultTemplateByModelId(modelId);
@@ -277,7 +332,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             details.add(detail);
         }
         if (details.isEmpty()) {
-            return;
+            throw new IllegalArgumentException("默认数据模板至少需要一个有效字段");
         }
         dto.setDetails(details);
         dataTemplateService.saveTemplate(dto);
@@ -511,6 +566,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
                 if (regionNode.isObject()) {
                     ObjectNode region = regions.addObject();
                     region.put("regionName", regionNode.path("regionName").asText(""));
+                    region.put("regionType", regionNode.path("regionType").asText(""));
                     region.put("initialStateName", regionNode.path("initialStateName").asText(""));
 
                     ArrayNode states = region.putArray("states");
@@ -523,10 +579,6 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
                                 JsonNode onEntry = s.get("onEntry");
                                 stateObj.set("onEntry", onEntry != null && onEntry.isArray() ? onEntry.deepCopy()
                                         : JsonNodeSupport.arrayNode());
-                            } else if (s.isTextual()) {
-                                ObjectNode stateObj = states.addObject();
-                                stateObj.put("stateName", s.asText());
-                                stateObj.putArray("onEntry");
                             }
                         }
                     }
@@ -587,6 +639,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         if (count != null && count > 0) {
             throw new IllegalStateException("该模型下仍有 " + count + " 台设备实例，无法删除");
         }
+        dataTemplateService.deleteByModelIdForModelRemoval(modelId);
         mapper.deleteById(modelId);
     }
 
@@ -599,6 +652,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         }
         validateCapabilityModelShape(model);
         validateCapabilityModelIdentifiers(model);
+        validateCapabilityAbortSemantics(model.getCapabilities());
         validateModelAdapterContract(model);
     }
 
@@ -643,6 +697,17 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             requireText(capability, "capabilityName", "设备能力");
             requireText(capability, "adapterCommandName", "设备能力");
             requireText(capability, "displayName", "设备能力");
+            requireSchemaBoolean(capability, "isAbort", "device capability");
+            JsonNode abortCapabilityName = capability.get("abortCapabilityName");
+            if (abortCapabilityName == null
+                    || (!abortCapabilityName.isNull()
+                    && (!abortCapabilityName.isTextual() || abortCapabilityName.textValue().isBlank()))) {
+                throw new IllegalArgumentException("device capability missing or invalid abortCapabilityName");
+            }
+            JsonNode scope = capability.get("scope");
+            if (scope != null && !scope.isArray()) {
+                throw new IllegalArgumentException("device capability scope must be an array");
+            }
             for (JsonNode parameter : iterable(capability.path("parameters"))) {
                 requireText(parameter, "name", "能力参数");
                 requireText(parameter, "displayName", "能力参数");
@@ -796,6 +861,32 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             throw new IllegalArgumentException("CMD状态空间不完整");
         }
         Map<String, Set<String>> opStates = operationStateNames(model.getOpState());
+        String exceptionRegionName = null;
+        for (JsonNode region : iterable(model.getOpState().path("regions"))) {
+            if ("EXCEPTION".equals(region.path("regionType").asText(""))) {
+                if (exceptionRegionName != null) {
+                    throw new IllegalArgumentException("OP状态空间最多只能有一个EXCEPTION区域");
+                }
+                exceptionRegionName = region.path("regionName").asText("");
+            }
+        }
+        for (JsonNode constraint : iterable(model.getIntrinsicConstraint())) {
+            String violation = constraint.path("violationStateName").asText("");
+            if (exceptionRegionName == null || !opStates.getOrDefault(exceptionRegionName, Set.of()).contains(violation)) {
+                throw new IllegalArgumentException("内置约束违规状态必须引用EXCEPTION区域状态: " + violation);
+            }
+        }
+        if (exceptionRegionName != null) {
+            Set<String> referencedExceptionStates = new HashSet<>();
+            for (JsonNode constraint : iterable(model.getIntrinsicConstraint())) {
+                referencedExceptionStates.add(constraint.path("violationStateName").asText(""));
+            }
+            for (String stateName : opStates.getOrDefault(exceptionRegionName, Set.of())) {
+                if (!referencedExceptionStates.contains(stateName)) {
+                    throw new IllegalArgumentException("EXCEPTION状态必须被至少一条内置约束引用: " + stateName);
+                }
+            }
+        }
         Set<String> cmdEvents = eventNames(model.getAdapterContract().path("events").path("cmdEvents"));
         Set<String> opEvents = eventNames(model.getAdapterContract().path("events").path("opEvents"));
         Set<String> transitionKeys = new HashSet<>();
@@ -807,11 +898,13 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             JsonNode trigger = transition.path("trigger");
             String interfaceName = trigger.path("interfaceName").asText("");
             String signalName = trigger.path("signalName").asText("");
+            String regionName = "OP".equals(stateSpace) ? transition.path("regionName").asText("") : "";
             if (!Set.of("CMD", "OP").contains(stateSpace) || !"Interface_adapter_in".equals(interfaceName)
                     || signalName.isBlank()) {
                 throw new IllegalArgumentException("设备状态转移只能由Interface_adapter_in的Adapter事件触发");
             }
-            if (!transitionKeys.add(stateSpace + "|" + fromState + "|" + signalName)) {
+            if (!transitionKeys.add(stateSpace + "|" + regionName + "|" + fromState + "|"
+                    + interfaceName + "|" + signalName)) {
                 throw new IllegalArgumentException("同一状态和Adapter事件只能对应一条转移: " + fromState + "/" + signalName);
             }
             if ("CMD".equals(stateSpace)) {
@@ -821,8 +914,11 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
                 }
                 commandTransitionPaths.add(fromState + "|" + toState);
             } else {
-                String regionName = transition.path("regionName").asText("");
                 Set<String> regionStates = opStates.get(regionName);
+                JsonNode regionNode = findOperationRegion(model.getOpState(), regionName);
+                if (regionNode == null || !"OPERATIONAL".equals(regionNode.path("regionType").asText(""))) {
+                    throw new IllegalArgumentException("OP状态转移不能引用EXCEPTION区域: " + regionName);
+                }
                 if (regionStates == null || !regionStates.contains(fromState) || !regionStates.contains(toState)
                         || !opEvents.contains(signalName)) {
                     throw new IllegalArgumentException("OP状态转移引用了错误分区、状态或事件: " + regionName + "/" + signalName);
@@ -839,8 +935,29 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             }
         }
         validateStateMachineActions(model.getCmdState().path("states"), actual);
+        validateStatusOnEntry(model.getCmdState().path("states"), "CMD_STATE", "CMD");
         for (JsonNode region : model.getOpState().path("regions")) {
             validateStateMachineActions(region.path("states"), actual);
+            validateStatusOnEntry(region.path("states"), "OP_STATE",
+                    "OP区域" + region.path("regionName").asText(""));
+        }
+    }
+
+    private void validateStatusOnEntry(JsonNode states, String expectedSignal, String owner) {
+        for (JsonNode state : iterable(states)) {
+            int count = 0;
+            for (JsonNode action : iterable(state.path("onEntry"))) {
+                JsonNode payload = action.path("payload");
+                if ("SEND".equals(action.path("actionName").asText(""))
+                        && "Interface_state_out".equals(payload.path("interfaceName").asText(""))
+                        && expectedSignal.equals(payload.path("signalName").asText(""))) {
+                    count++;
+                }
+            }
+            if (count != 1) {
+                throw new IllegalArgumentException(owner + "状态" + state.path("stateName").asText("")
+                        + "的onEntry必须且只能声明一个" + expectedSignal + " SEND动作");
+            }
         }
     }
 
@@ -873,10 +990,23 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         }
         for (JsonNode region : iterable(opState == null ? null : opState.path("regions"))) {
             String regionName = requireText(region, "regionName", "OP状态分区");
+            String regionType = requireText(region, "regionType", "OP状态分区" + regionName);
+            if (!Set.of("OPERATIONAL", "EXCEPTION").contains(regionType)) {
+                throw new IllegalArgumentException("OP状态分区regionType不合法: " + regionType);
+            }
             if (result.containsKey(regionName)) {
                 throw new IllegalArgumentException("OP状态分区名称重复: " + regionName);
             }
-            result.put(regionName, stateNames(region, "OP状态分区" + regionName));
+            Set<String> names = stateNames(region, "OP状态分区" + regionName);
+            String initialStateName = region.path("initialStateName").asText("");
+            if ("EXCEPTION".equals(regionType)) {
+                if (!initialStateName.isEmpty()) {
+                    throw new IllegalArgumentException("EXCEPTION区域initialStateName必须为空字符串: " + regionName);
+                }
+            } else if (!names.contains(initialStateName)) {
+                throw new IllegalArgumentException("OP状态分区initialStateName未引用分区内状态: " + initialStateName);
+            }
+            result.put(regionName, names);
         }
         return result;
     }
@@ -889,11 +1019,14 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
                 throw new IllegalArgumentException(stateSpaceName + "状态名重复: " + name);
             }
         }
-        String initialStateName = requireText(stateSpace, "initialStateName", stateSpaceName);
-        if (!names.contains(initialStateName)) {
-            throw new IllegalArgumentException(stateSpaceName + "initialStateName未引用分区内状态: " + initialStateName);
-        }
         return names;
+    }
+
+    private JsonNode findOperationRegion(JsonNode opState, String regionName) {
+        for (JsonNode region : iterable(opState == null ? null : opState.path("regions"))) {
+            if (regionName.equals(region.path("regionName").asText(""))) return region;
+        }
+        return null;
     }
 
     private Set<String> eventNames(JsonNode events) {
@@ -991,6 +1124,84 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             validateCapabilityParameterMapping(capability, commandName, commandParams);
         }
 
+    }
+
+    private void validateCapabilityAbortSemantics(JsonNode capabilities) {
+        Map<String, JsonNode> byName = new HashMap<>();
+        for (JsonNode capability : iterable(capabilities)) {
+            byName.put(capability.path("capabilityName").asText(""), capability);
+        }
+
+        for (JsonNode capability : iterable(capabilities)) {
+            String capabilityName = capability.path("capabilityName").asText("");
+            boolean isAbort = capability.path("isAbort").asBoolean(false);
+            JsonNode abortNameNode = capability.get("abortCapabilityName");
+            String abortCapabilityName = abortNameNode != null && abortNameNode.isTextual()
+                    ? abortNameNode.textValue().trim() : "";
+            JsonNode scope = capability.get("scope");
+
+            if (isAbort) {
+                if (!abortCapabilityName.isBlank()) {
+                    throw new IllegalArgumentException(
+                            "abort capability must set abortCapabilityName to null: " + capabilityName);
+                }
+                if (scope == null || !scope.isArray() || scope.isEmpty()) {
+                    throw new IllegalArgumentException(
+                            "abort capability must declare a non-empty scope: " + capabilityName);
+                }
+                Set<String> scopeNames = new HashSet<>();
+                for (JsonNode item : scope) {
+                    if (!item.isTextual() || item.textValue().isBlank()) {
+                        throw new IllegalArgumentException(
+                                "abort capability scope contains an invalid capability name: " + capabilityName);
+                    }
+                    String affectedName = item.textValue().trim();
+                    if (!scopeNames.add(affectedName)) {
+                        throw new IllegalArgumentException(
+                                "abort capability scope contains a duplicate: " + capabilityName + " -> " + affectedName);
+                    }
+                    JsonNode affected = byName.get(affectedName);
+                    if (affected == null) {
+                        throw new IllegalArgumentException(
+                                "abort capability scope references a missing capability: " + affectedName);
+                    }
+                    if (affected.path("isAbort").asBoolean(false)) {
+                        throw new IllegalArgumentException(
+                                "abort capability scope may reference only normal capabilities: " + affectedName);
+                    }
+                }
+                continue;
+            }
+
+            if (scope != null && scope.size() > 0) {
+                throw new IllegalArgumentException(
+                        "normal capability must not declare scope: " + capabilityName);
+            }
+            if (abortCapabilityName.isBlank()) {
+                continue;
+            }
+            JsonNode abortCapability = byName.get(abortCapabilityName);
+            if (abortCapability == null) {
+                throw new IllegalArgumentException(
+                        "abortCapabilityName references a missing capability: " + abortCapabilityName);
+            }
+            if (!abortCapability.path("isAbort").asBoolean(false)) {
+                throw new IllegalArgumentException(
+                        "abortCapabilityName must reference an abort capability: " + abortCapabilityName);
+            }
+            boolean coveredByScope = false;
+            for (JsonNode item : iterable(abortCapability.path("scope"))) {
+                if (capabilityName.equals(item.asText(""))) {
+                    coveredByScope = true;
+                    break;
+                }
+            }
+            if (!coveredByScope) {
+                throw new IllegalArgumentException(
+                        "referenced abort capability scope must include normal capability: "
+                                + abortCapabilityName + " -> " + capabilityName);
+            }
+        }
     }
 
     private void validateCapabilityModelIdentifiers(DeviceModels model) {
@@ -1137,7 +1348,13 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         String adapterName = config.path("adapterName").asText("");
         String categoryName = config.path("categoryName").asText("");
         if (!adapterName.isBlank() && !categoryName.isBlank()) {
-            return adapterIndexService.buildAdapterContract(adapterName, categoryName);
+            ObjectNode canonical = adapterIndexService.buildAdapterContract(adapterName, categoryName);
+            JsonNode submittedMappings = inputContract.path("telemetry").path("attributesMapping");
+            if (submittedMappings.isArray()) {
+                ((ObjectNode) canonical.path("telemetry"))
+                        .set("attributesMapping", submittedMappings.deepCopy());
+            }
+            return canonical;
         }
         return inputContract;
     }

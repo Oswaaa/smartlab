@@ -2,30 +2,20 @@ package com.smartlab.engine.constraint;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.smartlab.engine.statemachine.StateMachineEngine;
-import com.smartlab.engine.statemachine.StateMachineInterfaceSignalEvent;
+import com.smartlab.engine.observation.ObservationSample;
+import com.smartlab.engine.statemachine.StateMachineCommandPort;
+import com.smartlab.engine.observation.ObservableKey;
+import com.smartlab.engine.observation.ObservationSnapshot;
+import com.smartlab.engine.observation.ObservationStatus;
 import com.smartlab.engine.workflow.WorkflowTaskControlService;
 import com.smartlab.global.event.ConstraintAlertEvent;
-import com.smartlab.global.event.DeviceTelemetryUpdatedEvent;
-import com.smartlab.global.event.TaskLifecycleObservationEvent;
-import com.smartlab.global.event.WorkflowNodeObservationEvent;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.entity.constraint.ConstraintRule;
 import com.smartlab.management.entity.constraint.ViolationLog;
-import com.smartlab.management.entity.resource.device.DeviceInstances;
-import com.smartlab.management.entity.resource.device.DeviceModels;
-import com.smartlab.management.entity.workflow.Task;
-import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
-import com.smartlab.management.mapper.resource.device.DeviceModelsMapper;
-import com.smartlab.management.service.db.constraint.ConstraintRuleService;
-import com.smartlab.management.service.db.constraint.TaskConstraintService;
 import com.smartlab.management.service.db.constraint.ViolationLogService;
-import com.smartlab.management.service.db.workflow.WorkflowService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.ApplicationEventPublisher;
-import org.springframework.context.event.EventListener;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import java.time.Instant;
@@ -33,168 +23,74 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class ConstraintEngine {
     private static final Logger log = LoggerFactory.getLogger(ConstraintEngine.class);
     private static final int MAX_HISTORY_SIZE = 4096;
+    private static final long MAX_HISTORY_SECONDS = 1800;
 
-    private final ConstraintRuleService ruleService;
-    private final TaskConstraintService taskConstraintService;
     private final ViolationLogService violationLogService;
     private final WorkflowTaskControlService taskControlService;
-    private final StateMachineEngine stateMachineEngine;
-    private final DeviceInstancesMapper deviceInstancesMapper;
-    private final DeviceModelsMapper deviceModelsMapper;
-    private final WorkflowService workflowService;
+    private final StateMachineCommandPort stateMachineCommandPort;
     private final ConstraintExpressionEvaluator expressionEvaluator;
     private final ApplicationEventPublisher eventPublisher;
     private final Map<String, ScopeState> scopes = new ConcurrentHashMap<>();
     private final Map<String, Instant> expressionTrueSince = new ConcurrentHashMap<>();
     private final Map<String, Boolean> expressionTriggered = new ConcurrentHashMap<>();
 
-    public ConstraintEngine(ConstraintRuleService ruleService, TaskConstraintService taskConstraintService,
-                            ViolationLogService violationLogService,
-                            WorkflowTaskControlService taskControlService, StateMachineEngine stateMachineEngine,
-                            DeviceInstancesMapper deviceInstancesMapper, DeviceModelsMapper deviceModelsMapper,
-                            WorkflowService workflowService, ConstraintExpressionEvaluator expressionEvaluator,
+    public ConstraintEngine(ViolationLogService violationLogService,
+                            WorkflowTaskControlService taskControlService, StateMachineCommandPort stateMachineCommandPort,
+                            ConstraintExpressionEvaluator expressionEvaluator,
                             ApplicationEventPublisher eventPublisher) {
-        this.ruleService = ruleService;
-        this.taskConstraintService = taskConstraintService;
         this.violationLogService = violationLogService;
         this.taskControlService = taskControlService;
-        this.stateMachineEngine = stateMachineEngine;
-        this.deviceInstancesMapper = deviceInstancesMapper;
-        this.deviceModelsMapper = deviceModelsMapper;
-        this.workflowService = workflowService;
+        this.stateMachineCommandPort = stateMachineCommandPort;
         this.expressionEvaluator = expressionEvaluator;
         this.eventPublisher = eventPublisher;
     }
 
-    @EventListener
-    public void observeTelemetry(DeviceTelemetryUpdatedEvent event) {
-        observeTelemetryRules(ruleService.list(Boolean.TRUE), event, null);
-        for (Task task : taskConstraintService.activeTasksForDevice(event.deviceInstanceId())) {
-            observeTelemetryRules(taskConstraintService.rulesForTask(task), event, task.getId());
-        }
+    public void evaluate(RuntimeConstraint constraint,
+                         Map<ObservableKey, ObservationSnapshot> observations) {
+        evaluate(constraint, observations, Map.of());
     }
 
-    private void observeTelemetryRules(List<ConstraintRule> rules, DeviceTelemetryUpdatedEvent event, Long taskId) {
-        for (ConstraintRule rule : rules) {
-            ScopeState scope = null;
-            for (ObservableBinding binding : observableBindings(rule)) {
-                JsonNode source = binding.source();
-                if (!"DEVICE_ATTRIBUTE".equals(text(source, "sourceType"))
-                        || !matchesDevice(source, event.deviceModelId(), event.deviceInstanceId())) continue;
-                JsonNode value = event.attributes().get(text(source, "targetName"));
-                if (value == null) continue;
-                scope = scope(rule, taskId == null ? deviceScope(event.deviceInstanceId()) : taskScope(taskId),
-                        taskId, null, event.deviceInstanceId());
-                update(scope, binding.variableName(), value, event.occurredAt());
-            }
-            if (scope != null) evaluateRule(rule, scope);
-        }
-    }
-    @EventListener
-    public void observeStateMachine(StateMachineInterfaceSignalEvent event) {
-        if (!"STATE".equals(event.interfaceType()) || !"Interface_state_out".equals(event.interfaceName())) return;
-        String signalName = text(event.signal(), "signalName");
-        JsonNode payload = event.signal().path("payload");
-        Long deviceModelId = positiveLong(payload.get("deviceModelId"));
-        Long deviceInstanceId = positiveLong(payload.get("deviceInstanceId"));
-        if (deviceModelId == null || deviceInstanceId == null) return;
-        observeStateMachineRules(ruleService.list(Boolean.TRUE), event, signalName, payload, deviceModelId, deviceInstanceId, null);
-        for (Task task : taskConstraintService.activeTasksForDevice(deviceInstanceId)) {
-            observeStateMachineRules(taskConstraintService.rulesForTask(task), event, signalName, payload,
-                    deviceModelId, deviceInstanceId, task.getId());
-        }
-    }
-
-    private void observeStateMachineRules(List<ConstraintRule> rules, StateMachineInterfaceSignalEvent event,
-                                          String signalName, JsonNode payload, Long deviceModelId,
-                                          Long deviceInstanceId, Long taskId) {
-        Instant occurredAt = timestamp(payload.path("timestamp"));
-        for (ConstraintRule rule : rules) {
-            ScopeState scope = null;
-            for (ObservableBinding binding : observableBindings(rule)) {
-                JsonNode source = binding.source();
-                String sourceType = text(source, "sourceType");
-                if (!matchesDevice(source, deviceModelId, deviceInstanceId)) continue;
-                if ("CMD_STATE".equals(signalName) && "DEVICE_COMMAND_LIFECYCLE".equals(sourceType)) {
-                    scope = scope(rule, taskId == null ? deviceScope(deviceInstanceId) : taskScope(taskId),
-                            taskId, null, deviceInstanceId);
-                    update(scope, binding.variableName(), payload.path("stateName"), occurredAt);
-                }
-                if ("OP_STATE".equals(signalName) && "DEVICE_OPERATION_STATE".equals(sourceType)
-                        && Objects.equals(text(source, "regionName"), text(payload, "regionName"))) {
-                    scope = scope(rule, taskId == null ? deviceScope(deviceInstanceId) : taskScope(taskId),
-                            taskId, null, deviceInstanceId);
-                    update(scope, binding.variableName(), payload.path("stateName"), occurredAt);
+    public void evaluate(RuntimeConstraint constraint,
+                         Map<ObservableKey, ObservationSnapshot> observations,
+                         Map<ObservableKey, List<ObservationSample>> histories) {
+        ConstraintRule rule = constraint.rule();
+        String versionedScope = constraint.key().scopeKey() + "@" + constraint.key().version();
+        ScopeState scope = scope(rule, versionedScope, constraint.taskId(),
+                constraint.taskStepId(), constraint.deviceInstanceId());
+        synchronized (scope) {
+            for (Map.Entry<String, ObservableKey> entry : constraint.observableBindings().entrySet()) {
+                ObservationSnapshot observation = observations.get(entry.getValue());
+                if (observation == null || observation.status() != ObservationStatus.VALID
+                        || observation.value() == null || observation.value().isNull()) return;
+                Long lastRevision = scope.revisions.get(entry.getKey());
+                if (!Long.valueOf(observation.revision()).equals(lastRevision)) {
+                    List<ObservationSample> samples = histories == null ? null : histories.get(entry.getValue());
+                    if (samples == null || samples.isEmpty()) {
+                        update(scope, entry.getKey(), observation.value(), observation.observedAt());
+                    } else {
+                        scope.values.put(entry.getKey(), observation.value());
+                        scope.histories.put(entry.getKey(), toTimedValues(samples));
+                    }
+                    scope.revisions.put(entry.getKey(), observation.revision());
                 }
             }
-            if (scope != null) evaluateRule(rule, scope);
         }
-    }
-    @EventListener
-    public void observeWorkflowNode(WorkflowNodeObservationEvent event) {
-        observeWorkflowNodeRules(ruleService.list(Boolean.TRUE), event);
-        Task task = taskConstraintService.task(event.taskId());
-        if (TaskConstraintService.isActive(task)) observeWorkflowNodeRules(taskConstraintService.rulesForTask(task), event);
+        evaluateRule(rule, scope);
     }
 
-    private void observeWorkflowNodeRules(List<ConstraintRule> rules, WorkflowNodeObservationEvent event) {
-        for (ConstraintRule rule : rules) {
-            ScopeState scope = null;
-            for (ObservableBinding binding : observableBindings(rule)) {
-                JsonNode source = binding.source();
-                String sourceType = text(source, "sourceType");
-                if (!("NODE_LIFECYCLE_STATE".equals(sourceType) || "NODE_INTERNAL_VARIABLE".equals(sourceType))) continue;
-                if (!Objects.equals(positiveLong(source.get("workflowTemplateId")), event.workflowTemplateId())
-                        || !matchesNodeName(source, event.workflowTemplateId(), event.nodeIdRef())) continue;
-                JsonNode value = "NODE_LIFECYCLE_STATE".equals(sourceType)
-                        ? JsonNodeSupport.MAPPER.getNodeFactory().textNode(event.nodeLifecycleState())
-                        : event.variableSpace().get(text(source, "variableName"));
-                if (value == null) continue;
-                scope = scope(rule, taskScope(event.taskId()), event.taskId(), event.taskStepId(), null);
-                update(scope, binding.variableName(), value, event.occurredAt());
-            }
-            if (scope != null) evaluateRule(rule, scope);
-        }
-    }
-    @EventListener
-    public void observeTask(TaskLifecycleObservationEvent event) {
-        observeTaskRules(ruleService.list(Boolean.TRUE), event);
-        Task task = taskConstraintService.task(event.taskId());
-        if (TaskConstraintService.isActive(task)) observeTaskRules(taskConstraintService.rulesForTask(task), event);
-    }
-
-    private void observeTaskRules(List<ConstraintRule> rules, TaskLifecycleObservationEvent event) {
-        for (ConstraintRule rule : rules) {
-            ScopeState scope = null;
-            for (ObservableBinding binding : observableBindings(rule)) {
-                JsonNode source = binding.source();
-                if (!"TASK_LIFECYCLE_STATE".equals(text(source, "sourceType"))
-                        || !Objects.equals(positiveLong(source.get("taskId")), event.taskId())) continue;
-                scope = scope(rule, taskScope(event.taskId()), event.taskId(), null, null);
-                update(scope, binding.variableName(), JsonNodeSupport.MAPPER.getNodeFactory().textNode(event.taskLifecycleState()), event.occurredAt());
-            }
-            if (scope != null) evaluateRule(rule, scope);
-        }
-    }
-    @Scheduled(fixedDelay = 1000)
-    public void evaluateSustainedConstraints() {
-        Map<Long, ConstraintRule> enabledRules = new HashMap<>();
-        for (ConstraintRule rule : ruleService.list(Boolean.TRUE)) enabledRules.put(rule.getId(), rule);
-        for (Task task : taskConstraintService.activeTasks()) {
-            for (ConstraintRule rule : taskConstraintService.rulesForTask(task)) enabledRules.put(rule.getId(), rule);
-        }
-        scopes.entrySet().removeIf(entry -> !enabledRules.containsKey(entry.getValue().ruleId));
-        for (ScopeState scope : scopes.values()) {
-            ConstraintRule rule = enabledRules.get(scope.ruleId);
-            if (rule != null) evaluateRule(rule, scope);
-        }
+    public void retainRuntimeKeys(java.util.Set<RuntimeConstraintKey> activeKeys) {
+        java.util.Set<String> valid = activeKeys.stream()
+                .map(key -> key.stableRuleKey() + "::" + key.scopeKey() + "@" + key.version())
+                .collect(java.util.stream.Collectors.toSet());
+        scopes.entrySet().removeIf(entry -> !valid.contains(entry.getKey()));
+        expressionTrueSince.keySet().removeIf(key -> valid.stream().noneMatch(key::startsWith));
+        expressionTriggered.keySet().removeIf(key -> valid.stream().noneMatch(key::startsWith));
     }
 
     private void evaluateRule(ConstraintRule rule, ScopeState scope) {
@@ -286,7 +182,7 @@ public class ConstraintEngine {
                     yield "SYSTEM:PAUSE";
                 }
                 case "ALERT" -> {
-                    eventPublisher.publishEvent(new ConstraintAlertEvent(TaskConstraintService.isTaskRule(rule) ? null : rule.getId(), rule.getRuleName(),
+                    eventPublisher.publishEvent(new ConstraintAlertEvent(isTaskRule(rule) ? null : rule.getId(), rule.getRuleName(),
                             targetTaskId == null ? scope.taskId : targetTaskId, snapshot(values), Instant.now()));
                     yield "SYSTEM:ALERT";
                 }
@@ -297,35 +193,18 @@ public class ConstraintEngine {
         Long deviceInstanceId = positiveLong(action.get("deviceInstanceId"));
         if (deviceInstanceId == null) throw new IllegalArgumentException("设备能力违规动作缺少deviceInstanceId");
         String capabilityName = text(action, "capabilityName");
-        if (isAbortCapability(deviceInstanceId, capabilityName)) {
-            stateMachineEngine.dispatchSignalByType(deviceInstanceId, "CONSTRAINT", "CONSTRAINT_ABORT", Map.of());
-            return "DEVICE_CAPABILITY:CONSTRAINT_ABORT:" + capabilityName;
-        }
-        Map<String, Object> context = new HashMap<>();
-        context.put("deviceInstanceId", deviceInstanceId);
-        context.put("capabilityName", capabilityName);
-        context.put("parameters", action.path("parameters").isObject()
-                ? JsonNodeSupport.MAPPER.convertValue(action.path("parameters"), Map.class) : Map.of());
-        stateMachineEngine.dispatchSignalByType(deviceInstanceId, "CONSTRAINT", "CONSTRAINT_EXECUTE", context);
+        stateMachineCommandPort.executeConstraintCapability(deviceInstanceId, capabilityName,
+                action.path("parameters").isObject()
+                        ? JsonNodeSupport.MAPPER.convertValue(action.path("parameters"), Map.class) : Map.of());
         return "DEVICE_CAPABILITY:CONSTRAINT_EXECUTE:" + capabilityName;
     }
 
-    private boolean isAbortCapability(Long deviceInstanceId, String capabilityName) {
-        DeviceInstances instance = deviceInstancesMapper.selectById(deviceInstanceId);
-        if (instance == null) throw new IllegalArgumentException("设备实例不存在: " + deviceInstanceId);
-        DeviceModels model = deviceModelsMapper.selectById(instance.getDeviceModelId());
-        if (model == null) throw new IllegalArgumentException("设备模型不存在: " + instance.getDeviceModelId());
-        for (JsonNode capability : elements(model.getCapabilities())) {
-            if (capabilityName.equals(text(capability, "capabilityName"))) return capability.path("isAbort").asBoolean(false);
-        }
-        throw new IllegalArgumentException("设备模型未声明能力: " + capabilityName);
-    }
 
     private void writeViolationLog(ConstraintRule rule, JsonNode action, ScopeState scope,
                                    Map<String, JsonNode> values, String actionTaken) {
         ViolationLog logEntry = new ViolationLog();
-        logEntry.setConstraintRuleId(TaskConstraintService.isTaskRule(rule) ? null : rule.getId());
-        logEntry.setConstraintType(TaskConstraintService.isTaskRule(rule) ? "TASK_CONSTRAINT" : "CONSTRAINT_MODEL");
+        logEntry.setConstraintRuleId(isTaskRule(rule) ? null : rule.getId());
+        logEntry.setConstraintType(isTaskRule(rule) ? "TASK_CONSTRAINT" : "CONSTRAINT_MODEL");
         logEntry.setTaskId(scope.taskId == null ? positiveLong(action.get("targetTaskId")) : scope.taskId);
         logEntry.setTaskStepId(scope.taskStepId);
         logEntry.setDeviceInstanceId(scope.deviceInstanceId == null ? positiveLong(action.get("deviceInstanceId")) : scope.deviceInstanceId);
@@ -355,40 +234,15 @@ public class ConstraintEngine {
         List<ConstraintExpressionEvaluator.TimedValue> history = scope.histories.computeIfAbsent(variableName,
                 ignored -> new ArrayList<>());
         history.add(new ConstraintExpressionEvaluator.TimedValue(occurredAt == null ? Instant.now() : occurredAt, copy));
+        Instant threshold = Instant.now().minusSeconds(MAX_HISTORY_SECONDS);
+        history.removeIf(sample -> sample.occurredAt().isBefore(threshold));
         if (history.size() > MAX_HISTORY_SIZE) history.subList(0, history.size() - MAX_HISTORY_SIZE).clear();
     }
 
-    private List<ObservableBinding> observableBindings(ConstraintRule rule) {
-        JsonNode bindings = rule.getBindings();
-        if (bindings == null || !bindings.isObject()) return List.of();
-        List<ObservableBinding> result = new ArrayList<>();
-        var entries = bindings.fields();
-        while (entries.hasNext()) {
-            Map.Entry<String, JsonNode> entry = entries.next();
-            JsonNode binding = entry.getValue();
-            if ("OBSERVABLE".equals(text(binding, "bindingType")) && binding.path("source").isObject()) {
-                result.add(new ObservableBinding(entry.getKey(), binding.path("source")));
-            }
-        }
-        return result;
-    }
-
-    private boolean matchesDevice(JsonNode source, Long deviceModelId, Long deviceInstanceId) {
-        if (!Objects.equals(positiveLong(source.get("deviceModelId")), deviceModelId)) return false;
-        Long expectedInstanceId = positiveLong(source.get("deviceInstanceId"));
-        return expectedInstanceId == null || Objects.equals(expectedInstanceId, deviceInstanceId);
-    }
-
-    private boolean matchesNodeName(JsonNode source, Long workflowTemplateId, Long nodeIdRef) {
-        try {
-            Long expectedNodeIdRef = workflowService.compileDefinition(workflowTemplateId)
-                    .refsByNodeName().get(text(source, "nodeName"));
-            return Objects.equals(expectedNodeIdRef, nodeIdRef);
-        } catch (RuntimeException e) {
-            log.warn("约束节点引用无法解析, workflowTemplateId={}, nodeName={}: {}", workflowTemplateId,
-                    text(source, "nodeName"), e.getMessage());
-            return false;
-        }
+    private List<ConstraintExpressionEvaluator.TimedValue> toTimedValues(List<ObservationSample> samples) {
+        return samples.stream()
+                .map(sample -> new ConstraintExpressionEvaluator.TimedValue(sample.observedAt(), sample.value()))
+                .toList();
     }
 
     private Long requiredTaskId(Long targetTaskId, String action) {
@@ -419,19 +273,8 @@ public class ConstraintEngine {
         return value.asLong();
     }
 
-    private Instant timestamp(JsonNode value) {
-        return value != null && value.canConvertToLong() ? Instant.ofEpochMilli(value.asLong()) : Instant.now();
-    }
-
-    private String deviceScope(Long deviceInstanceId) {
-        return "device:" + deviceInstanceId;
-    }
-
-    private String taskScope(Long taskId) {
-        return "task:" + taskId;
-    }
-
-    private record ObservableBinding(String variableName, JsonNode source) {
+    private boolean isTaskRule(ConstraintRule rule) {
+        return rule != null && rule.getId() != null && rule.getId() < 0;
     }
 
     private static final class ScopeState {
@@ -439,6 +282,7 @@ public class ConstraintEngine {
         private final String scopeKey;
         private final Map<String, JsonNode> values = new HashMap<>();
         private final Map<String, List<ConstraintExpressionEvaluator.TimedValue>> histories = new HashMap<>();
+        private final Map<String, Long> revisions = new HashMap<>();
         private Long taskId;
         private Long taskStepId;
         private Long deviceInstanceId;

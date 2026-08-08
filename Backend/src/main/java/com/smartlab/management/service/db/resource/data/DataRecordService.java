@@ -10,6 +10,9 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -85,29 +88,42 @@ public class DataRecordService {
      */
     @Transactional(rollbackFor = Exception.class)
     public int appendRecord(Long dataIndexId, Map<String, Object> record) {
+        return appendRecord(dataIndexId, record, Instant.now());
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public int appendRecord(Long dataIndexId, Map<String, Object> record, Instant sourceTime) {
         if (record == null || record.isEmpty()) {
             return 0;
         }
-        return appendRecords(dataIndexId, List.of(record));
+        return appendRecords(dataIndexId, List.of(record), sourceTime);
     }
 
     /**
-     * 向指定数据集批量追加记录。
+     * 向指定数据集批量追加记录。create_time 保存 Adapter 采集时间，ingest_time 由数据库生成。
      */
     @Transactional(rollbackFor = Exception.class)
     public int appendRecords(Long dataIndexId, List<Map<String, Object>> records) {
+        return appendRecords(dataIndexId, records, Instant.now());
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public int appendRecords(Long dataIndexId, List<Map<String, Object>> records, Instant sourceTime) {
         if (records == null || records.isEmpty()) {
             return 0;
         }
         DataIndex index = requireDataIndex(dataIndexId);
         String table = quoteIdentifier(index.getDataTable());
         List<DataTemplateDetail> templateFields = loadTemplateFields(index.getDataTemplateId());
+        OffsetDateTime recordTime = OffsetDateTime.ofInstant(
+                sourceTime == null ? Instant.now() : sourceTime, ZoneOffset.UTC);
         int inserted = 0;
         for (Map<String, Object> record : records) {
-            Map<String, Object> row = normalizeRecord(record, templateFields);
+            Map<String, Object> row = new LinkedHashMap<>(normalizeRecord(record, templateFields));
             if (row.isEmpty()) {
                 continue;
             }
+            row.put("create_time", recordTime);
             insertRow(table, row);
             inserted++;
         }
@@ -250,6 +266,7 @@ public class DataRecordService {
             List<DataTemplateDetail> templateFields = loadTemplateFields(index.getDataTemplateId());
             List<String> columns = new ArrayList<>();
             columns.add("create_time");
+            columns.add("ingest_time");
             columns.addAll(templateFields.stream()
                     .map(detail -> normalizeIdentifier(detail.getColumnName(), "数据字段名"))
                     .toList());

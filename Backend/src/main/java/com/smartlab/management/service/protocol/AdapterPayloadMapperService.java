@@ -27,11 +27,13 @@ import org.springframework.context.annotation.Lazy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -80,17 +82,21 @@ public class AdapterPayloadMapperService {
     }
 
     public Map<String, AdapterRouteDTO> refreshAdapterRouteTable() {
-        adapterRouteTable.clear();
         List<DeviceInstances> instances = deviceInstancesMapper.selectList(Wrappers.<DeviceInstances>lambdaQuery()
                 .eq(DeviceInstances::getLifecycleStatus, DeviceInstanceLifecycle.IN_USE)
                 .isNotNull(DeviceInstances::getBoundAdapterName)
                 .isNotNull(DeviceInstances::getBoundDevicePoint)
                 .orderByAsc(DeviceInstances::getId));
+        Map<String, AdapterRouteDTO> refreshed = new LinkedHashMap<>();
         for (DeviceInstances instance : instances) {
             if (!DeviceInstanceLifecycle.isUsable(instance)) continue;
-            adapterRouteTable.put(routeKey(instance.getBoundAdapterName(), instance.getBoundDevicePoint()),
-                    toRoute(instance));
+            String key = routeKey(instance.getBoundAdapterName(), instance.getBoundDevicePoint());
+            if (refreshed.putIfAbsent(key, toRoute(instance)) != null) {
+                throw new IllegalStateException("同一 Adapter 设备点不能绑定多个使用中设备实例: " + key);
+            }
         }
+        adapterRouteTable.clear();
+        adapterRouteTable.putAll(refreshed);
         return getAdapterRouteTable();
     }
 
@@ -145,29 +151,6 @@ public class AdapterPayloadMapperService {
         return result;
     }
 
-    public ObjectNode buildAbortMessage(String id, String messageId) {
-        if (messageId == null || messageId.isBlank()) {
-            throw new IllegalArgumentException("中止指令缺少messageId");
-        }
-        DeviceInstances instance = deviceInstancesMapper.selectById(parseId(id));
-        if (instance == null) {
-            throw new IllegalArgumentException("设备实例不存在");
-        }
-        requireUsable(instance);
-        DeviceModels model = deviceModelsMapper.selectById(instance.getDeviceModelId());
-        if (model == null) {
-            throw new IllegalArgumentException("设备模型不存在");
-        }
-        JsonNode abortCapability = findAbortCapability(model.getCapabilities());
-        if (abortCapability == null) {
-            throw new IllegalStateException("设备模型没有声明isAbort=true的终止能力");
-        }
-        String capabilityName = abortCapability.path("capabilityName").asText("");
-        if (capabilityName.isBlank()) {
-            throw new IllegalStateException("终止能力缺少capabilityName");
-        }
-        return buildCommandMessage(id, capabilityName, messageId, Map.of());
-    }
     public ObjectNode buildAdapterBinding(Long modelId, String adapterName, String devicePoint) {
         if (modelId == null) {
             throw new IllegalArgumentException("设备实例缺少 deviceModelId");
@@ -189,6 +172,16 @@ public class AdapterPayloadMapperService {
         }
         JsonNode contract = model.getAdapterContract();
 
+        String registeredAdapterName = adapter.getAdapterName();
+        String modelAdapterName = contract == null ? null : contract.path("config").path("adapterName").asText(null);
+        if (modelAdapterName == null || modelAdapterName.isBlank()) {
+            throw new IllegalArgumentException("设备模型缺少 Adapter 名称");
+        }
+        if (!modelAdapterName.equals(registeredAdapterName)) {
+            throw new IllegalArgumentException("设备模型绑定的是 Adapter " + modelAdapterName
+                    + "，不能绑定 Adapter " + registeredAdapterName);
+        }
+
         String pointCategoryName = point.path("categoryName").asText(null);
         String modelCategoryName = contract == null ? null : contract.path("config").path("categoryName").asText(null);
         if (modelCategoryName != null && !modelCategoryName.isBlank()
@@ -203,7 +196,7 @@ public class AdapterPayloadMapperService {
         binding.put("templateName", templateName);
         if (pointCategoryName != null && !pointCategoryName.isBlank()) {
             binding.put("categoryName", pointCategoryName);
-        }        binding.set("attributeMapping", point.path("attributeMapping"));
+        }        // attributeMapping removed from parse_config - adapter-internal concern
         ObjectNode topics = binding.putObject("topics");
         topics.put("command", commandTopic(adapterName, devicePoint));
         topics.put("telemetry", telemetryTopic(adapterName, devicePoint));
@@ -218,7 +211,7 @@ public class AdapterPayloadMapperService {
                 contract == null ? null : contract.path("telemetry").path("attributesMapping"))) {
             String modelAttr = mapping.path("modelAttributeName").asText("");
             String templateAttr = mapping.path("adapterAttrName").asText("");
-            String rawAttr = point.path("attributeMapping").path(templateAttr).asText("");
+            String rawAttr = templateAttr; // attributeMapping removed - use template name directly
             if (modelAttr.isBlank() || templateAttr.isBlank() || rawAttr.isBlank()) {
                 continue;
             }
@@ -227,17 +220,19 @@ public class AdapterPayloadMapperService {
             if (modelType != null && adapterType != null && !modelType.equals(adapterType)) {
                 throw new IllegalArgumentException("实例属性映射类型不一致: " + modelAttr + " -> " + templateAttr);
             }
+
             modelToRaw.put(modelAttr, rawAttr);
-            rawToModel.put(rawAttr, modelAttr);
+            rawToModel.put(templateAttr, modelAttr);
             ObjectNode row = resolved.addObject();
             row.put("modelAttributeName", modelAttr);
             row.put("templateAttributeName", templateAttr);
-            row.put("rawAttributeName", rawAttr);
+            row.put("rawAttributeName", templateAttr);
             row.put("dataType", modelType == null ? Objects.toString(adapterType, "STRING") : modelType);
         }
         return binding;
     }
 
+    @Transactional(rollbackFor = Exception.class)
     public void applyTelemetry(String adapterName, String devicePoint, JsonNode message) {
         AdapterRouteDTO route = resolveAdapterRoute(adapterName, devicePoint);
         if (route == null) {
@@ -251,6 +246,11 @@ public class AdapterPayloadMapperService {
         if (rawToModel == null || rawToModel.isEmpty()) {
             return;
         }
+        long sourceTimestamp = message.path("timestamp").asLong(0L);
+        if (sourceTimestamp <= 0L) {
+            throw new IllegalArgumentException("遥测消息缺少合法的 Adapter 采集时间");
+        }
+        Instant sourceTime = Instant.ofEpochMilli(sourceTimestamp);
         ObjectNode mappedValues = JsonNodeSupport.objectNode();
         data.fields().forEachRemaining(entry -> {
             String modelAttr = rawToModel.get(entry.getKey());
@@ -263,46 +263,35 @@ public class AdapterPayloadMapperService {
                     entry.getValue(), definition, "telemetry." + entry.getKey()));
         });
         if (mappedValues.isEmpty()) return;
-        Long instanceId = route.getDeviceInstanceId();
-        DeviceTwinStates state = getOrCreateTwinState(instanceId);
-        ObjectNode current = state.getCurrentAttr() != null && state.getCurrentAttr().isObject()
-                ? (ObjectNode) state.getCurrentAttr().deepCopy()
-                : JsonNodeSupport.objectNode();
-        mappedValues.fields().forEachRemaining(entry -> current.set(entry.getKey(), entry.getValue()));
-        state.setCurrentAttr(current);
-        state.setOnlineStatus("ONLINE");
-        state.setLastOnlineTime(OffsetDateTime.now());
-        state.setUpdateTime(OffsetDateTime.now());
-        twinStatesMapper.updateById(state);
-        eventPublisher.publishEvent(new DeviceTelemetryUpdatedEvent(instanceId, route.getDeviceModelId(), mappedValues.deepCopy(), Instant.now()));
 
-        try {
-            Map<String, Object> recordMap = new HashMap<>();
-            current.fields().forEachRemaining(e -> {
-                JsonNode val = e.getValue();
-                if (val.isNumber()) {
-                    recordMap.put(e.getKey(), val.numberValue());
-                } else if (val.isBoolean()) {
-                    recordMap.put(e.getKey(), val.booleanValue());
-                } else {
-                    recordMap.put(e.getKey(), val.asText());
-                }
-            });
-            List<DataIndex> dataIndexes = dataIndexService.listByDeviceInstance(instanceId);
-            if (dataIndexes != null) {
-                for (DataIndex index : dataIndexes) {
-                    try {
-                        dataRecordService.appendRecord(index.getId(), recordMap);
-                    } catch (Exception e) {
-                        log.warn("遥测数据写入数据集失败，dataIndexId={}", index.getId(), e);
-                    }
-                }
-            }
-        } catch (Exception e) {
-            log.error("应用 Adapter 遥测数据失败，adapter={}, devicePoint={}", adapterName, devicePoint, e);
+        Long instanceId = route.getDeviceInstanceId();
+        getOrCreateTwinState(instanceId);
+        OffsetDateTime now = OffsetDateTime.now();
+        int updated = twinStatesMapper.patchAttributes(instanceId, mappedValues.toString(), now, now);
+        if (updated != 1) {
+            throw new IllegalStateException("设备属性快照更新失败: " + instanceId);
         }
+
+        Map<String, Object> recordMap = new HashMap<>();
+        mappedValues.fields().forEachRemaining(entry -> recordMap.put(entry.getKey(), recordValue(entry.getValue())));
+        List<DataIndex> dataIndexes = dataIndexService.listByDeviceInstance(instanceId);
+        if (dataIndexes == null || dataIndexes.isEmpty()) {
+            throw new IllegalStateException("设备实例缺少数据集，拒绝产生不可追溯的遥测状态: " + instanceId);
+        }
+        for (DataIndex index : dataIndexes) {
+            dataRecordService.appendRecord(index.getId(), recordMap, sourceTime);
+        }
+        eventPublisher.publishEvent(new DeviceTelemetryUpdatedEvent(
+                instanceId, route.getDeviceModelId(), mappedValues.deepCopy(), sourceTime));
     }
 
+    private Object recordValue(JsonNode value) {
+        if (value == null || value.isNull()) return null;
+        if (value.isNumber()) return value.numberValue();
+        if (value.isBoolean()) return value.booleanValue();
+        if (value.isContainerNode()) return value.toString();
+        return value.asText();
+    }
     public void applyAdapterEvent(String adapterName, String devicePoint, JsonNode message) {
         AdapterRouteDTO route = resolveAdapterRoute(adapterName, devicePoint);
         if (route == null || message == null) {
@@ -433,14 +422,6 @@ public class AdapterPayloadMapperService {
         return null;
     }
 
-    private JsonNode findAbortCapability(JsonNode capabilities) {
-        for (JsonNode capability : iterable(capabilities)) {
-            if (capability.path("isAbort").asBoolean(false)) {
-                return capability;
-            }
-        }
-        return null;
-    }
 
     private JsonNode findCommand(JsonNode adapterContract, String commandName) {
         if (adapterContract == null || commandName == null) {

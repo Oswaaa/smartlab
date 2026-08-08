@@ -32,10 +32,11 @@
         <div>
           <span>{{ workspaceTag }}</span>
           <h1>{{ workspaceTitle }}</h1>
+          <p class="data-source-note">实时状态来自 Adapter；历史记录与导出统一读取数据库</p>
         </div>
         <div class="toolbar-actions">
           <el-button @click="loadAll">刷新</el-button>
-          <el-button v-if="selectedTemplate" type="primary" @click="openDatasetDrawer(selectedTemplate)">用模板建表</el-button>
+          <el-button v-if="selectedTemplate && templateHasModel(selectedTemplate)" type="primary" @click="openDatasetDrawer(selectedTemplate)">用模板建表</el-button>
           <el-button v-if="selectedInstance && isUsableInstance(selectedInstance)" type="primary" @click="openDatasetDrawer(null, selectedInstance)">为该设备建表</el-button>
           <el-button v-if="selectedDataset" @click="exportDataset">导出 CSV</el-button>
           <el-popconfirm v-if="selectedDataset" title="确认删除该数据表？物理表会同步删除" @confirm="deleteDataset(selectedDataset)">
@@ -58,7 +59,8 @@
           <div ref="chartRef" class="chart-box"></div>
           <div class="table-title"><strong>历史数据</strong><span>{{ recordPage.total }} 条</span></div>
           <el-table :data="records" border stripe size="small" v-loading="loadingRecords" class="record-table">
-            <el-table-column label="采集时间" width="180"><template #default="{ row }">{{ formatTime(recordTime(row)) }}</template></el-table-column>
+            <el-table-column label="Adapter 采集时间" width="180"><template #default="{ row }">{{ formatTime(recordTime(row)) }}</template></el-table-column>
+            <el-table-column label="系统入库时间" width="180"><template #default="{ row }">{{ formatTime(recordIngestTime(row)) }}</template></el-table-column>
             <el-table-column v-for="field in valueFields" :key="field.columnName" :label="fieldLabel(field)" min-width="150">
               <template #default="{ row }">{{ valueOf(row, field.columnName) }}</template>
             </el-table-column>
@@ -100,8 +102,8 @@
     <el-drawer v-model="datasetDrawer.visible" title="新建数据表" size="78%" class="unified-workflow-drawer">
       <el-form label-position="top" class="drawer-form">
         <el-form-item label="数据表说明"><el-input v-model="datasetDrawer.dataDesc" placeholder="例如：高压报警专项数据" /></el-form-item>
-        <el-form-item label="数据模板"><el-select v-model="datasetDrawer.templateId" filterable placeholder="请选择模板"><el-option v-for="tpl in templates" :key="tpl.id" :label="tpl.templateName" :value="tpl.id" /></el-select></el-form-item>
-        <el-form-item label="绑定设备实例"><el-select v-model="datasetDrawer.deviceInstanceId" filterable placeholder="请选择设备"><el-option v-for="ins in usableInstances" :key="instanceId(ins)" :label="instancePath(ins)" :value="Number(instanceId(ins))" /></el-select></el-form-item>
+        <el-form-item label="数据模板"><el-select v-model="datasetDrawer.templateId" filterable placeholder="请选择同模型模板" @change="onDatasetTemplateChange"><el-option v-for="tpl in compatibleTemplates" :key="tpl.id" :label="`${modelName(tpl.deviceModelId)} / ${tpl.templateName}`" :value="tpl.id" /></el-select></el-form-item>
+        <el-form-item label="绑定设备实例"><el-select v-model="datasetDrawer.deviceInstanceId" filterable placeholder="请选择同模型设备" @change="onDatasetInstanceChange"><el-option v-for="ins in compatibleInstances" :key="instanceId(ins)" :label="instancePath(ins)" :value="Number(instanceId(ins))" /></el-select></el-form-item>
       </el-form>
       <template #footer><el-button @click="datasetDrawer.visible = false">取消</el-button><el-button type="primary" :loading="saving" @click="createDataset">保存建表</el-button></template>
     </el-drawer>
@@ -147,6 +149,7 @@ const models = ref([])
 const instances = ref([])
 const datasets = ref([])
 const templates = ref([])
+const propertyTypes = ref([])
 const templateDetails = ref([])
 const records = ref([])
 const selectedDataset = ref(null)
@@ -163,6 +166,18 @@ const templateDrawer = reactive({ visible: false, templateName: '', templateDesc
 const modelMap = computed(() => Object.fromEntries(models.value.map(m => [String(modelId(m)), m])))
 const templateMap = computed(() => Object.fromEntries(templates.value.map(t => [String(t.id), t])))
 const usableInstances = computed(() => instances.value.filter(isUsableInstance))
+const compatibleTemplates = computed(() => {
+  const instance = instances.value.find(row => Number(instanceId(row)) === Number(datasetDrawer.deviceInstanceId))
+  const selectedModelId = instance?.deviceModelId || instance?.modelId
+  return templates.value.filter(template => templateHasModel(template)
+    && (!selectedModelId || String(template.deviceModelId) === String(selectedModelId)))
+})
+const compatibleInstances = computed(() => {
+  const template = templates.value.find(row => Number(row.id) === Number(datasetDrawer.templateId))
+  const selectedModelId = template?.deviceModelId
+  return usableInstances.value.filter(instance => !selectedModelId
+    || String(instance.deviceModelId || instance.modelId) === String(selectedModelId))
+})
 const childrenByCategory = computed(() => {
   const map = new Map()
   categories.value.forEach(cat => {
@@ -186,25 +201,27 @@ const workspaceTag = computed(() => selectedDataset.value ? '数据表' : select
 const workspaceTitle = computed(() => selectedDataset.value?.dataDesc || selectedDataset.value?.dataTable || selectedTemplate.value?.templateName || selectedInstance.value?.instanceName || '请选择数据对象')
 const assetTree = computed(() => [
   { key: 'root_device_data', type: 'root', label: '设备数据', count: datasets.value.length, children: buildCategoryNodes('root') },
-  { key: 'root_templates', type: 'root', label: '模板库', count: templates.value.length, children: templates.value.map(t => ({ key: 'template_' + t.id, type: 'template', label: t.templateName, data: t, count: t.isDefault ? '默认' : '自定义' })) }
+  { key: 'root_templates', type: 'root', label: '模板库', count: templates.value.length, children: templates.value.map(t => ({ key: 'template_' + t.id, type: 'template', label: t.templateName + (templateHasModel(t) ? '' : '（模型缺失）'), data: t, count: t.isDefault ? '默认' : '自定义' })) }
 ])
 const filteredTree = computed(() => filterTree(assetTree.value, keyword.value.trim().toLowerCase()))
 
 async function loadAll() {
   loading.value = true
   try {
-    const [catRes, modelRes, insRes, datasetRes, tplRes] = await Promise.all([
+    const [catRes, modelRes, insRes, datasetRes, tplRes, typeRes] = await Promise.all([
       axios.get('/api/device/category/list').catch(() => ({ data: { data: [] } })),
       axios.get('/api/device/model/list'),
       axios.get('/api/device/instance/list'),
       axios.get('/api/data/index/list'),
-      axios.get('/api/data/template/list')
+      axios.get('/api/data/template/list'),
+      axios.get('/api/data/property-type/list')
     ])
     categories.value = asArray(catRes.data?.data)
     models.value = asArray(modelRes.data?.data)
     instances.value = asArray(insRes.data?.data)
     datasets.value = asArray(datasetRes.data?.data)
     templates.value = asArray(tplRes.data?.data)
+    propertyTypes.value = asArray(typeRes.data?.data)
     if (!selectedDataset.value && !selectedTemplate.value && !selectedInstance.value) selectFirstAvailable()
   } catch (err) {
     ElMessage.error(errorMessage(err, '加载数据中心失败'))
@@ -283,9 +300,9 @@ async function loadTemplateDetails(templateId) {
   templateDetails.value = detailCache[templateId]
 }
 
-async function loadRecords() {
+async function loadRecords(silent = false) {
   if (!selectedDataset.value) return
-  loadingRecords.value = true
+  if (!silent) loadingRecords.value = true
   try {
     const res = await axios.get(`/api/data/record/dataset/${selectedDataset.value.id}`, { params: { pageNo: recordPage.pageNo, pageSize: recordPage.pageSize } })
     const page = res.data?.data || {}
@@ -294,9 +311,9 @@ async function loadRecords() {
     await nextTick()
     renderChart()
   } catch (err) {
-    ElMessage.error(errorMessage(err, '加载数据记录失败'))
+    if (!silent) ElMessage.error(errorMessage(err, '加载数据记录失败'))
   } finally {
-    loadingRecords.value = false
+    if (!silent) loadingRecords.value = false
   }
 }
 
@@ -315,8 +332,12 @@ function renderChart() {
 }
 
 function openDatasetDrawer(template = null, instance = null) {
+  if (template && !templateHasModel(template)) {
+    ElMessage.error('该模板的来源模型不存在，已禁止继续建表')
+    return
+  }
   if (instance && !isUsableInstance(instance)) {
-    ElMessage.warning('已注销设备不能新建数据表')
+    ElMessage.warning('RETIRED device cannot create data table')
     return
   }
   datasetDrawer.visible = true
@@ -326,12 +347,42 @@ function openDatasetDrawer(template = null, instance = null) {
   else if (selectedInstance.value) datasetDrawer.deviceInstanceId = Number(instanceId(selectedInstance.value))
   else datasetDrawer.deviceInstanceId = null
   datasetDrawer.dataDesc = ''
+  normalizeDatasetSelection()
 }
 
+function normalizeDatasetSelection() {
+  const template = templates.value.find(row => Number(row.id) === Number(datasetDrawer.templateId))
+  const instance = instances.value.find(row => Number(instanceId(row)) === Number(datasetDrawer.deviceInstanceId))
+  if (template && instance && String(template.deviceModelId) !== String(instance.deviceModelId || instance.modelId)) {
+    datasetDrawer.deviceInstanceId = null
+  }
+}
+
+function onDatasetTemplateChange() {
+  const template = templates.value.find(row => Number(row.id) === Number(datasetDrawer.templateId))
+  const instance = instances.value.find(row => Number(instanceId(row)) === Number(datasetDrawer.deviceInstanceId))
+  if (template && instance && String(template.deviceModelId) !== String(instance.deviceModelId || instance.modelId)) {
+    datasetDrawer.deviceInstanceId = null
+  }
+}
+
+function onDatasetInstanceChange() {
+  const template = templates.value.find(row => Number(row.id) === Number(datasetDrawer.templateId))
+  const instance = instances.value.find(row => Number(instanceId(row)) === Number(datasetDrawer.deviceInstanceId))
+  if (template && instance && String(template.deviceModelId) !== String(instance.deviceModelId || instance.modelId)) {
+    datasetDrawer.templateId = null
+  }
+}
 async function createDataset() {
   const selected = instances.value.find(ins => Number(instanceId(ins)) === Number(datasetDrawer.deviceInstanceId))
-  if (selected && !isUsableInstance(selected)) { ElMessage.warning('已注销设备不能新建数据表'); return }
-  if (!datasetDrawer.templateId || !datasetDrawer.deviceInstanceId) { ElMessage.warning('请选择模板和设备实例'); return }
+  const template = templates.value.find(row => Number(row.id) === Number(datasetDrawer.templateId))
+  if (selected && !isUsableInstance(selected)) { ElMessage.warning('RETIRED device cannot create data table'); return }
+  if (!template || !selected) { ElMessage.warning('请选择模板和设备实例'); return }
+  if (!templateHasModel(template)) { ElMessage.error('模板来源模型不存在，不能建表'); return }
+  if (String(template.deviceModelId) !== String(selected.deviceModelId || selected.modelId)) {
+    ElMessage.error('模板与设备实例必须属于同一设备模型')
+    return
+  }
   saving.value = true
   try {
     const res = await axios.post('/api/data/index/create-dataset', { templateId: datasetDrawer.templateId, deviceInstanceId: datasetDrawer.deviceInstanceId, dataDesc: datasetDrawer.dataDesc })
@@ -355,16 +406,34 @@ function generateFieldsFromModel() {
     const name = attr.attributeName || attr.displayName
     const desc = attr.displayName || attr.attributeName
     const rows = [{ _key: uid(), columnName: name, columnDesc: desc, propertyTypeId: propertyTypeId(attr.dataType), columnLength: 255, deviceAttrKey: name, defaultValue: '' }]
-    if (attr.unit) rows.push({ _key: uid(), columnName: `${name}_unit`, columnDesc: `${desc}单位`, propertyTypeId: 6, columnLength: 50, deviceAttrKey: '', defaultValue: attr.unit })
+    if (attr.unit) rows.push({ _key: uid(), columnName: `${name}_unit`, columnDesc: `${desc}单位`, propertyTypeId: propertyTypeId('STRING'), columnLength: 50, deviceAttrKey: '', defaultValue: attr.unit })
     return rows
   })
 }
 
-function addTemplateField() { templateDrawer.details.push({ _key: uid(), columnName: '', columnDesc: '', propertyTypeId: 6, columnLength: 255, deviceAttrKey: '', defaultValue: '' }) }
+function addTemplateField() { templateDrawer.details.push({ _key: uid(), columnName: '', columnDesc: '', propertyTypeId: propertyTypeId('STRING'), columnLength: 255, deviceAttrKey: '', defaultValue: '' }) }
 
+function validateTemplateFields(details) {
+  if (!Array.isArray(details) || details.length === 0) return '数据模板至少需要一个字段'
+  const used = new Set()
+  const reserved = new Set(['id', 'data_index_id', 'create_time', 'ingest_time'])
+  for (const field of details) {
+    const name = String(field.columnName || '').trim().toLowerCase()
+    if (!/^[a-z_][a-z0-9_]*$/.test(name)) return `字段名“${field.columnName || ''}”不合法，只能使用字母、数字和下划线且不能以数字开头`
+    if (reserved.has(name) || used.has(name)) return `字段“${name}”重复或占用系统字段`
+    used.add(name)
+    if (!String(field.deviceAttrKey || '').trim() && !String(field.defaultValue ?? '').trim()) {
+      return `字段“${name}”未绑定模型属性，必须设置默认值`
+    }
+    if (!field.propertyTypeId && !String(field.deviceAttrKey || '').trim()) return `字段“${name}”缺少数据类型`
+  }
+  return ''
+}
 async function saveTemplate() {
   if (!templateDrawer.templateName.trim()) { ElMessage.warning('请输入模板名称'); return }
   if (!templateDrawer.deviceModelId) { ElMessage.warning('请选择绑定模型'); return }
+  const fieldError = validateTemplateFields(templateDrawer.details)
+  if (fieldError) { ElMessage.warning(fieldError); return }
   saving.value = true
   try {
     const payload = { templateName: templateDrawer.templateName, templateDesc: templateDrawer.templateDesc, deviceModelId: templateDrawer.deviceModelId, isDefault: false, details: templateDrawer.details.map(({ _key, ...row }) => ({ ...row, columnLength: row.columnLength || 255 })) }
@@ -387,34 +456,74 @@ async function deleteTemplate(template) {
   if (res.data?.success) { ElMessage.success('模板已删除'); selectedTemplate.value = null; templateDetails.value = []; delete detailCache[template.id]; await loadAll() } else ElMessage.error(res.data?.message || '删除失败')
 }
 
-function exportDataset() { if (selectedDataset.value?.id) window.open(`/api/data/record/export/${selectedDataset.value.id}`, '_blank') }
+async function exportDataset() {
+  if (!selectedDataset.value?.id) return
+  try {
+    const response = await axios.get(`/api/data/record/export/${selectedDataset.value.id}`, { responseType: 'blob' })
+    const url = URL.createObjectURL(new Blob([response.data], { type: 'text/csv;charset=utf-8' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${selectedDataset.value.dataTable || 'dataset'}.csv`
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+    URL.revokeObjectURL(url)
+  } catch (err) {
+    ElMessage.error(errorMessage(err, '导出失败'))
+  }
+}
 function selectFirstAvailable() { const firstDataset = datasets.value[0]; if (firstDataset) selectDataset(firstDataset); else if (templates.value[0]) selectTemplate(templates.value[0]) }
 function fieldLabel(field) { const unit = unitMap.value.get(field.columnName) || unitMap.value.get(field.deviceAttrKey); return `${field.columnDesc || field.columnName}${unit ? ' (' + unit + ')' : ''}` }
 function bindingLabel(row) { if (isUnitField(row)) return '-'; return row.deviceAttrKey || '-' }
 function valueOf(row, key) { const value = row?.[key] ?? row?.[String(key).toLowerCase()] ?? row?.data?.[key] ?? row?.payload?.[key]; return value == null || value === '' ? '-' : value }
 function numericOrNull(value) { const n = Number(value); return Number.isFinite(n) ? n : null }
 function recordTime(row) { return row?.create_time || row?.createTime || row?.timestamp || row?.collectTime }
+function recordIngestTime(row) { return row?.ingest_time || row?.ingestTime }
 function formatTime(value) { return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '-' }
 function isUnitField(row) { return String(row?.columnName || '').endsWith('_unit') }
 function stripUnit(value) { return String(value || '').replace(/_unit$/, '') }
 function modelId(model) { return model?.modelId || model?.id }
-function isUsableInstance(instance) { return instance?.lifecycleStatus === '使用中' }
+function isUsableInstance(instance) { return instance?.lifecycleStatus === 'IN_USE' }
 
 function instanceId(instance) { return instance?.instanceId || instance?.id }
-function modelName(id) { return modelMap.value[String(id)]?.modelName || '-' }
+function modelName(id) { return modelMap.value[String(id)]?.modelName || '模型缺失（一致性异常）' }
+function templateHasModel(template) { return Boolean(template?.deviceModelId && modelMap.value[String(template.deviceModelId)]) }
 function templateName(id) { return templateMap.value[String(id)]?.templateName || '-' }
 function instanceName(id) { return instances.value.find(ins => String(instanceId(ins)) === String(id))?.instanceName || '-' }
 function instancePath(ins) { return `${modelName(ins.deviceModelId)} / ${ins.instanceName}` }
 function asArray(value) { return Array.isArray(value) ? value : [] }
 function errorMessage(err, fallback) { return err?.response?.data?.message || err?.message || fallback }
-function propertyTypeId(type) { const t = String(type || '').toUpperCase(); return t === 'DOUBLE' ? 4 : t === 'INTEGER' ? 3 : t === 'BOOLEAN' ? 5 : 6 }
+function propertyTypeId(type) {
+  const candidates = {
+    DOUBLE: ['double precision', 'double', 'float8', 'numeric', 'decimal'],
+    INTEGER: ['integer', 'int4', 'int', 'bigint'],
+    BOOLEAN: ['boolean', 'bool'],
+    JSON: ['jsonb', 'json'],
+    STRING: ['varchar', 'character varying', 'text', 'string']
+  }[String(type || 'STRING').toUpperCase()] || ['varchar', 'text']
+  const match = propertyTypes.value.find(row => candidates.includes(String(row.dbType || '').trim().toLowerCase()))
+  return match?.id || null
+}
 function uid() { return Math.random().toString(36).slice(2, 10) }
 function disposeChart() { chart.value?.dispose(); chart.value = null }
 function resizeChart() { chart.value?.resize() }
 
+let refreshInterval = null
 watch(templateDetails, () => nextTick(renderChart))
-onMounted(() => { loadAll(); window.addEventListener('resize', resizeChart) })
-onUnmounted(() => { window.removeEventListener('resize', resizeChart); disposeChart() })
+onMounted(() => { 
+  loadAll(); 
+  window.addEventListener('resize', resizeChart)
+  refreshInterval = setInterval(() => {
+    if (selectedDataset.value && !loadingRecords.value) {
+      loadRecords(true) // 后台静默刷新
+    }
+  }, 1000)
+})
+onUnmounted(() => { 
+  window.removeEventListener('resize', resizeChart); 
+  disposeChart();
+  if (refreshInterval) clearInterval(refreshInterval)
+})
 </script>
 
 <style scoped>
@@ -436,6 +545,7 @@ onUnmounted(() => { window.removeEventListener('resize', resizeChart); disposeCh
 .workspace-toolbar { min-height: 72px; padding: 10px 16px; background: #fff; border-bottom: 1px solid #cbd5e1; display: flex; justify-content: space-between; align-items: center; gap: 12px; }
 .workspace-toolbar span { color: #64748b; font-size: 12px; }
 .workspace-toolbar h1 { margin: 2px 0 0; font-size: 24px; line-height: 1.25; }
+.data-source-note { margin: 3px 0 0; color: #64748b; font-size: 12px; }
 .toolbar-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
 .workspace-body { flex: 1; min-height: 0; overflow: auto; padding: 10px 12px 22px; }
 .workspace-section { background: #fff; border: 1px solid #cbd5e1; padding: 12px; }

@@ -29,18 +29,18 @@ class MqttAdapterMessagingServiceTest {
         doNothing().when(service).publishCommand(any());
         when(mapper.buildCommandMessage("7", "heat", "msg-1", Map.of("target", 80)))
                 .thenReturn(message("start"));
-        when(mapper.buildAbortMessage("7", "msg-1")).thenReturn(message("abort"));
+        when(mapper.buildCommandMessage("7", "stopHeat", "msg-2", Map.of())).thenReturn(message("abort"));
 
         service.handleStateMachineSendAction(new StateMachineSendActionEvent(
                 7L, "Interface_adapter_out", "ADAPTER", "CMD_START",
                 "heat", "heat_cmd", "msg-1", Map.of("target", 80), JsonNodeSupport.objectNode()));
         service.handleStateMachineSendAction(new StateMachineSendActionEvent(
                 7L, "Interface_adapter_out", "ADAPTER", "CMD_ABORT",
-                null, null, "msg-1", Map.of(), JsonNodeSupport.objectNode()));
+                "stopHeat", "stop_heat_cmd", "msg-2", Map.of(), JsonNodeSupport.objectNode()));
 
         verify(mapper).buildCommandMessage("7", "heat", "msg-1", Map.of("target", 80));
-        verify(mapper).buildAbortMessage("7", "msg-1");
-        verify(mapper, never()).buildCommandMessage("7", null, "msg-1", Map.of());
+        verify(mapper).buildCommandMessage("7", "stopHeat", "msg-2", Map.of());
+        verify(mapper, never()).buildCommandMessage("7", null, "msg-2", Map.of());
     }
 
     @Test

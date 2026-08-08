@@ -17,7 +17,10 @@ import com.smartlab.management.mapper.resource.device.DeviceModelsMapper;
 import com.smartlab.management.mapper.resource.device.DeviceTwinStatesMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import com.smartlab.management.service.db.resource.data.DataIndexService;
+import com.smartlab.global.event.DeviceInstanceRetiredEvent;
+import com.smartlab.global.event.DeviceInstanceSavedEvent;
 import com.smartlab.management.service.protocol.AdapterPayloadMapperService;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -45,6 +48,7 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
     private final DeviceModelsMapper deviceModelsMapper;
     private final DeviceComponentService deviceComponentService;
     private final DeviceModelService deviceModelService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public DeviceInstanceService(DeviceInstancesMapper mapper,
                                  DeviceTwinStatesMapper twinStatesMapper,
@@ -52,7 +56,8 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
                                  AdapterPayloadMapperService protocolMapperService,
                                  DeviceModelsMapper deviceModelsMapper,
                                  DeviceComponentService deviceComponentService,
-                                 DeviceModelService deviceModelService) {
+                                 DeviceModelService deviceModelService,
+                                 ApplicationEventPublisher eventPublisher) {
         super(mapper);
         this.mapper = mapper;
         this.twinStatesMapper = twinStatesMapper;
@@ -61,6 +66,7 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
         this.deviceModelsMapper = deviceModelsMapper;
         this.deviceComponentService = deviceComponentService;
         this.deviceModelService = deviceModelService;
+        this.eventPublisher = eventPublisher;
     }
 
     @Override
@@ -145,7 +151,8 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
         instance.setBoundDevicePoint(stringValue(first(payload, "boundDevicePoint", "devicePoint")));
         instance.setPicture(stringValue(payload.get("picture")));
 
-        if (instance.getId() == null) {
+        boolean creating = instance.getId() == null;
+        if (creating) {
             instance.setLifecycleStatus(DeviceInstanceLifecycle.IN_USE);
             deviceModelService.requireRuntimeReadyForUpdate(instance.getDeviceModelId());
         } else {
@@ -184,7 +191,7 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
         }
         instance.setInstanceConfig(configNode);
 
-        if (instance.getId() == null) {
+        if (creating) {
             instance.setCreateTime(OffsetDateTime.now());
             mapper.insert(instance);
             createDefaultTwinState(instance.getId(), instance.getDeviceModelId());
@@ -198,6 +205,8 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
             mapper.updateById(instance);
         }
         protocolMapperService.refreshAdapterRouteTable();
+        eventPublisher.publishEvent(new DeviceInstanceSavedEvent(
+                instance.getId(), instance.getDeviceModelId(), creating));
         return instance;
     }
 
@@ -222,6 +231,7 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
         instance.setLifecycleStatus(DeviceInstanceLifecycle.RETIRED);
         mapper.updateById(instance);
         protocolMapperService.refreshAdapterRouteTable();
+        eventPublisher.publishEvent(new DeviceInstanceRetiredEvent(instanceId));
         return instance;
     }
 
@@ -290,8 +300,9 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
         for (JsonNode region : stateSpace.path("regions")) {
             String regionName = region.path("regionName").asText("");
             String initialStateName = region.path("initialStateName").asText("");
-            if (!regionName.isBlank() && !initialStateName.isBlank()) {
-                stateVector.put(regionName, initialStateName);
+            if (!regionName.isBlank()) {
+                com.fasterxml.jackson.databind.node.ArrayNode arr = stateVector.putArray(regionName);
+                if (!initialStateName.isBlank()) arr.add(initialStateName);
             }
         }
         return stateVector;

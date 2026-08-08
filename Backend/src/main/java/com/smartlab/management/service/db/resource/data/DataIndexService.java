@@ -23,6 +23,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
@@ -112,18 +113,23 @@ public class DataIndexService extends ManagementCrudService<DataIndex> {
      */
     @Transactional(rollbackFor = Exception.class)
     public DataIndex createDataSet(Long templateId, Long deviceInstanceId, String dataDesc) {
-        if (deviceInstanceId != null) {
-            DeviceInstances instance = deviceInstancesMapper.selectById(deviceInstanceId);
-            if (instance == null) throw new IllegalArgumentException("设备实例不存在: " + deviceInstanceId);
-            if (!DeviceInstanceLifecycle.isUsable(instance))
-                throw new IllegalStateException("设备实例已注销，不能创建新数据集");
-        }
         if (templateId == null) {
             throw new IllegalArgumentException("数据模板ID不能为空");
         }
-        DataTemplateMain template = templateMainMapper.selectById(templateId);
+        if (deviceInstanceId == null) {
+            throw new IllegalArgumentException("数据集必须绑定设备实例");
+        }
+        DeviceInstances instance = deviceInstancesMapper.selectByIdForUpdate(deviceInstanceId);
+        if (instance == null) throw new IllegalArgumentException("设备实例不存在: " + deviceInstanceId);
+        if (!DeviceInstanceLifecycle.isUsable(instance)) {
+            throw new IllegalStateException("设备实例已注销，不能创建新数据集");
+        }
+        DataTemplateMain template = templateMainMapper.selectByIdForUpdate(templateId);
         if (template == null) {
             throw new IllegalArgumentException("数据模板不存在");
+        }
+        if (!Objects.equals(instance.getDeviceModelId(), template.getDeviceModelId())) {
+            throw new IllegalStateException("数据模板与设备实例不属于同一设备模型");
         }
         List<DataTemplateDetail> details = templateDetailMapper.selectList(
                 Wrappers.<DataTemplateDetail>lambdaQuery()
@@ -160,14 +166,18 @@ public class DataIndexService extends ManagementCrudService<DataIndex> {
                         .eq(DataTemplateMain::getIsDefault, true)
                         .orderByAsc(DataTemplateMain::getId)
         );
-        return defaultTemplates.stream()
-                .filter(template -> !hasDataSet(deviceInstanceId, template.getId()))
-                .map(template -> createDataSet(
-                        template.getId(),
-                        deviceInstanceId,
-                        defaultDataDesc(instanceName, template.getTemplateName())
-                ))
-                .toList();
+        if (defaultTemplates.size() != 1) {
+            throw new IllegalStateException("设备模型必须且只能有一个默认数据模板，当前数量: " + defaultTemplates.size());
+        }
+        DataTemplateMain template = defaultTemplates.get(0);
+        if (hasDataSet(deviceInstanceId, template.getId())) {
+            return listByDeviceInstance(deviceInstanceId);
+        }
+        return List.of(createDataSet(
+                template.getId(),
+                deviceInstanceId,
+                defaultDataDesc(instanceName, template.getTemplateName())
+        ));
     }
 
     @Override
@@ -176,7 +186,7 @@ public class DataIndexService extends ManagementCrudService<DataIndex> {
         if (entity.getId() == null) {
             return createDataSet(entity.getDataTemplateId(), entity.getDeviceInstanceId(), entity.getDataDesc());
         }
-        return super.save(entity);
+        throw new IllegalStateException("数据集的模板、设备和物理表绑定创建后不可修改");
     }
 
     @Override
@@ -208,7 +218,7 @@ public class DataIndexService extends ManagementCrudService<DataIndex> {
 
     private void createPhysicalRecordTable(DataIndex index, List<DataTemplateDetail> details) {
         Map<Long, PropertyType> typeMap = loadPropertyTypes();
-        Set<String> usedColumns = new HashSet<>(Set.of("id", "data_index_id", "create_time"));
+        Set<String> usedColumns = new HashSet<>(Set.of("id", "data_index_id", "create_time", "ingest_time"));
         StringBuilder sql = new StringBuilder();
         sql.append("create table ").append(quoteIdentifier(index.getDataTable())).append(" (")
                 .append(quoteIdentifier("id")).append(" bigserial primary key, ")
@@ -227,7 +237,9 @@ public class DataIndexService extends ManagementCrudService<DataIndex> {
                     .append(", ");
         }
 
-        sql.append(quoteIdentifier("create_time")).append(" timestamptz not null default now())");
+        sql.append(quoteIdentifier("create_time")).append(" timestamptz not null, ")
+                .append(quoteIdentifier("ingest_time"))
+                .append(" timestamptz not null default now())");
         jdbcTemplate.execute(sql.toString());
         jdbcTemplate.execute("create index " + quoteIdentifier(index.getDataTable() + "_idx_time")
                 + " on " + quoteIdentifier(index.getDataTable()) + " (" + quoteIdentifier("create_time") + ")");

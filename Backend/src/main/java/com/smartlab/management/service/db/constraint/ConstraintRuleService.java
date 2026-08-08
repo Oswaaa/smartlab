@@ -16,6 +16,9 @@ import com.smartlab.management.mapper.constraint.ConstraintRuleMapper;
 import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
+import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.beans.factory.annotation.Autowired;
+import com.smartlab.global.event.ConstraintRulesChangedEvent;
 
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -34,13 +37,22 @@ public class ConstraintRuleService extends ManagementCrudService<ConstraintRule>
     private final ConstraintRuleMapper mapper;
     private final DeviceInstancesMapper deviceInstancesMapper;
     private final ConstraintExpressionEvaluator expressionEvaluator;
+    private final ApplicationEventPublisher eventPublisher;
 
+    @Autowired
     public ConstraintRuleService(ConstraintRuleMapper mapper, DeviceInstancesMapper deviceInstancesMapper,
-                                 ConstraintExpressionEvaluator expressionEvaluator) {
+                                 ConstraintExpressionEvaluator expressionEvaluator,
+                                 ApplicationEventPublisher eventPublisher) {
         super(mapper);
         this.mapper = mapper;
         this.deviceInstancesMapper = deviceInstancesMapper;
         this.expressionEvaluator = expressionEvaluator;
+        this.eventPublisher = eventPublisher;
+    }
+
+    public ConstraintRuleService(ConstraintRuleMapper mapper, DeviceInstancesMapper deviceInstancesMapper,
+                                 ConstraintExpressionEvaluator expressionEvaluator) {
+        this(mapper, deviceInstancesMapper, expressionEvaluator, event -> { });
     }
 
     public List<ConstraintRule> list(Boolean isEnabled) {
@@ -67,6 +79,7 @@ public class ConstraintRuleService extends ManagementCrudService<ConstraintRule>
         if (rule == null) throw new IllegalArgumentException("约束规则不存在");
         rule.setIsEnabled(enabled);
         mapper.updateById(rule);
+        eventPublisher.publishEvent(new ConstraintRulesChangedEvent(id));
         return rule;
     }
 
@@ -83,7 +96,15 @@ public class ConstraintRuleService extends ManagementCrudService<ConstraintRule>
     public ConstraintRule save(ConstraintRule entity) {
         normalize(entity);
         validate(entity, false);
-        return super.save(entity);
+        ConstraintRule saved = super.save(entity);
+        eventPublisher.publishEvent(new ConstraintRulesChangedEvent(saved.getId()));
+        return saved;
+    }
+
+    @Override
+    public void delete(java.io.Serializable id) {
+        super.delete(id);
+        eventPublisher.publishEvent(new ConstraintRulesChangedEvent(id instanceof Long value ? value : null));
     }
 
     private void normalize(ConstraintRule entity) {

@@ -232,7 +232,7 @@ function sanitizeValue(value) {
   if (Array.isArray(value)) return value.map(sanitizeValue)
   if (!value || typeof value !== 'object') return value
   return Object.entries(value).reduce((result, [key, child]) => {
-    if (key.startsWith('_') || key === 'position') return result
+    if (key.startsWith('_') || key === 'position' || key === 'compiled' || key === 'runtime') return result
     result[key] = sanitizeValue(child)
     return result
   }, {})

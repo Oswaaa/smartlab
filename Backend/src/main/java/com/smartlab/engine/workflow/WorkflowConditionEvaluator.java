@@ -46,6 +46,8 @@ public class WorkflowConditionEvaluator {
     }
 
     private boolean equal(JsonNode left, JsonNode right) {
+        if (left.isArray() && !right.isArray()) return contains(left, right);
+        if (right.isArray() && !left.isArray()) return contains(right, left);
         if (left.isNumber() && right.isNumber())
             return left.decimalValue().compareTo(right.decimalValue()) == 0;
         return left.equals(right) || left.asText().equals(right.asText());

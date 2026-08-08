@@ -25,15 +25,22 @@ mybatis-plus:
       id-type: auto
 
 smartlab:
+  adapter:
+    heartbeat-timeout-seconds: ${SMARTLAB_ADAPTER_HEARTBEAT_TIMEOUT_SECONDS:30}
+  state-machine:
+    intrinsic-scan-interval-ms: ${SMARTLAB_INTRINSIC_SCAN_INTERVAL_MS:100}
+  constraint:
+    scan-interval-ms: ${SMARTLAB_CONSTRAINT_SCAN_INTERVAL_MS:200}
   auth:
     jwt-secret: ${SMARTLAB_JWT_SECRET:change_me_to_a_256_bit_secret_for_local_dev}
     expiration-ms: ${SMARTLAB_JWT_EXPIRATION_MS:86400000}
 
 # MQTT Broker Config
 mqtt:
-  broker: tcp://192.168.11.178:1883
-  client-id: smartlab_backend_2.0
-  username: plc
+  # broker: tcp://192.168.11.178:1883
+  broker: tcp://127.0.0.1:1883
+  client-id: smartlab_system
+  username: lab_system
   password: 123456
   auto-start: true
   reconnect-delay-ms: 15000

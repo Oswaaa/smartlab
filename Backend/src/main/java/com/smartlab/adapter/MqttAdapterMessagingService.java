@@ -229,8 +229,8 @@ public class MqttAdapterMessagingService implements MqttCallback {
             commandMessage = protocolMapperService.buildCommandMessage(
                     String.valueOf(event.instanceId()), event.capabilityName(), event.messageId(), event.parameters());
         } else if ("CMD_ABORT".equals(event.signalName())) {
-            commandMessage = protocolMapperService.buildAbortMessage(
-                    String.valueOf(event.instanceId()), event.messageId());
+            commandMessage = protocolMapperService.buildCommandMessage(
+                    String.valueOf(event.instanceId()), event.capabilityName(), event.messageId(), event.parameters());
         } else {
             throw new IllegalArgumentException("不支持的 Adapter 下行信号: " + event.signalName());
         }

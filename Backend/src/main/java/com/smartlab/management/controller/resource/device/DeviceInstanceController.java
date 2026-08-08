@@ -9,6 +9,7 @@ import com.smartlab.management.entity.resource.device.DeviceInstances;
 import com.smartlab.management.entity.resource.device.DeviceTwinStates;
 import com.smartlab.adapter.MqttAdapterMessagingService;
 import com.smartlab.management.service.db.resource.device.DeviceInstanceService;
+import com.smartlab.management.service.db.user.CurrentUserPermissionService;
 import com.smartlab.management.service.protocol.AdapterPayloadMapperService;
 import com.smartlab.engine.statemachine.StateMachineEngine;
 import org.springframework.web.bind.annotation.*;
@@ -28,15 +29,18 @@ public class DeviceInstanceController {
     private final MqttAdapterMessagingService mqttAdapterMessagingService;
     private final StateMachineEngine stateMachineEngine;
     private final AdapterPayloadMapperService protocolMapperService;
+    private final CurrentUserPermissionService permissionService;
 
     public DeviceInstanceController(DeviceInstanceService deviceInstanceService,
                                     MqttAdapterMessagingService mqttAdapterMessagingService,
                                     StateMachineEngine stateMachineEngine,
-                                    AdapterPayloadMapperService protocolMapperService) {
+                                    AdapterPayloadMapperService protocolMapperService,
+                                    CurrentUserPermissionService permissionService) {
         this.deviceInstanceService = deviceInstanceService;
         this.mqttAdapterMessagingService = mqttAdapterMessagingService;
         this.stateMachineEngine = stateMachineEngine;
         this.protocolMapperService = protocolMapperService;
+        this.permissionService = permissionService;
     }
 
     @GetMapping("/list")
@@ -110,14 +114,20 @@ public class DeviceInstanceController {
     @PostMapping("/control/{id}")
     public ApiResponse<ObjectNode> control(@PathVariable String id, @RequestBody Map<String, Object> body) {
         try {
+            permissionService.require("device_instance", "control");
             deviceInstanceService.requireUsable(Long.valueOf(id));
-            String commandId = body == null ? "" : String.valueOf(body.getOrDefault("commandId", ""));
+            Object capabilityValue = body == null ? null
+                    : body.getOrDefault("capabilityName", body.get("commandId"));
+            String capabilityName = capabilityValue == null ? "" : String.valueOf(capabilityValue).trim();
+            if (capabilityName.isBlank()) {
+                throw new IllegalArgumentException("设备能力标识 capabilityName 不能为空");
+            }
             String signalName = body == null ? "MANUAL_EXECUTE_START" : String.valueOf(body.getOrDefault("signalName", "MANUAL_EXECUTE_START"));
             Map<String, Object> parameters = new HashMap<>();
             if (body != null && body.get("parameters") instanceof Map<?, ?> raw) {
                 raw.forEach((key, value) -> parameters.put(String.valueOf(key), value));
             }
-            ObjectNode result = stateMachineEngine.handleManualControl(Long.valueOf(id), signalName, commandId, parameters);
+            ObjectNode result = stateMachineEngine.handleManualControl(Long.valueOf(id), signalName, capabilityName, parameters);
             return ApiResponse.ok(result);
         } catch (Exception e) {
             return ApiResponse.fail(e.getMessage());

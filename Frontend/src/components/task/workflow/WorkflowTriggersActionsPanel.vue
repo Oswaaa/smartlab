@@ -20,7 +20,7 @@ const outputInterfaces = computed(() => (props.node.interfaces || []).filter((it
 const inputInterfaces = computed(() => (props.node.interfaces || []).filter((item: Item) => item.direction === 'IN'))
 const actionNames = computed(() => actions.value.map((item: Item) => item.actionName).filter(Boolean))
 const customActionNames = computed(() => nodeCustomTriggerActionNames(props.node))
-const conditionObjects = computed(() => ['inputSignalName', 'inputPayload.stateName', 'nodeLifecycleState', 'expression', ...(props.node.internalVariables || []).map((item: Item) => item.name)])
+const conditionObjects = computed(() => ['inputSignalName', 'inputPayload.stateName', 'inputPayload.state', 'nodeLifecycleState', 'expression', ...(props.node.internalVariables || []).map((item: Item) => item.name)])
 function publish(next: Item) { emit('update:node', next) }
 function allowedSignals(interfaceName: string) { return outputInterfaces.value.find((item: Item) => item.name === interfaceName)?.allowedSignals || [] }
 function uniqueActionName(prefix: string) { let index = 1; while (actionNames.value.includes(`${prefix}${index}`)) index += 1; return `${prefix}${index}` }

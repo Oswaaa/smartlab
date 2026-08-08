@@ -2,7 +2,7 @@ package com.smartlab.engine.workflow;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.smartlab.engine.statemachine.StateMachineEngine;
+import com.smartlab.engine.statemachine.StateMachineCommandPort;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.workflow.WorkflowDetailResponse;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
@@ -24,18 +24,18 @@ import java.util.UUID;
 public class DefaultWorkflowExecutionOperations implements WorkflowExecutionOperations {
     private final WorkflowRuntimeService runtime;
     private final WorkflowTaskResourceService taskResourceService;
-    private final StateMachineEngine stateMachineEngine;
+    private final StateMachineCommandPort stateMachineCommandPort;
     private final WorkflowService workflowService;
     private final DeviceTwinStateService twinStateService;
 
     public DefaultWorkflowExecutionOperations(WorkflowRuntimeService runtime,
                                               WorkflowTaskResourceService taskResourceService,
-                                              StateMachineEngine stateMachineEngine,
+                                              StateMachineCommandPort stateMachineCommandPort,
                                               WorkflowService workflowService,
                                               DeviceTwinStateService twinStateService) {
         this.runtime = runtime;
         this.taskResourceService = taskResourceService;
-        this.stateMachineEngine = stateMachineEngine;
+        this.stateMachineCommandPort = stateMachineCommandPort;
         this.workflowService = workflowService;
         this.twinStateService = twinStateService;
     }
@@ -96,7 +96,7 @@ public class DefaultWorkflowExecutionOperations implements WorkflowExecutionOper
                 ? JsonNodeSupport.MAPPER.convertValue(parameters, Map.class) : Map.of());
         context.put("taskId", task.getId());
         context.put("taskStepId", step.getId());
-        return stateMachineEngine.dispatchSignal(deviceInstanceId, route.deviceInputInterfaceName(), signalName, context).isEmpty()
+        return stateMachineCommandPort.dispatchInputSignal(deviceInstanceId, route.deviceInputInterfaceName(), signalName, context).isEmpty()
                 ? DeviceDispatchResult.DEVICE_BUSY : DeviceDispatchResult.ACCEPTED;
     }
 
@@ -107,7 +107,7 @@ public class DefaultWorkflowExecutionOperations implements WorkflowExecutionOper
         context.put("messageId", messageId);
         context.put("taskId", task.getId());
         context.put("taskStepId", step.getId());
-        if (stateMachineEngine.dispatchSignal(deviceInstanceId, route.deviceInputInterfaceName(), "WF_EXECUTE_ABORT", context).isEmpty()) {
+        if (stateMachineCommandPort.dispatchInputSignal(deviceInstanceId, route.deviceInputInterfaceName(), "WF_EXECUTE_ABORT", context).isEmpty()) {
             throw new IllegalStateException("设备状态机未接受WF_EXECUTE_ABORT");
         }
     }

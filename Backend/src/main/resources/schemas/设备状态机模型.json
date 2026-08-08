@@ -41,19 +41,20 @@
     },
     "opStateSpace": {
       "type": "object",
-      "description": "设备业务功能状态（OP状态空间）",
+      "description": "设备业务功能状态（OP状态空间）；每个区域的运行时当前状态统一表示为状态名数组，具体数量与变化方式由regionType决定",
       "properties": {
         "regions": {
           "type": "array",
-          "description": "业务功能状态分区",
+          "description": "业务功能状态分区；OPERATIONAL区域是互斥单状态区域，EXCEPTION区域是可同时激活多个异常状态的集合区域",
           "items": {
             "type": "object",
             "properties": {
               "regionName": { "type": "string", "description": "分区名" },
-              "initialStateName": { "type": "string", "description": "分区的初始状态" },
+              "regionType": { "type": "string", "enum": ["OPERATIONAL", "EXCEPTION"], "description": "区域类型：OPERATIONAL为互斥单状态的功能业务区域；EXCEPTION为不经过普通状态转移、可同时激活多个状态的异常集合区域" },
+              "initialStateName": { "type": "string", "description": "区域初始状态名；OPERATIONAL区域必须引用本区域states[].stateName，EXCEPTION区域必须为空字符串" },
               "states": {
                 "type": "array",
-                "description": "分区状态列表",
+                "description": "分区允许使用的状态定义列表；EXCEPTION区域中的每个状态都必须至少被一条设备内置约束violationStateName引用，状态由监测器直接激活",
                 "items": {
                   "type": "object",
                   "properties": {
@@ -67,7 +68,7 @@
                 }
               }
             },
-            "required": [ "regionName", "initialStateName", "states" ]
+            "required": [ "regionName", "regionType", "initialStateName", "states" ]
           }
         }
       },
@@ -97,7 +98,7 @@
     },
     "transitions": {
       "type": "array",
-      "description": "设备状态转移规则系统级固定转移（systemTransitions）已由系统执行规范预定义，此处只需声明设备特有的转移规则（如adapter事件触发的SENT→RUNNING、RUNNING→COMPLETED等）",
+      "description": "设备状态转移规则系统级固定转移（systemTransitions）已由系统执行规范预定义，此处只需声明设备特有的转移规则（如adapter事件触发的SENT→RUNNING、RUNNING→COMPLETED等）；OP转移只能引用regionType为OPERATIONAL的区域，EXCEPTION区域由状态机内置约束监测器直接维护活动状态集合，不声明普通转移",
       "items": {
         "type": "object",
         "properties": {
@@ -107,7 +108,7 @@
             "enum": [ "CMD", "OP" ],
             "description": "CMD：指令生命周期；OP：业务功能状态"
           },
-          "regionName": { "type": "string", "description": "当stateSpace为OP时必填，归属的业务功能状态分区名" },
+          "regionName": { "type": "string", "description": "当stateSpace为OP时必填，引用regionType为OPERATIONAL的业务功能状态分区名" },
           "fromStateName": { "type": "string", "description": "原状态" },
           "toStateName": { "type": "string", "description": "目标状态" },
           "trigger": {

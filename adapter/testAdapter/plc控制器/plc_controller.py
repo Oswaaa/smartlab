@@ -30,6 +30,7 @@ DEVICE_SN = "plc0001"
 
 # 寄存器说明
 # MW0  : 温度原始值 (÷100 → °C)
+# MW10 : 报警状态   1=开 0=关
 # MW20 : 散热输出   1=开 0=关
 # MW21 : 自动模式   1=是 0=否
 # MW22 : 手动模式   1=是 0=否
@@ -203,13 +204,13 @@ class Remote(tk.Tk):
         # ── 三色状态指示 ──────────────────────────────────────
         sf = tk.Frame(self, bg=BG)
         sf.grid(row=2, column=0, sticky="ew", padx=14, pady=3)
-        sf.columnconfigure((0, 1, 2), weight=1)
+        sf.columnconfigure((0, 1, 2, 3), weight=1)
 
         def indicator(col, title):
             f = tk.Frame(sf, bg=SURF,
                          highlightbackground=BORD, highlightthickness=1)
             f.grid(row=0, column=col, sticky="nsew",
-                   padx=(0, 5 if col < 2 else 0))
+                   padx=(0, 5 if col < 3 else 0))
             tk.Label(f, text=title, bg=SURF, fg=DIM, font=fN).pack(pady=(6, 1))
             dot = tk.Label(f, text="●", bg=SURF, fg=DIM,
                            font=tkfont.Font(family="微软雅黑",
@@ -222,6 +223,7 @@ class Remote(tk.Tk):
         self._dot_auto,   self._val_auto   = indicator(0, "自动模式")
         self._dot_manual, self._val_manual = indicator(1, "手动模式")
         self._dot_cool,   self._val_cool   = indicator(2, "散热输出")
+        self._dot_alarm,  self._val_alarm  = indicator(3, "报警状态")
 
         # ── 控制区（按钮 + 寄存器格） ─────────────────────────
         mid = self._card(3)
@@ -249,6 +251,8 @@ class Remote(tk.Tk):
         btn("🖐  手动模式", ORG, self._manual,   0, 1)
         btn("❄  开启散热", CYN, self._cool_on,  1, 0)
         btn("🔥  关闭散热", RED, self._cool_off, 1, 1)
+        btn("🚨  触发报警", RED, self._alarm_on, 2, 0)
+        btn("✅  取消报警", GRN, self._alarm_off, 2, 1)
 
         # 分隔线
         tk.Frame(mid, bg=BORD, height=1).pack(fill="x", padx=12, pady=(8, 5))
@@ -258,14 +262,14 @@ class Remote(tk.Tk):
                  bg=SURF, fg=DIM, font=fN).pack(anchor="w", padx=12, pady=(0, 4))
         rg = tk.Frame(mid, bg=SURF)
         rg.pack(fill="x", padx=12, pady=(0, 10))
-        for c in range(4):
+        for c in range(5):
             rg.columnconfigure(c, weight=1)
 
         def reg_cell(col, name, desc):
             cell = tk.Frame(rg, bg=ELEV,
                             highlightbackground=BORD, highlightthickness=1)
             cell.grid(row=0, column=col, sticky="nsew",
-                      padx=(0, 5 if col < 3 else 0), ipadx=4, ipady=3)
+                      padx=(0, 5 if col < 4 else 0), ipadx=4, ipady=3)
             tk.Label(cell, text=name, bg=ELEV, fg=BLUE,
                      font=tkfont.Font(family="Consolas", size=9)).pack()
             tk.Label(cell, text=desc, bg=ELEV, fg=DIM,
@@ -275,9 +279,10 @@ class Remote(tk.Tk):
             return lbl
 
         self._lbl_mw0  = reg_cell(0, "MW0",  "温度")
-        self._lbl_mw20 = reg_cell(1, "MW20", "散热")
-        self._lbl_mw21 = reg_cell(2, "MW21", "自动")
-        self._lbl_mw22 = reg_cell(3, "MW22", "手动")
+        self._lbl_mw10 = reg_cell(1, "MW10", "报警")
+        self._lbl_mw20 = reg_cell(2, "MW20", "散热")
+        self._lbl_mw21 = reg_cell(3, "MW21", "自动")
+        self._lbl_mw22 = reg_cell(4, "MW22", "手动")
 
         # ── 日志 ──────────────────────────────────────────────
         lf = self._card(4, expand=True)
@@ -353,6 +358,7 @@ class Remote(tk.Tk):
             self._lbl_upd.config(text=f"更新 {time.strftime('%H:%M:%S')}")
 
         for name, lbl in [("MW0",  self._lbl_mw0),
+                           ("MW10", self._lbl_mw10),
                            ("MW20", self._lbl_mw20),
                            ("MW21", self._lbl_mw21),
                            ("MW22", self._lbl_mw22)]:
@@ -361,6 +367,7 @@ class Remote(tk.Tk):
         auto   = bool(r.get("MW21", 0) & 1)
         manual = bool(r.get("MW22", 0) & 1)
         cool   = bool(r.get("MW20", 0) & 1)
+        alarm  = bool(r.get("MW10", 0) & 1)
 
         self._dot_auto.config(fg=GRN if auto else DIM)
         self._val_auto.config(text="开启" if auto else "关闭",
@@ -371,6 +378,9 @@ class Remote(tk.Tk):
         self._dot_cool.config(fg=CYN if cool else DIM)
         self._val_cool.config(text="运行" if cool else "停止",
                               fg=CYN if cool else DIM)
+        self._dot_alarm.config(fg=RED if alarm else DIM)
+        self._val_alarm.config(text="报警中" if alarm else "正常",
+                               fg=RED if alarm else DIM)
 
     # ──────────────────────────────────────────────────────────
     # 指令
@@ -388,6 +398,12 @@ class Remote(tk.Tk):
 
     def _cool_off(self):
         self._mqtt.send({"MW20": 0})
+
+    def _alarm_on(self):
+        self._mqtt.send({"MW10": 1})
+
+    def _alarm_off(self):
+        self._mqtt.send({"MW10": 0})
 
     # ──────────────────────────────────────────────────────────
     # 日志

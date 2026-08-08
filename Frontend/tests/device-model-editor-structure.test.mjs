@@ -28,3 +28,9 @@ test('adapter contract is explicitly read-only while mappings remain editable', 
   assert.equal(source.includes('@click="addAdapterCommand"'), false)
   assert.equal(source.includes('@click="addAdapterAttribute"'), false)
 })
+
+test('termination lifecycle presents the system default and optional adapter event separately', () => {
+  assert.ok(source.includes('终止成功默认转换'))
+  assert.ok(source.includes('终止能力完成后，系统自动将原指令转为 ABORTED'))
+  assert.ok(source.includes('（可选Adapter事件）'))
+})

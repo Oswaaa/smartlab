@@ -160,7 +160,7 @@ export function normalizeEventsToFlatList(events) {
 export function normalizeAttributes(value) { return asArray(value).map(item => ({ _key: item._key || makeUiKey('attr'), name: stringValue(item.attributeName || item.name), displayName: stringValue(item.displayName || item.attributeName || item.name), valueKind: item.valueKind === 'DISCRETE' ? 'DISCRETE' : 'CONTINUOUS', dataType: normalizeDataType(item.dataType, 'DOUBLE', attributeDataTypes), unit: stringValue(item.unit) })) }
 
 export function normalizeCapabilities(value) {
-  return asArray(value).map(item => {
+  const capabilities = asArray(value).map(item => {
     const params = asArray(item.parameters).map(param => ({
       _key: param._key || makeUiKey('param'),
       name: stringValue(param.name),
@@ -175,15 +175,33 @@ export function normalizeCapabilities(value) {
       isFixedValue: !!mapping.isFixedValue,
       fixedValue: mapping.fixedValue ?? ''
     }))
+    const isAbort = item.isAbort === true
     return {
       _key: item._key || makeUiKey('cap'),
-      name: stringValue(item.name),
-      displayName: stringValue(item.displayName || item.name),
+      name: stringValue(item.capabilityName || item.name),
+      displayName: stringValue(item.displayName || item.capabilityName || item.name),
       adapterCommandName: stringValue(item.adapterCommandName),
+      isAbort,
+      abortCapabilityName: isAbort ? null : (stringValue(item.abortCapabilityName) || null),
+      abortCapabilityKey: '',
+      scope: isAbort ? asArray(item.scope).map(stringValue).filter(Boolean) : [],
+      scopeCapabilityKeys: [],
       parameters: params,
       parameterMapping
     }
   })
+  const capabilityKeyByName = new Map()
+  capabilities.forEach(capability => {
+    if (capability.name && !capabilityKeyByName.has(capability.name)) capabilityKeyByName.set(capability.name, capability._key)
+  })
+  capabilities.forEach(capability => {
+    if (!capability.isAbort) {
+      capability.abortCapabilityKey = capabilityKeyByName.get(capability.abortCapabilityName) || ''
+      return
+    }
+    capability.scopeCapabilityKeys = capability.scope.map(name => capabilityKeyByName.get(name)).filter(Boolean)
+  })
+  return capabilities
 }
 
 export function extractFunctionMappings(capabilities, normalizedCapabilities = null) {
@@ -283,11 +301,13 @@ export function normalizeStateSpace(value, fallback, spaceType) {
     const regions = asArray(source.regions).length > 0 ? asArray(source.regions) : defaultOpStateSpace(fallback).regions
     return {
       regions: regions.map((region, index) => {
+        const regionType = stringValue(region.regionType).toUpperCase()
         const states = asArray(region.states).length > 0 ? asArray(region.states) : [{ stateName: fallback }]
         return {
           _key: region._key || makeUiKey('region'),
           regionName: stringValue(region.regionName || ('分区 ' + (index + 1))),
-          initialStateName: stringValue(region.initialStateName || states[0]?.stateName || fallback),
+          regionType,
+          initialStateName: regionType === 'EXCEPTION' ? '' : stringValue(region.initialStateName || states[0]?.stateName || fallback),
           states: states.map(item => {
             const onEntry = asArray(item.onEntry).map(action => ({
               _key: action._key || makeUiKey('action'),
@@ -330,10 +350,14 @@ export function normalizeTransitions(value) {
     if (!['CMD', 'OP'].includes(stateSpace)) {
       throw new Error('状态转移必须明确声明 stateSpace 为 CMD 或 OP')
     }
+    const regionName = stateSpace === 'OP' ? stringValue(item.regionName) : undefined
+    if (stateSpace === 'OP' && !regionName) {
+      throw new Error('OP 状态转移必须指定 regionName')
+    }
     return {
       _key: item._key || makeUiKey('transition'),
       stateSpace,
-      regionName: stateSpace === 'OP' ? stringValue(item.regionName || 'Main') : undefined,
+      regionName,
       description: stringValue(item.description),
       fromStateName: stringValue(item.fromStateName),
       toStateName: stringValue(item.toStateName),
@@ -384,8 +408,15 @@ export function materializePorts(rows, attrNameByKey) {
 
 export function materializeCapabilities(rows, functionMappings = []) {
   const usedCapabilityNames = new Set()
-  return asArray(rows).filter(item => stringValue(item.name || item.displayName)).map((item, index) => {
-    const mapping = functionMappings.find(fm => fm.capabilityKey === item._key)
+  const preparedRows = asArray(rows).filter(item => stringValue(item.name || item.displayName)).map((item, index) => ({
+    item,
+    name: materializedName(item, 'capability_' + (index + 1), usedCapabilityNames),
+    mapping: functionMappings.find(fm => fm.capabilityKey === item._key)
+  }))
+  const capabilityNameByKey = new Map(preparedRows.map(row => [row.item._key, row.name]))
+  const capabilityByKey = new Map(preparedRows.map(row => [row.item._key, row.item]))
+
+  return preparedRows.map(({ item, name, mapping }) => {
     const paramNames = new Map()
     const usedParamNames = new Set()
     const parameters = asArray(item.parameters).filter(param => stringValue(param.name || param.displayName)).map((param, paramIndex) => {
@@ -393,14 +424,27 @@ export function materializeCapabilities(rows, functionMappings = []) {
       paramNames.set(param._key, name)
       return { name, displayName: stringValue(param.displayName || name), dataType: normalizeDataType(param.dataType, 'DOUBLE', attributeDataTypes) }
     })
-    const name = materializedName(item, 'capability_' + (index + 1), usedCapabilityNames)
-    return {
+    const isAbort = item.isAbort === true
+    const capability = {
       capabilityName: name,
       adapterCommandName: mapping?.adapterCommandName || item.adapterCommandName,
       displayName: stringValue(item.displayName || name),
+      isAbort,
+      abortCapabilityName: isAbort
+        ? null
+        : (lookupName(capabilityNameByKey, item.abortCapabilityKey) || stringValue(item.abortCapabilityName) || null),
       parameters,
       parameterMapping: materializeParameterMappings(mapping?.parameterMapping || item.parameterMapping, paramNames)
     }
+    if (isAbort) {
+      const scopeNames = asArray(item.scopeCapabilityKeys)
+        .filter(key => capabilityByKey.get(key)?.isAbort !== true)
+        .map(key => lookupName(capabilityNameByKey, key))
+        .filter(Boolean)
+      const fallbackScopeNames = asArray(item.scope).map(stringValue).filter(Boolean)
+      capability.scope = [...new Set(scopeNames.length ? scopeNames : fallbackScopeNames)]
+    }
+    return capability
   })
 }
 

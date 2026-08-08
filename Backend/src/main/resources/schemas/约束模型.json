@@ -25,7 +25,7 @@
         "type": "object",
         "properties": {
           "name": { "type": "string", "description": "约束规则名" },
-          "expression": { "type": "string", "description": "布尔表达式，结果为true时视为违规并执行violationActions支持运算符：算术（+,-,*,/）、比较（>,<,>=,<=,==,!=）、逻辑（&&,||,!）内置函数：delta(var,seconds) N秒内变化量；avg(var,seconds) N秒滚动均值；rate(var) 变化速率（单位/秒）表达式中的变量名须在bindings中声明示例：'a > 80'、'delta(a,60) > 5'、'avg(a,300) > b && state == RUNNING'" },
+          "expression": { "type": "string", "description": "布尔表达式，结果为true时视为违规并执行violationActions支持运算符：算术（+,-,*,/）、比较（>,<,>=,<=,==,!=）、逻辑（&&,||,!）内置函数：delta(var,seconds) N秒内变化量；avg(var,seconds) N秒滚动均值；rate(var) 变化速率（单位/秒）表达式中的变量名须在bindings中声明示例：'a > 80'、'delta(a,60) > 5'、'avg(a,300) > b'" },
           "bindings": {
             "type": "object",
             "description": "表达式中变量名到数据源的纯映射，不含任何计算逻辑（计算逻辑写在expression中）key为表达式中的变量名，value为绑定目标",
@@ -103,7 +103,7 @@
       ]
     },
     "deviceOpStateObservable": {
-      "description": "DEVICE_OPERATION_STATE：监测某设备实例（或某模型所有实例）的业务功能状态",
+      "description": "DEVICE_OPERATION_STATE：监测某设备实例（或某模型所有实例）的业务功能状态；当前值来自OperationStatePayload.state，是指定区域完整活动状态数组，dataType使用JSON；OPERATIONAL区域数组有且仅有一个状态，EXCEPTION区域数组允许为空或包含多个状态",
       "allOf": [
         { "$ref": "#/definitions/observableBase" },
         {
@@ -182,7 +182,7 @@
       "required": [ "actionType", "action", "targetTaskId" ]
     },
     "deviceCapabilityViolationAction": {
-      "description": "DEVICE_CAPABILITY：通过目标设备状态机执行指定能力；目标能力isAbort为true时转换为CONSTRAINT_ABORT，否则转换为CONSTRAINT_EXECUTE",
+      "description": "DEVICE_CAPABILITY：通过目标设备状态机执行指定能力；统一发送CONSTRAINT_EXECUTE，由状态机根据能力模型的isAbort路由到普通或可插队终止状态机；CONSTRAINT_ABORT仅用于终止目标设备当前活动的普通命令",
       "type": "object",
       "properties": {
         "actionType": { "type": "string", "const": "DEVICE_CAPABILITY" },

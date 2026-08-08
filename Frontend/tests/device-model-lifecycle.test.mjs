@@ -7,7 +7,7 @@ const requirements = [
   { kind: 'MAIN', fromStateName: 'SENT', toStateName: 'RUNNING', triggerPolicy: 'REQUIRED' },
   { kind: 'MAIN', fromStateName: 'RUNNING', toStateName: 'COMPLETED', triggerPolicy: 'REQUIRED' },
   { kind: 'FAILURE', fromStateName: 'RUNNING', toStateName: 'FAILED', triggerPolicy: 'REQUIRED' },
-  { kind: 'TERMINATION', fromStateName: 'ABORTING', toStateName: 'ABORTED', triggerPolicy: 'REQUIRED' }
+  { kind: 'TERMINATION', fromStateName: 'ABORTING', toStateName: 'ABORTED', triggerPolicy: 'OPTIONAL' }
 ]
 
 test('builds exactly the four adapter-driven command lifecycle transitions from the final contract', () => {
@@ -66,4 +66,22 @@ test('hydrates each final lifecycle event binding by its from and to state', () 
   assert.equal(bindings['main:RUNNING:COMPLETED'], 'DONE')
   assert.equal(bindings['failure:RUNNING:FAILED'], 'FAILED')
   assert.equal(bindings['termination:ABORTING:ABORTED'], 'ABORTED')
+})
+
+test('omits the optional explicit abort event while keeping required lifecycle transitions', () => {
+  const rows = lifecycle.buildLifecycleRuleRows(requirements)
+  const transitions = lifecycle.serializeLifecycleTransitions(rows, {
+    'main:SENT:RUNNING': 'STARTED',
+    'main:RUNNING:COMPLETED': 'DONE',
+    'failure:RUNNING:FAILED': 'FAILED'
+  }, 'Interface_adapter_in')
+
+  assert.deepEqual(
+    transitions.map(row => [row.fromStateName, row.toStateName]),
+    [
+      ['SENT', 'RUNNING'],
+      ['RUNNING', 'COMPLETED'],
+      ['RUNNING', 'FAILED']
+    ]
+  )
 })

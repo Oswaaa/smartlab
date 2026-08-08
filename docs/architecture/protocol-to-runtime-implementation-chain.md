@@ -60,8 +60,7 @@ flowchart LR
 | `SystemSignalFormat` | 系统内部信号的统一外形 | 协议字典定义 | 当前运行时使用同构 `signalName + payload` 对象，但没有逐次调用该 definition 校验 |
 | `MqttTopicConvention` | 注册、心跳、命令、遥测、事件 Topic | `resolveMqttTopic()`、`matchMqttTopic()` | `MqttAdapterMessagingService` 和 testAdapter Topic 路由 |
 | `AdapterRegisterRequest` | Adapter 注册报文 | `validateDefinition()` | MQTT 注册入口、手动注册预览入口 |
-| `CommandMessageFormat` | 系统下发命令报文 | `validateDefinition()` | `AdapterPayloadMapperService.buildCommandMessage()` |
-| `CommandAbortMessageFormat` | 系统下发中止报文 | `validateDefinition()` | `AdapterPayloadMapperService.buildAbortMessage()` |
+| `CommandMessageFormat` | 普通指令、附属终止指令和独立终止指令的统一下行报文 | `validateDefinition()` | `StateMachineEngine` 解析具体能力后统一调用 `AdapterPayloadMapperService.buildCommandMessage()` |
 | `TelemetryMessageFormat` | Adapter 上行遥测报文 | `validateDefinition()` | `MqttAdapterMessagingService` → `applyTelemetry()` |
 | `EventMessageFormat` | Adapter 上行事件报文 | `validateDefinition()` | `MqttAdapterMessagingService` → `applyAdapterEvent()` |
 | `AdapterHeartbeat` | Adapter 心跳报文 | `validateDefinition()` | `AdapterIndexService.heartbeat()` |
@@ -443,6 +442,27 @@ eventTopic
 - `FAILED/ABORTED` 将当前步骤标记失败。
 
 cmdEvents 和 opEvents 均由 Adapter 配置文件定义，不在 `protocol-dict.json` 中维护固定事件名。
+
+### 12.3 内置约束监测
+
+设备实例建立或服务启动时，状态机将实例对应的设备模型、`intrinsicConstraints` 和
+`EXCEPTION` 状态区域映射编译为内存运行计划。监测器独立轮询设备属性内存快照，先比较
+属性快照 `revision`；未变化的设备不复制属性 JSON，也不重复计算约束。
+
+```text
+设备属性内存快照
+  └─ revision 发生变化
+       └─ 读取内存约束运行计划
+            └─ 读取状态机内存快照中的当前异常集合
+                 ├─ 没有新增违规：不访问 DEVICE_TWIN_STATES
+                 └─ 出现新增违规：局部追加 EXCEPTION 状态
+                      └─ 执行异常状态 onEntry.SEND
+                           └─ OP_STATE 更新状态机内存观察快照
+```
+
+人工解除同样使用内存约束计划、最新属性快照和当前异常集合复核条件，仅在异常确实可以
+解除时局部删除状态。CMD、OPERATIONAL 和 EXCEPTION 状态均只在真实变化时持久化；
+`DEVICE_TWIN_STATES` 是持久化结果，不是监测器每轮计算的数据源。
 
 ## 13. testAdapter 到 PLC 的实现链路
 

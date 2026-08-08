@@ -25,6 +25,7 @@ import java.util.function.Consumer;
 
 import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -44,6 +45,7 @@ class DeviceModelServiceTest {
         private DeviceInstancesMapper deviceInstancesMapper;
         private DeviceModelService service;
         private AdapterIndexService adapterIndexService;
+        private DataTemplateService dataTemplateService;
 
         @BeforeEach
         void setUp() {
@@ -52,16 +54,22 @@ class DeviceModelServiceTest {
                 adapterIndexService = mock(AdapterIndexService.class);
                 ProtocolDictionaryService protocol = new ProtocolDictionaryService();
                 adapterManifestService = mock(AdapterManifestService.class);
+                dataTemplateService = mock(DataTemplateService.class);
                 service = new DeviceModelService(
                                 modelMapper,
                                 deviceInstancesMapper,
                                 mock(DeviceCategoryService.class),
                                 adapterManifestService,
                                 protocol,
-                                mock(DataTemplateService.class),
+                                dataTemplateService,
                                 adapterIndexService);
                 when(adapterManifestService.normalizeDataType(any()))
                                 .thenAnswer(invocation -> invocation.getArgument(0));
+                when(modelMapper.insert(any(DeviceModels.class))).thenAnswer(invocation -> {
+                        DeviceModels model = invocation.getArgument(0);
+                        if (model.getId() == null) model.setId(7L);
+                        return 1;
+                });
         }
 
         @Test
@@ -91,6 +99,20 @@ class DeviceModelServiceTest {
                 verify(modelMapper, never()).deleteById(any(Serializable.class));
         }
 
+        @Test
+        void deleteRemovesTemplatesBeforeDeletingUninstantiatedModel() {
+                DeviceModels lockedModel = completeModel();
+                when(modelMapper.selectByIdForUpdate(7L)).thenReturn(lockedModel);
+                when(deviceInstancesMapper.selectCount(any())).thenReturn(0L);
+
+                service.delete((Serializable) "7");
+
+                InOrder order = inOrder(modelMapper, deviceInstancesMapper, dataTemplateService);
+                order.verify(modelMapper).selectByIdForUpdate(7L);
+                order.verify(deviceInstancesMapper).selectCount(any());
+                order.verify(dataTemplateService).deleteByModelIdForModelRemoval(7L);
+                order.verify(modelMapper).deleteById(7L);
+        }
         @Test
         void updateLocksModelRowBeforeReferenceCheckAndWrite() {
                 DeviceModelSaveDTO payload = completePayload();
@@ -260,6 +282,12 @@ class DeviceModelServiceTest {
         void saveUsesTheSameCanonicalAdapterContractAsPreview() {
                 DeviceModelSaveDTO payload = minimalPayload();
                 payload.setCategoryId(7L);
+                ObjectNode defaultTemplate = JsonNodeSupport.objectNode();
+                defaultTemplate.putArray("details").addObject()
+                                .put("columnName", "constant_value")
+                                .put("propertyTypeId", 4L)
+                                .put("defaultValue", "0");
+                payload.setDefaultDataTemplate(defaultTemplate);
                 ObjectNode config = (ObjectNode) payload.getAdapterContract().path("config");
                 config.put("categoryName", "Reactor");
                 config.put("adapterName", "adapter-1");
@@ -277,6 +305,26 @@ class DeviceModelServiceTest {
         }
 
         @Test
+        void previewKeepsUserConfiguredTelemetryMappingsWhenCanonicalizingAdapterContract() {
+                DeviceModelSaveDTO payload = completePayload();
+                ObjectNode canonical = registeredContract("adapter-1", "Reactor", "start");
+                ((ObjectNode) canonical.path("commands").get(0)).withArray("commandParameters").addObject()
+                                .put("paramName", "duration")
+                                .put("dataType", "INTEGER");
+                ((ArrayNode) canonical.path("telemetry").path("adapterAttributes")).addObject()
+                                .put("telemetryName", "temperature")
+                                .put("dataType", "DOUBLE");
+                when(adapterIndexService.buildAdapterContract("adapter-1", "Reactor")).thenReturn(canonical);
+
+                ObjectNode preview = service.previewModel(payload);
+                JsonNode mapping = preview.path("capabilityModel").path("adapterContract")
+                                .path("telemetry").path("attributesMapping").get(0);
+
+                assertEquals("temperature", mapping.path("adapterAttrName").asText());
+                assertEquals("temperature", mapping.path("modelAttributeName").asText());
+        }
+
+        @Test
         void saveRejectsCapabilityWithoutRequiredShapeBeforeInsert() {
                 DeviceModelSaveDTO payload = completePayload();
                 ((ArrayNode) payload.getCapabilities()).addObject()
@@ -285,6 +333,26 @@ class DeviceModelServiceTest {
                 assertThrows(IllegalArgumentException.class, () -> service.savePayload(payload));
                 verify(modelMapper, never()).insert(any(DeviceModels.class));
         }
+        @Test
+        void acceptsAbortCapabilityRelationAndScope() {
+                DeviceModelSaveDTO payload = completePayload();
+                addAbortCapability(payload, "start");
+
+                ObjectNode bundle = service.previewModel(payload);
+
+                JsonNode capabilities = bundle.path("capabilityModel").path("capabilities");
+                assertEquals("stop", capabilities.get(0).path("abortCapabilityName").asText());
+                assertEquals("start", capabilities.get(1).path("scope").get(0).asText());
+        }
+
+        @Test
+        void rejectsAbortScopeReferencingUnknownCapability() {
+                DeviceModelSaveDTO payload = completePayload();
+                addAbortCapability(payload, "missing");
+
+                assertThrows(IllegalArgumentException.class, () -> service.previewModel(payload));
+        }
+
 
         @Test
         void saveRejectsStateTransitionReferencingUnknownAdapterEvent() {
@@ -294,6 +362,59 @@ class DeviceModelServiceTest {
 
                 assertThrows(IllegalArgumentException.class, () -> service.savePayload(payload));
                 verify(modelMapper, never()).insert(any(DeviceModels.class));
+        }
+
+        @Test
+        void allowsModelWithoutOptionalExplicitAbortTerminalEvent() {
+                DeviceModelSaveDTO payload = completePayload();
+                ArrayNode transitions = (ArrayNode) payload.getStateTransitions();
+                for (int index = transitions.size() - 1; index >= 0; index--) {
+                        JsonNode transition = transitions.get(index);
+                        if ("CMD".equals(transition.path("stateSpace").asText())
+                                        && "ABORTING".equals(transition.path("fromStateName").asText())
+                                        && "ABORTED".equals(transition.path("toStateName").asText())) {
+                                transitions.remove(index);
+                        }
+                }
+
+                assertDoesNotThrow(() -> service.previewModel(payload));
+        }
+
+        @Test
+        void runtimeReadBackfillsMissingTerminationDefaultsWithoutPersisting() {
+                DeviceModels model = completeModel();
+                ObjectNode capability = (ObjectNode) model.getCapabilities().get(0);
+                capability.remove("isAbort");
+                capability.remove("abortCapabilityName");
+                when(modelMapper.selectById(7L)).thenReturn(model);
+
+                DeviceModels normalized = service.requireRuntimeReady(7L);
+
+                assertFalse(normalized.getCapabilities().get(0).path("isAbort").asBoolean());
+                assertTrue(normalized.getCapabilities().get(0).path("abortCapabilityName").isNull());
+                verify(modelMapper, never()).updateById(any(DeviceModels.class));
+        }
+
+        @Test
+        void runtimeReadInfersSingleLegacyAbortCapabilityWithoutChangingDatabase() {
+                DeviceModels model = completeModel();
+                ObjectNode legacyAbort = ((ArrayNode) model.getCapabilities()).addObject();
+                legacyAbort.put("capabilityName", "stop");
+                legacyAbort.put("adapterCommandName", "start");
+                legacyAbort.put("displayName", "Stop");
+                legacyAbort.put("isAbort", true);
+                legacyAbort.putArray("parameters");
+                legacyAbort.putArray("parameterMapping").addObject()
+                                .put("commandParamName", "duration")
+                                .put("isFixedValue", true)
+                                .put("fixedValue", 0);
+                when(modelMapper.selectById(7L)).thenReturn(model);
+
+                DeviceModels normalized = service.requireRuntimeReady(7L);
+
+                assertEquals("stop", normalized.getCapabilities().get(0).path("abortCapabilityName").asText());
+                assertEquals("start", normalized.getCapabilities().get(1).path("scope").get(0).asText());
+                verify(modelMapper, never()).updateById(any(DeviceModels.class));
         }
 
         @Test
@@ -422,6 +543,24 @@ class DeviceModelServiceTest {
                 assertEquals("heat", commands.get(0).path("commandName").asText());
         }
 
+        private ObjectNode addAbortCapability(DeviceModelSaveDTO payload, String scopeName) {
+                ObjectNode normal = (ObjectNode) payload.getCapabilities().get(0);
+                normal.put("abortCapabilityName", "stop");
+                ObjectNode abort = ((ArrayNode) payload.getCapabilities()).addObject();
+                abort.put("capabilityName", "stop");
+                abort.put("adapterCommandName", "start");
+                abort.put("displayName", "Stop");
+                abort.put("isAbort", true);
+                abort.putNull("abortCapabilityName");
+                abort.putArray("scope").add(scopeName);
+                abort.putArray("parameters");
+                abort.putArray("parameterMapping").addObject()
+                                .put("commandParamName", "duration")
+                                .put("isFixedValue", true)
+                                .put("fixedValue", 0);
+                return abort;
+        }
+
         private void addTransition(DeviceModelSaveDTO payload, String stateSpace, String from, String to,
                         String signal) {
                 ObjectNode transition = ((ArrayNode) payload.getStateTransitions()).addObject();
@@ -487,6 +626,8 @@ class DeviceModelServiceTest {
                 capability.put("capabilityName", "start")
                                 .put("adapterCommandName", "start")
                                 .put("displayName", "启动");
+                capability.put("isAbort", false);
+                capability.putNull("abortCapabilityName");
                 capability.putArray("parameters").addObject()
                                 .put("name", "duration")
                                 .put("displayName", "时长")
@@ -521,7 +662,16 @@ class DeviceModelServiceTest {
                 payload.setStateMachineInterfaces(standardInterfaces());
                 payload.setCmdState(completeCmdState());
                 payload.setStateTransitions(completeCmdTransitions());
-                when(adapterIndexService.buildAdapterContract("adapter-1", "Reactor")).thenReturn(contract);
+                ObjectNode defaultTemplate = JsonNodeSupport.objectNode();
+                defaultTemplate.put("enabled", true);
+                defaultTemplate.put("templateName", "model 默认数据模板");
+                defaultTemplate.putArray("details").addObject()
+                                .put("columnName", "temperature")
+                                .put("columnDesc", "温度")
+                                .put("propertyTypeId", 4L)
+                                .put("columnLength", 255)
+                                .put("deviceAttrKey", "temperature");
+                payload.setDefaultDataTemplate(defaultTemplate);                when(adapterIndexService.buildAdapterContract("adapter-1", "Reactor")).thenReturn(contract);
                 return payload;
         }
 
@@ -654,11 +804,16 @@ class DeviceModelServiceTest {
                 ArrayNode regions = opState.putArray("regions");
                 ObjectNode region = regions.addObject();
                 region.put("regionName", "operatingMode");
+                region.put("regionType", "OPERATIONAL");
                 region.put("initialStateName", "IDLE");
                 ArrayNode states = region.putArray("states");
                 ObjectNode state = states.addObject();
                 state.put("stateName", "IDLE");
-                state.putArray("onEntry");
+                state.putArray("onEntry").addObject()
+                                .put("actionName", "SEND")
+                                .putObject("payload")
+                                .put("interfaceName", "Interface_state_out")
+                                .put("signalName", "OP_STATE");
                 payload.setOpState(opState);
                 payload.setStateMachineInterfaces(standardInterfaces());
                 payload.setCmdState(completeCmdState());

@@ -9,35 +9,34 @@ import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class TestAdapterIniContractTest {
 
     @Test
-    void mqttPlcAdapterConfigIsAcceptedByBackendParser() throws Exception {
-        Path configPath = Path.of("..", "adapter", "testAdapter", "adapterconfig.ini").normalize();
+    void mqttPlcAdapterSetupIsAcceptedByBackendParser() throws Exception {
+        Path configPath = Path.of("..", "adapter", "testAdapter", "adapterSetup.ini").normalize();
         String rawConfig = Files.readString(configPath, StandardCharsets.UTF_8);
 
         ObjectNode parsed = new AdapterManifestService().parseRawConfig(
-                "PLCAdapter", "INI", rawConfig, 1719892800000L);
+                "PLCControllerAdapter", "INI", rawConfig, 1719892800000L);
 
-        assertEquals("PLCAdapter", parsed.path("adapterName").asText());
-        assertEquals("PLCThermalUnit",
+        assertEquals("PLCControllerAdapter", parsed.path("adapterName").asText());
+        assertEquals("PLCController",
                 parsed.path("deviceCategories").get(0).path("categoryName").asText());
         assertEquals(1, parsed.path("deviceCategories").get(0).path("devicePoints").size());
 
         var commands = parsed.path("deviceCategories").get(0)
                 .path("deviceTemplate").path("commands");
-        assertEquals(2, commands.size());
-        var internalParameters = commands.get(0).path("parameters");
-        assertTrue(internalParameters.get(1).path("internal").asBoolean());
-        assertEquals("deviceSN", internalParameters.get(1).path("sourceField").asText());
+        assertEquals(3, commands.size());
+        assertEquals("setOperatingMode", commands.get(0).path("name").asText());
+        assertFalse(commands.get(0).path("parameters").get(0).path("internal").asBoolean());
 
         var attributes = parsed.path("deviceCategories").get(0)
                 .path("deviceTemplate").path("attributes");
-        assertEquals(4, attributes.size());
-        assertEquals("plc0001", parsed.path("deviceCategories").get(0)
-                .path("devicePoints").get(0).path("deviceSN").asText());
+        assertEquals(1, attributes.size());
+        assertEquals("temperature", attributes.get(0).path("name").asText());
+        assertEquals("PLC1", parsed.path("deviceCategories").get(0)
+                .path("devicePoints").get(0).path("devicePoint").asText());
 
         var events = parsed.path("deviceCategories").get(0)
                 .path("deviceTemplate").path("events");

@@ -61,6 +61,7 @@ test('system command lifecycle transitions explicitly belong to CMD state space'
 test('normalizes transition stateSpace without inferring it from state names', () => {
   const [transition] = normalizers.normalizeTransitions([{
     stateSpace: 'OP',
+    regionName: 'operatingMode',
     fromStateName: 'IDLE',
     toStateName: 'RUNNING',
     trigger: { interfaceName: 'Interface_adapter_in', signalName: 'HEAT_STARTED' }
@@ -71,8 +72,8 @@ test('normalizes transition stateSpace without inferring it from state names', (
 test('normalizes orthogonal operation regions and keeps transition region identity', () => {
   const stateSpace = normalizers.normalizeStateSpace({
     regions: [
-      { regionName: 'operatingMode', initialStateName: 'MANUAL', states: [{ stateName: 'MANUAL' }, { stateName: 'AUTOMATIC' }] },
-      { regionName: 'cooling', initialStateName: 'IDLE', states: [{ stateName: 'IDLE' }, { stateName: 'COOLING' }] }
+      { regionName: 'operatingMode', regionType: 'OPERATIONAL', initialStateName: 'MANUAL', states: [{ stateName: 'MANUAL' }, { stateName: 'AUTOMATIC' }] },
+      { regionName: 'cooling', regionType: 'OPERATIONAL', initialStateName: 'IDLE', states: [{ stateName: 'IDLE' }, { stateName: 'COOLING' }] }
     ]
   }, 'IDLE', 'OP')
   const [transition] = normalizers.normalizeTransitions([{

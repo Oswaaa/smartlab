@@ -83,6 +83,24 @@
                     </div>
                     <el-button link type="danger" :icon="Delete" @click="removeCapability(capability)">删除</el-button>
                   </div>
+                  <div class="capability-execution-config">
+                    <label class="capability-config-field">
+                      <span>操作类型</span>
+                      <el-switch v-model="capability.isAbort" size="small" active-text="终止能力" inactive-text="普通能力" @change="handleCapabilityAbortTypeChange(capability)" />
+                    </label>
+                    <label v-if="!capability.isAbort" class="capability-config-field capability-config-select">
+                      <span>终止能力</span>
+                      <el-select v-model="capability.abortCapabilityKey" size="small" clearable filterable placeholder="可选：选择终止操作" @change="handleAbortCapabilityChange(capability)">
+                        <el-option v-for="option in terminationCapabilityOptions(capability)" :key="option._key" :label="capabilityLabel(option)" :value="option._key" />
+                      </el-select>
+                    </label>
+                    <label v-else class="capability-config-field capability-config-select">
+                      <span>影响范围</span>
+                      <el-select v-model="capability.scopeCapabilityKeys" size="small" multiple filterable collapse-tags collapse-tags-tooltip placeholder="选择受影响的普通操作" @change="handleAbortScopeChange(capability)">
+                        <el-option v-for="option in normalCapabilityOptions(capability)" :key="option._key" :label="capabilityLabel(option)" :value="option._key" :disabled="isScopeReferenceLocked(capability, option._key)" />
+                      </el-select>
+                    </label>
+                  </div>
                   <div class="nested-toolbar">
                     <span>操作参数</span>
                     <el-button size="small" type="primary" plain circle :icon="Plus" title="添加参数" @click="addCapabilityParameter(capability)" />
@@ -371,13 +389,17 @@
                         </div>
                       </div>
                       <div v-else class="adapter-trigger-binding">
+                        <div v-if="row.kind === 'TERMINATION'" class="termination-default-transition">
+                          <el-tag size="small" type="warning" effect="light">终止成功默认转换</el-tag>
+                          <span>终止能力完成后，系统自动将原指令转为 ABORTED</span>
+                        </div>
                         <div class="cell-line-upper">
                           <span class="locked-action-badge compact"><el-icon><Lock /></el-icon>{{ adapterInterfaceName() }}</span>
-                          <span class="binding-tip-text">（必须绑定Adapter命令事件）</span>
+                          <span class="binding-tip-text">{{ row.triggerPolicy === 'REQUIRED' ? '（必须绑定Adapter命令事件）' : '（可选Adapter事件）' }}</span>
                         </div>
                         <div class="cell-line-lower">
                           <div class="binding-select-wrapper">
-                            <el-select v-model="executionLifecycleBindings[row.key]" clearable filterable size="small" style="width: 100%;" placeholder="请选择Adapter命令事件">
+                            <el-select v-model="executionLifecycleBindings[row.key]" clearable filterable size="small" style="width: 100%;" :placeholder="row.triggerPolicy === 'REQUIRED' ? '请选择Adapter命令事件' : '可选：选择Adapter明确终止事件'">
                               <el-option v-for="eventName in adapterCmdEventOptions" :key="eventName" :label="eventName" :value="eventName" />
                             </el-select>
                           </div>
@@ -401,10 +423,16 @@
 
               <div v-for="(region, rIndex) in draft.opState.regions" :key="region._key || rIndex" class="region-block" style="border: 1px solid var(--el-border-color-light); border-radius: 4px; padding: 12px; margin-bottom: 12px;">
                 <div class="region-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-                  <el-input v-model="region.regionName" size="small" placeholder="分区名称" style="width: 200px;" />
+                  <div style="display: flex; gap: 8px;">
+                    <el-input v-model="region.regionName" size="small" placeholder="分区名称" style="width: 200px;" />
+                    <el-select v-model="region.regionType" size="small" style="width: 132px;" @change="handleRegionTypeChange(region)">
+                      <el-option label="功能区域" value="OPERATIONAL" />
+                      <el-option label="异常区域" value="EXCEPTION" />
+                    </el-select>
+                  </div>
                   <el-button link type="danger" :icon="Delete" @click="removeOpStateRegion(rIndex)" />
                 </div>
-                <div class="state-summary-row">
+                <div v-if="region.regionType === 'OPERATIONAL'" class="state-summary-row">
                   <span class="state-summary-label">初始状态</span>
                   <div class="state-input-with-warning">
                     <el-select v-model="region.initialStateName" filterable allow-create size="small" class="state-inline-select">
@@ -413,12 +441,13 @@
                     <span class="warning-slot"><el-tooltip v-if="isRegionInitialStateInvalid(region)" content="该状态不存在" placement="top"><el-icon class="inline-warning-icon"><Warning /></el-icon></el-tooltip></span>
                   </div>
                 </div>
+                <div v-else class="state-summary-row"><span class="state-summary-label">初始状态</span><span class="section-note">异常区域不设置初始状态</span></div>
                 <div class="state-summary-row align-top">
                   <span class="state-summary-label">状态列表</span>
                   <div class="state-token-list">
                     <el-tag v-for="(state, $index) in region.states" :key="state._key || $index" size="small" closable @close="removeOpState(region, $index)" class="state-token filled closable-state-token">
                       <span class="state-token-text">{{ state.stateName || '未命名' }}</span>
-                      <span class="state-token-warning-slot"><el-tooltip v-if="stateUsageWarning(state.stateName)" :content="stateUsageWarning(state.stateName)" placement="top"><el-icon class="state-warning-icon"><Warning /></el-icon></el-tooltip></span>
+                      <span class="state-token-warning-slot"><el-tooltip v-if="stateUsageWarning(state.stateName, region.regionName)" :content="stateUsageWarning(state.stateName, region.regionName)" placement="top"><el-icon class="state-warning-icon"><Warning /></el-icon></el-tooltip></span>
                     </el-tag>
                     <el-input v-if="opStateInputVisibleMap[region._key]" :ref="el => setOpStateInputRef(el, region._key)" v-model="opStateInputValueMap[region._key]" size="small" class="state-name-input" @keyup.enter="handleOpStateInputConfirm(region)" @blur="handleOpStateInputConfirm(region)" />
                     <el-button v-else size="small" plain class="compact-action-btn" @click="showOpStateInput(region)">新增状态</el-button>
@@ -428,12 +457,12 @@
             </section>
 
             <section class="drawer-section">
-              <div class="section-title"><div class="section-header-copy"><h3>功能状态转移规则</h3><p class="section-note">只使用 Adapter 功能事件（OP）触发设备业务状态变化。</p></div><div class="section-actions"><el-button type="primary" plain size="small" :icon="Plus" :disabled="adapterOpEventOptions.length === 0" @click="addStateTransition">新增规则</el-button></div></div>
+              <div class="section-title"><div class="section-header-copy"><h3>功能状态转移规则</h3><p class="section-note">只配置 Adapter 功能事件（OP）触发的业务状态变化；Exception 分区由内置约束自动驱动，不在此配置。</p></div><div class="section-actions"><el-button type="primary" plain size="small" :icon="Plus" :disabled="adapterOpEventOptions.length === 0 || functionalOpRegions.length === 0" @click="addStateTransition">新增规则</el-button></div></div>
               <div v-if="stateMachineWarningMessages.length" class="state-warning-panel"><div v-for="message in stateMachineWarningMessages" :key="message" class="state-warning-item"><el-icon class="inline-warning-icon"><Warning /></el-icon><span>{{ message }}</span></div></div>
               <div v-if="operationTransitionRows.length === 0" class="compact-empty block-empty">暂无功能状态转移规则，可使用上方按钮添加</div>
               <el-table v-else :data="operationTransitionRows" border size="small" class="transition-table editor-table operation-transition-table">
                 <el-table-column label="说明" min-width="120"><template #default="{ row }"><div class="field-with-warning"><span class="warning-slot"><el-tooltip v-if="transitionWarning(row)" :content="transitionWarning(row)" placement="top"><el-icon class="inline-warning-icon"><Warning /></el-icon></el-tooltip></span><el-input v-model="row.description" size="small" placeholder="可选" /></div></template></el-table-column>
-                <el-table-column label="所属分区" min-width="120"><template #default="{ row }"><el-select v-model="row.regionName" size="small"><el-option v-for="region in draft.opState.regions" :key="region._key" :label="region.regionName" :value="region.regionName" /></el-select></template></el-table-column>
+                <el-table-column label="所属分区" min-width="120"><template #default="{ row }"><el-select v-model="row.regionName" size="small"><el-option v-for="region in functionalOpRegions" :key="region._key" :label="region.regionName" :value="region.regionName" /></el-select></template></el-table-column>
                 <el-table-column label="状态流转" min-width="300"><template #default="{ row }"><div class="transition-state-pair"><state-select v-model="row.fromStateName" :options="getRegionStateOptionsByName(row.regionName)" /><el-icon><Right /></el-icon><state-select v-model="row.toStateName" :options="getRegionStateOptionsByName(row.regionName)" /></div></template></el-table-column>
                 <el-table-column label="触发条件" min-width="240"><template #default="{ row }"><div class="transition-trigger-editor"><span class="locked-action"><el-icon><Lock /></el-icon>{{ adapterInterfaceName() }}</span><state-select v-model="row.trigger.signalName" :options="adapterOpEventOptions" /></div></template></el-table-column>
                 <el-table-column label="转移动作" min-width="280"><template #default="{ row }"><div class="transition-action-list"><div v-for="(act, aIdx) in row.actions" :key="aIdx" class="transition-action-row"><span class="action-editor-label">发送</span><el-select v-model="act.payload.signalName" size="small" placeholder="选择信号"><el-option v-for="sig in getSignalsForInterface(act.payload.interfaceName)" :key="sig" :label="sig" :value="sig" /></el-select><el-button link type="info" :icon="Close" title="移除动作" @click="row.actions.splice(aIdx, 1)" /></div><el-button size="small" plain :icon="Plus" class="compact-action-btn" @click="ensureTransitionAction(row)">添加动作</el-button></div></template></el-table-column>
@@ -618,7 +647,8 @@ import {
 } from './normalizers.js'
 
 const props = defineProps({
-  categories: Array
+  categories: Array,
+  models: Array
 })
 
 const emit = defineEmits(['saved', 'update:visible'])
@@ -635,9 +665,28 @@ const registeredAdapterLoading = ref(false)
 const selectedRegisteredAdapterName = ref('')
 const selectedRegisteredAdapterTemplate = ref('')
 
+const usedTemplateKeys = computed(() => {
+  const keys = new Set()
+  for (const model of (props.models || [])) {
+    const ac = model?.adapterContract || {}
+    const cfg = (typeof ac === 'object' && !Array.isArray(ac)) ? (ac.config || {}) : {}
+    const adapterName = cfg?.adapterName || ''
+    const categoryName = cfg?.categoryName || ''
+    if (adapterName && categoryName) {
+      keys.add(adapterName + '::' + categoryName)
+    }
+  }
+  return keys
+})
+
 const registeredAdapterTemplateOptions = computed(() => {
   const adapter = registeredAdapters.value.find(item => item.adapterName === selectedRegisteredAdapterName.value)
-  return adapterDeviceCategoryOptions(parsedAdapterConfig(adapter))
+  const allOptions = adapterDeviceCategoryOptions(parsedAdapterConfig(adapter))
+  const adapterName = adapter?.adapterName || ''
+  return allOptions.filter(option => {
+    const key = adapterCategoryKey(option)
+    return !usedTemplateKeys.value.has(adapterName + '::' + key)
+  })
 })
 
 // ── 接口锁定 ──────────────────────────────────────────
@@ -867,7 +916,9 @@ const mergedLifecycleRules = computed(() => {
     if (r.kind === 'FAILURE') {
       desc = 'Adapter执行失败事件（必须绑定）'
     } else if (r.kind === 'TERMINATION') {
-      desc = 'Adapter终止成功事件（必须绑定）'
+      desc = r.triggerPolicy === 'REQUIRED'
+        ? 'Adapter终止成功事件（必须绑定）'
+        : '终止成功默认转换；可选绑定Adapter明确终止事件'
     } else if (r.toStateName === 'RUNNING') {
       desc = 'Adapter开始执行事件（必须绑定）'
     } else if (r.toStateName === 'COMPLETED') {
@@ -879,7 +930,8 @@ const mergedLifecycleRules = computed(() => {
   })
   return [...sysRules, ...bindRules]
 })
-const operationTransitionRows = computed(() => draft.stateTransitions.filter(row => row.stateSpace === 'OP'))
+const functionalOpRegions = computed(() => (draft.opState.regions || []).filter(region => region.regionType === 'OPERATIONAL'))
+const operationTransitionRows = computed(() => draft.stateTransitions.filter(row => row.stateSpace === 'OP' && functionalOpRegions.value.some(region => region.regionName === row.regionName)))
 const commandStateNameOptions = computed(() => draft.cmdState.states.map(item => item.stateName).filter(Boolean))
 const opStateNameOptions = computed(() => {
   return (draft.opState.regions || []).flatMap(r => r.states || []).map(item => item.stateName).filter(Boolean)
@@ -887,7 +939,7 @@ const opStateNameOptions = computed(() => {
 
 const exceptionOpStateNameOptions = computed(() => {
   return (draft.opState.regions || [])
-    .filter(r => r.regionName === 'Exception')
+    .filter(r => r.regionType === 'EXCEPTION')
     .flatMap(r => r.states || [])
     .map(item => item.stateName)
     .filter(Boolean)
@@ -906,8 +958,14 @@ function isRegionInitialStateInvalid(region) {
   return !!region.initialStateName && !getRegionStateOptions(region).includes(region.initialStateName)
 }
 
-function stateUsageWarning(stateName) {
+function stateUsageWarning(stateName, regionName = '') {
   if (!stateName) return '状态名未填写'
+  const region = (draft.opState.regions || []).find(item => item.regionName === regionName)
+  if (region?.regionType === 'EXCEPTION') {
+    const usedByIntrinsicConstraint = asArray(draft.intrinsicConstraints)
+      .some(constraint => stringValue(constraint.violationStateName) === stateName)
+    return usedByIntrinsicConstraint ? '' : '异常状态未被任何内置约束使用'
+  }
   const used = operationTransitionRows.value.some(t => t.fromStateName === stateName || t.toStateName === stateName)
   if (!used) return '状态未在任何转移规则中使用'
   return ''
@@ -921,10 +979,11 @@ function transitionWarning(row) {
 
 const stateMachineWarningMessages = computed(() => {
   const messages = []
-  if (operationTransitionRows.value.length > 0) {
+  if (operationTransitionRows.value.length > 0 || (draft.opState.regions || []).some(region => region.regionType === 'EXCEPTION')) {
     (draft.opState.regions || []).forEach(region => {
+      if (region.regionType !== 'EXCEPTION' && operationTransitionRows.value.length === 0) return
       (region.states || []).forEach(state => {
-        const warning = stateUsageWarning(state.stateName)
+        const warning = stateUsageWarning(state.stateName, region.regionName)
         if (warning) messages.push('分区 ' + (region.regionName || '未命名') + ' 的状态 ' + (state.stateName || '未命名') + '：' + warning)
       })
     })
@@ -965,6 +1024,21 @@ async function saveDraft() {
     ElMessage.error('请填写完整模型基础信息')
     return
   }
+  const validAttributes = asArray(draft.attributes)
+    .filter(attribute => stringValue(attribute.name || attribute.displayName))
+  if (!validAttributes.length) {
+    ElMessage.error('设备模型至少需要一个属性，才能生成默认数据模板')
+    return
+  }
+  if (!asArray(draft.defaultDataTemplateAttrs).length) {
+    draft.defaultDataTemplateAttrs = validAttributes.map(attribute => attribute._key).filter(Boolean)
+  }
+  const abortWithoutScope = asArray(draft.capabilities)
+    .find(capability => capability.isAbort === true && !normalizeScopeKeys(capability.scopeCapabilityKeys).length)
+  if (abortWithoutScope) {
+    ElMessage.error(`终止能力“${capabilityLabel(abortWithoutScope)}”至少需要选择一个受影响的普通能力`)
+    return
+  }
   saving.value = true
   try {
     const propertyTypes = draft.defaultDataTemplateAttrs?.length ? await loadPropertyTypesForTemplate() : []
@@ -1001,7 +1075,8 @@ function cleanStateSpace(space, fallback, type) {
     return {
       regions: (norm.regions || []).map(r => ({
         regionName: stringValue(r.regionName),
-        initialStateName: stringValue(r.initialStateName),
+        regionType: r.regionType,
+        initialStateName: r.regionType === 'EXCEPTION' ? '' : stringValue(r.initialStateName),
         states: (r.states || []).map(s => {
           const stateName = stringValue(s.stateName)
           const onEntry = s.onEntry.map(a => ({ actionName: stringValue(a.actionName), payload: normalizePayload(a.payload || a.parameters) })).filter(a => a.actionName)
@@ -1138,13 +1213,14 @@ function buildDefaultDataTemplate(rowByKey, propertyTypes = []) {
   const usedColumns = new Set()
   const details = []
   selectedKeys.map(key => rowByKey?.get(key)).filter(Boolean).forEach((attr, index) => {
-    const columnName = reserveIdentifier(toSafeColumnName(attr.name, index), 'column_' + (index + 1), usedColumns)
+    const attributeName = stringValue(attr.attributeName || attr.name)
+    const columnName = reserveIdentifier(toSafeColumnName(attributeName, index), 'column_' + (index + 1), usedColumns)
     details.push({
       columnName,
-      columnDesc: attr.displayName || attr.name || columnName,
+      columnDesc: attr.displayName || attributeName || columnName,
       propertyTypeId: propertyTypeIdForDataType(attr.dataType, propertyTypes),
       columnLength: 255,
-      deviceAttrKey: attr.name,
+      deviceAttrKey: attributeName,
       defaultValue: ''
     })
     const unitValue = stringValue(attr.unit)
@@ -1152,7 +1228,7 @@ function buildDefaultDataTemplate(rowByKey, propertyTypes = []) {
       const unitColumnName = reserveIdentifier(columnName + '_unit', 'column_' + (index + 1) + '_unit', usedColumns)
       details.push({
         columnName: unitColumnName,
-        columnDesc: (attr.displayName || attr.name || columnName) + '单位',
+        columnDesc: (attr.displayName || attributeName || columnName) + '单位',
         propertyTypeId: propertyTypeIdForDataType('STRING', propertyTypes),
         columnLength: 50,
         deviceAttrKey: '',
@@ -1245,8 +1321,103 @@ function removeAttribute(index) {
 }
 
 function addPort() { draft.ports.push({ _key: makeUiKey('port'), portName: '', displayName: '', direction: 'OUT', bindingAttrKey: '', bindingAttrName: '' }) }
-function addCapability() { draft.capabilities.push({ _key: makeUiKey('cap'), name: '', displayName: '', adapterCommandName: '', parameters: [], parameterMapping: [] }) }
+function capabilityLabel(capability) {
+  const index = draft.capabilities.indexOf(capability)
+  return capability.displayName || capability.name || '操作' + (index + 1)
+}
+
+function terminationCapabilityOptions(capability) {
+  return draft.capabilities.filter(item => item._key !== capability._key && item.isAbort === true)
+}
+
+function normalCapabilityOptions(capability) {
+  return draft.capabilities.filter(item => item._key !== capability._key && item.isAbort !== true)
+}
+
+function normalizeScopeKeys(keys) {
+  return [...new Set(asArray(keys).filter(key => draft.capabilities.some(item => item._key === key && item.isAbort !== true)))]
+}
+
+function syncCapabilityReferenceNames(capability) {
+  if (capability.isAbort === true) {
+    capability.abortCapabilityKey = ''
+    capability.abortCapabilityName = null
+    capability.scopeCapabilityKeys = normalizeScopeKeys(capability.scopeCapabilityKeys)
+    capability.scope = capability.scopeCapabilityKeys.map(key => draft.capabilities.find(item => item._key === key)?.name).filter(Boolean)
+    return
+  }
+  const target = draft.capabilities.find(item => item._key === capability.abortCapabilityKey && item.isAbort === true)
+  capability.abortCapabilityKey = target?._key || ''
+  capability.abortCapabilityName = target?.name || null
+  capability.scopeCapabilityKeys = []
+  capability.scope = []
+}
+
+function handleCapabilityAbortTypeChange(capability) {
+  capability.isAbort = capability.isAbort === true
+  if (capability.isAbort) {
+    draft.capabilities.forEach(item => {
+      if (item.isAbort === true && item !== capability) {
+        item.scopeCapabilityKeys = asArray(item.scopeCapabilityKeys).filter(key => key !== capability._key)
+        syncCapabilityReferenceNames(item)
+      }
+    })
+  } else {
+    draft.capabilities.forEach(item => {
+      if (item.abortCapabilityKey === capability._key) {
+        item.abortCapabilityKey = ''
+        syncCapabilityReferenceNames(item)
+      }
+    })
+  }
+  syncCapabilityReferenceNames(capability)
+}
+
+function handleAbortCapabilityChange(capability) {
+  draft.capabilities.forEach(item => {
+    if (item.isAbort === true) {
+      item.scopeCapabilityKeys = asArray(item.scopeCapabilityKeys).filter(key => key !== capability._key)
+      syncCapabilityReferenceNames(item)
+    }
+  })
+  const target = draft.capabilities.find(item => item._key === capability.abortCapabilityKey && item.isAbort === true)
+  if (target) {
+    target.scopeCapabilityKeys = normalizeScopeKeys([...asArray(target.scopeCapabilityKeys), capability._key])
+    syncCapabilityReferenceNames(target)
+  }
+  syncCapabilityReferenceNames(capability)
+}
+
+function isScopeReferenceLocked(terminationCapability, capabilityKey) {
+  return draft.capabilities.some(item => item.isAbort !== true && item.abortCapabilityKey === terminationCapability._key && item._key === capabilityKey)
+}
+
+function handleAbortScopeChange(capability) {
+  capability.scopeCapabilityKeys = normalizeScopeKeys(capability.scopeCapabilityKeys)
+  draft.capabilities.filter(item => item.isAbort !== true && item.abortCapabilityKey === capability._key).forEach(item => {
+    if (!capability.scopeCapabilityKeys.includes(item._key)) capability.scopeCapabilityKeys.push(item._key)
+  })
+  syncCapabilityReferenceNames(capability)
+}
+
+function addCapability() {
+  draft.capabilities.push({
+    _key: makeUiKey('cap'), name: '', displayName: '', adapterCommandName: '',
+    isAbort: false, abortCapabilityName: null, abortCapabilityKey: '', scope: [], scopeCapabilityKeys: [],
+    parameters: [], parameterMapping: []
+  })
+}
 function removeCapability(capability) {
+  draft.capabilities.forEach(item => {
+    if (item.abortCapabilityKey === capability._key) {
+      item.abortCapabilityKey = ''
+      syncCapabilityReferenceNames(item)
+    }
+    if (item.isAbort === true) {
+      item.scopeCapabilityKeys = asArray(item.scopeCapabilityKeys).filter(key => key !== capability._key)
+      syncCapabilityReferenceNames(item)
+    }
+  })
   removeObjectRow(draft.capabilities, capability)
   draft.functionMappings = draft.functionMappings.filter(mapping => mapping.capabilityKey !== capability._key)
 }
@@ -1462,9 +1633,18 @@ function addOpStateRegion() {
   draft.opState.regions.push({
     _key: newKey,
     regionName: '新建分区',
+    regionType: 'OPERATIONAL',
     initialStateName: 'IDLE',
     states: [{ _key: makeUiKey('state'), stateName: 'IDLE', onEntry: [] }]
   })
+}
+
+function handleRegionTypeChange(region) {
+  if (region.regionType === 'EXCEPTION') {
+    region.initialStateName = ''
+    return
+  }
+  region.initialStateName = getRegionStateOptions(region)[0] || 'IDLE'
 }
 
 function removeOpStateRegion(index) {
@@ -1506,7 +1686,7 @@ function removeOpState(region, index) {
 function removeObjectRow(rows, row) { const index = rows.indexOf(row); if (index >= 0) rows.splice(index, 1) }
 
 function addStateTransition() {
-  const firstRegion = draft.opState.regions?.[0]?.regionName || 'Main'
+  const firstRegion = functionalOpRegions.value[0]?.regionName || 'Main'
   draft.stateTransitions.push({
     _key: makeUiKey('transition'),
     stateSpace: 'OP',
@@ -1721,6 +1901,11 @@ function summaryText(model) {
 .edit-scroll-content { flex: 1; min-width: 0; }
 .edit-scroll-content :deep(.el-scrollbar__view) { padding: 14px 18px 28px; }
 .capability-editor-card, .capability-editor-list, .capability-title-editor { border-left: 3px solid #3b82f6; }
+.capability-execution-config { display: flex; flex-wrap: wrap; gap: 10px 16px; margin: 10px 0; padding: 9px 10px; border: 1px solid #dbe4ef; border-radius: 5px; background: #f8fafc; }
+.capability-config-field { display: flex; align-items: center; gap: 8px; min-width: 200px; color: #475569; font-size: 12px; font-weight: 700; }
+.capability-config-field > span { flex: 0 0 auto; }
+.capability-config-select { flex: 1 1 320px; }
+.capability-config-select :deep(.el-select) { flex: 1; min-width: 0; }
 .command-editor-card, .command-editor-list { border-left: 3px solid #10b981; }
 .locked-table :deep(.el-table__body-wrapper) { background: #ffffff; }
 .locked-action { max-width: 100%; color: #475569; font-size: 12px; line-height: 1.45; display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; white-space: normal; }
@@ -2016,6 +2201,19 @@ function summaryText(model) {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.termination-default-transition {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 1px solid #fde68a;
+  border-radius: 5px;
+  background: #fffbeb;
+  color: #92400e;
+  font-size: 11px;
+  line-height: 1.4;
 }
 
 .binding-tip-text {

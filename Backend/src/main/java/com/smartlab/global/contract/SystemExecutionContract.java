@@ -81,7 +81,7 @@ public final class SystemExecutionContract {
                 new DeviceCommandTransitionRequirement("MAIN", "SENT", "RUNNING", "REQUIRED"),
                 new DeviceCommandTransitionRequirement("MAIN", "RUNNING", "COMPLETED", "REQUIRED"),
                 new DeviceCommandTransitionRequirement("FAILURE", "RUNNING", "FAILED", "REQUIRED"),
-                new DeviceCommandTransitionRequirement("TERMINATION", "ABORTING", "ABORTED", "REQUIRED")
+                new DeviceCommandTransitionRequirement("TERMINATION", "ABORTING", "ABORTED", "OPTIONAL")
         );
     }
 

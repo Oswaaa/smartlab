@@ -136,6 +136,12 @@ public class WorkflowEngine {
             return;
         }
 
+        JsonNode inputInterfaceDef = interfaceByName(node, inputInterface);
+        String interfaceType = inputInterfaceDef != null ? inputInterfaceDef.path("interfaceType").asText("") : "";
+        if ("STATE".equals(interfaceType)) {
+            return;
+        }
+
         switch (node.getNodeType()) {
             case "DEV_NODE" -> throw new IllegalStateException("DEV_NODE输入触发器未发送STATE控制信号");
             case "SUBFLOW_NODE" -> executeSubFlow(task, step, node);
@@ -193,8 +199,14 @@ public class WorkflowEngine {
             variables.put("inputSignalName", input.path("inputSignalName").asText(""));
             variables.set("inputPayload", input.path("inputPayload").deepCopy());
             String signalName = input.path("inputSignalName").asText("");
-            if (!signalName.isBlank())
+            if (!signalName.isBlank()) {
                 variables.put(signalName, true);
+                if ("CMD_STATE".equals(signalName)) {
+                    variables.set("CMD_STATE", input.path("inputPayload").path("stateName").deepCopy());
+                } else if ("OP_STATE".equals(signalName)) {
+                    variables.set("OP_STATE", input.path("inputPayload").path("state").deepCopy());
+                }
+            }
         }
         variables.put("nodeLifecycleState", step.getNodeStatus());
         if (inputInterface != null)

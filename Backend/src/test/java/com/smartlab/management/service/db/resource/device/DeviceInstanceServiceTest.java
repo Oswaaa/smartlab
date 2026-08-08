@@ -3,6 +3,7 @@ package com.smartlab.management.service.db.resource.device;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
 import com.smartlab.management.entity.resource.device.DeviceModels;
 import com.smartlab.management.entity.resource.device.DeviceTwinStates;
+import com.smartlab.global.event.DeviceInstanceRetiredEvent;
 import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
 import com.smartlab.management.mapper.resource.device.DeviceModelsMapper;
 import com.smartlab.management.mapper.resource.device.DeviceTwinStatesMapper;
@@ -10,6 +11,7 @@ import com.smartlab.management.service.db.resource.data.DataIndexService;
 import com.smartlab.management.service.protocol.AdapterPayloadMapperService;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
+import org.springframework.context.ApplicationEventPublisher;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -129,6 +131,7 @@ class DeviceInstanceServiceTest {
         verify(fixture.instances, never()).deleteById(any(java.io.Serializable.class));
         verify(fixture.twins, never()).delete(any());
         verify(fixture.routes).refreshAdapterRouteTable();
+        verify(fixture.events).publishEvent(any(DeviceInstanceRetiredEvent.class));
     }
 
     @Test
@@ -159,7 +162,8 @@ class DeviceInstanceServiceTest {
         final DeviceModelsMapper models = mock(DeviceModelsMapper.class);
         final DeviceComponentService components = mock(DeviceComponentService.class);
         final DeviceModelService modelService = mock(DeviceModelService.class);
+        final ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
         final DeviceInstanceService service = new DeviceInstanceService(
-                instances, twins, data, routes, models, components, modelService);
+                instances, twins, data, routes, models, components, modelService, events);
     }
 }

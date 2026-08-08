@@ -292,7 +292,7 @@ public class AdapterManifestService {
         ArrayNode adapterAttributes = telemetry.putArray("adapterAttributes");
         for (JsonNode attr : array(template.get("attributes"))) {
             ObjectNode attrNode = adapterAttributes.addObject();
-            attrNode.put("name", attr.path("name").asText());
+            attrNode.put("telemetryName", attr.path("name").asText());
             attrNode.put("dataType", normalizeDataType(attr.path("dataType").asText("STRING")));
             attrNode.put("description", attr.path("description").asText(""));
         }
@@ -349,15 +349,11 @@ public class AdapterManifestService {
             commandNode.put("description", text(command, "description", ""));
             ArrayNode params = commandNode.putArray("parameters");
             for (JsonNode param : array(firstNode(command, "parameters", "commandParameters", "params"))) {
+                if (param.path("internal").asBoolean(false)) continue;
                 ObjectNode paramNode = params.addObject();
                 paramNode.put("name", firstText(param, "", "name", "paramName", "key"));
                 paramNode.put("dataType", normalizeDataType(firstText(param, "STRING", "dataType", "type")));
                 paramNode.put("description", text(param, "description", ""));
-                boolean internal = param.path("internal").asBoolean(false);
-                paramNode.put("internal", internal);
-                if (internal) {
-                    paramNode.put("sourceField", text(param, "sourceField", ""));
-                }
             }
         }
 
@@ -378,12 +374,6 @@ public class AdapterManifestService {
         node.put("templateName", firstText(point, defaultTemplateName == null ? "" : defaultTemplateName,
                 "templateName", "deviceTemplate", "type"));
         node.put("description", text(point, "description", ""));
-        ObjectNode mapping = JsonNodeSupport.objectNode();
-        JsonNode sourceMapping = firstNode(point, "attributeMapping", "attributeBindings", "attributesMapping");
-        if (sourceMapping != null && sourceMapping.isObject()) {
-            sourceMapping.fields().forEachRemaining(entry -> mapping.put(entry.getKey(), entry.getValue().asText()));
-        }
-        node.set("attributeMapping", mapping);
         return node;
     }
 
@@ -474,10 +464,16 @@ public class AdapterManifestService {
             }
         }
         Iterator<String> mappingNames = mapping.fieldNames();
+        Set<String> rawAttributes = new HashSet<>();
         while (mappingNames.hasNext()) {
             String name = mappingNames.next();
             if (!templateAttrs.contains(name)) {
                 throw new IllegalArgumentException("devicePoint " + devicePoint + " 声明了模板中不存在的属性映射: " + name);
+            }
+            String rawAttribute = mapping.path(name).asText("").trim();
+            if (!rawAttributes.add(rawAttribute)) {
+                throw new IllegalArgumentException("devicePoint " + devicePoint
+                        + " 的多个模板属性不能映射到同一原始字段: " + rawAttribute);
             }
         }
 

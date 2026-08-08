@@ -6,9 +6,14 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.entity.resource.adapter.AdapterIndex;
+import com.smartlab.management.entity.resource.device.DeviceInstances;
+import com.smartlab.management.entity.resource.device.DeviceModels;
 import com.smartlab.management.mapper.resource.adapter.AdapterIndexMapper;
+import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
+import com.smartlab.management.mapper.resource.device.DeviceModelsMapper;
 import com.smartlab.adapter.AdapterManifestService;
 import com.smartlab.management.service.db.common.ManagementCrudService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
@@ -28,12 +33,25 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
 
     private final AdapterIndexMapper mapper;
     private final AdapterManifestService manifestService;
+    private final DeviceInstancesMapper deviceInstancesMapper;
+    private final DeviceModelsMapper deviceModelsMapper;
 
     public AdapterIndexService(AdapterIndexMapper mapper,
-                               AdapterManifestService manifestService) {
+                               AdapterManifestService manifestService,
+                               DeviceInstancesMapper deviceInstancesMapper) {
+        this(mapper, manifestService, deviceInstancesMapper, null);
+    }
+
+    @Autowired
+    public AdapterIndexService(AdapterIndexMapper mapper,
+                               AdapterManifestService manifestService,
+                               DeviceInstancesMapper deviceInstancesMapper,
+                               DeviceModelsMapper deviceModelsMapper) {
         super(mapper);
         this.mapper = mapper;
         this.manifestService = manifestService;
+        this.deviceInstancesMapper = deviceInstancesMapper;
+        this.deviceModelsMapper = deviceModelsMapper;
     }
 
     /**
@@ -70,6 +88,7 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
         if (entity.getParsedConfig() != null) {
             manifestService.validate(entity.getParsedConfig());
         }
+        ensureConfigNotChangedWhileReferenced(entity);
         OffsetDateTime now = OffsetDateTime.now();
         if (entity.getId() == null) {
             entity.setCreateTime(now);
@@ -102,6 +121,8 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
             adapter = new AdapterIndex();
             adapter.setAdapterName(adapterName);
             adapter.setCreateTime(OffsetDateTime.now());
+        } else if (hasReferencingDeviceModel(adapterName)) {
+            throw new IllegalStateException("Adapter " + adapterName + " 已有关联设备模型，不能重新注册。请先删除所有关联模型后再试。");
         }
         adapter.setOriginalConfig(stringValue(payload.get("rawConfigContent")));
         adapter.setParsedConfig(manifest);
@@ -195,6 +216,44 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
         adapter.setStatus(status == null || status.isBlank() ? "ONLINE" : status);
         adapter.setLastHeartbeat(OffsetDateTime.now());
         return save(adapter);
+    }
+
+    /**
+     * Adapter 被设备实例引用时不能直接物理删除，避免留下不可执行的绑定配置。
+     */
+    @Override
+    public void delete(java.io.Serializable id) {
+        AdapterIndex adapter = getById(id);
+        if (adapter == null) {
+            throw new IllegalArgumentException("Adapter 不存在: " + id);
+        }
+        long boundCount = deviceInstancesMapper.selectCount(
+                Wrappers.<DeviceInstances>lambdaQuery()
+                        .eq(DeviceInstances::getBoundAdapterName, adapter.getAdapterName())
+        );
+        if (boundCount > 0) {
+            throw new IllegalStateException("Adapter 仍被 " + boundCount + " 个设备实例绑定，请先解除绑定");
+        }
+        if (hasReferencingDeviceModel(adapter.getAdapterName())) {
+            throw new IllegalStateException("Adapter 已被设备模型引用，不能删除");
+        }
+        super.delete(id);
+    }
+
+    private void ensureConfigNotChangedWhileReferenced(AdapterIndex entity) {
+        if (entity.getId() == null || entity.getParsedConfig() == null || deviceModelsMapper == null) return;
+        AdapterIndex existing = mapper.selectById(entity.getId());
+        if (existing == null || Objects.equals(existing.getParsedConfig(), entity.getParsedConfig())) return;
+        if (hasReferencingDeviceModel(entity.getAdapterName())) {
+            throw new IllegalStateException("Adapter 已被设备模型引用，不能修改或更新配置");
+        }
+    }
+
+    private boolean hasReferencingDeviceModel(String adapterName) {
+        if (deviceModelsMapper == null || adapterName == null || adapterName.isBlank()) return false;
+        return deviceModelsMapper.selectList(Wrappers.<DeviceModels>lambdaQuery()).stream()
+                .anyMatch(model -> model.getAdapterContract() != null
+                        && adapterName.equals(model.getAdapterContract().path("config").path("adapterName").asText("")));
     }
 
     private Long longValue(Object value) {

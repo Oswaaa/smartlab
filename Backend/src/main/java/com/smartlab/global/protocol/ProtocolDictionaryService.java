@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -42,20 +43,20 @@ public class ProtocolDictionaryService {
         return switch (definitionName) {
             case "MqttTopicConvention" -> mqttTopicDefinition();
             case "AdapterRegisterRequest" -> objectDefinition(Map.of(
-                    "adapterName", "string", "rawConfigFormat", "string", "rawConfigContent", "string", "timestamp", "integer"));
+                    "adapterName", "string", "rawConfigFormat", "string", "rawConfigContent", "string", "timestamp", "number"));
             case "CommandMessageFormat" -> objectDefinition(Map.of(
-                    "messageId", "string", "adapterName", "string", "devicePoint", "string", "commandName", "string", "parameters", "object", "timestamp", "integer"));
+                    "messageId", "string", "adapterName", "string", "devicePoint", "string", "commandName", "string", "parameters", "object", "timestamp", "number"));
             case "TelemetryMessageFormat" -> objectDefinition(Map.of(
-                    "timestamp", "integer", "adapterName", "string", "devicePoint", "string", "telemetryData", "object"));
+                    "timestamp", "number", "adapterName", "string", "devicePoint", "string", "telemetryData", "object"));
             case "EventMessageFormat" -> objectDefinition(Map.of(
-                    "timestamp", "integer", "adapterName", "string", "devicePoint", "string", "eventName", "string", "payload", "object"));
-            case "AdapterHeartbeat" -> objectDefinition(Map.of("status", "string", "timestamp", "integer"));
+                    "timestamp", "number", "adapterName", "string", "devicePoint", "string", "eventName", "string", "payload", "object"));
+            case "AdapterHeartbeat" -> objectDefinition(Map.of("status", "string", "timestamp", "number"));
             case "ConstraintExecutePayload" -> objectDefinition(Map.of(
                     "deviceInstanceId", "integer", "capabilityName", "string", "parameters", "object"));
             case "CommandStatePayload" -> objectDefinition(Map.of(
-                    "deviceModelId", "integer", "deviceInstanceId", "integer", "messageId", "string", "stateName", "string", "timestamp", "integer"));
+                    "deviceModelId", "integer", "deviceInstanceId", "integer", "messageId", "string", "stateName", "string", "timestamp", "number"));
             case "OperationStatePayload" -> objectDefinition(Map.of(
-                    "deviceModelId", "integer", "deviceInstanceId", "integer", "regionName", "string", "stateName", "string", "timestamp", "integer"));
+                    "deviceModelId", "integer", "deviceInstanceId", "integer", "regionName", "string", "regionType", "string", "state", "array", "timestamp", "number"));
             case "SystemSignalFormat" -> objectDefinition(Map.of("signalName", "string", "payload", "object"));
             default -> throw new IllegalArgumentException("协议定义不存在: " + definitionName);
         };
@@ -131,7 +132,7 @@ public class ProtocolDictionaryService {
                 requireText(payload, "adapterName");
                 requireEnum(payload, "rawConfigFormat", enumValues("AdapterRegisterRawConfigFormat"));
                 requireText(payload, "rawConfigContent");
-                requireInteger(payload, "timestamp");
+                requireNumber(payload, "timestamp");
             }
             case "CommandMessageFormat" -> {
                 requireText(payload, "messageId");
@@ -139,17 +140,17 @@ public class ProtocolDictionaryService {
                 requireText(payload, "devicePoint");
                 requireText(payload, "commandName");
                 requireObjectField(payload, "parameters");
-                requireInteger(payload, "timestamp");
+                requireNumber(payload, "timestamp");
                 rejectField(payload, "operation");
             }
             case "TelemetryMessageFormat" -> {
-                requireInteger(payload, "timestamp");
+                requireNumber(payload, "timestamp");
                 requireText(payload, "adapterName");
                 requireText(payload, "devicePoint");
                 requireObjectField(payload, "telemetryData");
             }
             case "EventMessageFormat" -> {
-                requireInteger(payload, "timestamp");
+                requireNumber(payload, "timestamp");
                 requireText(payload, "adapterName");
                 requireText(payload, "devicePoint");
                 requireText(payload, "eventName");
@@ -158,27 +159,38 @@ public class ProtocolDictionaryService {
                 }
             }
             case "AdapterHeartbeat" -> {
-                requireEnum(payload, "status", List.of("ALIVE"));
-                requireInteger(payload, "timestamp");
+                requireEnum(payload, "status", List.of("ALIVE", "ONLINE"));
+                requireNumber(payload, "timestamp");
             }
             case "ConstraintExecutePayload" -> {
-                requireInteger(payload, "deviceInstanceId");
+                requireNumber(payload, "deviceInstanceId");
                 requireText(payload, "capabilityName");
                 requireObjectField(payload, "parameters");
             }
             case "CommandStatePayload" -> {
-                requireInteger(payload, "deviceModelId");
-                requireInteger(payload, "deviceInstanceId");
+                requireNumber(payload, "deviceModelId");
+                requireNumber(payload, "deviceInstanceId");
                 requireNullableText(payload, "messageId");
                 requireText(payload, "stateName");
-                requireInteger(payload, "timestamp");
+                requireNumber(payload, "timestamp");
             }
             case "OperationStatePayload" -> {
-                requireInteger(payload, "deviceModelId");
-                requireInteger(payload, "deviceInstanceId");
+                requireNumber(payload, "deviceModelId");
+                requireNumber(payload, "deviceInstanceId");
                 requireText(payload, "regionName");
-                requireText(payload, "stateName");
-                requireInteger(payload, "timestamp");
+                requireEnum(payload, "regionType", List.of("OPERATIONAL", "EXCEPTION"));
+                JsonNode state = payload.get("state");
+                if (state == null || !state.isArray()) throw new IllegalArgumentException("state必须是数组");
+                Set<String> values = new java.util.HashSet<>();
+                for (JsonNode item : state) {
+                    if (!item.isTextual() || item.asText().isBlank() || !values.add(item.asText())) {
+                        throw new IllegalArgumentException("state必须是非空且不重复的字符串数组");
+                    }
+                }
+                if ("OPERATIONAL".equals(payload.path("regionType").asText()) && state.size() != 1) {
+                    throw new IllegalArgumentException("OPERATIONAL区域state必须恰好包含一个状态");
+                }
+                requireNumber(payload, "timestamp");
             }
             default -> throw new IllegalArgumentException("不支持的协议报文定义: " + definitionName);
         }
@@ -277,10 +289,10 @@ public class ProtocolDictionaryService {
         }
     }
 
-    private void requireInteger(JsonNode payload, String name) {
+    private void requireNumber(JsonNode payload, String name) {
         JsonNode value = payload.get(name);
-        if (value == null || !value.isIntegralNumber()) {
-            throw new IllegalArgumentException(name + " 必须是整数");
+        if (value == null || !value.isNumber()) {
+            throw new IllegalArgumentException(name + " 必须是数字");
         }
     }
 

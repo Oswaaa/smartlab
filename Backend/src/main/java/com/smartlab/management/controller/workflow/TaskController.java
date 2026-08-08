@@ -10,7 +10,9 @@ import com.smartlab.management.dto.workflow.TaskMonitorSummary;
 import com.smartlab.management.entity.workflow.ExecutionLog;
 import com.smartlab.management.entity.workflow.Task;
 import com.smartlab.management.entity.workflow.TaskStep;
+import com.smartlab.management.service.db.workflow.TaskExecutionViewService;
 import com.smartlab.management.service.db.workflow.TaskService;
+import com.smartlab.management.dto.workflow.TaskExecutionView;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
@@ -22,10 +24,13 @@ import java.util.Map;
 public class TaskController {
     private final TaskService taskService;
     private final WorkflowTaskControlService taskControlService;
+    private final TaskExecutionViewService executionViewService;
 
-    public TaskController(TaskService taskService, WorkflowTaskControlService taskControlService) {
+    public TaskController(TaskService taskService, WorkflowTaskControlService taskControlService,
+                              TaskExecutionViewService executionViewService) {
         this.taskService = taskService;
         this.taskControlService = taskControlService;
+        this.executionViewService = executionViewService;
     }
 
     @GetMapping("/page")
@@ -94,6 +99,12 @@ public class TaskController {
                                                 @RequestParam(required = false) Long afterLogId,
                                                 @RequestParam(required = false) Integer limit) {
         return ApiResponse.ok(taskService.logs(taskId, afterLogId, limit));
+    }
+
+    @GetMapping("/execution-view/{taskId}")
+    public ApiResponse<TaskExecutionView> executionView(@PathVariable Long taskId) {
+        try { return ApiResponse.ok(executionViewService.get(taskId)); }
+        catch (Exception e) { return ApiResponse.fail(e.getMessage()); }
     }
 
     @GetMapping("/snapshots/{taskId}")

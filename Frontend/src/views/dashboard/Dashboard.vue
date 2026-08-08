@@ -88,7 +88,7 @@
         <el-divider content-position="left">实时状态</el-divider>
         <el-descriptions :column="1" border size="small" class="mb-12">
           <el-descriptions-item label="指令状态">{{ liveSnapshot?.currentCommandState || '-' }}</el-descriptions-item>
-          <el-descriptions-item label="功能状态">{{ liveSnapshot?.currentOperationState || '-' }}</el-descriptions-item>
+          <el-descriptions-item label="功能状态">{{ formatOperationState(liveSnapshot?.currentOperationState) }}</el-descriptions-item>
           <el-descriptions-item label="实时属性">
             <div v-if="liveSnapshot?.latestAttributes">
               <el-tag
@@ -130,6 +130,16 @@ const labConstraint = ref({
 const deviceDrawerVisible = ref(false)
 const currentDevice = ref<any>(null)
 const liveSnapshot = ref<any>(null)
+
+const formatOperationState = (value: unknown) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return '-'
+  const regions = Object.entries(value as Record<string, unknown>)
+    .map(([regionName, states]) => {
+      if (!Array.isArray(states) || states.length === 0) return ''
+      return `${regionName}: ${states.join(', ')}`
+    }).filter(Boolean)
+  return regions.length ? regions.join(' | ') : '-'
+}
 const mqttStatusLabel = computed(() => {
   if (mqttStatus.value?.enabled === false) return '未启用'
   if (mqttStatus.value?.connected) return '已连接'
@@ -178,7 +188,7 @@ const fetchMqttStatus = async () => {
 const fetchData = async () => {
   try {
     const [deviceRes, modelRes, taskSummaryRes, runningTaskRes, templateRes, dataIndexRes] = await Promise.all([
-      axios.get('/api/device/instance/list', { params: { lifecycleStatus: '使用中' } }),
+      axios.get('/api/device/instance/list', { params: { lifecycleStatus: 'IN_USE' } }),
       axios.get('/api/device/model/list'),
       axios.get('/api/task/summary'),
       axios.get('/api/task/page', { params: { pageNo: 1, pageSize: 10, status: 'RUNNING' } }),

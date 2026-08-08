@@ -233,3 +233,14 @@ test('保存payload递归移除系统标识与画布字段', () => {
   }] })
   assert.deepEqual(payload.nodesDef[0], { name: 'start', actions: [{ actionName: 'emitActive' }] })
 })
+
+test('保存payload不携带编译或运行时派生数据', () => {
+  const payload = sanitizeWorkflowPayload({
+    name: '流程',
+    compiled: { nodeRefs: { start: 1 } },
+    runtime: { state: 'RUNNING' },
+    nodesDef: [{ name: 'start', compiled: { ref: 1 }, runtime: { status: 'RUNNING' } }],
+  })
+
+  assert.deepEqual(payload, { name: '流程', nodesDef: [{ name: 'start' }] })
+})

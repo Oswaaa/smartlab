@@ -25,8 +25,8 @@ import java.util.List;
 @Service
 public class DeviceComponentService extends ManagementCrudService<DeviceComponents> {
 
-    private static final String STATUS_IN_USE = "使用中";
-    private static final String STATUS_PENDING_REPLACEMENT = "待更换";
+    private static final String STATUS_IN_USE = "IN_USE";
+    private static final String STATUS_PENDING_REPLACEMENT = "PENDING_REPLACEMENT";
     private static final String STATUS_REPLACED = "已更换";
 
     private final DeviceComponentsMapper mapper;

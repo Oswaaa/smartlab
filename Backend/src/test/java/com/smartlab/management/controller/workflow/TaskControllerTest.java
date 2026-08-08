@@ -4,6 +4,7 @@ import com.smartlab.engine.workflow.WorkflowTaskControlService;
 import com.smartlab.management.dto.workflow.TaskPreflightRequest;
 import com.smartlab.management.dto.workflow.TaskPreflightResponse;
 import com.smartlab.management.dto.workflow.WorkflowIssue;
+import com.smartlab.management.service.db.workflow.TaskExecutionViewService;
 import com.smartlab.management.service.db.workflow.TaskService;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
@@ -27,7 +28,7 @@ class TaskControllerTest {
         TaskService service = mock(TaskService.class);
         when(service.preflight(any())).thenReturn(new TaskPreflightResponse(false, List.of(
                 new WorkflowIssue("TASK_BINDING_MISSING", "BINDING", "deviceBindings[slot-a]", "DEV_NODE", "slot-a", true, "缺少绑定", "绑定设备"))));
-        MockMvc mvc = MockMvcBuilders.standaloneSetup(new TaskController(service, mock(WorkflowTaskControlService.class))).build();
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new TaskController(service, mock(WorkflowTaskControlService.class), mock(TaskExecutionViewService.class))).build();
 
         mvc.perform(post("/api/task/preflight").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"flowModelId\":11,\"deviceBindings\":[{\"slotId\":\"slot-a\",\"deviceInstanceId\":7}]}"))

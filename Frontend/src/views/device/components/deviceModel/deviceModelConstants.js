@@ -157,13 +157,15 @@ export function defaultOpStateSpace(initialStateName) {
       {
         _key: makeUiKey('region'),
         regionName: 'Main',
+        regionType: 'OPERATIONAL',
         initialStateName,
         states: [{ _key: makeUiKey('state'), stateName: initialStateName, onEntry: defaultStateEntryActions('OP', initialStateName) }]
       },
       {
         _key: makeUiKey('region'),
         regionName: 'Exception',
-        initialStateName: 'ABNORMAL',
+        regionType: 'EXCEPTION',
+        initialStateName: '',
         states: [{ _key: makeUiKey('state'), stateName: 'ABNORMAL', onEntry: defaultStateEntryActions('OP', 'ABNORMAL') }]
       }
     ]
@@ -216,8 +218,7 @@ export function defaultStateEntryActions(type, stateName) {
     actionName: 'SEND',
     payload: {
       interfaceName: standardInterfaceName('OUT', 'STATE'),
-      signalName: type === 'CMD' ? 'CMD_STATE' : 'OP_STATE',
-      stateName
+      signalName: type === 'CMD' ? 'CMD_STATE' : 'OP_STATE'
     }
   }]
 }

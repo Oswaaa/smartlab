@@ -1,5 +1,6 @@
 package com.smartlab.management.service.db.resource.data;
 
+import com.smartlab.management.entity.resource.data.DataTemplateMain;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
 import com.smartlab.management.mapper.resource.data.DataIndexMapper;
 import com.smartlab.management.mapper.resource.data.DataTemplateDetailMapper;
@@ -20,7 +21,7 @@ class DataIndexServiceTest {
         DeviceInstances retired = new DeviceInstances();
         retired.setId(9L);
         retired.setLifecycleStatus("已注销");
-        when(instances.selectById(9L)).thenReturn(retired);
+        when(instances.selectByIdForUpdate(9L)).thenReturn(retired);
         DataIndexService service = new DataIndexService(
                 mock(DataIndexMapper.class), mock(DataTemplateMainMapper.class),
                 mock(DataTemplateDetailMapper.class), mock(PropertyTypeMapper.class),
@@ -28,4 +29,34 @@ class DataIndexServiceTest {
 
         assertThrows(IllegalStateException.class, () -> service.createDataSet(2L, 9L, "retired"));
     }
-}
+
+    @Test
+    void dataSetMustBindDeviceInstance() {
+        DataIndexService service = new DataIndexService(
+                mock(DataIndexMapper.class), mock(DataTemplateMainMapper.class),
+                mock(DataTemplateDetailMapper.class), mock(PropertyTypeMapper.class),
+                mock(JdbcTemplate.class), mock(DeviceInstancesMapper.class));
+
+        assertThrows(IllegalArgumentException.class, () -> service.createDataSet(2L, null, "missing instance"));
+    }
+
+    @Test
+    void templateAndInstanceMustBelongToSameModel() {
+        DeviceInstancesMapper instances = mock(DeviceInstancesMapper.class);
+        DataTemplateMainMapper templates = mock(DataTemplateMainMapper.class);
+        DeviceInstances instance = new DeviceInstances();
+        instance.setId(9L);
+        instance.setDeviceModelId(11L);
+        instance.setLifecycleStatus("使用中");
+        DataTemplateMain template = new DataTemplateMain();
+        template.setId(2L);
+        template.setDeviceModelId(12L);
+        when(instances.selectByIdForUpdate(9L)).thenReturn(instance);
+        when(templates.selectByIdForUpdate(2L)).thenReturn(template);
+        DataIndexService service = new DataIndexService(
+                mock(DataIndexMapper.class), templates,
+                mock(DataTemplateDetailMapper.class), mock(PropertyTypeMapper.class),
+                mock(JdbcTemplate.class), instances);
+
+        assertThrows(IllegalStateException.class, () -> service.createDataSet(2L, 9L, "mismatch"));
+    }}

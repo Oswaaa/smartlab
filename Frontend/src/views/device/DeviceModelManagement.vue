@@ -37,7 +37,7 @@
 
 
 
-<DeviceModelEditorDrawer ref="editorDrawerRef" :categories="categories" @saved="handleModelSaved" />
+<DeviceModelEditorDrawer ref="editorDrawerRef" :categories="categories" :models="models" @saved="handleModelSaved" />
     <el-dialog v-model="migrationDialogVisible" title="类别结构变更向导" width="800px" :close-on-click-modal="false" destroy-on-close>
       <el-alert title="类别下已有设备模型" type="warning" show-icon :closable="false" style="margin-bottom: 20px;">
         【{{ migrationState.parentCategory?.label }}】当前是叶子节点并挂载了设备模型。添加子类别后，它将变为中间节点。请在下方为其创建新子类别，并将现有模型分配到新类别下。
@@ -85,7 +85,7 @@ import DeviceModelTree from './components/DeviceModelTree.vue'
 import { loadModelWorkspace, listDeviceCategories, saveDeviceCategory, deleteDeviceCategory } from './components/deviceModel/deviceModelManagementApi'
 import { saveDeviceModel, deleteDeviceModel, previewDeviceModel, fetchModelBundle as fetchModelBundleApi } from './components/deviceModel/deviceModelManagementApi'
 import { listDataPropertyTypes, fetchDefaultTemplateAttributes, listRegisteredAdapters, fetchRegisteredAdapterContract } from './components/deviceModel/deviceModelManagementApi'
-import { stringId, normalizeModelBundle, normalizeModel, asArray } from './components/deviceModel/normalizers.js'
+import { stringId, normalizeModelBundle, normalizeModel, asArray, formatJson } from './components/deviceModel/normalizers.js'
 import { adapterDeviceCategoryOptions, adapterCategoryKey, adapterCategoryLabel, buildAdapterContractFromManifestCategory } from './components/deviceModel/deviceModelConstants'
 import { attributeDataTypes, adapterDataTypes, operators, interfaceTypes, stateActionNames } from './components/deviceModel/deviceModelConstants'
 import { getSignalTagType, formatSignalName, formatSignalShortName, getSignalsForInterface } from './components/deviceModel/deviceModelConstants'

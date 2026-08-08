@@ -53,6 +53,9 @@ class AdapterManifestServiceTest {
         assertTrue(contract.path("commands").get(0).path("commandParameters").isArray());
         assertFalse(contract.path("commands").get(0).path("commandParameters").findValuesAsText("paramName")
                 .contains("index"));
+        assertEquals("temperature", contract.path("telemetry").path("adapterAttributes").get(0)
+                .path("telemetryName").asText());
+        assertFalse(contract.path("telemetry").path("adapterAttributes").get(0).has("name"));
         assertEquals("COMMAND_RECEIVED",
                 contract.path("events").path("cmdEvents").get(0).path("eventName").asText());
         assertFalse(contract.path("events").path("cmdEvents").get(0).has("name"));

@@ -75,10 +75,7 @@ class DeviceModelServiceTest {
         @Test
         void sealsGenericAndConstraintMutationBypasses() {
                 assertThrows(UnsupportedOperationException.class, () -> service.save(completeModel()));
-                assertThrows(UnsupportedOperationException.class,
-                                () -> service.saveModelConstraintRule(java.util.Map.of("modelId", "7")));
-                assertThrows(UnsupportedOperationException.class,
-                                () -> service.deleteModelConstraintRule("7", "rule-1"));
+
 
                 verifyNoInteractions(modelMapper, deviceInstancesMapper);
         }

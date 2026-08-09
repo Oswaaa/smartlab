@@ -20,10 +20,7 @@ public class DeviceTwinStateController {
         this.service = service;
     }
 
-    @GetMapping("/list")
-    public ApiResponse<List<DeviceTwinStates>> list() {
-        return ApiResponse.ok(service.list());
-    }
+
 
     @GetMapping("/{id}")
     public ApiResponse<DeviceTwinStates> get(@PathVariable Long id) {

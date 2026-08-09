@@ -19,11 +19,11 @@ class DeviceComponentServiceTest {
         DeviceComponents component = new DeviceComponents();
         component.setId(4L);
         component.setParentInstanceId(7L);
-        component.setStatus("使用中");
+        component.setStatus("IN_USE");
         when(components.selectById(4L)).thenReturn(component);
         DeviceInstances parent = new DeviceInstances();
         parent.setId(7L);
-        parent.setLifecycleStatus("已注销");
+        parent.setLifecycleStatus("RETIRED");
         when(instances.selectById(7L)).thenReturn(parent);
 
         assertThrows(IllegalStateException.class, () -> service.configure(4L, new DeviceComponents()));

@@ -20,7 +20,7 @@ class DataIndexServiceTest {
         DeviceInstancesMapper instances = mock(DeviceInstancesMapper.class);
         DeviceInstances retired = new DeviceInstances();
         retired.setId(9L);
-        retired.setLifecycleStatus("已注销");
+        retired.setLifecycleStatus("RETIRED");
         when(instances.selectByIdForUpdate(9L)).thenReturn(retired);
         DataIndexService service = new DataIndexService(
                 mock(DataIndexMapper.class), mock(DataTemplateMainMapper.class),
@@ -47,7 +47,7 @@ class DataIndexServiceTest {
         DeviceInstances instance = new DeviceInstances();
         instance.setId(9L);
         instance.setDeviceModelId(11L);
-        instance.setLifecycleStatus("使用中");
+        instance.setLifecycleStatus("IN_USE");
         DataTemplateMain template = new DataTemplateMain();
         template.setId(2L);
         template.setDeviceModelId(12L);

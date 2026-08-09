@@ -124,19 +124,7 @@ public class AdapterIndexController {
             return ApiResponse.fail(e.getMessage());
         }
     }
-    /**
-     * 更新 Adapter 心跳。
-     */
-    @PostMapping("/heartbeat")
-    public ApiResponse<AdapterIndex> heartbeat(@RequestBody Map<String, Object> payload) {
-        try {
-            String adapterName = payload.get("adapterName") == null ? null : String.valueOf(payload.get("adapterName"));
-            String status = payload.get("status") == null ? null : String.valueOf(payload.get("status"));
-            return ApiResponse.ok(service.heartbeat(adapterName, status));
-        } catch (Exception e) {
-            return ApiResponse.fail(e.getMessage());
-        }
-    }
+
 
     /**
      * 删除 Adapter 索引。

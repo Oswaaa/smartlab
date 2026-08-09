@@ -33,7 +33,7 @@ class StateMachineObservationRegistryTest {
         persisted.setCurrentCmdState("IDLE");
         DeviceInstances retired = new DeviceInstances();
         retired.setId(7L);
-        retired.setLifecycleStatus("已注销");
+        retired.setLifecycleStatus("RETIRED");
         when(twins.selectList(any())).thenReturn(List.of(persisted));
         when(instances.selectById(7L)).thenReturn(retired);
         ObservationHistoryStore history = new ObservationHistoryStore();

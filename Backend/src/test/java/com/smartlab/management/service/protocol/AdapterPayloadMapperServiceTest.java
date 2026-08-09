@@ -88,7 +88,7 @@ class AdapterPayloadMapperServiceTest {
         instance.setDeviceModelId(9L);
         instance.setBoundAdapterName("adapter-1");
         instance.setBoundDevicePoint("point-1");
-        instance.setLifecycleStatus("使用中");
+        instance.setLifecycleStatus("IN_USE");
         when(instances.selectList(any())).thenReturn(List.of(instance));
 
         DeviceModels model = new DeviceModels();
@@ -116,7 +116,7 @@ class AdapterPayloadMapperServiceTest {
         retired.setId(8L);
         retired.setBoundAdapterName("adapter-1");
         retired.setBoundDevicePoint("point-1");
-        retired.setLifecycleStatus("已注销");
+        retired.setLifecycleStatus("RETIRED");
         when(instances.selectList(any())).thenReturn(List.of(retired));
 
         service.refreshAdapterRouteTable();
@@ -137,7 +137,7 @@ class AdapterPayloadMapperServiceTest {
         instance.setDeviceModelId(9L);
         instance.setBoundAdapterName("adapter-1");
         instance.setBoundDevicePoint("point-1");
-        instance.setLifecycleStatus("使用中");
+        instance.setLifecycleStatus("IN_USE");
         when(instances.selectById(7L)).thenReturn(instance);
 
         DeviceModels model = new DeviceModels();
@@ -168,7 +168,7 @@ class AdapterPayloadMapperServiceTest {
         instance.setDeviceModelId(9L);
         instance.setBoundAdapterName("adapter-1");
         instance.setBoundDevicePoint("point-1");
-        instance.setLifecycleStatus("使用中");
+        instance.setLifecycleStatus("IN_USE");
         var config = JsonNodeSupport.objectNode();
         var binding = config.putObject("adapterBinding");
         binding.putObject("rawToModelAttribute").put("MW0", "temperature");
@@ -209,7 +209,7 @@ class AdapterPayloadMapperServiceTest {
         instance.setDeviceModelId(9L);
         instance.setBoundAdapterName("adapter-1");
         instance.setBoundDevicePoint("point-1");
-        instance.setLifecycleStatus("使用中");
+        instance.setLifecycleStatus("IN_USE");
         var config = JsonNodeSupport.objectNode();
         var binding = config.putObject("adapterBinding");
         binding.putObject("rawToModelAttribute").put("MW0", "temperature");

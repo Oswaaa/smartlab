@@ -59,8 +59,7 @@
             "description": "开始加热",
             "parameters": [
               { "name": "targetTemp", "dataType": "DOUBLE", "internal": false, "description": "目标温度" },
-              { "name": "heatTime", "dataType": "INTEGER", "internal": false, "description": "加热时间（秒）" },
-              { "name": "index",   "dataType": "INTEGER", "internal": true, "sourceField": "index", "description": "底层从机ID，对用户不可见【internal=true则不向用户展示，为adapter内部使用，映射至devicePoints的某字段】" }
+              { "name": "heatTime", "dataType": "INTEGER", "internal": false, "description": "加热时间（秒）" }
             ]
           }
         ],
@@ -82,13 +81,11 @@
         {
           "devicePoint": "Reactor_01",
           "description": "1号反应釜",
-          "index": 1,
           "attributeMapping": { "temperature": "ch1_temp", "pressure": "ch1_pres" }
         },
         {
           "devicePoint": "Reactor_02",
           "description": "2号反应釜",
-          "index": 2,
           "attributeMapping": { "temperature": "ch2_temp", "pressure": "ch2_pres" }
         }
       ]
@@ -127,7 +124,6 @@
         { 
           "devicePoint": "Stirrer_A1", 
           "description": "A区1号搅拌电机", 
-          "index": 1,
           "attributeMapping": { "rpm": "motor_a1_rpm" } }
       ]
     }

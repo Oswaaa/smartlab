@@ -107,8 +107,5 @@ public class TaskController {
         catch (Exception e) { return ApiResponse.fail(e.getMessage()); }
     }
 
-    @GetMapping("/snapshots/{taskId}")
-    public ApiResponse<List<TaskStep>> snapshots(@PathVariable Long taskId) {
-        return ApiResponse.ok(taskService.snapshots(taskId));
-    }
+
 }

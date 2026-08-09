@@ -32,8 +32,6 @@ class AdapterManifestServiceTest {
         assertEquals(jsonManifest.path("adapterName"), iniManifest.path("adapterName"));
         assertEquals(jsonManifest.path("adapterDescription"), iniManifest.path("adapterDescription"));
         assertEquals(jsonManifest.path("deviceCategories"), iniManifest.path("deviceCategories"));
-        assertEquals(true, iniManifest.path("deviceCategories").get(0).path("deviceTemplate")
-                .path("commands").get(0).path("parameters").get(2).path("internal").asBoolean());
     }
 
     @Test
@@ -48,8 +46,6 @@ class AdapterManifestServiceTest {
 
         assertEquals("ReactorUnit", contract.path("config").path("categoryName").asText());
         assertFalse(contract.path("config").has("templateName"));
-        assertTrue(manifest.path("deviceCategories").get(0).path("deviceTemplate")
-                .path("commands").get(0).path("parameters").get(2).path("internal").asBoolean());
         assertTrue(contract.path("commands").get(0).path("commandParameters").isArray());
         assertFalse(contract.path("commands").get(0).path("commandParameters").findValuesAsText("paramName")
                 .contains("index"));
@@ -65,10 +61,7 @@ class AdapterManifestServiceTest {
     void adapterContractNeverExposesSourceBoundParameters() throws IOException {
         ObjectNode manifest = service.parseRawConfig(ADAPTER_NAME, "JSON", resource("samples/adapterSetup.json"),
                 REGISTERED_AT);
-        ObjectNode internalParameter = (ObjectNode) manifest.path("deviceCategories").get(0)
-                .path("deviceTemplate").path("commands").get(0).path("parameters").get(2);
-        internalParameter.remove("internal");
-        internalParameter.put("hidden", true);
+        
 
         AdapterIndex adapter = new AdapterIndex();
         adapter.setAdapterName(ADAPTER_NAME);

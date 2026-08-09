@@ -3,6 +3,7 @@ package com.smartlab.management.service.db.resource.device;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
 import com.smartlab.management.entity.resource.device.DeviceModels;
 import com.smartlab.management.entity.resource.device.DeviceTwinStates;
+import com.smartlab.management.entity.resource.device.DeviceInstanceLifecycle;
 import com.smartlab.global.event.DeviceInstanceRetiredEvent;
 import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
 import com.smartlab.management.mapper.resource.device.DeviceModelsMapper;
@@ -37,7 +38,7 @@ class DeviceInstanceServiceTest {
             return 1;
         }).when(fixture.instances).insert(any(DeviceInstances.class));
         DeviceInstances saved = fixture.service.savePayload(Map.of("deviceModelId", 3L, "instanceName", "Reactor-01"));
-        assertEquals("使用中", saved.getLifecycleStatus());
+        assertEquals(DeviceInstanceLifecycle.IN_USE, saved.getLifecycleStatus());
     }
 
     @Test
@@ -79,7 +80,7 @@ class DeviceInstanceServiceTest {
     @Test
     void existingInstanceCannotChangeDeviceModel() {
         Fixture fixture = new Fixture();
-        DeviceInstances existing = instance(10L, "使用中");
+        DeviceInstances existing = instance(10L, DeviceInstanceLifecycle.IN_USE);
         when(fixture.instances.selectById(10L)).thenReturn(existing);
 
         Map<String, Object> payload = new HashMap<>();
@@ -95,7 +96,7 @@ class DeviceInstanceServiceTest {
     @Test
     void existingInstanceUpdateInheritsDeviceModelWhenOmitted() {
         Fixture fixture = new Fixture();
-        DeviceInstances existing = instance(10L, "使用中");
+        DeviceInstances existing = instance(10L, DeviceInstanceLifecycle.IN_USE);
         when(fixture.instances.selectById(10L)).thenReturn(existing);
 
         DeviceInstances updated = fixture.service.savePayload(Map.of(
@@ -108,7 +109,7 @@ class DeviceInstanceServiceTest {
     @Test
     void retiredInstanceCannotBeEdited() {
         Fixture fixture = new Fixture();
-        DeviceInstances retired = instance(7L, "已注销");
+        DeviceInstances retired = instance(7L, DeviceInstanceLifecycle.RETIRED);
         when(fixture.instances.selectById(7L)).thenReturn(retired);
         IllegalStateException error = assertThrows(IllegalStateException.class,
                 () -> fixture.service.savePayload(Map.of("instanceId", 7L, "instanceName", "changed")));
@@ -119,14 +120,14 @@ class DeviceInstanceServiceTest {
     @Test
     void retirementKeepsInstanceAndTwinSnapshot() {
         Fixture fixture = new Fixture();
-        DeviceInstances active = instance(7L, "使用中");
+        DeviceInstances active = instance(7L, DeviceInstanceLifecycle.IN_USE);
         DeviceTwinStates twin = new DeviceTwinStates();
         twin.setInstanceId(7L);
         twin.setCurrentCmdState("IDLE");
         when(fixture.instances.selectById(7L)).thenReturn(active);
         when(fixture.twins.selectOne(any())).thenReturn(twin);
         DeviceInstances retired = fixture.service.retire("7");
-        assertEquals("已注销", retired.getLifecycleStatus());
+        assertEquals(DeviceInstanceLifecycle.RETIRED, retired.getLifecycleStatus());
         verify(fixture.instances).updateById(active);
         verify(fixture.instances, never()).deleteById(any(java.io.Serializable.class));
         verify(fixture.twins, never()).delete(any());
@@ -137,7 +138,7 @@ class DeviceInstanceServiceTest {
     @Test
     void retirementRejectsRunningCommand() {
         Fixture fixture = new Fixture();
-        DeviceInstances active = instance(7L, "使用中");
+        DeviceInstances active = instance(7L, DeviceInstanceLifecycle.IN_USE);
         DeviceTwinStates twin = new DeviceTwinStates();
         twin.setCurrentCmdState("RUNNING");
         when(fixture.instances.selectById(7L)).thenReturn(active);

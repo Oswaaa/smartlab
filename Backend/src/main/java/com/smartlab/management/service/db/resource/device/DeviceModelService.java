@@ -218,20 +218,6 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         return result;
     }
 
-    /**
-     * 保存设备模型内置约束规则。
-     */
-    public void saveModelConstraintRule(Map<String, Object> payload) {
-        throw new UnsupportedOperationException("Use savePayload to update intrinsic constraints");
-    }
-
-    /**
-     * 删除设备模型内置约束规则。
-     */
-    public void deleteModelConstraintRule(String modelId, String constraintRuleId) {
-        throw new UnsupportedOperationException("Use savePayload to update intrinsic constraints");
-    }
-
     @Transactional(rollbackFor = Exception.class)
     public DeviceModels savePayload(DeviceModelSaveDTO payload) {
         if (payload == null) {

@@ -65,14 +65,6 @@ public class SceneController {
         }
     }
 
-    @DeleteMapping("/detail/delete/{id}")
-    public ApiResponse<String> deleteDetail(@PathVariable Long id) {
-        try {
-            service.deleteSceneDetail(id);
-            return ApiResponse.ok("删除成功");
-        } catch (Exception e) {
-            return ApiResponse.fail(e.getMessage());
-        }
-    }
+
 }
 

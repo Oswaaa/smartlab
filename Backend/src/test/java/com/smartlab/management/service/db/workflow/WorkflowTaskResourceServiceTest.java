@@ -75,7 +75,7 @@ class WorkflowTaskResourceServiceTest {
         WorkflowTaskResourceService service = new WorkflowTaskResourceService(workflows, instances, mock(DeviceModelsMapper.class),
                 mock(TaskStepMapper.class), mock(FlowNodeMapper.class));
         stubWorkflow(workflows, 3L, 7L);
-        when(instances.selectById(55L)).thenReturn(instance(55L, 7L, "使用中"));
+        when(instances.selectById(55L)).thenReturn(instance(55L, 7L, "IN_USE"));
         ObjectNode map = resourceMapWithBindings("3:1", 7L, 55L, "root/heat", 7L, 55L);
 
         assertEquals(55L, service.resolveDeviceInstance(3L, "heat", map).getId());
@@ -123,7 +123,7 @@ class WorkflowTaskResourceServiceTest {
         WorkflowTaskResourceService service = new WorkflowTaskResourceService(
                 workflows, instances, mock(DeviceModelsMapper.class), steps, nodes);
         stubRepeatedSubFlow(workflows);
-        when(instances.selectById(55L)).thenReturn(instance(55L, 7L, "使用中"));
+        when(instances.selectById(55L)).thenReturn(instance(55L, 7L, "IN_USE"));
 
         FlowNode parentNode = flowNode(1000L, 10L, 1L, "SUBFLOW_NODE", null);
         FlowNode childNode = flowNode(2000L, 20L, 1L, "DEV_NODE", 7L);
@@ -145,7 +145,7 @@ class WorkflowTaskResourceServiceTest {
         WorkflowTaskResourceService service = new WorkflowTaskResourceService(workflows, instances, mock(DeviceModelsMapper.class),
                 mock(TaskStepMapper.class), mock(FlowNodeMapper.class));
         stubWorkflow(workflows, 3L, 7L);
-        when(instances.selectById(55L)).thenReturn(instance(55L, 7L, "使用中"));
+        when(instances.selectById(55L)).thenReturn(instance(55L, 7L, "IN_USE"));
 
         ObjectNode resourceMap = resourceMap("root/heat", 7L, 55L);
 
@@ -159,7 +159,7 @@ class WorkflowTaskResourceServiceTest {
         WorkflowTaskResourceService service = new WorkflowTaskResourceService(workflows, instances, mock(DeviceModelsMapper.class),
                 mock(TaskStepMapper.class), mock(FlowNodeMapper.class));
         stubWorkflow(workflows, 3L, 7L);
-        when(instances.selectById(55L)).thenReturn(instance(55L, 8L, "使用中"));
+        when(instances.selectById(55L)).thenReturn(instance(55L, 8L, "IN_USE"));
 
         assertThrows(IllegalStateException.class, () -> service.validate(3L, resourceMap("root/heat", 7L, 55L)));
     }

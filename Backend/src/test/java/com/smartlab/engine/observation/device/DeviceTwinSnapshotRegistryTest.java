@@ -104,7 +104,7 @@ class DeviceTwinSnapshotRegistryTest {
         DeviceInstances retired = new DeviceInstances();
         retired.setId(7L);
         retired.setDeviceModelId(3L);
-        retired.setLifecycleStatus("已注销");
+        retired.setLifecycleStatus("RETIRED");
         when(twins.selectList(org.mockito.ArgumentMatchers.any())).thenReturn(List.of(state));
         when(instances.selectById(7L)).thenReturn(retired);
         DeviceTwinSnapshotRegistry registry = new DeviceTwinSnapshotRegistry(twins, instances,

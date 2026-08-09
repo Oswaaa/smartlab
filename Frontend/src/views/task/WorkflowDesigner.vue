@@ -12,16 +12,17 @@
                 <template #default="{ data }">
                   <div
                     class="tree-item"
-                    :class="{ draggable: data.kind==='instance' && contractReady }"
+                    :class="[data.kind, { draggable: data.kind==='instance' && contractReady }]"
                     :draggable="data.kind==='instance' && contractReady"
                     @dragstart="drag($event,data)"
                     @dblclick="data.kind==='instance' && addResource({kind:'instance',instance:data.instance,model:data.model})"
-                    :title="data.kind==='instance' ? '按住拖拽至画布，或双击添加设备实例' : '设备模型分类'"
+                    :title="data.kind==='instance' ? '按住拖拽至画布，或双击添加设备实例' : data.kind==='model' ? '设备模型' : '设备分类'"
                   >
                     <span class="tree-label">
                       <span class="tree-dot" :class="data.kind"></span>
                       <span class="node-title">{{ data.label }}</span>
-                      <span v-if="data.kind==='instance'" class="instance-badge">实例</span>
+                      <span v-if="data.kind==='model'" class="model-badge">模型</span>
+                      <span v-else-if="data.kind==='instance'" class="instance-badge">实例</span>
                     </span>
                   </div>
                 </template>
@@ -62,42 +63,29 @@
       </aside>
 
       <main class="canvas-panel">
+        <!-- 顶部信息栏 -->
         <div class="canvas-floating-island">
           <div class="island-left">
             <div class="flow-title-row">
               <strong>{{ form.name || '未命名流程' }}</strong>
               <span class="status-chip" :class="form.status.toLowerCase()">{{ form.status === 'ACTIVE' ? '已启用' : '草稿' }}</span>
-              <span v-if="form.id" class="meta-chip">ID {{ form.id }}</span>
               <span class="meta-chip">V{{ form.version }}</span>
               <span class="stats-chip">{{ form.nodesDef.length }} 节点 · {{ nodeConnections.length }} 连接</span>
               <span v-if="validationSummary.errors" class="error-badge">{{ validationSummary.errors }} 错误</span>
               <span v-if="dirty" class="dirty-mark">未保存</span>
             </div>
-            <el-select v-model="openedWorkflowId" clearable filterable placeholder="切换流程" class="workflow-select-compact" @change="loadWorkflow">
-              <el-option v-for="item in workflows" :key="item.id" :label="workflowOptionLabel(item)" :value="item.id" />
-            </el-select>
           </div>
 
           <div class="island-right">
-            <el-tooltip :content="actionsExpanded ? '收起操作组' : '展开操作组'" placement="bottom">
-              <el-button :icon="actionsExpanded ? ArrowLeft : ArrowRight" circle size="small" class="toggle-actions-btn" @click="actionsExpanded = !actionsExpanded" />
+            <el-tooltip content="新建流程" placement="bottom">
+              <el-button :icon="Plus" class="island-btn" @click="create">新建</el-button>
             </el-tooltip>
-            
-            <div v-if="actionsExpanded" class="action-btn-group">
-              <el-tooltip content="新建流程" placement="bottom">
-                <el-button :icon="Plus" class="island-btn" @click="create">新建</el-button>
-              </el-tooltip>
-              <el-tooltip content="刷新服务" placement="bottom">
-                <el-button :icon="Refresh" class="island-btn" @click="loadAll">刷新</el-button>
-              </el-tooltip>
-              <el-tooltip content="导出 JSON" placement="bottom">
-                <el-button :disabled="!form.name" class="island-btn" @click="exportWorkflow">导出</el-button>
-              </el-tooltip>
-              <el-button class="island-btn" @click="runValidation">校验</el-button>
-              <el-button :icon="Setting" class="island-btn" @click="openSettings">设置</el-button>
-              <el-button class="island-btn-cta draft" :loading="draftSaving" :disabled="!contractReady" @click="saveDraft">保存草稿</el-button>
-              <el-button class="island-btn-cta primary" :loading="publishSaving" :disabled="!contractReady" @click="publishAndValidate">发布启用</el-button>
-            </div>
+            <el-tooltip content="导出 JSON" placement="bottom">
+              <el-button :disabled="!form.name" class="island-btn" @click="exportWorkflow">导出</el-button>
+            </el-tooltip>
+            <el-button class="island-btn" @click="runValidation">校验</el-button>
+            <el-button class="island-btn-cta draft" :loading="draftSaving" :disabled="!contractReady" @click="saveDraft">保存草稿</el-button>
+            <el-button class="island-btn-cta primary" :loading="publishSaving" :disabled="!contractReady" @click="publishAndValidate">发布启用</el-button>
           </div>
         </div>
 
@@ -122,18 +110,12 @@
             </div>
           </div>
 
-          <!-- 画布左下角操作工具浮岛 (自动布局/适应画布) -->
-          <div class="canvas-bottom-left-dock">
-            <el-button-group>
-              <el-button size="small" class="dock-btn" :icon="Aim" title="适应画布视图" @click="fitCanvas">适应画布</el-button>
-              <el-button size="small" class="dock-btn" :icon="MagicStick" title="DAG 自动整理布局" @click="autoLayout">自动布局</el-button>
-              <el-button v-if="selectedEdgeId" size="small" type="danger" plain class="dock-btn-danger" @click="deleteSelectedEdge">删除选中连接</el-button>
-            </el-button-group>
-          </div>
-
           <VueFlow v-model:nodes="flowNodes" v-model:edges="flowEdges" class="workflow-flow" :min-zoom="0.35" :max-zoom="1.8" :default-edge-options="defaultEdgeOptions" :delete-key-code="null" :fit-view-on-init="true" @connect="connectNodes" @node-click="selectCanvasNode" @pane-click="clearSelection" @node-drag-stop="persistLayout" @edge-click="selectEdge" @edges-delete="removeDeletedEdges">
             <Background pattern-color="#cbd8e8" :gap="20" :size="1.2" />
-            <Controls position="bottom-left" />
+            <Controls position="bottom-left">
+              <ControlButton title="适应画布" @click="fitCanvas"><Aim /></ControlButton>
+              <ControlButton title="自动布局" @click="autoLayout"><MagicStick /></ControlButton>
+            </Controls>
             <template #node-workflow="slotProps">
               <WorkflowCanvasNode :node="nodeByName(slotProps.data.nodeName)" :selected="slotProps.selected" :issues="nodeIssues(slotProps.data.nodeName)" />
             </template>
@@ -143,11 +125,6 @@
             <div class="quick-start single-action">
               <button :disabled="!contractReady" @click.stop="addResource({kind:'function',type:'START'})"><b>▶</b><span>添加开始节点</span></button>
             </div>
-            <ol>
-              <li><span>02</span><div><strong>编排执行节点</strong><small>加入设备能力、条件分支或子流程</small></div></li>
-              <li><span>03</span><div><strong>连接执行与数据</strong><small>实线表示执行流，虚线表示端口数据流</small></div></li>
-              <li><span>04</span><div><strong>校验并保存</strong><small>修复错误后保存为草稿或启用模型</small></div></li>
-            </ol>
           </section>
         </div>
 
@@ -161,21 +138,10 @@
       <aside class="inspector-panel">
         <div class="panel-titlebar inspector-titlebar">
           <div><strong>{{ inspectorTitle }}</strong><span>{{ inspectorSubtitle }}</span></div>
-          <el-button v-if="hasInspectorSelection" link class="btn-aliyun-link" @click="showOverview">返回总览</el-button>
+          <el-button v-if="hasInspectorSelection" link class="btn-aliyun-link" @click="showOverview">返回配置与总览</el-button>
         </div>
         <div class="inspector-scroll">
-          <section v-if="settingsVisible" class="settings-view">
-            <div class="business-note"><b>01</b><div><strong>定义模型身份</strong><span>名称和版本用于创建任务时识别流程；已启用模型可被执行和引用。</span></div></div>
-            <el-form label-position="top" class="dense-form">
-              <el-form-item label="流程名称"><el-input v-model="form.name" maxlength="80" placeholder="例如：恒温反应实验流程" @input="markDirty" /></el-form-item>
-              <div class="two-column-form"><el-form-item label="版本"><el-input-number v-model="form.version" :min="1" :precision="0" controls-position="right" @change="markDirty" /></el-form-item></div>
-              <el-form-item label="业务说明"><el-input v-model="form.description" type="textarea" :rows="4" maxlength="500" placeholder="说明前置条件、执行目标和适用范围" @input="markDirty" /></el-form-item>
-            </el-form>
-            <div class="business-note"><b>02</b><div><strong>编排执行路径</strong><span>START → 设备/分支/子流程 → END；AGGREGATE 用于等待多条上游路径。</span></div></div>
-            <div class="business-note"><b>03</b><div><strong>校验后保存</strong><span>保存前检查节点契约、入口出口、断路和环路；任务运行时再绑定设备实例。</span></div></div>
-            <el-button class="wide-action btn-aliyun-cta" plain @click="runValidation">执行完整校验</el-button>
-          </section>
-          <WorkflowNodeInspector v-else-if="nodeDrawerVisible && selectedNode" :visible="nodeDrawerVisible" :node="selectedNode" :errors="selectedNodeIssues" :device-capabilities="selectedDeviceModel?.capabilities || []" :device-attributes="selectedDeviceModel?.attributes || []" :port-connections="form.portConnections" :contract-ready="contractReady" @close="closeNodeDrawer" @rename="renameSelectedNode" @update:node="replaceSelectedNode" @update:port-connections="replacePortConnections" @remove-port-request="confirmRemovePort" @remove-node="removeSelectedNode" />
+          <WorkflowNodeInspector v-if="nodeDrawerVisible && selectedNode" :visible="nodeDrawerVisible" :node="selectedNode" :errors="selectedNodeIssues" :device-capabilities="selectedDeviceModel?.capabilities || []" :device-attributes="selectedDeviceModel?.attributes || []" :port-connections="form.portConnections" :contract-ready="contractReady" @close="closeNodeDrawer" @rename="renameSelectedNode" @update:node="replaceSelectedNode" @update:port-connections="replacePortConnections" @remove-port-request="confirmRemovePort" @remove-node="removeSelectedNode" />
           <section v-else-if="selectedEdge" class="edge-view">
             <div class="connection-type" :class="selectedEdge.data?.connectionKind?.toLowerCase()"><span>{{ selectedEdge.data?.connectionKind === 'PORT' ? '数据流' : '执行流' }}</span><b>{{ selectedEdgeEndpoint.source }} → {{ selectedEdgeEndpoint.target }}</b></div>
             <dl class="property-list"><div><dt>源连接点</dt><dd>{{ selectedEdgeEndpoint.sourceHandle }}</dd></div><div><dt>目标连接点</dt><dd>{{ selectedEdgeEndpoint.targetHandle }}</dd></div><div><dt>业务语义</dt><dd>{{ selectedEdge.data?.connectionKind === 'PORT' ? '将上游节点内部变量传递给下游节点' : '上游节点完成后激活下游节点' }}</dd></div></dl>
@@ -187,12 +153,20 @@
             <el-result v-else icon="success" title="流程校验通过" sub-title="节点契约与执行拓扑均满足保存要求" />
           </section>
           <section v-else class="overview-view">
+            <div class="config-section">
+              <div class="section-heading"><strong>流程基本配置</strong><span>身份与描述</span></div>
+              <el-form label-position="top" class="dense-form">
+                <el-form-item label="流程名称">
+                  <el-input v-model="form.name" maxlength="80" placeholder="例如：恒温反应实验流程" @input="markDirty" />
+                </el-form-item>
+                <el-form-item label="流程描述">
+                  <el-input v-model="form.description" type="textarea" :rows="3" maxlength="500" placeholder="说明前置条件、执行目标和适用范围" @input="markDirty" />
+                </el-form-item>
+              </el-form>
+            </div>
+            <div class="section-heading"><strong>静态建模检查</strong><span>架构与链接状态</span></div>
             <div class="overview-metrics"><div><strong>{{ form.nodesDef.length }}</strong><span>节点</span></div><div><strong>{{ executionConnectionCount }}</strong><span>执行连接</span></div><div><strong>{{ form.portConnections.length }}</strong><span>数据连接</span></div><div><strong>{{ deviceNodeCount }}</strong><span>设备节点</span></div></div>
-            <div class="section-heading"><strong>建模检查</strong><span>保存前必须通过</span></div>
             <ul class="check-list"><li :class="{ok:hasSingleStartEnd}"><i></i><span><strong>唯一入口与出口</strong><small>需要且仅需要一个 START 和 END</small></span></li><li :class="{ok:!validationSummary.errors}"><i></i><span><strong>节点与拓扑有效</strong><small>{{ validationSummary.errors ? `${validationSummary.errors} 个问题待处理` : '节点契约、连接和路径正常' }}</small></span></li><li :class="{ok:contractReady}"><i></i><span><strong>系统契约已加载</strong><small>{{ contractReady ? '可安全创建并保存节点' : contractError || '契约加载中' }}</small></span></li></ul>
-            <div class="section-heading"><strong>标准业务顺序</strong><span>运行时语义</span></div>
-            <div class="business-flow"><span>创建任务并绑定设备实例</span><b>↓</b><span>START 激活首个执行节点</span><b>↓</b><span>能力调用 / 分支 / 子流程</span><b>↓</b><span>AGGREGATE 汇聚后进入 END</span></div>
-            <div class="overview-actions"><el-button class="btn-aliyun" @click="openSettings">流程配置</el-button><el-button class="btn-aliyun-cta" @click="runValidation">校验流程</el-button></div>
           </section>
         </div>
       </aside>
@@ -207,7 +181,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Aim, ArrowLeft, ArrowRight, MagicStick, Plus, Refresh, Search, Setting } from '@element-plus/icons-vue'
 import { VueFlow, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
-import { Controls } from '@vue-flow/controls'
+import { Controls, ControlButton } from '@vue-flow/controls'
 import '@vue-flow/core/dist/style.css'
 import '@vue-flow/core/dist/theme-default.css'
 import '@vue-flow/controls/dist/style.css'
@@ -295,20 +269,18 @@ const validationSummary = computed(() => ({
   errors: workflowValidationIssues.value.filter(issue => issue.severity === 'error').length,
   warnings: workflowValidationIssues.value.filter(issue => issue.severity === 'warning').length
 }))
-const hasInspectorSelection = computed(() => settingsVisible.value || nodeDrawerVisible.value || Boolean(selectedEdge.value) || validationVisible.value)
+const hasInspectorSelection = computed(() => nodeDrawerVisible.value || Boolean(selectedEdge.value) || validationVisible.value)
 const inspectorTitle = computed(() => {
-  if (settingsVisible.value) return '流程配置'
   if (nodeDrawerVisible.value && selectedNode.value) return '节点配置'
   if (selectedEdge.value) return '连接配置'
   if (validationVisible.value) return '流程校验'
-  return '流程总览'
+  return '流程配置与总览'
 })
 const inspectorSubtitle = computed(() => {
-  if (settingsVisible.value) return '模型身份、版本与启用状态'
   if (nodeDrawerVisible.value && selectedNode.value) return `${selectedNode.value.name} · ${nodeBusinessLabel(selectedNode.value)}`
   if (selectedEdge.value) return selectedEdge.value.data?.connectionKind === 'PORT' ? '端口数据传递关系' : '节点执行顺序关系'
   if (validationVisible.value) return `${validationSummary.value.errors} 个错误 · ${validationSummary.value.warnings} 个提醒`
-  return '结构、连接与运行时业务语义'
+  return '流程名称、描述与建模检查状态'
 })
 
 const deviceTree = computed(() => {
@@ -1048,7 +1020,15 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
 .function-list.vertical{display:flex;flex-direction:column;gap:8px}
 .function-list.vertical .function-item{height:52px;grid-template-columns:32px minmax(0,1fr) 20px;border:1px solid #e2e7ee;border-radius:4px;padding:6px 10px}
 .function-list.vertical .function-item:hover{border-color:#4096ff;background:#f0f7ff}
-.instance-badge{display:inline-block;padding:1px 5px;margin-left:4px;border:1px solid #d9d9d9;border-radius:2px;background:#f5f5f5;color:#595959;font-size:10px;font-weight:normal;line-height:14px}
+.instance-badge{display:inline-block;padding:1px 5px;margin-left:4px;border:1px solid #bbf7d0;border-radius:2px;background:#f0fdf4;color:#16a34a;font-size:9px;font-weight:600;line-height:14px}
+.model-badge{display:inline-block;padding:1px 5px;margin-left:4px;border:1px solid #bfdbfe;border-radius:2px;background:#eff6ff;color:#2563eb;font-size:9px;font-weight:600;line-height:14px}
+.tree-item.category{font-weight:600;color:#334155;background:#f8fafc;padding:3px 6px;border-radius:3px}
+.tree-item.model{font-weight:600;color:#1e293b;padding:2px 4px}
+.tree-item.instance{background:#ffffff;border:1px solid #e2e8f0;border-radius:4px;padding:4px 8px;margin:2px 0}
+.tree-item.instance:hover{border-color:#3b82f6;background:#eff6ff}
+.tree-dot.category{background:#94a3b8}
+.tree-dot.model{background:#2563eb}
+.tree-dot.instance{background:#16a34a}
 .tree-item .node-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
 .canvas-floating-controls{position:absolute;top:10px;right:16px;z-index:9;display:flex;align-items:center;gap:8px;padding:4px 8px;border:1px solid rgba(217,222,230,.9);border-radius:6px;background:rgba(255,255,255,.94);backdrop-filter:blur(8px);box-shadow:0 2px 10px rgba(24,34,48,.06)}
 .control-bar-label{font-size:10px;font-weight:700;color:#64748b;letter-spacing:.02em}
@@ -1068,11 +1048,5 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
 .opened-badge{font-size:9px;font-weight:700;color:#2563eb;background:#eff6ff;padding:1px 4px;border-radius:2px;border:1px solid #bfdbfe;margin-left:auto}
 .stats-chip{height:18px;display:inline-flex;align-items:center;padding:0 6px;border:1px solid #cbd5e1;border-radius:2px;background:#f8fafc;color:#475569;font-size:9px;font-weight:600}
 .error-badge{height:18px;display:inline-flex;align-items:center;padding:0 6px;border:1px solid #fca5a5;border-radius:2px;background:#fef2f2;color:#dc2626;font-size:9px;font-weight:700}
-.toggle-actions-btn{border-color:#cbd5e1;color:#475569}
-.toggle-actions-btn:hover{background:#f1f5f9;color:#1e293b}
-.action-btn-group{display:flex;align-items:center;gap:6px}
-.canvas-bottom-left-dock{position:absolute;bottom:14px;left:70px;z-index:10;display:flex;align-items:center;gap:6px}
-.canvas-bottom-left-dock .dock-btn{height:28px;padding:0 9px;border-color:#cbd5e1;background:rgba(255,255,255,.92);backdrop-filter:blur(4px);color:#1e293b;font-size:11px;font-weight:500}
-.canvas-bottom-left-dock .dock-btn:hover{border-color:#2563eb;color:#2563eb;background:#fff}
-.canvas-bottom-left-dock .dock-btn-danger{height:28px;padding:0 9px;font-size:11px}
+.config-section{padding-bottom:12px;border-bottom:1px solid #e2e8f0}
 </style>

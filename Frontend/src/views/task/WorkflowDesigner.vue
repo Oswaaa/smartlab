@@ -12,11 +12,11 @@
                 <template #default="{ data }">
                   <div
                     class="tree-item"
-                    :class="{ draggable: (data.kind==='model' || data.kind==='instance') && contractReady }"
-                    :draggable="(data.kind==='model' || data.kind==='instance') && contractReady"
+                    :class="{ draggable: data.kind==='instance' && contractReady }"
+                    :draggable="data.kind==='instance' && contractReady"
                     @dragstart="drag($event,data)"
-                    @dblclick="addResource(data.kind==='model' ? {kind:'model',model:data.model} : {kind:'instance',instance:data.instance,model:data.model})"
-                    title="按住拖拽至画布，或双击添加"
+                    @dblclick="data.kind==='instance' && addResource({kind:'instance',instance:data.instance,model:data.model})"
+                    :title="data.kind==='instance' ? '按住拖拽至画布，或双击添加设备实例' : '设备模型分类'"
                   >
                     <span class="tree-label">
                       <span class="tree-dot" :class="data.kind"></span>
@@ -32,7 +32,7 @@
 
           <el-tab-pane label="流程库" name="workflows">
             <div class="resource-search">
-              <el-input v-model="resourceKeyword" :prefix-icon="Search" clearable placeholder="搜索子流程..." />
+              <el-input v-model="resourceKeyword" :prefix-icon="Search" clearable placeholder="搜索流程..." />
             </div>
             <div class="tab-scroll-body">
               <div v-if="filteredWorkflows.length" class="flow-list">
@@ -40,6 +40,7 @@
                   v-for="item in filteredWorkflows"
                   :key="item.id"
                   class="flow-item clickable-flow-item"
+                  :class="{ 'is-active-flow': item.id === openedWorkflowId }"
                   :disabled="!contractReady"
                   :draggable="contractReady"
                   @dragstart="drag($event,{kind:'workflow',workflow:item})"
@@ -51,6 +52,7 @@
                     <strong>{{ item.flowName }}</strong>
                     <small>V{{ item.version || 1 }} · 点击查看流程 / 拖拽为节点</small>
                   </span>
+                  <span v-if="item.id === openedWorkflowId" class="opened-badge">当前</span>
                 </div>
               </div>
               <el-empty v-else description="没有可引用的流程" :image-size="48" />
@@ -67,6 +69,8 @@
               <span class="status-chip" :class="form.status.toLowerCase()">{{ form.status === 'ACTIVE' ? '已启用' : '草稿' }}</span>
               <span v-if="form.id" class="meta-chip">ID {{ form.id }}</span>
               <span class="meta-chip">V{{ form.version }}</span>
+              <span class="stats-chip">{{ form.nodesDef.length }} 节点 · {{ nodeConnections.length }} 连接</span>
+              <span v-if="validationSummary.errors" class="error-badge">{{ validationSummary.errors }} 错误</span>
               <span v-if="dirty" class="dirty-mark">未保存</span>
             </div>
             <el-select v-model="openedWorkflowId" clearable filterable placeholder="切换流程" class="workflow-select-compact" @change="loadWorkflow">
@@ -75,40 +79,32 @@
           </div>
 
           <div class="island-right">
-            <el-tooltip content="新建流程" placement="bottom">
-              <el-button :icon="Plus" class="island-btn" @click="create">新建</el-button>
+            <el-tooltip :content="actionsExpanded ? '收起操作组' : '展开操作组'" placement="bottom">
+              <el-button :icon="actionsExpanded ? ArrowLeft : ArrowRight" circle size="small" class="toggle-actions-btn" @click="actionsExpanded = !actionsExpanded" />
             </el-tooltip>
-            <el-tooltip content="刷新服务" placement="bottom">
-              <el-button :icon="Refresh" class="island-btn" @click="loadAll">刷新</el-button>
-            </el-tooltip>
-            <el-tooltip content="导出 JSON" placement="bottom">
-              <el-button :disabled="!form.name" class="island-btn" @click="exportWorkflow">导出</el-button>
-            </el-tooltip>
-            <el-button class="island-btn" @click="runValidation">校验</el-button>
-            <el-button :icon="Setting" class="island-btn" @click="openSettings">设置</el-button>
-            <el-button class="island-btn-cta draft" :loading="draftSaving" :disabled="!contractReady" @click="saveDraft">保存草稿</el-button>
-            <el-button class="island-btn-cta primary" :loading="publishSaving" :disabled="!contractReady" @click="publishAndValidate">发布启用</el-button>
-          </div>
-        </div>
-
-        <div class="canvas-toolbar">
-          <div class="canvas-title">
-            <strong>流程画布</strong>
-            <span>{{ form.nodesDef.length }} 节点</span>
-            <span>{{ nodeConnections.length }} 连接</span>
-            <span v-if="validationSummary.errors" class="error-count">{{ validationSummary.errors }} 错误</span>
-          </div>
-          <div class="canvas-actions">
-            <el-button v-if="selectedEdgeId" class="btn-aliyun-danger-link" text @click="deleteSelectedEdge">删除连接</el-button>
-            <el-button class="btn-aliyun" text :icon="MagicStick" @click="autoLayout">自动布局</el-button>
-            <el-button class="btn-aliyun" text :icon="Aim" @click="fitCanvas">适应画布</el-button>
+            
+            <div v-if="actionsExpanded" class="action-btn-group">
+              <el-tooltip content="新建流程" placement="bottom">
+                <el-button :icon="Plus" class="island-btn" @click="create">新建</el-button>
+              </el-tooltip>
+              <el-tooltip content="刷新服务" placement="bottom">
+                <el-button :icon="Refresh" class="island-btn" @click="loadAll">刷新</el-button>
+              </el-tooltip>
+              <el-tooltip content="导出 JSON" placement="bottom">
+                <el-button :disabled="!form.name" class="island-btn" @click="exportWorkflow">导出</el-button>
+              </el-tooltip>
+              <el-button class="island-btn" @click="runValidation">校验</el-button>
+              <el-button :icon="Setting" class="island-btn" @click="openSettings">设置</el-button>
+              <el-button class="island-btn-cta draft" :loading="draftSaving" :disabled="!contractReady" @click="saveDraft">保存草稿</el-button>
+              <el-button class="island-btn-cta primary" :loading="publishSaving" :disabled="!contractReady" @click="publishAndValidate">发布启用</el-button>
+            </div>
           </div>
         </div>
 
         <div class="flow-stage" @dragover.prevent @drop="drop">
-          <!-- 画布右上角流程控制算子工具栏 -->
+          <!-- 画布右上角功能节点工具栏 -->
           <div class="canvas-floating-controls">
-            <span class="control-bar-label">控制算子</span>
+            <span class="control-bar-label">功能节点</span>
             <div class="control-btn-group">
               <button
                 v-for="item in palette"
@@ -124,6 +120,15 @@
                 <span class="tool-name">{{ item.label }}</span>
               </button>
             </div>
+          </div>
+
+          <!-- 画布左下角操作工具浮岛 (自动布局/适应画布) -->
+          <div class="canvas-bottom-left-dock">
+            <el-button-group>
+              <el-button size="small" class="dock-btn" :icon="Aim" title="适应画布视图" @click="fitCanvas">适应画布</el-button>
+              <el-button size="small" class="dock-btn" :icon="MagicStick" title="DAG 自动整理布局" @click="autoLayout">自动布局</el-button>
+              <el-button v-if="selectedEdgeId" size="small" type="danger" plain class="dock-btn-danger" @click="deleteSelectedEdge">删除选中连接</el-button>
+            </el-button-group>
           </div>
 
           <VueFlow v-model:nodes="flowNodes" v-model:edges="flowEdges" class="workflow-flow" :min-zoom="0.35" :max-zoom="1.8" :default-edge-options="defaultEdgeOptions" :delete-key-code="null" :fit-view-on-init="true" @connect="connectNodes" @node-click="selectCanvasNode" @pane-click="clearSelection" @node-drag-stop="persistLayout" @edge-click="selectEdge" @edges-delete="removeDeletedEdges">
@@ -199,7 +204,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Aim, MagicStick, Plus, Refresh, Search, Setting } from '@element-plus/icons-vue'
+import { Aim, ArrowLeft, ArrowRight, MagicStick, Plus, Refresh, Search, Setting } from '@element-plus/icons-vue'
 import { VueFlow, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
@@ -228,6 +233,7 @@ type FlowEdge = Record<string, any>
 type ValidationIssue = { code:string, severity:'error'|'warning', title:string, detail:string, nodeName?:string, path?:string }
 
 const tab = ref('devices')
+const actionsExpanded = ref(true)
 const workflows = ref<any[]>([])
 const models = ref<any[]>([])
 const instances = ref<any[]>([])
@@ -340,7 +346,7 @@ const filteredDeviceTree = computed(() => {
 
 const filteredWorkflows = computed(() => {
   const keyword = resourceKeyword.value.trim().toLowerCase()
-  return workflows.value.filter(item => item.id !== form.id && (!keyword || item.flowName?.toLowerCase().includes(keyword) || item.description?.toLowerCase().includes(keyword)))
+  return workflows.value.filter(item => !keyword || item.flowName?.toLowerCase().includes(keyword) || item.description?.toLowerCase().includes(keyword))
 })
 
 const allFilteredWorkflows = computed(() => {
@@ -588,7 +594,11 @@ function createResourceNode(data:any):NodeDefinition | null {
 }
 
 function drag(event:DragEvent, data:any) {
-  const payload = data.kind === 'model' ? { kind:'model', model:data.model } : data.kind === 'instance' ? { kind:'instance', instance:data.instance, model:data.model } : data
+  if (data.kind === 'model') {
+    event.preventDefault()
+    return
+  }
+  const payload = data.kind === 'instance' ? { kind:'instance', instance:data.instance, model:data.model } : data
   if (!contractReady.value) return
   event.dataTransfer?.setData('workflow-resource', JSON.stringify(payload))
   if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy'
@@ -611,6 +621,9 @@ function drop(event:DragEvent) {
 }
 
 function addResource(data:any, position = suggestedPosition()) {
+  if (data.kind === 'model') {
+    return ElMessage.warning('设备模型不能直接作为节点放至画布，请展开并拖拽具体的“设备实例”')
+  }
   if (!contractReady.value) return ElMessage.error(contractError.value || '工作流系统模板尚未加载，暂时不能添加节点')
   let node:NodeDefinition | null
   try {
@@ -1051,4 +1064,15 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
 .flow-control-tool .tool-name{font-size:11px;font-weight:600}
 .clickable-flow-item{cursor:pointer;transition:all .15s ease}
 .clickable-flow-item:hover{border-color:#2563eb;background:#f0f7ff}
+.clickable-flow-item.is-active-flow{background:#eff6ff;border-color:#93c5fd}
+.opened-badge{font-size:9px;font-weight:700;color:#2563eb;background:#eff6ff;padding:1px 4px;border-radius:2px;border:1px solid #bfdbfe;margin-left:auto}
+.stats-chip{height:18px;display:inline-flex;align-items:center;padding:0 6px;border:1px solid #cbd5e1;border-radius:2px;background:#f8fafc;color:#475569;font-size:9px;font-weight:600}
+.error-badge{height:18px;display:inline-flex;align-items:center;padding:0 6px;border:1px solid #fca5a5;border-radius:2px;background:#fef2f2;color:#dc2626;font-size:9px;font-weight:700}
+.toggle-actions-btn{border-color:#cbd5e1;color:#475569}
+.toggle-actions-btn:hover{background:#f1f5f9;color:#1e293b}
+.action-btn-group{display:flex;align-items:center;gap:6px}
+.canvas-bottom-left-dock{position:absolute;bottom:14px;left:70px;z-index:10;display:flex;align-items:center;gap:6px}
+.canvas-bottom-left-dock .dock-btn{height:28px;padding:0 9px;border-color:#cbd5e1;background:rgba(255,255,255,.92);backdrop-filter:blur(4px);color:#1e293b;font-size:11px;font-weight:500}
+.canvas-bottom-left-dock .dock-btn:hover{border-color:#2563eb;color:#2563eb;background:#fff}
+.canvas-bottom-left-dock .dock-btn-danger{height:28px;padding:0 9px;font-size:11px}
 </style>

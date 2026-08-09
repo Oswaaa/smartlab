@@ -113,6 +113,19 @@
               <WorkflowCanvasNode :node="nodeByName(slotProps.data.nodeName)" :selected="slotProps.selected" :issues="nodeIssues(slotProps.data.nodeName)" />
             </template>
           </VueFlow>
+          <section v-if="!flowNodes.length" class="empty-workbench">
+            <div class="empty-head"><span>01</span><div><strong>建立流程骨架</strong><small>一个可执行流程从 START 开始，在 END 结束</small></div></div>
+            <div class="quick-start">
+              <button :disabled="!contractReady" @click.stop="addResource({kind:'function',type:'START'})"><b>▶</b><span>添加开始节点</span></button>
+              <i>→</i>
+              <button :disabled="!contractReady" @click.stop="addResource({kind:'function',type:'END'})"><b>■</b><span>添加结束节点</span></button>
+            </div>
+            <ol>
+              <li><span>02</span><div><strong>编排执行节点</strong><small>加入设备能力、条件分支或子流程</small></div></li>
+              <li><span>03</span><div><strong>连接执行与数据</strong><small>实线表示执行流，虚线表示端口数据流</small></div></li>
+              <li><span>04</span><div><strong>校验并保存</strong><small>修复错误后保存为草稿或启用模型</small></div></li>
+            </ol>
+          </section>
         </div>
 
         <footer class="canvas-statusbar">

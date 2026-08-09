@@ -40,7 +40,7 @@
         <WorkflowLifecyclePanel :lifecycle="node.lifecycle" />
       </el-tab-pane>
     </el-tabs>
-    <div class="node-footer"><span>删除会同时移除关联的执行流和数据流</span><el-button type="danger" text @click="emit('remove-node')">删除节点</el-button></div>
+    <div class="node-footer"><span>删除会同时移除关联的执行流和数据流</span><el-button class="btn-aliyun-danger-link" text @click="emit('remove-node')">删除节点</el-button></div>
   </section>
 </template>
 <script setup lang="ts">

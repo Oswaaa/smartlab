@@ -15,13 +15,13 @@
         <el-select v-model="openedWorkflowId" clearable filterable placeholder="打开流程" class="workflow-select" @change="loadWorkflow">
           <el-option v-for="item in workflows" :key="item.id" :label="workflowOptionLabel(item)" :value="item.id" />
         </el-select>
-        <el-tooltip content="刷新流程、设备模型与契约" placement="bottom"><el-button :icon="Refresh" @click="loadAll">刷新</el-button></el-tooltip>
-        <el-button :icon="Plus" @click="create">新建</el-button>
-        <el-button @click="runValidation">校验</el-button>
-        <el-button :icon="Setting" @click="openSettings">流程配置</el-button>
-        <el-button :disabled="!form.name" @click="exportWorkflow">导出 JSON</el-button>
-        <el-button :loading="draftSaving" :disabled="!contractReady" @click="saveDraft">保存草稿</el-button>
-        <el-button type="primary" :loading="publishSaving" :disabled="!contractReady" @click="publishAndValidate">检查并发布</el-button>
+        <el-tooltip content="刷新流程、设备模型与契约" placement="bottom"><el-button :icon="Refresh" class="btn-aliyun" @click="loadAll">刷新</el-button></el-tooltip>
+        <el-button :icon="Plus" class="btn-aliyun" @click="create">新建</el-button>
+        <el-button class="btn-aliyun" @click="runValidation">校验</el-button>
+        <el-button :icon="Setting" class="btn-aliyun" @click="openSettings">流程配置</el-button>
+        <el-button class="btn-aliyun" :disabled="!form.name" @click="exportWorkflow">导出 JSON</el-button>
+        <el-button class="btn-aliyun-cta" :loading="draftSaving" :disabled="!contractReady" @click="saveDraft">保存草稿</el-button>
+        <el-button class="btn-aliyun-cta" :loading="publishSaving" :disabled="!contractReady" @click="publishAndValidate">检查并发布</el-button>
       </div>
     </header>
 
@@ -53,7 +53,7 @@
               <template #default="{ data }">
                 <div class="tree-item" :class="{ draggable:data.kind==='model' && contractReady }" :draggable="data.kind==='model' && contractReady" @dragstart="drag($event,data)">
                   <span class="tree-label"><span class="tree-dot" :class="data.kind"></span><span>{{ data.label }}</span></span>
-                  <el-button v-if="data.kind==='model'" link type="primary" title="添加到画布" :disabled="!contractReady" @click.stop="addResource({kind:'model',model:data.model})">＋</el-button>
+                  <el-button v-if="data.kind==='model'" link class="btn-aliyun-link" title="添加到画布" :disabled="!contractReady" @click.stop="addResource({kind:'model',model:data.model})">＋</el-button>
                   <small v-else-if="data.kind==='instance'">实例</small>
                 </div>
               </template>
@@ -99,9 +99,9 @@
             <span v-if="validationSummary.errors" class="error-count">{{ validationSummary.errors }} 错误</span>
           </div>
           <div class="canvas-actions">
-            <el-button v-if="selectedEdgeId" type="danger" text @click="deleteSelectedEdge">删除连接</el-button>
-            <el-button text :icon="MagicStick" @click="autoLayout">自动布局</el-button>
-            <el-button text :icon="Aim" @click="fitCanvas">适应画布</el-button>
+            <el-button v-if="selectedEdgeId" class="btn-aliyun-danger-link" text @click="deleteSelectedEdge">删除连接</el-button>
+            <el-button class="btn-aliyun" text :icon="MagicStick" @click="autoLayout">自动布局</el-button>
+            <el-button class="btn-aliyun" text :icon="Aim" @click="fitCanvas">适应画布</el-button>
           </div>
         </div>
 
@@ -138,7 +138,7 @@
       <aside class="inspector-panel">
         <div class="panel-titlebar inspector-titlebar">
           <div><strong>{{ inspectorTitle }}</strong><span>{{ inspectorSubtitle }}</span></div>
-          <el-button v-if="hasInspectorSelection" link type="primary" @click="showOverview">返回总览</el-button>
+          <el-button v-if="hasInspectorSelection" link class="btn-aliyun-link" @click="showOverview">返回总览</el-button>
         </div>
         <div class="inspector-scroll">
           <section v-if="settingsVisible" class="settings-view">
@@ -150,13 +150,13 @@
             </el-form>
             <div class="business-note"><b>02</b><div><strong>编排执行路径</strong><span>START → 设备/分支/子流程 → END；AGGREGATE 用于等待多条上游路径。</span></div></div>
             <div class="business-note"><b>03</b><div><strong>校验后保存</strong><span>保存前检查节点契约、入口出口、断路和环路；任务运行时再绑定设备实例。</span></div></div>
-            <el-button class="wide-action" type="primary" plain @click="runValidation">执行完整校验</el-button>
+            <el-button class="wide-action btn-aliyun-cta" plain @click="runValidation">执行完整校验</el-button>
           </section>
           <WorkflowNodeInspector v-else-if="nodeDrawerVisible && selectedNode" :visible="nodeDrawerVisible" :node="selectedNode" :errors="selectedNodeIssues" :device-capabilities="selectedDeviceModel?.capabilities || []" :device-attributes="selectedDeviceModel?.attributes || []" :port-connections="form.portConnections" :contract-ready="contractReady" @close="closeNodeDrawer" @rename="renameSelectedNode" @update:node="replaceSelectedNode" @update:port-connections="replacePortConnections" @remove-port-request="confirmRemovePort" @remove-node="removeSelectedNode" />
           <section v-else-if="selectedEdge" class="edge-view">
             <div class="connection-type" :class="selectedEdge.data?.connectionKind?.toLowerCase()"><span>{{ selectedEdge.data?.connectionKind === 'PORT' ? '数据流' : '执行流' }}</span><b>{{ selectedEdgeEndpoint.source }} → {{ selectedEdgeEndpoint.target }}</b></div>
             <dl class="property-list"><div><dt>源连接点</dt><dd>{{ selectedEdgeEndpoint.sourceHandle }}</dd></div><div><dt>目标连接点</dt><dd>{{ selectedEdgeEndpoint.targetHandle }}</dd></div><div><dt>业务语义</dt><dd>{{ selectedEdge.data?.connectionKind === 'PORT' ? '将上游节点内部变量传递给下游节点' : '上游节点完成后激活下游节点' }}</dd></div></dl>
-            <el-button class="wide-action" type="danger" plain @click="deleteSelectedEdge">删除该连接</el-button>
+            <el-button class="wide-action btn-aliyun-danger-link" plain @click="deleteSelectedEdge">删除该连接</el-button>
           </section>
           <section v-else-if="validationVisible" class="validation-view">
             <div class="validation-summary"><div><strong>{{ validationSummary.errors }}</strong><span>错误</span></div><div><strong>{{ validationSummary.warnings }}</strong><span>提醒</span></div><div><strong>{{ form.nodesDef.length }}</strong><span>节点</span></div></div>
@@ -169,7 +169,7 @@
             <ul class="check-list"><li :class="{ok:hasSingleStartEnd}"><i></i><span><strong>唯一入口与出口</strong><small>需要且仅需要一个 START 和 END</small></span></li><li :class="{ok:!validationSummary.errors}"><i></i><span><strong>节点与拓扑有效</strong><small>{{ validationSummary.errors ? `${validationSummary.errors} 个问题待处理` : '节点契约、连接和路径正常' }}</small></span></li><li :class="{ok:contractReady}"><i></i><span><strong>系统契约已加载</strong><small>{{ contractReady ? '可安全创建并保存节点' : contractError || '契约加载中' }}</small></span></li></ul>
             <div class="section-heading"><strong>标准业务顺序</strong><span>运行时语义</span></div>
             <div class="business-flow"><span>创建任务并绑定设备实例</span><b>↓</b><span>START 激活首个执行节点</span><b>↓</b><span>能力调用 / 分支 / 子流程</span><b>↓</b><span>AGGREGATE 汇聚后进入 END</span></div>
-            <div class="overview-actions"><el-button @click="openSettings">流程配置</el-button><el-button type="primary" @click="runValidation">校验流程</el-button></div>
+            <div class="overview-actions"><el-button class="btn-aliyun" @click="openSettings">流程配置</el-button><el-button class="btn-aliyun-cta" @click="runValidation">校验流程</el-button></div>
           </section>
         </div>
       </aside>

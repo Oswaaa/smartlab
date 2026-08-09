@@ -6,8 +6,8 @@
         <div class="card-header-fullscreen">
           <h1 class="header-title">任务列表</h1>
           <div class="header-actions-right">
-            <el-button class="refresh-button" :icon="Refresh" circle aria-label="刷新任务列表" @click="refreshTaskList" :loading="loading" />
-            <el-button type="primary" :icon="Plus" @click="openCreateDrawer">新建任务</el-button>
+            <el-button class="refresh-button btn-aliyun" :icon="Refresh" circle aria-label="刷新任务列表" @click="refreshTaskList" :loading="loading" />
+            <el-button class="btn-aliyun-cta" :icon="Plus" @click="openCreateDrawer">新建任务</el-button>
           </div>
         </div>
       </template>
@@ -26,8 +26,8 @@
           <el-select v-model="taskStatusFilter" clearable placeholder="全部状态" @change="applyTaskFilters">
             <el-option label="排队中" value="PENDING"/><el-option label="运行中" value="RUNNING"/><el-option label="已完成" value="SUCCEEDED"/><el-option label="失败" value="FAILED"/><el-option label="已终止" value="TERMINATED"/>
           </el-select>
-          <el-button type="primary" @click="applyTaskFilters">查询</el-button>
-          <el-button v-if="hasTaskFilters" @click="clearTaskFilters">重置</el-button>
+          <el-button class="btn-aliyun-cta" @click="applyTaskFilters">查询</el-button>
+          <el-button v-if="hasTaskFilters" class="btn-aliyun" @click="clearTaskFilters">重置</el-button>
         </div>
         <span class="task-result-meta">共 {{ taskTotal }} 条<span v-if="lastUpdatedAt"> · 更新于 {{ lastUpdatedAt }}</span></span>
       </div>
@@ -159,14 +159,14 @@
           </div>
           <div class="anchor-section industrial-section" v-else-if="createForm.flowModelId && workflowHasDeviceNodes[String(createForm.flowModelId)]"><el-alert type="warning" :closable="false" title="该工作流包含DEV_NODE但无法生成设备绑定路径，请先修复工作流模型" /></div>
           <div class="anchor-section industrial-section">
-            <div class="section-title-row"><h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px; margin-top: 24px;">任务级约束</h2><el-button type="primary" plain @click="openTaskConstraint()">添加任务约束</el-button></div>
-            <section class="drawer-section"><el-alert type="info" :closable="false" title="任务级约束随当前任务保存，只能观测或操作本任务及其绑定设备；全局约束仍在约束管理页面配置" style="margin-bottom:12px"/><el-empty v-if="!createForm.taskConstraints.length" description="未配置任务级约束" :image-size="48"/><div v-for="(rule,index) in createForm.taskConstraints" :key="index" class="task-constraint-row"><div><strong>{{ rule.ruleName }}</strong><code>{{ rule.expression }}</code><span>{{ Object.keys(rule.bindings||{}).length }}个变量 · {{ (rule.violationActions||[]).length }}个动作</span></div><div><el-button link type="primary" @click="openTaskConstraint(index)">编辑</el-button><el-button link type="danger" @click="createForm.taskConstraints.splice(index,1)">删除</el-button></div></div></section>
+            <div class="section-title-row"><h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px; margin-top: 24px;">任务级约束</h2><el-button class="btn-aliyun-cta" plain @click="openTaskConstraint()">添加任务约束</el-button></div>
+            <section class="drawer-section"><el-alert type="info" :closable="false" title="任务级约束随当前任务保存，只能观测或操作本任务及其绑定设备；全局约束仍在约束管理页面配置" style="margin-bottom:12px"/><el-empty v-if="!createForm.taskConstraints.length" description="未配置任务级约束" :image-size="48"/><div v-for="(rule,index) in createForm.taskConstraints" :key="index" class="task-constraint-row"><div><strong>{{ rule.ruleName }}</strong><code>{{ rule.expression }}</code><span>{{ Object.keys(rule.bindings||{}).length }}个变量 · {{ (rule.violationActions||[]).length }}个动作</span></div><div><el-button class="btn-aliyun-link" link @click="openTaskConstraint(index)">编辑</el-button><el-button class="btn-aliyun-danger-link" link @click="createForm.taskConstraints.splice(index,1)">删除</el-button></div></div></section>
           </div>          </el-form>
       </div>
       <template #footer>
         <div class="drawer-footer">
-          <el-button @click="createDrawerVisible = false">取消</el-button>
-          <el-button type="primary" @click="submitCreateTask" :loading="creating">
+          <el-button class="btn-aliyun" @click="createDrawerVisible = false">取消</el-button>
+          <el-button class="btn-aliyun-cta" @click="submitCreateTask" :loading="creating">
             创建任务
           </el-button>
         </div>
@@ -175,7 +175,7 @@
 
     <el-dialog v-model="taskConstraintDialogVisible" :title="editingTaskConstraintIndex == null ? '添加任务级约束' : '编辑任务级约束'" width="1040px" append-to-body destroy-on-close @opened="loadTaskConstraintEditor">
       <ConstraintRuleEditor ref="taskConstraintEditorRef" :models="deviceModels" :instances="deviceInstances" :workflows="executableProcessTemplates" :tasks="[]" task-mode :task-resources="selectedTaskResources" :task-workflow-nodes="selectedWorkflowNodes" />
-      <template #footer><el-button @click="taskConstraintDialogVisible=false">取消</el-button><el-button type="primary" @click="saveTaskConstraint">保存任务约束</el-button></template>
+      <template #footer><el-button class="btn-aliyun" @click="taskConstraintDialogVisible=false">取消</el-button><el-button class="btn-aliyun-cta" @click="saveTaskConstraint">保存任务约束</el-button></template>
     </el-dialog>
     <!-- Monitor Tab Drawer -->
     <el-drawer v-model="monitorDrawerVisible" :title="`任务详情 · ${activeTask?.taskName || ''}`" size="78%" class="unified-workflow-drawer">

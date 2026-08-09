@@ -2,19 +2,22 @@
   <div class="workflow-page">
     <div class="designer-grid">
       <aside class="resource-panel">
-        <div class="panel-titlebar">
-          <div><strong>节点资源库</strong><span>所有节点支持拖拽 / 点击 ＋ 接入画布</span></div>
-        </div>
-
         <el-tabs v-model="tab" class="resource-tabs" stretch>
           <el-tab-pane label="流程控制" name="control">
             <div class="tab-scroll-body">
               <el-alert v-if="contractError" class="contract-error" type="error" :closable="false" :title="contractError" />
-              <div class="function-list vertical">
-                <button v-for="item in palette" :key="item.type" class="function-item" :disabled="!contractReady" :draggable="contractReady" @dragstart="drag($event,{kind:'function',type:item.type})" @click="addResource({kind:'function',type:item.type})">
-                  <span class="function-icon" :class="item.type.toLowerCase()">{{ item.glyph }}</span>
-                  <span><strong>{{ item.label }}</strong><small>{{ item.description }}</small></span>
-                  <b class="add-mark">＋</b>
+              <div class="control-tool-grid">
+                <button
+                  v-for="item in palette"
+                  :key="item.type"
+                  class="tool-btn"
+                  :disabled="!contractReady"
+                  :draggable="contractReady"
+                  @dragstart="drag($event,{kind:'function',type:item.type})"
+                  @click="addResource({kind:'function',type:item.type})"
+                >
+                  <span class="tool-icon" :class="item.type.toLowerCase()">{{ item.glyph }}</span>
+                  <span class="tool-name">{{ item.label }}</span>
                 </button>
               </div>
             </div>
@@ -1016,4 +1019,14 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
 .function-list.vertical .function-item:hover{border-color:#4096ff;background:#f0f7ff}
 .instance-badge{display:inline-block;padding:1px 5px;margin-left:4px;border:1px solid #d9d9d9;border-radius:2px;background:#f5f5f5;color:#595959;font-size:10px;font-weight:normal;line-height:14px}
 .tree-item .node-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
+.control-tool-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:6px 2px}
+.control-tool-grid .tool-btn{height:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border:1px solid #e1e7f0;border-radius:5px;background:#fff;color:#1e293b;cursor:grab;transition:all .16s ease}
+.control-tool-grid .tool-btn:hover{border-color:#2563eb;background:#f0f7ff;box-shadow:0 2px 8px rgba(37,99,235,.12);transform:translateY(-1px)}
+.control-tool-grid .tool-btn:disabled{cursor:not-allowed;opacity:.5}
+.control-tool-grid .tool-icon{width:22px;height:22px;display:grid;place-items:center;border-radius:4px;background:#eef4fb;color:#3978bd;font-size:10px;font-weight:800}
+.control-tool-grid .tool-icon.start{background:#eaf8f0;color:#218654}
+.control-tool-grid .tool-icon.end{background:#f1f3f6;color:#536073}
+.control-tool-grid .tool-icon.branch{background:#fff5df;color:#ad7213}
+.control-tool-grid .tool-icon.aggregate{background:#f2edff;color:#7251b6}
+.control-tool-grid .tool-name{font-size:11px;font-weight:600}
 </style>

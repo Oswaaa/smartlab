@@ -28,64 +28,57 @@
     <div class="designer-grid">
       <aside class="resource-panel">
         <div class="panel-titlebar">
-          <div><strong>节点库</strong><span>{{ models.length }} 个设备模型</span></div>
-          <small>单击或拖入画布</small>
+          <div><strong>节点资源库</strong><span>所有节点支持拖拽 / 点击 ＋ 接入画布</span></div>
         </div>
-        <div class="resource-search">
-          <el-input v-model="resourceKeyword" :prefix-icon="Search" clearable placeholder="搜索设备模型或子流程" />
-        </div>
-
-        <section class="function-section">
-          <el-alert v-if="contractError" class="contract-error" type="error" :closable="false" :title="contractError" />
-          <div class="group-title"><strong>流程控制</strong><span>4</span></div>
-          <div class="function-list">
-            <button v-for="item in palette" :key="item.type" class="function-item" :disabled="!contractReady" :draggable="contractReady" @dragstart="drag($event,{kind:'function',type:item.type})" @click="addResource({kind:'function',type:item.type})">
-              <span class="function-icon" :class="item.type.toLowerCase()">{{ item.glyph }}</span>
-              <span><strong>{{ item.label }}</strong><small>{{ item.description }}</small></span>
-              <b>＋</b>
-            </button>
-          </div>
-        </section>
 
         <el-tabs v-model="tab" class="resource-tabs" stretch>
-          <el-tab-pane label="设备模型" name="devices">
-            <el-tree v-if="filteredDeviceTree.length" :data="filteredDeviceTree" node-key="key" default-expand-all :expand-on-click-node="false" class="resource-tree">
-              <template #default="{ data }">
-                <div class="tree-item" :class="{ draggable:data.kind==='model' && contractReady }" :draggable="data.kind==='model' && contractReady" @dragstart="drag($event,data)">
-                  <span class="tree-label"><span class="tree-dot" :class="data.kind"></span><span>{{ data.label }}</span></span>
-                  <el-button v-if="data.kind==='model'" link class="btn-aliyun-link" title="添加到画布" :disabled="!contractReady" @click.stop="addResource({kind:'model',model:data.model})">＋</el-button>
-                  <small v-else-if="data.kind==='instance'">实例</small>
-                </div>
-              </template>
-            </el-tree>
-            <el-empty v-else description="没有匹配的设备模型" :image-size="48" />
-          </el-tab-pane>
-          <el-tab-pane label="子流程" name="workflows">
-            <div v-if="filteredWorkflows.length" class="flow-list">
-              <button v-for="item in filteredWorkflows" :key="item.id" class="flow-item" :disabled="!contractReady" :draggable="contractReady" @dragstart="drag($event,{kind:'workflow',workflow:item})" @click="addResource({kind:'workflow',workflow:item})">
-                <span class="flow-icon">↳</span><span><strong>{{ item.flowName }}</strong><small>{{ item.description || '作为子流程节点引用' }}</small></span><span class="add-mark">＋</span>
-              </button>
+          <el-tab-pane label="流程控制" name="control">
+            <div class="tab-scroll-body">
+              <el-alert v-if="contractError" class="contract-error" type="error" :closable="false" :title="contractError" />
+              <div class="function-list vertical">
+                <button v-for="item in palette" :key="item.type" class="function-item" :disabled="!contractReady" :draggable="contractReady" @dragstart="drag($event,{kind:'function',type:item.type})" @click="addResource({kind:'function',type:item.type})">
+                  <span class="function-icon" :class="item.type.toLowerCase()">{{ item.glyph }}</span>
+                  <span><strong>{{ item.label }}</strong><small>{{ item.description }}</small></span>
+                  <b class="add-mark">＋</b>
+                </button>
+              </div>
             </div>
-            <el-empty v-else description="没有可引用的流程" :image-size="48" />
           </el-tab-pane>
-          <el-tab-pane label="已有流程" name="all-flows">
-            <div v-if="allFilteredWorkflows.length" class="flow-list">
-              <button
-                v-for="item in allFilteredWorkflows"
-                :key="item.id"
-                class="flow-item existing-flow-item"
-                :class="{ 'is-active': item.id === form.id }"
-                @click="loadWorkflow(item.id)"
-              >
-                <span class="flow-icon existing-icon">⊙</span>
-                <span>
-                  <strong>{{ item.flowName || '未命名流程' }}</strong>
-                  <small>V{{ item.version }} · {{ item.status === 'ACTIVE' ? '已启用' : '草稿' }}{{ item.id === form.id ? ' · 当前' : '' }}</small>
-                </span>
-                <span class="load-mark">{{ item.id === form.id ? '●' : '↗' }}</span>
-              </button>
+
+          <el-tab-pane label="设备资产" name="devices">
+            <div class="resource-search">
+              <el-input v-model="resourceKeyword" :prefix-icon="Search" clearable placeholder="搜索模型或实例..." />
             </div>
-            <el-empty v-else description="暂无流程" :image-size="48" />
+            <div class="tab-scroll-body">
+              <el-tree v-if="filteredDeviceTree.length" :data="filteredDeviceTree" node-key="key" default-expand-all :expand-on-click-node="false" class="resource-tree">
+                <template #default="{ data }">
+                  <div class="tree-item" :class="{ draggable: (data.kind==='model' || data.kind==='instance') && contractReady }" :draggable="(data.kind==='model' || data.kind==='instance') && contractReady" @dragstart="drag($event,data)">
+                    <span class="tree-label">
+                      <span class="tree-dot" :class="data.kind"></span>
+                      <span class="node-title">{{ data.label }}</span>
+                      <span v-if="data.kind==='instance'" class="instance-badge">实例</span>
+                    </span>
+                    <el-button v-if="data.kind==='model'" link class="btn-aliyun-link" title="接入设备模型" :disabled="!contractReady" @click.stop="addResource({kind:'model',model:data.model})">＋</el-button>
+                    <el-button v-else-if="data.kind==='instance'" link class="btn-aliyun-link" title="接入预绑定实例" :disabled="!contractReady" @click.stop="addResource({kind:'instance',instance:data.instance,model:data.model})">＋</el-button>
+                  </div>
+                </template>
+              </el-tree>
+              <el-empty v-else description="没有匹配的设备模型" :image-size="48" />
+            </div>
+          </el-tab-pane>
+
+          <el-tab-pane label="复合模块" name="workflows">
+            <div class="resource-search">
+              <el-input v-model="resourceKeyword" :prefix-icon="Search" clearable placeholder="搜索子流程..." />
+            </div>
+            <div class="tab-scroll-body">
+              <div v-if="filteredWorkflows.length" class="flow-list">
+                <button v-for="item in filteredWorkflows" :key="item.id" class="flow-item" :disabled="!contractReady" :draggable="contractReady" @dragstart="drag($event,{kind:'workflow',workflow:item})" @click="addResource({kind:'workflow',workflow:item})">
+                  <span class="flow-icon">↳</span><span><strong>{{ item.flowName }}</strong><small>{{ item.description || '作为子流程节点引用' }}</small></span><span class="add-mark">＋</span>
+                </button>
+              </div>
+              <el-empty v-else description="没有可引用的流程" :image-size="48" />
+            </div>
           </el-tab-pane>
         </el-tabs>
       </aside>
@@ -207,7 +200,7 @@ type FlowNode = Record<string, any>
 type FlowEdge = Record<string, any>
 type ValidationIssue = { code:string, severity:'error'|'warning', title:string, detail:string, nodeName?:string, path?:string }
 
-const tab = ref('devices')
+const tab = ref('control')
 const workflows = ref<any[]>([])
 const models = ref<any[]>([])
 const instances = ref<any[]>([])
@@ -557,13 +550,18 @@ function uniqueName(prefix:string) {
 
 function createResourceNode(data:any):NodeDefinition | null {
   if (data.kind === 'model') return createDeviceNode(data.model, uniqueName('device'))
+  if (data.kind === 'instance') {
+    const node = createDeviceNode(data.model, uniqueName('device'))
+    node.boundInstanceId = data.instance?.id
+    return node
+  }
   if (data.kind === 'workflow') return createSubflowNode(data.workflow, uniqueName('subflow'))
   if (data.kind === 'function') return createFunctionNode(data.type, uniqueName(data.type === 'START' ? 'start' : data.type === 'END' ? 'end' : data.type === 'BRANCH' ? 'branch' : 'aggregate'))
   return null
 }
 
 function drag(event:DragEvent, data:any) {
-  const payload = data.kind === 'model' ? { kind:'model', model:data.model } : data
+  const payload = data.kind === 'model' ? { kind:'model', model:data.model } : data.kind === 'instance' ? { kind:'instance', instance:data.instance, model:data.model } : data
   if (!contractReady.value) return
   event.dataTransfer?.setData('workflow-resource', JSON.stringify(payload))
   if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy'
@@ -1006,5 +1004,10 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
 .empty-workbench.compact .quick-start{border-bottom:0}
 .quick-start.single-action{display:flex;justify-content:center;align-items:center;padding:14px}
 .quick-start.single-action button{width:100%;max-width:240px;height:40px;border-radius:4px}
-.resource-panel{width:auto;min-width:0;display:flex;flex-direction:column;border:0;border-right:1px solid #d9dee6;border-radius:0;background:#fff;box-shadow:none;overflow:hidden}.panel-titlebar{height:49px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex:none;padding:0 12px;border-bottom:1px solid #e2e6ec;background:#fafbfc;box-sizing:border-box}.panel-titlebar>div{display:grid;gap:1px;min-width:0}.panel-titlebar strong{font-size:13px}.panel-titlebar span,.panel-titlebar small{overflow:hidden;color:#7b8797;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.resource-search{padding:8px 10px;border-bottom:1px solid #e8ebf0}.resource-search :deep(.el-input__wrapper){border-radius:2px;box-shadow:0 0 0 1px #dfe4ea inset}.function-section{padding:0;border-bottom:1px solid #dfe4ea}.contract-error{margin:8px;width:auto}.group-title{height:30px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:#f5f6f8;color:#526074}.group-title strong{font-size:10px;letter-spacing:.04em}.group-title span{font-size:9px}.function-list{display:grid;grid-template-columns:1fr 1fr}.function-item{height:48px;display:grid;grid-template-columns:26px minmax(0,1fr) 12px;align-items:center;gap:6px;padding:5px 8px;border:0;border-right:1px solid #e7eaf0;border-bottom:1px solid #e7eaf0;background:#fff;color:#26364b;text-align:left;cursor:grab}.function-item:nth-child(even){border-right:0}.function-item:hover{background:#edf5ff}.function-item:disabled{cursor:not-allowed;opacity:.5}.function-item>span:nth-child(2){display:grid;min-width:0}.function-item strong,.function-item small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.function-item strong{font-size:11px}.function-item small{color:#8a95a5;font-size:9px}.function-item>b{color:#3978bd;font-size:13px}.function-icon{width:24px;height:24px;border-radius:2px}.resource-tabs{padding:0;min-height:0}.resource-tabs :deep(.el-tabs__header){margin:0}.resource-tabs :deep(.el-tabs__nav-wrap){padding:0 8px;border-bottom:1px solid #e2e6ec}.resource-tabs :deep(.el-tabs__nav-wrap:after){display:none}.resource-tabs :deep(.el-tabs__item){height:36px;font-size:11px}.resource-tabs :deep(.el-tabs__content){padding:4px 6px 8px}.resource-tabs :deep(.el-tree-node__content){height:30px}.tree-item{padding-right:2px}.flow-list{gap:0;padding:0}.flow-item{grid-template-columns:26px minmax(0,1fr) 16px;gap:7px;padding:8px;border:0;border-bottom:1px solid #e5e9ef;border-radius:0}.flow-icon{width:24px;height:24px;border-radius:2px}.canvas-panel{min-width:0;display:flex;flex-direction:column;border:0;border-right:1px solid #d9dee6;border-radius:0;background:#fff;box-shadow:none;overflow:hidden}.canvas-toolbar{height:49px;padding:0 8px 0 12px}.canvas-title{gap:0}.canvas-title strong{padding-right:10px;font-size:13px}.canvas-title>span{padding:0 9px;border-left:1px solid #dfe4ea;color:#738094;font-size:10px}.canvas-title>.error-count{color:#c43d3d;font-weight:700}.canvas-actions{gap:0}.canvas-actions :deep(.el-button+.el-button){margin-left:0}.flow-stage{background:#f7f9fb}.workflow-flow :deep(.vue-flow__controls){border-radius:2px}.empty-workbench{position:absolute;left:50%;top:50%;z-index:3;width:430px;border:1px solid #cfd6df;background:#fff;transform:translate(-50%,-50%);box-shadow:0 8px 26px rgba(30,45,65,.08)}.empty-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid #dfe4ea;background:#f5f7fa}.empty-head>span,.empty-workbench li>span{color:#3576b8;font-size:10px;font-weight:800}.empty-head>div,.empty-workbench li>div{display:grid;gap:2px}.empty-head strong,.empty-workbench li strong{font-size:12px}.empty-head small,.empty-workbench li small{color:#7b8797;font-size:10px}.quick-start{height:72px;display:grid;grid-template-columns:1fr 28px 1fr;align-items:center;padding:0 14px;border-bottom:1px solid #e4e8ed}.quick-start button{height:38px;display:flex;align-items:center;justify-content:center;gap:7px;border:1px solid #bfcbd9;border-radius:2px;background:#fff;color:#2f6196;cursor:pointer}.quick-start button:hover{border-color:#3379bd;background:#eef6ff}.quick-start button:disabled{cursor:not-allowed;opacity:.5}.quick-start i{text-align:center;color:#8793a3}.empty-workbench ol{display:grid;grid-template-columns:1fr 1fr 1fr;margin:0;padding:0;list-style:none}.empty-workbench li{display:flex;gap:7px;padding:10px;border-right:1px solid #e4e8ed}.empty-workbench li:last-child{border-right:0}.canvas-statusbar{height:28px;justify-content:flex-start;gap:15px;padding:0 10px}.status-grow{flex:1}.legend-line{width:15px;height:0;border-top:2px solid #3276d2}.legend-line.data{border-top-color:#7c4dce;border-top-style:dashed}.inspector-panel{min-width:0;display:flex;flex-direction:column;background:#fff;overflow:hidden}.inspector-titlebar{height:49px}.inspector-scroll{min-height:0;flex:1;overflow:auto}.settings-view,.edge-view,.validation-view,.overview-view{min-height:100%;box-sizing:border-box}.settings-view{padding-bottom:12px}.business-note{display:grid;grid-template-columns:26px 1fr;gap:8px;padding:10px 12px;border-bottom:1px solid #e3e7ed}.business-note>b{color:#3276b8;font-size:10px}.business-note>div{display:grid;gap:3px}.business-note strong{font-size:11px}.business-note span{color:#6d798b;font-size:10px;line-height:1.55}.dense-form{padding:12px 12px 2px;border-bottom:1px solid #e3e7ed}.dense-form :deep(.el-form-item){margin-bottom:11px}.dense-form :deep(.el-form-item__label){height:20px;padding:0;color:#556276;font-size:10px;line-height:20px}.dense-form :deep(.el-select),.dense-form :deep(.el-input-number){width:100%}.two-column-form{grid-template-columns:108px 1fr;gap:8px}.wide-action{width:calc(100% - 24px);margin:12px}.connection-type{display:grid;gap:5px;padding:13px 12px;border-bottom:3px solid #3276d2;background:#edf5ff}.connection-type.port{border-color:#7c4dce;background:#f5f0ff}.connection-type span{color:#607086;font-size:10px}.connection-type b{font-size:12px}.property-list{margin:0;border-bottom:1px solid #e1e5eb}.property-list>div{display:grid;grid-template-columns:90px 1fr;border-bottom:1px solid #e8ebef}.property-list>div:last-child{border-bottom:0}.property-list dt,.property-list dd{margin:0;padding:9px 10px;font-size:10px;line-height:1.55}.property-list dt{background:#f7f8fa;color:#697587}.property-list dd{color:#27364a}.validation-summary,.overview-metrics{display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid #dfe4ea}.validation-summary>div,.overview-metrics>div{display:grid;place-items:center;gap:2px;padding:12px 4px;border-right:1px solid #e2e6eb}.validation-summary>div:last-child,.overview-metrics>div:last-child{border-right:0}.validation-summary strong,.overview-metrics strong{font-size:18px}.validation-summary span,.overview-metrics span{color:#7d8898;font-size:9px}.issue-list{display:grid}.issue-list button{display:grid;grid-template-columns:38px minmax(0,1fr) 12px;align-items:start;gap:8px;padding:10px 12px;border:0;border-bottom:1px solid #e4e8ed;background:#fff;text-align:left;cursor:pointer}.issue-list button:hover{background:#f6f8fb}.issue-list button>b{padding:2px 4px;background:#fdeaea;color:#b52f2f;font-size:9px;text-align:center}.issue-list button.warning>b{background:#fff2d7;color:#9a6200}.issue-list button>span{display:grid;gap:3px}.issue-list strong{font-size:11px}.issue-list small{color:#748194;font-size:10px;line-height:1.5}.issue-list i{color:#9aa4b2}.overview-metrics{grid-template-columns:repeat(4,1fr)}.section-heading{height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-top:1px solid #dfe4ea;border-bottom:1px solid #dfe4ea;background:#f6f7f9}.section-heading strong{font-size:11px}.section-heading span{color:#8a95a4;font-size:9px}.check-list{margin:0;padding:0;list-style:none}.check-list li{display:grid;grid-template-columns:14px 1fr;gap:8px;padding:10px 12px;border-bottom:1px solid #e6e9ee}.check-list i{width:10px;height:10px;margin-top:2px;border:2px solid #d34e4e;border-radius:50%;box-sizing:border-box}.check-list li.ok i{border-color:#2a9a5b;background:#2a9a5b;box-shadow:inset 0 0 0 2px #fff}.check-list span{display:grid;gap:2px}.check-list strong{font-size:11px}.check-list small{color:#788496;font-size:9px;line-height:1.5}.business-flow{display:grid;grid-template-columns:1fr;place-items:center;padding:10px 12px}.business-flow span{width:100%;padding:7px;border:1px solid #dce2e9;background:#fafbfc;box-sizing:border-box;text-align:center;font-size:10px}.business-flow b{color:#5383b4;font-size:10px}.overview-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 12px 12px}.overview-actions :deep(.el-button+.el-button){margin-left:0}@media(max-width:1280px){.designer-grid{grid-template-columns:224px minmax(400px,1fr) 340px}.workflow-select{width:190px}.command-actions :deep(.el-button){padding-left:10px;padding-right:10px}}@media(max-width:1050px){.workflow-page{overflow:auto}.designer-grid{min-width:980px}.product-path,.canvas-title>span:not(.error-count),.status-grow{display:none}}
+.resource-panel{width:auto;min-width:0;display:flex;flex-direction:column;border:0;border-right:1px solid #d9dee6;border-radius:0;background:#fff;box-shadow:none;overflow:hidden}.panel-titlebar{height:49px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex:none;padding:0 12px;border-bottom:1px solid #e2e6ec;background:#fafbfc;box-sizing:border-box}.panel-titlebar>div{display:grid;gap:1px;min-width:0}.panel-titlebar strong{font-size:13px}.panel-titlebar span,.panel-titlebar small{overflow:hidden;color:#7b8797;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.resource-search{padding:8px 10px;border-bottom:1px solid #e8ebf0}.resource-search :deep(.el-input__wrapper){border-radius:2px;box-shadow:0 0 0 1px #dfe4ea inset}.function-section{padding:0;border-bottom:1px solid #dfe4ea}.contract-error{margin:8px;width:auto}.group-title{height:30px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:#f5f6f8;color:#526074}.group-title strong{font-size:10px;letter-spacing:.04em}.group-title span{font-size:9px}.function-list{display:grid;grid-template-columns:1fr 1fr}.function-item{height:48px;display:grid;grid-template-columns:26px minmax(0,1fr) 12px;align-items:center;gap:6px;padding:5px 8px;border:0;border-right:1px solid #e7eaf0;border-bottom:1px solid #e7eaf0;background:#fff;color:#26364b;text-align:left;cursor:grab}.function-item:nth-child(even){border-right:0}.function-item:hover{background:#edf5ff}.function-item:disabled{cursor:not-allowed;opacity:.5}.function-item>span:nth-child(2){display:grid;min-width:0}.function-item strong,.function-item small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.function-item strong{font-size:11px}.function-item small{color:#8a95a5;font-size:9px}.function-item>b{color:#3978bd;font-size:13px}.function-icon{width:24px;height:24px;border-radius:2px}.resource-tabs{padding:0;min-height:0}.resource-tabs :deep(.el-tabs__header){margin:0}.resource-tabs :deep(.el-tabs__nav-wrap){padding:0 8px;border-bottom:1px solid #e2e6ec}.resource-tabs :deep(.el-tabs__nav-wrap:after){display:none}.resource-tabs :deep(.el-tabs__item){height:36px;font-size:11px}.resource-tabs :deep(.el-tabs__content){padding:4px 6px 8px}.resource-tabs :deep(.el-tree-node__content){height:30px}.tree-item{padding-right:2px}.flow-list{gap:0;padding:0}.flow-item{grid-template-columns:26px minmax(0,1fr) 16px;gap:7px;padding:8px;border:0;border-bottom:1px solid #e5e9ef;border-radius:0}.flow-icon{width:24px;height:24px;border-radius:2px}.canvas-panel{min-width:0;display:flex;flex-direction:column;border:0;border-right:1px solid #d9dee6;border-radius:0;background:#fff;box-shadow:none;overflow:hidden}.canvas-toolbar{height:49px;padding:0 8px 0 12px}.canvas-title{gap:0}.canvas-title strong{padding-right:10px;font-size:13px}.canvas-title>span{padding:0 9px;border-left:1px solid #dfe4ea;color:#738094;font-size:10px}.canvas-title>.error-count{color:#c43d3d;font-weight:700}.canvas-actions{gap:0}.canvas-actions :deep(.el-button+.el-button){margin-left:0}.flow-stage{background:#f7f9fb}.workflow-flow :deep(.vue-flow__controls){border-radius:2px}.empty-workbench{position:absolute;left:50%;top:50%;z-index:3;width:430px;border:1px solid #cfd6df;background:#fff;transform:translate(-50%,-50%);box-shadow:0 8px 26px rgba(30,45,65,.08)}.empty-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid #dfe4ea;background:#f5f7fa}.empty-head>span,.empty-workbench li>span{color:#3576b8;font-size:10px;font-weight:800}.empty-head>div,.empty-workbench li>div{display:grid;gap:2px}.empty-head strong,.empty-workbench li strong{font-size:12px}.empty-head small,.empty-workbench li small{color:#7b8797;font-size:10px}.quick-start{height:72px;display:grid;grid-template-columns:1fr 28px 1fr;align-items:center;padding:0 14px;border-bottom:1px solid #e4e8ed}.quick-start button{height:38px;display:flex;align-items:center;justify-content:center;gap:7px;border:1px solid #bfcbd9;border-radius:2px;background:#fff;color:#2f6196;cursor:pointer}.quick-start button:hover{border-color:#3379bd;background:#eef6ff}.quick-start button:disabled{cursor:not-allowed;opacity:.5}.quick-start i{text-align:center;color:#8793a3}.empty-workbench ol{display:grid;grid-template-columns:1fr 1fr 1fr;margin:0;padding:0;list-style:none}.empty-workbench li{display:flex;gap:7px;padding:10px;border-right:1px solid #e4e8ed}.empty-workbench li:last-child{border-right:0}.canvas-statusbar{height:28px;justify-content:flex-start;gap:15px;padding:0 10px}.status-grow{flex:1}.legend-line{width:15px;height:0;border-top:2px solid #3276d2}.legend-line.data{border-top-color:#7c4dce;border-top-style:dashed}.inspector-panel{min-width:0;display:flex;flex-direction:column;background:#fff;overflow:hidden}.inspector-titlebar{height:49px}.inspector-scroll{min-height:0;flex:1;overflow:auto}.settings-view,.edge-view,.validation-view,.overview-view{min-height:100%;box-sizing:border-box}.settings-view{padding-bottom:12px}.business-note{display:grid;grid-template-columns:26px 1fr;gap:8px;padding:10px 12px;border-bottom:1px solid #e3e7ed}.business-note>b{color:#3276b8;font-size:10px}.business-note>div{display:grid;gap:3px}.business-note strong{font-size:11px}.business-note span{color:#6d798b;font-size:10px;line-height:1.55}.dense-form{padding:12px 12px 2px;border-bottom:1px solid #e3e7ed}.dense-form :deep(.el-form-item){margin-bottom:11px}.dense-form :deep(.el-form-item__label){height:20px;padding:0;color:#556276;font-size:10px;line-height:20px}.dense-form :deep(.el-select),.dense-form :deep(.el-input-number){width:100%}.two-column-form{grid-template-columns:108px 1fr;gap:8px}.wide-action{width:calc(100% - 24px);margin:12px}.connection-type{display:grid;gap:5px;padding:13px 12px;border-bottom:3px solid #3276d2;background:#edf5ff}.connection-type.port{border-color:#7c4dce;background:#f5f0ff}.connection-type span{color:#607086;font-size:10px}.connection-type b{font-size:12px}.property-list{margin:0;border-bottom:1px solid #e1e5eb}.property-list>div{display:grid;grid-template-columns:90px 1fr;border-bottom:1px solid #e8ebef}.property-list>div:last-child{border-bottom:0}.property-list dt,.property-list dd{margin:0;padding:9px 10px;font-size:10px;line-height:1.55}.property-list dt{background:#f7f8fa;color:#697587}.property-list dd{color:#27364a}.validation-summary,.overview-metrics{display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid #dfe4ea}.validation-summary>div,.overview-metrics>div{display:grid;place-items:center;gap:2px;padding:12px 4px;border-right:1px solid #e2e6eb}.validation-summary>div:last-child,.overview-metrics>div:last-child{border-right:0}.validation-summary strong,.overview-metrics strong{font-size:18px}.validation-summary span,.overview-metrics span{color:#7d8898;font-size:9px}.issue-list{display:grid}.issue-list button{display:grid;grid-template-columns:38px minmax(0,1fr) 12px;align-items:start;gap:8px;padding:10px 12px;border:0;border-bottom:1px solid #e4e8ed;background:#fff;text-align:left;cursor:pointer}.issue-list button:hover{background:#f6f8fb}.issue-list button>b{padding:2px 4px;background:#fdeaea;color:#b52f2f;font-size:9px;text-align:center}.issue-list button.warning>b{background:#fff2d7;color:#9a6200}.issue-list button>span{display:grid;gap:3px}.issue-list strong{font-size:11px}.issue-list small{color:#748194;font-size:10px;line-height:1.5}.issue-list i{color:#9aa4b2}.overview-metrics{grid-template-columns:repeat(4,1fr)}.section-heading{height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-top:1px solid #dfe4ea;border-bottom:1px solid #dfe4ea;background:#f6f7f9}.section-heading strong{font-size:11px}.section-heading span{color:#8a95a4;font-size:9px}.check-list{margin:0;padding:0;list-style:none}.check-list li{display:grid;grid-template-columns:14px 1fr;gap:8px;padding:10px 12px;border-bottom:1px solid #e6e9ee}.check-list i{width:10px;height:10px;margin-top:2px;border:2px solid #d34e4e;border-radius:50%;box-sizing:border-box}.check-list li.ok i{border-color:#2a9a5b;background:#2a9a5b;box-shadow:inset 0 0 0 2px #fff}.check-list span{display:grid;gap:2px}.check-list strong{font-size:11px}.check-list small{color:#788496;font-size:9px;line-height:1.5}.business-flow{display:grid;grid-template-columns:1fr;place-items:center;padding:10px 12px}.business-flow span{width:100%;padding:7px;border:1px solid #dce2e9;background:#fafbfc;box-sizing:border-box;text-align:center;font-size:10px}.business-flow b{color:#5383b4;font-size:10px}.overview-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 12px 12px}.overview-actions :deep(.el-button+.el-button){margin-left:0}@media(max-width:1280px){.designer-grid{grid-template-columns:224px minmax(400px,1fr) 340px}.workflow-select{width:190px}.command-actions :deep(.el-button){padding-left:10px;padding-right:10px}}.tab-scroll-body{flex:1;min-height:0;overflow-y:auto;padding:8px}
+.function-list.vertical{display:flex;flex-direction:column;gap:8px}
+.function-list.vertical .function-item{height:52px;grid-template-columns:32px minmax(0,1fr) 20px;border:1px solid #e2e7ee;border-radius:4px;padding:6px 10px}
+.function-list.vertical .function-item:hover{border-color:#4096ff;background:#f0f7ff}
+.instance-badge{display:inline-block;padding:1px 5px;margin-left:4px;border:1px solid #d9d9d9;border-radius:2px;background:#f5f5f5;color:#595959;font-size:10px;font-weight:normal;line-height:14px}
+.tree-item .node-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
 </style>

@@ -35,10 +35,8 @@
               placeholder="搜索实例或设备SN"
               @input="onInstanceSearchInput"
             />
-            <el-button :icon="Refresh" circle size="small" @click="loadData" title="刷新" />
-            <el-button v-if="canCreateInstance" type="primary" class="add-device-trigger" @click="openCreateDrawer">
-              <el-icon><Plus /></el-icon> 添加设备
-            </el-button>
+            <el-button class="btn-aliyun" :icon="Refresh" size="small" @click="loadData">刷新</el-button>
+            <el-button v-if="canCreateInstance" class="btn-aliyun-cta add-device-trigger" :icon="Plus" size="small" @click="openCreateDrawer">添加设备</el-button>
           </div>
         </div>
 
@@ -130,7 +128,7 @@
           <div class="header-primary">
             <h3>设备实例：{{ activeInstance.instanceName }}
               <span v-if="activeInstance.boundDevicePoint">（{{ activeInstance.boundDevicePoint }}）</span>
-              <el-button link type="primary" :icon="CopyDocument" @click.stop="copyText(activeInstance.instanceId)" title="复制实例 ID" style="margin-left: 6px; padding: 0;">
+              <el-button link class="btn-aliyun-link" :icon="CopyDocument" @click.stop="copyText(activeInstance.instanceId)" title="复制实例 ID" style="margin-left: 6px; padding: 0;">
                 <span style="font-size: 11px; font-weight: normal; color: #94a3b8; font-family: monospace;">ID: {{ activeInstance.instanceId }}</span>
               </el-button>
             </h3>
@@ -191,7 +189,7 @@
                     <el-tag v-for="state in region.states" :key="region.regionName + state" size="small" :type="region.regionType === 'EXCEPTION' ? 'danger' : 'success'" effect="plain">
                       {{ region.regionName }}: {{ state }}
                     </el-tag>
-                    <el-button v-if="region.regionType === 'EXCEPTION' && canControlActiveInstance" v-for="state in region.states" :key="'clear-' + region.regionName + state" link type="danger" size="small" :loading="clearingException === state" @click="clearException(state)">解除 {{ state }}</el-button>
+                    <el-button v-if="region.regionType === 'EXCEPTION' && canControlActiveInstance" v-for="state in region.states" :key="'clear-' + region.regionName + state" link class="btn-aliyun-danger-link" size="small" :loading="clearingException === state" @click="clearException(state)">解除 {{ state }}</el-button>
                   </template>
                   <span v-if="!operationStateRegions.some(region => region.states.length)" class="muted">已就绪</span>
                 </div>
@@ -245,7 +243,7 @@
                   <div v-else class="empty-inline" style="margin: 10px 0;">该功能无需传参。</div>
                 </el-form>
                 <div class="footer-actions mt-12" style="justify-content: flex-start;">
-                  <el-button type="primary" size="small" :loading="sendingControl" @click="sendManualCommand">
+                  <el-button class="btn-aliyun" size="small" :loading="sendingControl" @click="sendManualCommand">
                     下发调试指令
                   </el-button>
                 </div>
@@ -255,7 +253,7 @@
               <div class="control-right-console">
                 <div class="console-header">
                   <span>下发反馈控制台</span>
-                  <el-button link type="primary" size="small" @click="clearConsoleLogs" style="padding: 0;">清空</el-button>
+                  <el-button link class="btn-aliyun-link" size="small" @click="clearConsoleLogs" style="padding: 0;">清空</el-button>
                 </div>
                 <div class="console-body" ref="consoleBodyRef">
                   <div v-for="(log, idx) in consoleLogs" :key="idx" :class="['console-line', log.type]">
@@ -291,7 +289,7 @@
               </el-table-column>
               <el-table-column label="规格" min-width="110">
                 <template #default="{ row }">
-                  <el-button link type="primary" size="small"
+                  <el-button link class="btn-aliyun-link" size="small"
                     @click="showComponentSpecification(row)">
                     {{ componentSpecificationLabel(row.specification) }}
                   </el-button>
@@ -300,12 +298,12 @@
 
               <el-table-column label="操作" width="230" fixed="right">
                 <template #default="{ row }">
-                  <el-button v-if="canEditActiveInstance && row.status === 'IN_USE'" link type="primary" size="small" @click="openComponentAction(row, 'configure')">配置</el-button>
-                  <el-button v-if="canEditActiveInstance && row.status === 'IN_USE'" link type="warning" size="small" @click="markPendingReplacement(row)">标记待更换</el-button>
-                  <el-button v-if="canEditActiveInstance && row.status === 'IN_USE'" link type="warning" size="small" @click="openComponentAction(row, 'replace')">直接更换</el-button>
-                  <el-button v-if="canEditActiveInstance && row.status === 'PENDING_REPLACEMENT'" link type="primary" size="small" @click="openComponentAction(row, 'replace')">安装新组件</el-button>
-                  <el-button link size="small" @click="showComponentHistory(row)">历史</el-button>
-                                  </template>
+                  <el-button v-if="canEditActiveInstance && row.status === 'IN_USE'" link class="btn-aliyun-link" size="small" @click="openComponentAction(row, 'configure')">配置</el-button>
+                  <el-button v-if="canEditActiveInstance && row.status === 'IN_USE'" link class="btn-aliyun-danger-link" size="small" @click="markPendingReplacement(row)">标记待更换</el-button>
+                  <el-button v-if="canEditActiveInstance && row.status === 'IN_USE'" link class="btn-aliyun-link" size="small" @click="openComponentAction(row, 'replace')">直接更换</el-button>
+                  <el-button v-if="canEditActiveInstance && row.status === 'PENDING_REPLACEMENT'" link class="btn-aliyun-link" size="small" @click="openComponentAction(row, 'replace')">安装新组件</el-button>
+                  <el-button class="btn-aliyun" size="small" @click="showComponentHistory(row)">历史</el-button>
+                </template>
               </el-table-column>
             </el-table>
           </el-tab-pane>
@@ -317,7 +315,7 @@
                 <el-option v-for="tpl in availableDataTemplates" :key="templateIdOf(tpl)" :label="tpl.templateName || '未命名模板'" :value="templateIdOf(tpl)" />
               </el-select>
               <el-input v-model="datasetCreateForm.dataDesc" size="small" placeholder="数据集名称，例如：温度变化记录表" />
-              <el-button type="primary" size="small" :loading="creatingDataSet" @click="createDataSetForInstance">关联建表</el-button>
+              <el-button class="btn-aliyun" size="small" :loading="creatingDataSet" @click="createDataSetForInstance">关联建表</el-button>
             </div>
             <el-table :data="instanceDataSets" border size="small" v-loading="loadingDataSets">
               <el-table-column prop="id" label="数据集ID" width="90" />
@@ -330,22 +328,22 @@
                 <template #default="{ row }">
                   <el-popconfirm title="确认注销该归档数据表？物理存储将被清空。" @confirm="deleteInstanceDataSet(row)">
                     <template #reference>
-                      <el-button link type="danger" size="small">删除</el-button>
+                      <el-button link class="btn-aliyun-danger-link" size="small">删除</el-button>
                     </template>
                   </el-popconfirm>
                 </template>
               </el-table-column>
             </el-table>
             <div class="footer-actions mt-12">
-              <el-button type="primary" size="small" @click="loadDataSets">刷新列表</el-button>
+              <el-button class="btn-aliyun" size="small" @click="loadDataSets">刷新列表</el-button>
             </div>
           </el-tab-pane>
 
           <!-- Tab 5: 安全约束 -->
           <el-tab-pane label="安全约束" name="constraints">
             <div class="constraint-actions">
-              <el-button v-if="canEditActiveInstance" type="primary" plain size="small" @click="addConstraint">
-                <el-icon><Plus /></el-icon> 添加监控约束规则
+              <el-button v-if="canEditActiveInstance" class="btn-aliyun" :icon="Plus" size="small" @click="addConstraint">
+                添加监控约束规则
               </el-button>
             </div>
             <el-table :data="localConstraints" border size="small" :class="{ 'retired-readonly-table': activeInstanceRetired }">
@@ -395,12 +393,12 @@
               </el-table-column>
               <el-table-column v-if="canEditActiveInstance" label="操作" width="70" align="center">
                 <template #default="{ $index }">
-                  <el-button type="danger" link size="small" @click="removeConstraint($index)">删除</el-button>
+                  <el-button link class="btn-aliyun-danger-link" size="small" @click="removeConstraint($index)">删除</el-button>
                 </template>
               </el-table-column>
             </el-table>
             <div class="footer-actions mt-12">
-              <el-button v-if="canEditActiveInstance" type="primary" size="small" :loading="saving" @click="saveConstraints">保存约束</el-button>
+              <el-button v-if="canEditActiveInstance" class="btn-aliyun-cta" size="small" :loading="saving" @click="saveConstraints">保存约束</el-button>
             </div>
           </el-tab-pane>
 
@@ -458,10 +456,10 @@
             <div class="footer-actions">
               <el-popconfirm v-if="canRetireActiveInstance" title="注销后设备将不能参与控制、任务和新业务，现有数据与组件历史会完整保留。确认注销？" @confirm="retireInstance(activeInstance.instanceId)">
                 <template #reference>
-                  <el-button type="danger" plain size="small">注销设备实例</el-button>
+                  <el-button link class="btn-aliyun-danger-link" size="small">注销设备实例</el-button>
                 </template>
               </el-popconfirm>
-              <el-button v-if="canEditActiveInstance" type="primary" size="small" :loading="saving" @click="saveInstance">保存资产修改</el-button>
+              <el-button v-if="canEditActiveInstance" class="btn-aliyun-cta" size="small" :loading="saving" @click="saveInstance">保存资产修改</el-button>
             </div>
           </el-tab-pane>
         </el-tabs>
@@ -495,9 +493,9 @@
                   <el-input v-model="pair.key" placeholder="参数名 (如: 品牌)" style="flex: 1" />
                   <span>:</span>
                   <el-input v-model="pair.value" placeholder="参数值 (如: 罗氏)" style="flex: 1.2" />
-                  <el-button link type="danger" :icon="Delete" @click="componentActionForm.specificationPairs.splice(index, 1)" />
+                  <el-button link class="btn-aliyun-danger-link" :icon="Delete" @click="componentActionForm.specificationPairs.splice(index, 1)" />
                 </div>
-                <el-button type="primary" link :icon="Plus" size="small" style="padding: 0" @click="componentActionForm.specificationPairs.push({ key: '', value: '' })">
+                <el-button link class="btn-aliyun-link" :icon="Plus" size="small" style="padding: 0" @click="componentActionForm.specificationPairs.push({ key: '', value: '' })">
                   添加规格参数
                 </el-button>
               </div>
@@ -521,9 +519,9 @@
                   <el-input v-model="pair.key" placeholder="参数名 (如: 品牌)" style="flex: 1" />
                   <span>:</span>
                   <el-input v-model="pair.value" placeholder="参数值 (如: Roche)" style="flex: 1.2" />
-                  <el-button link type="danger" :icon="Delete" @click="componentActionForm.specificationPairs.splice(index, 1)" />
+                  <el-button link class="btn-aliyun-danger-link" :icon="Delete" @click="componentActionForm.specificationPairs.splice(index, 1)" />
                 </div>
-                <el-button type="primary" link :icon="Plus" size="small" style="padding: 0" @click="componentActionForm.specificationPairs.push({ key: '', value: '' })">
+                <el-button link class="btn-aliyun-link" :icon="Plus" size="small" style="padding: 0" @click="componentActionForm.specificationPairs.push({ key: '', value: '' })">
                   添加规格参数
                 </el-button>
               </div>
@@ -532,8 +530,8 @@
         </template>
       </div>
       <template #footer>
-        <el-button size="small" @click="componentActionVisible = false">取消</el-button>
-        <el-button size="small" type="primary" :loading="savingComponent" @click="submitComponentAction">保存</el-button>
+        <el-button class="btn-aliyun" size="small" @click="componentActionVisible = false">取消</el-button>
+        <el-button class="btn-aliyun-cta" size="small" :loading="savingComponent" @click="submitComponentAction">保存</el-button>
       </template>
     </el-dialog>
 
@@ -552,7 +550,7 @@
               绑定实例: <b>{{ instanceNameById(row.selfInstanceId) }}</b> <br/>
               更换状态: <el-tag size="small" :type="componentStatusType(row.status)" effect="plain">{{ row.status }}</el-tag> <br/>
               备注: {{ row.remark || '无' }} <br/>
-              规格: <el-button link type="primary" size="small" @click="showComponentSpecification(row)">查看详情</el-button> <br/>
+              规格: <el-button link class="btn-aliyun-link" size="small" @click="showComponentSpecification(row)">查看详情</el-button> <br/>
               <span v-if="row.predecessorId">前置坏件组件 ID: <code>{{ row.predecessorId }}</code></span>
             </p>
           </el-timeline-item>
@@ -719,8 +717,8 @@
       </div>
       <template #footer>
         <div class="drawer-footer unified-drawer-footer">
-          <el-button size="small" @click="createDrawerVisible = false">取消</el-button>
-          <el-button size="small" type="primary" :loading="creating" :disabled="!canSubmitCreate" @click="submitCreate">确认并保存</el-button>
+          <el-button class="btn-aliyun" size="small" @click="createDrawerVisible = false">取消</el-button>
+          <el-button class="btn-aliyun-cta" size="small" :loading="creating" :disabled="!canSubmitCreate" @click="submitCreate">确认并保存</el-button>
         </div>
       </template>
     </el-drawer>

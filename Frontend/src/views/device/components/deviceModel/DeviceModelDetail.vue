@@ -5,20 +5,20 @@
               <p>{{ model.categoryName || '未分类' }} · {{ formatTime(model.updateTime) }}</p>
             </div>
             <div class="detail-actions">
-              <el-button :icon="Download" @click="downloadModelBundle">导出模型文件</el-button>
+              <el-button class="btn-aliyun" :icon="Download" @click="downloadModelBundle">导出模型文件</el-button>
               <el-tooltip :disabled="!hasInstances" content="该模型下已有设备实例运行，已被锁定，禁止编辑" placement="top">
                 <span>
-                  <el-button v-if="canEditModel" type="primary" plain :icon="EditPen" :disabled="hasInstances" @click="openEditDrawer(model)">编辑模型</el-button>
+                  <el-button v-if="canEditModel" class="btn-aliyun-cta" :icon="EditPen" :disabled="hasInstances" @click="openEditDrawer(model)">编辑模型</el-button>
                 </span>
               </el-tooltip>
               <el-popconfirm v-if="canDeleteModel && !hasInstances" title="确认删除该模型？有设备实例时不可删除。" @confirm="deleteModel(model.modelId)">
                 <template #reference>
-                  <el-button type="danger" plain :icon="Delete">删除</el-button>
+                  <el-button link class="btn-aliyun-danger-link" :icon="Delete">删除</el-button>
                 </template>
               </el-popconfirm>
               <el-tooltip v-else-if="canDeleteModel && hasInstances" content="该模型下已有设备实例运行，已被锁定，禁止删除" placement="top">
                 <span>
-                  <el-button type="danger" plain :icon="Delete" :disabled="true">删除</el-button>
+                  <el-button link class="btn-aliyun-danger-link" :icon="Delete" :disabled="true">删除</el-button>
                 </span>
               </el-tooltip>
             </div>

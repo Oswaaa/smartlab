@@ -10,10 +10,10 @@
         <div class="overview-metric"><span>待审核</span><strong>{{ pendingRegistrations.length }}</strong></div>
       </div>
       <div class="overview-actions">
-        <el-button size="small" @click="fetchData">刷新</el-button>
-        <el-button v-if="!mqttConnected" size="small" type="warning" @click="reconnectMqtt">Broker 重连</el-button>
-        <el-button size="small" @click="openRegisterDrawer('manual')">导入配置</el-button>
-        <el-button size="small" type="primary" @click="openRegisterDrawer('mqtt')">待审核注册<span v-if="pendingRegistrations.length">（{{ pendingRegistrations.length }}）</span></el-button>
+        <el-button class="btn-aliyun" size="small" @click="fetchData">刷新</el-button>
+        <el-button v-if="!mqttConnected" class="btn-aliyun-cta" size="small" @click="reconnectMqtt">Broker 重连</el-button>
+        <el-button class="btn-aliyun" size="small" @click="openRegisterDrawer('manual')">导入配置</el-button>
+        <el-button class="btn-aliyun-cta" size="small" @click="openRegisterDrawer('mqtt')">待审核注册<span v-if="pendingRegistrations.length">（{{ pendingRegistrations.length }}）</span></el-button>
       </div>
     </section>
     <el-alert v-if="!mqttConnected" class="broker-alert" type="warning" :closable="false" show-icon title="Broker 当前不可用：Adapter 实时注册与心跳不会更新，手动导入仍可使用。" />
@@ -21,7 +21,7 @@
       <aside class="adapter-sidebar">
         <div class="sidebar-toolbar">
           <div class="list-title"><strong>Adapter 列表</strong><em>{{ filteredAdapters.length }} 个</em></div>
-          <el-button type="primary" size="small" circle :icon="Plus" aria-label="导入 Adapter 配置" @click="openRegisterDrawer('manual')" />
+          <el-button class="btn-aliyun-cta" size="small" circle :icon="Plus" aria-label="导入 Adapter 配置" @click="openRegisterDrawer('manual')" />
         </div>
         <div class="sidebar-search">
           <el-input v-model="keyword" placeholder="搜索 Adapter" clearable :prefix-icon="Search" />
@@ -54,7 +54,7 @@
           </div>
           <div class="detail-actions">
             <el-dropdown trigger="click" @command="handleAdapterAction">
-              <el-button circle size="small" :icon="MoreFilled" aria-label="Adapter 更多操作" />
+              <el-button class="btn-aliyun" circle size="small" :icon="MoreFilled" aria-label="Adapter 更多操作" />
               <template #dropdown><el-dropdown-menu><el-dropdown-item command="update">更新配置</el-dropdown-item><el-dropdown-item command="delete" class="danger-menu-item">删除 Adapter</el-dropdown-item></el-dropdown-menu></template>
             </el-dropdown>
           </div>
@@ -231,7 +231,7 @@
                 <el-table-column label="收到时间" min-width="155"><template #default="{ row }">{{ formatTime(row.receivedAt) }}</template></el-table-column>
                 <el-table-column label="类别 / 模板 / 点位" min-width="150"><template #default="{ row }">{{ pendingCategoryCount(row) }} / {{ pendingTemplateCount(row) }} / {{ pendingPointCount(row) }}</template></el-table-column>
                 <el-table-column label="格式" width="80"><template #default="{ row }">{{ row.rawConfigFormat || 'JSON' }}</template></el-table-column>
-                <el-table-column label="操作" width="175" fixed="right"><template #default="{ row }"><el-button type="primary" size="small" @click="reviewPendingRegistration(row)">审阅</el-button><el-button type="danger" link size="small" @click="discardPendingRegistration(row)">移除请求</el-button></template></el-table-column>
+                <el-table-column label="操作" width="175" fixed="right"><template #default="{ row }"><el-button class="btn-aliyun-cta" size="small" @click="reviewPendingRegistration(row)">审阅</el-button><el-button link class="btn-aliyun-danger-link" size="small" @click="discardPendingRegistration(row)">移除请求</el-button></template></el-table-column>
               </el-table>
             </div>
 
@@ -245,7 +245,7 @@
                   </el-upload>
                 </el-form-item>
                 <el-form-item label="配置内容"><el-input v-model="registerForm.rawConfigContent" type="textarea" :rows="8" @input="resetManualPreview" placeholder="粘贴 Adapter 原始配置内容" /></el-form-item>
-                <el-form-item label=""><el-button type="primary" :loading="registerLoading" @click="parseRegisterConfig">解析配置</el-button></el-form-item>
+                <el-form-item label=""><el-button class="btn-aliyun-cta" size="small" :loading="registerLoading" @click="parseRegisterConfig">解析配置</el-button></el-form-item>
               </el-form>
             </div>
           </section>
@@ -286,7 +286,7 @@
                   <template #default="{ row }"><div class="contract-tag-list"><span v-for="point in asArray(row.devicePoints)" :key="point.devicePoint" class="contract-text">{{ point.devicePoint }} · {{ point.index ?? '-' }}</span><span v-if="!asArray(row.devicePoints).length">-</span></div></template>
                 </el-table-column>
               </el-table>
-              <div class="review-actions"><el-button @click="registerStep = 0">返回</el-button><el-button type="primary" @click="registerStep = 2">下一步：确认</el-button></div>
+              <div class="review-actions"><el-button class="btn-aliyun" size="small" @click="registerStep = 0">返回</el-button><el-button class="btn-aliyun-cta" size="small" @click="registerStep = 2">下一步：确认</el-button></div>
             </template>
           </section>
 
@@ -294,11 +294,11 @@
             <div class="drawer-section-head"><h3>{{ existingAdapterForPreview ? '确认更新 Adapter' : '确认注册 Adapter' }}</h3></div>
             <el-alert v-if="existingAdapterForPreview" type="warning" :closable="false" show-icon :title="`已存在同名 Adapter，将更新现有配置；当前绑定 ${boundCountFor(existingAdapterForPreview.adapterName)} 个设备实例。`" />
             <div class="save-summary"><span>Adapter</span><strong>{{ registerPreview?.adapterName || '-' }}</strong><span>操作</span><strong>{{ existingAdapterForPreview ? '更新现有配置' : '创建新 Adapter' }}</strong><span>类别 / 点位</span><strong>{{ adapterCategoriesOf(registerPreview).length }} / {{ adapterPointsOf(registerPreview).length }}</strong></div>
-            <div class="save-panel"><el-button @click="registerStep = 1">返回审阅</el-button><el-button type="primary" :disabled="!registerPreview" :loading="registerLoading" @click="saveReviewedRegistration">{{ existingAdapterForPreview ? '确认更新' : '确认注册' }}</el-button></div>
+            <div class="save-panel"><el-button class="btn-aliyun" size="small" @click="registerStep = 1">返回审阅</el-button><el-button class="btn-aliyun-cta" size="small" :disabled="!registerPreview" :loading="registerLoading" @click="saveReviewedRegistration">{{ existingAdapterForPreview ? '确认更新' : '确认注册' }}</el-button></div>
           </section>
         </el-scrollbar>
       </div>
-      <template #footer><div class="drawer-footer"><el-button @click="confirmCloseRegisterDrawer(() => closeRegisterDrawer())">取消</el-button></div></template>
+      <template #footer><div class="drawer-footer"><el-button class="btn-aliyun" size="small" @click="confirmCloseRegisterDrawer(() => closeRegisterDrawer())">取消</el-button></div></template>
     </el-drawer>
   </div>
 </template>
@@ -779,68 +779,108 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.adapter-management-page { height: calc(100vh - 52px); min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: #f0f2f5; color: #1e2533; }
+.adapter-management-page { height: calc(100vh - 52px); min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: #ffffff; color: #1e2533; }
 .adapter-management-page, .adapter-management-page * { box-sizing: border-box; }
-.adapter-overview-bar { min-height: 54px; padding: 7px 12px; display: flex; align-items: center; gap: 14px; border-bottom: 1px solid #d9dde6; background: #fff; }
+.adapter-overview-bar { min-height: 52px; padding: 8px 16px; display: flex; align-items: center; gap: 16px; border-bottom: 1px solid #e2e8f0; background: #ffffff; flex-shrink: 0; }
 .page-heading { min-width: 190px; display: grid; gap: 1px; }
-.page-heading h1 { margin: 0; color: #1e2533; font-size: 17px; font-weight: 600; }
-.page-heading span { color: #7b8798; font-size: 11px; }
-.overview-metrics { display: flex; flex: 1; min-width: 0; align-items: center; gap: 14px; }
+.page-heading h1 { margin: 0; color: #1e2533; font-size: 16px; font-weight: 700; }
+.page-heading span { color: #64748b; font-size: 11px; }
+.overview-metrics { display: flex; flex: 1; min-width: 0; align-items: center; gap: 16px; }
 .overview-metric { min-width: 52px; display: grid; gap: 1px; }
-.overview-metric span { color: #7b8798; font-size: 11px; }
-.overview-metric strong { color: #344054; font-size: 15px; font-weight: 600; }
-.overview-metric strong.ok { color: #1a8754; }
-.overview-metric strong.danger { color: #c2413b; }
-.overview-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.overview-metric span { color: #64748b; font-size: 11px; }
+.overview-metric strong { color: #0f172a; font-size: 15px; font-weight: 700; }
+.overview-metric strong.ok { color: #059669; }
+.overview-metric strong.danger { color: #dc2626; }
+.overview-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
 .broker-alert { flex: 0 0 auto; border-radius: 0; }
-.adapter-workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: 248px minmax(0, 1fr); overflow: hidden; }
-.adapter-sidebar { width: 248px; min-width: 0; max-width: 100%; display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid #d9dde6; background: #fff; }
-.list-title { height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #edf0f4; }
-.list-title strong { color: #344054; font-size: 13px; font-weight: 600; }
-.list-title em { color: #8a93a6; font-size: 12px; font-style: normal; }
-.sidebar-toolbar { height: 46px; padding: 0 10px 0 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e5e7eb; }
-.sidebar-toolbar .list-title { height: auto; min-width: 0; padding: 0; border: 0; flex: 1 1 auto; justify-content: flex-start; gap: 6px; overflow: hidden; }
-.sidebar-toolbar .list-title strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sidebar-toolbar .el-button { flex: 0 0 auto; }
-.sidebar-search { width: 100%; min-width: 0; max-width: 100%; padding: 8px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 7px; overflow: hidden; border-bottom: 1px solid #edf0f4; }
-.sidebar-search > * { min-width: 0; max-width: 100%; }
-.sidebar-search :deep(.el-input) { width: 100%; min-width: 0; }
-.sidebar-search :deep(.el-input__wrapper) { min-height: 28px; }
-.status-filter { width: 100%; min-width: 0; max-width: 100%; display: flex; overflow: hidden; }
-.status-filter :deep(.el-radio-button) { min-width: 0; flex: 1 1 0; }
-.status-filter :deep(.el-radio-button__inner) { width: 100%; padding: 5px 0; font-size: 11px; }
-.detail-actions { display: flex; align-items: center; gap: 8px; }
-.danger-menu-item { color: var(--color-danger) !important; }
-.compact-empty { padding: 14px 0; color: #8a93a6; font-size: 12px; text-align: center; }
-.adapter-list { width: 100%; min-width: 0; flex: 1; min-height: 0; overflow: auto; padding: 6px; }
-.adapter-list-item { width: 100%; min-height: 66px; padding: 10px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 6px; row-gap: 3px; border: 0; border-radius: 4px; background: transparent; text-align: left; cursor: pointer; transition: background-color .15s ease; }
-.adapter-list-item:hover { background: #f6f8fb; }
-.adapter-list-item.active { background: #e8f1fb; box-shadow: inset 3px 0 0 var(--color-primary); }
-.adapter-name { min-width: 0; overflow: hidden; color: #1e2533; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.adapter-subline { grid-column: 1 / 3; overflow: hidden; color: #7b8798; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
-.adapter-status { padding: 0 5px; border-radius: 2px; background: #eef1f5; color: #596579; font-size: 11px; line-height: 18px; }
-.adapter-status.online, .adapter-status.alive, .adapter-status.registered { background: #e7f7ee; color: #1a8754; }
-.adapter-status.degraded { background: #fff4df; color: #b76a00; }
-.adapter-detail { min-width: 0; min-height: 0; overflow: auto; padding: 10px 12px 12px; background: #f0f2f5; }
-.empty-detail { display: flex; align-items: center; justify-content: center; }
-.detail-header { min-height: 50px; padding: 10px 12px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid #d9dde6; background: #fff; }
-.detail-header h2 { margin: 0; color: #1e2533; font-size: 18px; font-weight: 600; line-height: 24px; }
-.detail-header p { max-width: 720px; margin: 2px 0 0; overflow: hidden; color: #6b7280; font-size: 12px; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
+
+.adapter-workspace { flex: 1; min-height: 0; display: flex; overflow: hidden; background: #f4f6f9; }
+.adapter-sidebar { width: 260px; min-width: 260px; display: flex; flex-direction: column; overflow: hidden; border-right: 1px solid #e2e8f0; background: #ffffff; }
+.sidebar-toolbar { height: 44px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e2e8f0; background: #f8fafc; }
+.sidebar-toolbar .list-title { display: flex; align-items: center; gap: 6px; }
+.sidebar-toolbar .list-title strong { font-size: 13px; font-weight: 700; color: #0f172a; }
+.sidebar-toolbar .list-title em { font-size: 12px; color: #64748b; font-style: normal; }
+
+/* Sidebar Search & Radio Group - Fixed Overflow */
+.sidebar-search {
+  width: 100%;
+  padding: 8px 12px;
+  background: #ffffff;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-sizing: border-box;
+}
+.sidebar-search :deep(.el-input) {
+  width: 100%;
+  box-sizing: border-box;
+}
+.sidebar-search :deep(.el-input__wrapper) {
+  box-shadow: 0 0 0 1px #cbd5e1 inset;
+  border-radius: 4px;
+}
+.sidebar-search :deep(.el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 1px #1677ff inset;
+}
+.status-filter {
+  width: 100%;
+  display: flex;
+  box-sizing: border-box;
+}
+.status-filter :deep(.el-radio-button) {
+  flex: 1;
+  min-width: 0;
+  text-align: center;
+}
+.status-filter :deep(.el-radio-button__inner) {
+  width: 100%;
+  padding: 6px 0 !important;
+  font-size: 12px;
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.adapter-list { width: 100%; flex: 1; min-height: 0; overflow: auto; padding: 6px 8px 12px; }
+.adapter-list-item { width: 100%; padding: 8px 10px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 6px; row-gap: 3px; border: 0; border-radius: 4px; background: transparent; text-align: left; cursor: pointer; transition: background-color .15s ease; }
+.adapter-list-item:hover { background: #f1f5f9; }
+.adapter-list-item.active { background: #e6f4ff; border-left: 3px solid #1677ff; }
+.adapter-name { min-width: 0; overflow: hidden; color: #0f172a; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.adapter-list-item.active .adapter-name { color: #0958d9; font-weight: 700; }
+.adapter-subline { grid-column: 1 / 3; overflow: hidden; color: #64748b; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Right Content Workspace - Edge-to-Edge Flush with Sidebar and Top Bar (Data Center Style) */
+.adapter-detail { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: #f4f6f9; padding: 0; margin: 0; overflow: hidden; }
+.empty-detail { display: flex; align-items: center; justify-content: center; background: #ffffff; }
+
+/* Edge-to-edge Header & Flat Splitter Ribbon */
+.detail-header { min-height: 50px; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; background: #ffffff; border-bottom: 1px solid #e2e8f0; flex-shrink: 0; }
+.detail-header h2 { margin: 0; color: #0f172a; font-size: 16px; font-weight: 700; line-height: 24px; }
+.detail-header p { max-width: 720px; margin: 2px 0 0; overflow: hidden; color: #64748b; font-size: 12px; line-height: 18px; text-overflow: ellipsis; white-space: nowrap; }
 .detail-actions { flex: 0 0 auto; }
-.runtime-table { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); margin-bottom: 8px; border: 1px solid #d9dde6; border-top: 0; background: #fff; }
-.runtime-table div { min-width: 0; padding: 8px 12px; display: grid; gap: 2px; border-right: 1px solid #e5e7eb; }
-.runtime-table div:last-child { border-right: 0; }
-.runtime-table span { color: #7b8798; font-size: 11px; }
-.runtime-table strong { overflow: hidden; color: #344054; font-size: 14px; font-weight: 600; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
-.adapter-tabs { padding: 0 10px 10px; border: 1px solid #d9dde6; background: #fff; }
-.adapter-tabs :deep(.el-tabs__header) { margin: 0; }
-.adapter-tabs :deep(.el-tabs__item) { height: 40px; padding: 0 14px; font-size: 13px; }
-.content-block { margin-top: 8px; border: 1px solid #e0e4eb; background: #fff; }
-.block-head { height: 36px; padding: 0 10px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e5e7eb; background: #f8fafc; }
-.block-head h3 { margin: 0; color: #344054; font-size: 13px; font-weight: 600; }
-.block-head em { color: #7b8798; font-size: 11px; font-style: normal; }
+
+/* Metric Ribbon Style Runtime Table (Edge-to-edge Flat Splitter) */
+.runtime-table { width: 100%; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); background: #ffffff; border-bottom: 1px solid #e2e8f0; flex-shrink: 0; }
+.runtime-table div { min-width: 0; padding: 10px 16px; display: flex; flex-direction: column; gap: 3px; border-right: 1px solid #f1f5f9; }
+.runtime-table div:last-child { border-right: none; }
+.runtime-table span { color: #64748b; font-size: 12px; font-weight: 500; }
+.runtime-table strong { overflow: hidden; color: #0f172a; font-size: 14px; font-weight: 700; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Tabs - Edge-to-Edge Flush Layout */
+.adapter-tabs { flex: 1; min-height: 0; display: flex; flex-direction: column; background: #ffffff; border: none; overflow: hidden; }
+.adapter-tabs :deep(.el-tabs__header) { margin: 0; padding: 0 16px; background: #f8fafc; border-bottom: 1px solid #e2e8f0; }
+.adapter-tabs :deep(.el-tabs__item) { height: 42px; padding: 0 16px; font-size: 13px; color: #475569; }
+.adapter-tabs :deep(.el-tabs__item.is-active) { color: #1677ff; font-weight: 600; }
+.adapter-tabs :deep(.el-tabs__content) { flex: 1; min-height: 0; overflow: auto; padding: 16px; background: #f4f6f9; }
+
+.content-block { border: 1px solid #e2e8f0; border-radius: 4px; background: #fff; margin-bottom: 12px; }
+.block-head { height: 38px; padding: 0 12px; display: flex; align-items: center; justify-content: space-between; border-bottom: 1px solid #e2e8f0; background: #f8fafc; }
+.block-head h3 { margin: 0; color: #0f172a; font-size: 13px; font-weight: 700; }
+.block-head em { color: #64748b; font-size: 11px; font-style: normal; }
 .industrial-table :deep(.el-table__cell) { padding: 6px 8px; }
-.industrial-table :deep(th.el-table__cell) { background: #f3f6fa; color: #4a5568; font-size: 11px; font-weight: 600; }
+.industrial-table :deep(th.el-table__cell) { background: #f8fafc; color: #475569; font-size: 12px; font-weight: 600; }
 .capability-summary-list { padding: 0 12px; }
 .capability-summary { padding: 14px 0; border-bottom: 1px solid #edf0f4; }
 .capability-summary:last-child { border-bottom: 0; }
@@ -930,17 +970,79 @@ onUnmounted(() => {
   .adapter-overview-bar { align-items: flex-start; flex-direction: column; gap: 8px; }
   .overview-metrics { width: 100%; gap: 12px; overflow: auto; }
   .overview-actions { width: 100%; flex-wrap: wrap; }
-  .adapter-workspace { grid-template-columns: 1fr; }
-  .adapter-sidebar { width: 100%; max-height: 320px; border-right: 0; border-bottom: 1px solid #d9dde6; }
-  .adapter-detail { overflow: visible; padding: 8px; }
+  .adapter-workspace { grid-template-columns: 1fr; flex-direction: column; }
+  .adapter-sidebar { width: 100%; min-width: 100%; max-height: 320px; border-right: 0; border-bottom: 1px solid #d9dde6; }
+  .adapter-detail { overflow: visible; padding: 0; }
   .detail-header { padding: 10px; }
   .runtime-table { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .runtime-table div:nth-child(2n) { border-right: 0; }
-  .adapter-tabs { padding: 0 8px 8px; }
+  .adapter-tabs { padding: 0; }
   .binding-node { grid-template-columns: 1fr; gap: 1px; }
   .capability-groups { grid-template-columns: 1fr; gap: 10px; }
   .parse-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .parse-summary div:nth-child(2n) { border-right: 0; }
   .save-summary { grid-template-columns: 80px 1fr; }
   .save-panel { align-items: flex-start; flex-direction: column; }
-}</style>
+}
+
+/* Alibaba Cloud B-Design Button System for Adapter Management */
+.btn-aliyun {
+  background: #ffffff !important;
+  border: 1px solid #d9d9d9 !important;
+  color: rgba(0, 0, 0, 0.88) !important;
+  font-weight: 400 !important;
+  transition: all 0.15s ease !important;
+}
+.btn-aliyun:hover:not(:disabled):not(.is-disabled) {
+  background: #ffffff !important;
+  border-color: #4096ff !important;
+  color: #1677ff !important;
+}
+
+.btn-aliyun-cta {
+  background: #ffffff !important;
+  border: 1px solid #1677ff !important;
+  color: #1677ff !important;
+  font-weight: 500 !important;
+  transition: all 0.15s ease !important;
+}
+.btn-aliyun-cta:hover:not(:disabled):not(.is-disabled) {
+  background: #1677ff !important;
+  border-color: #1677ff !important;
+  color: #ffffff !important;
+}
+
+.btn-aliyun-link {
+  background: transparent !important;
+  border: none !important;
+  color: #1677ff !important;
+  padding: 0 !important;
+  height: auto !important;
+}
+.btn-aliyun-link:hover:not(:disabled):not(.is-disabled) {
+  color: #4096ff !important;
+  text-decoration: underline !important;
+}
+
+.btn-aliyun-danger-link {
+  background: transparent !important;
+  border: none !important;
+  color: #ff4d4f !important;
+  padding: 0 !important;
+  height: auto !important;
+}
+.btn-aliyun-danger-link:hover:not(:disabled):not(.is-disabled) {
+  color: #ff7875 !important;
+  text-decoration: underline !important;
+}
+
+/* Locked Disabled States */
+.btn-aliyun:disabled, .btn-aliyun.is-disabled, .btn-aliyun:disabled:hover, .btn-aliyun.is-disabled:hover,
+.btn-aliyun-cta:disabled, .btn-aliyun-cta.is-disabled, .btn-aliyun-cta:disabled:hover, .btn-aliyun-cta.is-disabled:hover {
+  background: #f5f5f5 !important;
+  border-color: #d9d9d9 !important;
+  color: rgba(0, 0, 0, 0.25) !important;
+  cursor: not-allowed !important;
+  box-shadow: none !important;
+}
+</style>

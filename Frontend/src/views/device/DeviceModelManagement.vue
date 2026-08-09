@@ -22,8 +22,8 @@
         <div class="global-top-bar">
           <span class="global-toolbar-title">设备模型管理</span>
           <div class="global-toolbar-actions">
-            <el-button :icon="Refresh" @click="loadData">刷新</el-button>
-            <el-button v-if="canCreateModel" type="primary" :icon="Plus" @click="openCreateDrawer">新建设备模型</el-button>
+            <el-button class="btn-aliyun" :icon="Refresh" @click="loadData">刷新</el-button>
+            <el-button v-if="canCreateModel" class="btn-aliyun-cta" :icon="Plus" @click="openCreateDrawer">新建设备模型</el-button>
           </div>
         </div>
         <DeviceCategoryDetail v-if="selectedCategory" :category="selectedCategory" :categoryPathLabel="selectedCategoryPathLabel" :categoryChildren="selectedCategoryChildren" :categoryModels="selectedCategoryModels" :categoryInstances="selectedCategoryInstances" :categoryBomUsages="selectedCategoryBomUsages" :categoryComponentSlots="selectedCategoryComponentSlots" :categoryDataAssets="selectedCategoryDataAssets" :canCreateModel="canCreateModel" :selectedCategoryCanCreateModel="selectedCategoryCanCreateModel" :categories="categories" :models="models" :categoryChildrenByParent="categoryChildrenByParent" @select-category="selectCategoryById" @select-model="selectModel" @create-model-in-category="openCreateDrawerWithCategory" />
@@ -34,10 +34,7 @@
       </main>
     </section>
 
-
-
-
-<DeviceModelEditorDrawer ref="editorDrawerRef" :categories="categories" :models="models" @saved="handleModelSaved" />
+    <DeviceModelEditorDrawer ref="editorDrawerRef" :categories="categories" :models="models" @saved="handleModelSaved" />
     <el-dialog v-model="migrationDialogVisible" title="类别结构变更向导" width="800px" :close-on-click-modal="false" destroy-on-close>
       <el-alert title="类别下已有设备模型" type="warning" show-icon :closable="false" style="margin-bottom: 20px;">
         【{{ migrationState.parentCategory?.label }}】当前是叶子节点并挂载了设备模型。添加子类别后，它将变为中间节点。请在下方为其创建新子类别，并将现有模型分配到新类别下。
@@ -46,11 +43,11 @@
         <div style="flex: 1; min-width: 0;">
           <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
             <h4 style="margin: 0;">1. 创建新子类别</h4>
-            <el-button link type="primary" :icon="Plus" @click="migrationState.newCategories.push({ name: '' })">添加</el-button>
+            <el-button link class="btn-aliyun-link" :icon="Plus" @click="migrationState.newCategories.push({ name: '' })">添加</el-button>
           </div>
           <div v-for="(item, index) in migrationState.newCategories" :key="index" style="display: flex; gap: 8px; margin-bottom: 12px;">
             <el-input v-model="item.name" placeholder="请输入子类别名称" />
-            <el-button type="danger" plain :icon="Delete" @click="migrationState.newCategories.splice(index, 1)" :disabled="migrationState.newCategories.length <= 1" />
+            <el-button link class="btn-aliyun-danger-link" :icon="Delete" @click="migrationState.newCategories.splice(index, 1)" :disabled="migrationState.newCategories.length <= 1" />
           </div>
         </div>
         <div style="flex: 1; min-width: 0; border-left: 1px solid var(--el-border-color-light); padding-left: 24px;">
@@ -66,8 +63,8 @@
         </div>
       </div>
       <template #footer>
-        <el-button @click="migrationDialogVisible = false" :disabled="migrationSubmitting">取消</el-button>
-        <el-button type="primary" @click="confirmMigration" :loading="migrationSubmitting">确认迁移</el-button>
+        <el-button class="btn-aliyun" @click="migrationDialogVisible = false" :disabled="migrationSubmitting">取消</el-button>
+        <el-button class="btn-aliyun-cta" @click="confirmMigration" :loading="migrationSubmitting">确认迁移</el-button>
       </template>
     </el-dialog>
   </div>
@@ -947,4 +944,67 @@ onMounted(loadData)
 .info-section, .summary-card, .editor-card, .locked-section, .state-card, .boxed-section { border-radius: 6px; box-shadow: none; }
 .section-heading { border-left-width: 3px; font-size: 14px; }
 .category-detail-scroll { background: #f5f7fa; }
+
+/* Alibaba Cloud White Background Button Standard */
+.btn-aliyun {
+  background: #ffffff !important;
+  border: 1px solid #d9d9d9 !important;
+  color: rgba(0, 0, 0, 0.88) !important;
+  font-weight: 400 !important;
+  transition: all 0.15s ease;
+}
+.btn-aliyun:hover:not(:disabled):not(.is-disabled) {
+  background: #ffffff !important;
+  border-color: #4096ff !important;
+  color: #1677ff !important;
+}
+
+.btn-aliyun-cta {
+  background: #ffffff !important;
+  border: 1px solid #1677ff !important;
+  color: #1677ff !important;
+  font-weight: 500 !important;
+  transition: all 0.15s ease;
+}
+.btn-aliyun-cta:hover:not(:disabled):not(.is-disabled) {
+  background: #1677ff !important;
+  border-color: #1677ff !important;
+  color: #ffffff !important;
+}
+
+.btn-aliyun:disabled,
+.btn-aliyun.is-disabled,
+.btn-aliyun-cta:disabled,
+.btn-aliyun-cta.is-disabled {
+  background: #f5f5f5 !important;
+  border-color: #d9d9d9 !important;
+  color: rgba(0, 0, 0, 0.25) !important;
+  cursor: not-allowed !important;
+}
+
+.btn-aliyun-link {
+  background: transparent !important;
+  border: none !important;
+  color: #1677ff !important;
+  padding: 0 4px !important;
+  font-weight: 400 !important;
+}
+.btn-aliyun-link:hover {
+  color: #4096ff !important;
+  text-decoration: underline !important;
+  background: transparent !important;
+}
+
+.btn-aliyun-danger-link {
+  background: transparent !important;
+  border: none !important;
+  color: #ff4d4f !important;
+  padding: 0 4px !important;
+  font-weight: 400 !important;
+}
+.btn-aliyun-danger-link:hover {
+  color: #ff7875 !important;
+  text-decoration: underline !important;
+  background: transparent !important;
+}
 </style>

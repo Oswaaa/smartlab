@@ -423,22 +423,23 @@ function asArray(value) {
 
 .tree-toolbar-action {
   display: inline-flex;
-  width: 30px;
-  height: 30px;
+  height: 28px;
   align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 1px solid #bfdbfe;
-  border-radius: 5px;
-  background: #eff6ff;
-  color: #1d4ed8;
+  gap: 4px;
+  padding: 0 8px;
+  border: 1px solid #d9d9d9;
+  border-radius: 4px;
+  background: #ffffff;
+  color: rgba(0, 0, 0, 0.88);
   cursor: pointer;
-  font-size: 16px;
+  font-size: 12px;
+  transition: all 0.15s ease;
 }
 
 .tree-toolbar-action:hover {
-  background: #dbeafe;
-  border-color: #60a5fa;
+  background: #ffffff;
+  border-color: #4096ff;
+  color: #1677ff;
 }
 
 .tree-heading {
@@ -636,63 +637,201 @@ function asArray(value) {
   padding-left: 18px;
   background: linear-gradient(90deg, rgba(238, 246, 255, 0), #eef6ff 22px, #eef6ff 100%);
   opacity: 0;
-  pointer-events: none;
-  transform: translateY(-50%);
-  transition: opacity 0.12s ease;
+  font-size: 13px;
+  text-align: center;
+  border: 1px dashed #cbd5e1;
+  background: #fff;
+}
+/* Resource-tree refinements */
+.tree-toolbar-action {
+  width: auto;
+  min-width: 88px;
+  gap: 6px;
+  padding: 0 10px;
 }
 
-.category-model-tree :deep(.el-tree-node.is-current > .el-tree-node__content) .node-actions {
-  background: linear-gradient(90deg, rgba(219, 234, 254, 0), #dbeafe 22px, #dbeafe 100%);
+.tree-heading span,
+.node-meta {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.3;
 }
 
-.tree-node:hover .node-actions,
-.category-model-tree :deep(.el-tree-node.is-current > .el-tree-node__content) .node-actions {
-  opacity: 1;
-  pointer-events: auto;
+.tree-search-row {
+  padding: 8px 10px;
+  background: #fff;
+  border-bottom: 1px solid #e5eaf1;
 }
 
-.node-action {
+.tree-body {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 0;
+}
+
+.category-model-tree {
+  --tree-row-height: 34px;
+  background: transparent;
+}
+
+.category-model-tree :deep(.el-tree-node__content) {
+  height: var(--tree-row-height);
+  min-height: var(--tree-row-height);
+  padding-right: 6px;
+  border-bottom: 1px solid #e5ebf3;
+  position: relative;
+}
+
+.category-model-tree :deep(.el-tree-node__content:has(.tree-inline-editor)) {
+  height: 40px;
+  min-height: 40px;
+}
+
+.category-model-tree :deep(.el-tree-node__expand-icon) {
+  display: none;
+}
+
+.category-model-tree :deep(.el-tree-node__content:hover) {
+  background: #eef6ff;
+}
+
+.category-model-tree :deep(.el-tree-node.is-current > .el-tree-node__content) {
+  background: #dbeafe;
+}
+
+.tree-node,
+.tree-inline-editor {
+  position: relative;
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  grid-template-columns: 18px 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 5px;
+  color: #334155;
+}
+
+.tree-node.model.active {
+  color: #0f3f91;
+  font-weight: 700;
+}
+
+.tree-inline-editor {
+  padding-right: 2px;
+}
+
+.inline-editor-input :deep(.el-input__wrapper) {
+  min-height: 28px;
+  box-shadow: 0 0 0 1px #93c5fd inset;
+}
+
+.inline-editor-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.inline-editor-action {
   display: inline-flex;
   width: 24px;
   height: 24px;
   align-items: center;
   justify-content: center;
   padding: 0;
-  border: 1px solid #bfdbfe;
+  border: 1px solid #cbd5e1;
   border-radius: 4px;
   background: #fff;
-  color: #1d4ed8;
+  color: #475569;
   cursor: pointer;
   font-size: 14px;
-  line-height: 1;
 }
 
-.node-action:hover {
-  background: #eff6ff;
-  border-color: #60a5fa;
-}
-
-.node-action.model-action {
+.inline-editor-action.confirm {
   color: #047857;
   border-color: #a7f3d0;
 }
 
-.node-action.danger {
-  color: #dc2626;
-  border-color: #fecaca;
-}
-
-.node-action:disabled {
-  color: #94a3b8;
-  border-color: #e2e8f0;
+.inline-editor-action:hover {
   background: #f8fafc;
-  cursor: not-allowed;
 }
 
-.tree-empty {
-  margin: 8px 10px;
-  padding: 12px;
+
+.tree-expander {
+  display: inline-flex;
+  width: 18px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: #64748b;
+  cursor: pointer;
+}
+
+.tree-expander .el-icon {
+  transition: transform 0.14s ease;
+}
+
+.tree-expander .el-icon.expanded {
+  transform: rotate(90deg);
+}
+
+.tree-expander-placeholder {
+  width: 18px;
+  height: 18px;
+}
+
+.node-icon {
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+}
+
+.category-icon {
+  color: #64748b;
+}
+
+.model-icon {
+  color: #2563eb;
+}
+
+.node-text {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.node-label {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tree-node.model .node-label {
+  font-weight: 600;
+}
+
+.node-actions {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding-left: 18px;
+  background: linear-gradient(90deg, rgba(238, 246, 255, 0), #eef6ff 22px, #eef6ff 100%);
+  opacity: 0;
   font-size: 13px;
   text-align: center;
   border: 1px dashed #cbd5e1;
@@ -742,6 +881,39 @@ function asArray(value) {
   height: 22px;
   border-radius: 4px;
   font-size: 13px;
+  border: 1px solid #d9d9d9;
+  background: #ffffff;
+  color: #595959;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.node-action:hover {
+  border-color: #1677ff;
+  color: #1677ff;
+  background: #ffffff;
+}
+.node-action.model-action {
+  color: #047857;
+  border-color: #a7f3d0;
+  background: #ffffff;
+}
+.node-action.model-action:hover {
+  border-color: #059669;
+  color: #059669;
+  background: #ffffff;
+}
+.node-action.danger {
+  color: #ff4d4f;
+  border-color: #ffccc7;
+  background: #ffffff;
+}
+.node-action.danger:hover {
+  border-color: #ff4d4f;
+  color: #ff4d4f;
+  background: #ffffff;
 }
 .node-label { font-size: 13px; }
 .node-meta { flex-shrink: 0; }

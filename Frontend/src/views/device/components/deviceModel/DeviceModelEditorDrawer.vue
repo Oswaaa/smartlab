@@ -42,7 +42,7 @@
             <section class="drawer-section">
               <div class="section-title">
                 <h3>设备属性</h3>
-                <el-button type="primary" plain size="small" :icon="Plus" @click="addAttribute">新增属性</el-button>
+                <el-button class="btn-aliyun-primary" size="small" :icon="Plus" @click="addAttribute">新增属性</el-button>
               </div>
               <div v-if="draft.attributes.length === 0" class="compact-empty block-empty">暂无设备属性，请点击右上角“新增属性”进行配置</div>
               <el-table v-else :data="draft.attributes" border size="small">
@@ -64,7 +64,7 @@
                   <template #default="{ row }"><el-input v-model="row.unit" size="small" placeholder="℃ / rpm / mL" /></template>
                 </el-table-column>
                 <el-table-column label="" width="54" fixed="right">
-                  <template #default="{ $index }"><el-button link type="danger" :icon="Delete" @click="removeAttribute($index)" /></template>
+                  <template #default="{ $index }"><el-button link class="btn-aliyun-danger-link" :icon="Delete" @click="removeAttribute($index)" /></template>
                 </el-table-column>
               </el-table>
             </section>
@@ -72,7 +72,7 @@
             <section class="drawer-section">
               <div class="section-title">
                 <h3>设备操作</h3>
-                <el-button type="primary" plain size="small" :icon="Plus" @click="addCapability">新增操作</el-button>
+                <el-button class="btn-aliyun-primary" size="small" :icon="Plus" @click="addCapability">新增操作</el-button>
               </div>
               <div v-if="draft.capabilities.length > 0" class="editor-card-list capability-editor-list">
                 <article v-for="(capability, capIndex) in draft.capabilities" :key="capability._key" class="editor-card capability-editor-card">
@@ -81,7 +81,7 @@
                       <span class="item-index">{{ capIndex + 1 }}</span>
                       <el-input v-model="capability.displayName" size="small" placeholder="操作名称，例如：加热" />
                     </div>
-                    <el-button link type="danger" :icon="Delete" @click="removeCapability(capability)">删除</el-button>
+                    <el-button link class="btn-aliyun-danger-link" :icon="Delete" @click="removeCapability(capability)">删除</el-button>
                   </div>
                   <div class="capability-execution-config">
                     <label class="capability-config-field">
@@ -103,7 +103,7 @@
                   </div>
                   <div class="nested-toolbar">
                     <span>操作参数</span>
-                    <el-button size="small" type="primary" plain circle :icon="Plus" title="添加参数" @click="addCapabilityParameter(capability)" />
+                    <el-button size="small" class="btn-aliyun-primary" circle :icon="Plus" title="添加参数" @click="addCapabilityParameter(capability)" />
                   </div>
                   <el-table v-if="capability.parameters.length > 0" :data="capability.parameters" border size="small" class="nested-table">
                     <el-table-column label="参数名称" min-width="220">
@@ -113,7 +113,7 @@
                       <template #default="{ row }"><data-type-select v-model="row.dataType" :options="attributeDataTypes" /></template>
                     </el-table-column>
                     <el-table-column label="" width="54" fixed="right">
-                      <template #default="{ $index }"><el-button link type="danger" :icon="Delete" @click="removeCapabilityParameter(capability, $index)" /></template>
+                      <template #default="{ $index }"><el-button link class="btn-aliyun-danger-link" :icon="Delete" @click="removeCapabilityParameter(capability, $index)" /></template>
                     </el-table-column>
                   </el-table>
                   <div v-if="capability.parameters.length === 0" class="compact-empty inline-empty">暂无参数</div>
@@ -125,7 +125,7 @@
             <section class="drawer-section">
               <div class="section-title">
                 <h3>端口配置</h3>
-                <el-button type="primary" plain size="small" :icon="Plus" @click="addPort">新增端口</el-button>
+                <el-button class="btn-aliyun-primary" size="small" :icon="Plus" @click="addPort">新增端口</el-button>
               </div>
               <div v-if="draft.ports.length === 0" class="compact-empty block-empty">暂无端口配置，请点击右上角“新增端口”进行配置</div>
               <el-table v-else :data="draft.ports" border size="small">
@@ -148,7 +148,7 @@
                   </template>
                 </el-table-column>
                 <el-table-column label="" width="54" fixed="right">
-                  <template #default="{ $index }"><el-button link type="danger" :icon="Delete" @click="removeRow(draft.ports, $index)" /></template>
+                  <template #default="{ $index }"><el-button link class="btn-aliyun-danger-link" :icon="Delete" @click="removeRow(draft.ports, $index)" /></template>
                 </el-table-column>
               </el-table>
             </section>
@@ -180,8 +180,8 @@
                         :value="adapterCategoryKey(tpl)"
                       />
                     </el-select>
-                    <el-button type="primary" plain :disabled="!selectedRegisteredAdapterName || !selectedRegisteredAdapterTemplate" @click="applyRegisteredAdapterContract">载入契约</el-button>
-                    <el-button plain :icon="Refresh" @click="fetchRegisteredAdapters">刷新</el-button>
+                    <el-button class="btn-aliyun-primary" :disabled="!selectedRegisteredAdapterName || !selectedRegisteredAdapterTemplate" @click="applyRegisteredAdapterContract">载入契约</el-button>
+                    <el-button class="btn-aliyun" :icon="Refresh" @click="fetchRegisteredAdapters">刷新</el-button>
                   </div>
                 </el-form-item>
               </el-form>
@@ -261,7 +261,7 @@
                   <h3>属性映射</h3>
                   <p class="section-note">将模型业务属性与 Adapter 遥测字段逐一对应。</p>
                 </div>
-                <div class="section-actions"><el-button type="primary" plain size="small" :icon="Plus" @click="addAttributeMapping">新增映射</el-button></div>
+                <div class="section-actions"><el-button class="btn-aliyun-primary" size="small" :icon="Plus" @click="addAttributeMapping">新增映射</el-button></div>
               </div>
               <div v-if="draft.adapterContract.telemetry.attributesMapping.length === 0" class="compact-empty block-empty">暂无属性映射，可使用上方按钮添加</div>
               <el-table v-else :data="draft.adapterContract.telemetry.attributesMapping" border size="small" class="editor-table">
@@ -281,7 +281,7 @@
                   </template>
                 </el-table-column>
                 <el-table-column label="操作" width="64" fixed="right" align="center">
-                  <template #default="{ $index }"><el-button link type="danger" :icon="Delete" title="删除映射" @click="removeRow(draft.adapterContract.telemetry.attributesMapping, $index)" /></template>
+                  <template #default="{ $index }"><el-button link class="btn-aliyun-danger-link" :icon="Delete" title="删除映射" @click="removeRow(draft.adapterContract.telemetry.attributesMapping, $index)" /></template>
                 </el-table-column>
               </el-table>
             </section>
@@ -292,7 +292,7 @@
                   <h3>操作映射</h3>
                   <p class="section-note">将模型操作及其参数映射到 Adapter 命令的系统可见参数。</p>
                 </div>
-                <div class="section-actions"><el-button type="primary" plain size="small" :icon="Plus" @click="addFunctionMapping">新增映射</el-button></div>
+                <div class="section-actions"><el-button class="btn-aliyun-primary" size="small" :icon="Plus" @click="addFunctionMapping">新增映射</el-button></div>
               </div>
               <div v-if="draft.functionMappings.length === 0" class="compact-empty block-empty">暂无操作映射，可使用上方按钮添加</div>
               <div v-else class="function-mapping-card-list">
@@ -303,7 +303,7 @@
                       <span class="mapping-direction">→</span>
                       <label><span>Adapter 命令</span><el-select v-model="row.adapterCommandName" size="small" filterable clearable placeholder="选择 Adapter 命令" @change="handleFunctionMappingCommandChange(row)"><el-option v-for="cmd in commandNameOptions" :key="cmd" :label="cmd" :value="cmd" /></el-select></label>
                     </div>
-                    <el-button link type="danger" :icon="Delete" @click="removeRow(draft.functionMappings, rowIndex)">删除</el-button>
+                    <el-button link class="btn-aliyun-danger-link" :icon="Delete" @click="removeRow(draft.functionMappings, rowIndex)">删除</el-button>
                   </div>
                   <div class="param-map-editor compact-param-editor">
                     <div v-for="(mapping, index) in row.parameterMapping" :key="mapping._key || index" class="param-map-row" :class="{ invalid: isParameterMappingInvalid(row, mapping), fixed: mapping.isFixedValue }">
@@ -311,10 +311,10 @@
                       <div class="param-map-field"><span class="param-map-label">Adapter 参数</span><el-select v-model="mapping.commandParamName" size="small" filterable placeholder="选择命令参数" @change="handleParameterCommandChange(row, mapping)"><el-option v-for="param in commandParameterOptionsDetailed(row.adapterCommandName)" :key="param.paramName" :label="param.paramName + ' · ' + param.dataType" :value="param.paramName" :disabled="isCommandParamMapped(row, param.paramName, mapping)" /></el-select></div>
                       <div class="param-map-mode"><span class="param-map-label">取值方式</span><el-switch v-model="mapping.isFixedValue" size="small" active-text="固定" inactive-text="映射" @change="handleParameterFixedChange(mapping)" /></div>
                       <div v-if="mapping.isFixedValue" class="param-map-field fixed-input-field"><span class="param-map-label">固定值</span><el-input v-model="mapping.fixedValue" size="small" :placeholder="fixedValuePlaceholder(row, mapping)" /></div>
-                      <el-button link type="danger" :icon="Delete" class="param-delete-btn" @click="removeRow(row.parameterMapping, index)" />
+                      <el-button link class="btn-aliyun-danger-link param-delete-btn" :icon="Delete" @click="removeRow(row.parameterMapping, index)" />
                       <span v-if="isParameterMappingInvalid(row, mapping)" class="map-warning">{{ parameterMappingWarning(row, mapping) }}</span>
                     </div>
-                    <div class="param-map-toolbar"><span v-if="row.parameterMapping.length === 0" class="no-mapping-placeholder">未配置参数映射</span><span v-else></span><el-button size="small" type="primary" plain :icon="Plus" class="add-mapping-btn" @click="addParameterMapping(row)">新增参数映射</el-button></div>
+                    <div class="param-map-toolbar"><span v-if="row.parameterMapping.length === 0" class="no-mapping-placeholder">未配置参数映射</span><span v-else></span><el-button size="small" class="btn-aliyun-primary add-mapping-btn" :icon="Plus" @click="addParameterMapping(row)">新增参数映射</el-button></div>
                   </div>
                 </article>
               </div>
@@ -418,7 +418,7 @@
                   <h3>功能状态</h3>
                   <p class="section-note">描述设备并行的业务维度（Regions），可自定义多个分区。</p>
                 </div>
-                <div class="section-actions"><el-button type="primary" plain size="small" :icon="Plus" @click="addOpStateRegion">新增分区</el-button></div>
+                <div class="section-actions"><el-button class="btn-aliyun-primary" size="small" :icon="Plus" @click="addOpStateRegion">新增分区</el-button></div>
               </div>
 
               <div v-for="(region, rIndex) in draft.opState.regions" :key="region._key || rIndex" class="region-block" style="border: 1px solid var(--el-border-color-light); border-radius: 4px; padding: 12px; margin-bottom: 12px;">
@@ -430,7 +430,7 @@
                       <el-option label="异常区域" value="EXCEPTION" />
                     </el-select>
                   </div>
-                  <el-button link type="danger" :icon="Delete" @click="removeOpStateRegion(rIndex)" />
+                  <el-button link class="btn-aliyun-danger-link" :icon="Delete" @click="removeOpStateRegion(rIndex)" />
                 </div>
                 <div v-if="region.regionType === 'OPERATIONAL'" class="state-summary-row">
                   <span class="state-summary-label">初始状态</span>
@@ -450,14 +450,14 @@
                       <span class="state-token-warning-slot"><el-tooltip v-if="stateUsageWarning(state.stateName, region.regionName)" :content="stateUsageWarning(state.stateName, region.regionName)" placement="top"><el-icon class="state-warning-icon"><Warning /></el-icon></el-tooltip></span>
                     </el-tag>
                     <el-input v-if="opStateInputVisibleMap[region._key]" :ref="el => setOpStateInputRef(el, region._key)" v-model="opStateInputValueMap[region._key]" size="small" class="state-name-input" @keyup.enter="handleOpStateInputConfirm(region)" @blur="handleOpStateInputConfirm(region)" />
-                    <el-button v-else size="small" plain class="compact-action-btn" @click="showOpStateInput(region)">新增状态</el-button>
+                    <el-button v-else size="small" class="btn-aliyun compact-action-btn" @click="showOpStateInput(region)">新增状态</el-button>
                   </div>
                 </div>
               </div>
             </section>
 
             <section class="drawer-section">
-              <div class="section-title"><div class="section-header-copy"><h3>功能状态转移规则</h3><p class="section-note">只配置 Adapter 功能事件（OP）触发的业务状态变化；Exception 分区由内置约束自动驱动，不在此配置。</p></div><div class="section-actions"><el-button type="primary" plain size="small" :icon="Plus" :disabled="adapterOpEventOptions.length === 0 || functionalOpRegions.length === 0" @click="addStateTransition">新增规则</el-button></div></div>
+              <div class="section-title"><div class="section-header-copy"><h3>功能状态转移规则</h3><p class="section-note">只配置 Adapter 功能事件（OP）触发的业务状态变化；Exception 分区由内置约束自动驱动，不在此配置。</p></div><div class="section-actions"><el-button class="btn-aliyun-primary" size="small" :icon="Plus" :disabled="adapterOpEventOptions.length === 0 || functionalOpRegions.length === 0" @click="addStateTransition">新增规则</el-button></div></div>
               <div v-if="stateMachineWarningMessages.length" class="state-warning-panel"><div v-for="message in stateMachineWarningMessages" :key="message" class="state-warning-item"><el-icon class="inline-warning-icon"><Warning /></el-icon><span>{{ message }}</span></div></div>
               <div v-if="operationTransitionRows.length === 0" class="compact-empty block-empty">暂无功能状态转移规则，可使用上方按钮添加</div>
               <el-table v-else :data="operationTransitionRows" border size="small" class="transition-table editor-table operation-transition-table">
@@ -465,8 +465,8 @@
                 <el-table-column label="所属分区" min-width="120"><template #default="{ row }"><el-select v-model="row.regionName" size="small"><el-option v-for="region in functionalOpRegions" :key="region._key" :label="region.regionName" :value="region.regionName" /></el-select></template></el-table-column>
                 <el-table-column label="状态流转" min-width="300"><template #default="{ row }"><div class="transition-state-pair"><state-select v-model="row.fromStateName" :options="getRegionStateOptionsByName(row.regionName)" /><el-icon><Right /></el-icon><state-select v-model="row.toStateName" :options="getRegionStateOptionsByName(row.regionName)" /></div></template></el-table-column>
                 <el-table-column label="触发条件" min-width="240"><template #default="{ row }"><div class="transition-trigger-editor"><span class="locked-action"><el-icon><Lock /></el-icon>{{ adapterInterfaceName() }}</span><state-select v-model="row.trigger.signalName" :options="adapterOpEventOptions" /></div></template></el-table-column>
-                <el-table-column label="转移动作" min-width="280"><template #default="{ row }"><div class="transition-action-list"><div v-for="(act, aIdx) in row.actions" :key="aIdx" class="transition-action-row"><span class="action-editor-label">发送</span><el-select v-model="act.payload.signalName" size="small" placeholder="选择信号"><el-option v-for="sig in getSignalsForInterface(act.payload.interfaceName)" :key="sig" :label="sig" :value="sig" /></el-select><el-button link type="info" :icon="Close" title="移除动作" @click="row.actions.splice(aIdx, 1)" /></div><el-button size="small" plain :icon="Plus" class="compact-action-btn" @click="ensureTransitionAction(row)">添加动作</el-button></div></template></el-table-column>
-                <el-table-column label="操作" width="64" fixed="right" align="center"><template #default="{ row }"><el-button link type="danger" :icon="Delete" title="删除规则" @click="removeObjectRow(draft.stateTransitions, row)" /></template></el-table-column>
+                <el-table-column label="转移动作" min-width="280"><template #default="{ row }"><div class="transition-action-list"><div v-for="(act, aIdx) in row.actions" :key="aIdx" class="transition-action-row"><span class="action-editor-label">发送</span><el-select v-model="act.payload.signalName" size="small" placeholder="选择信号"><el-option v-for="sig in getSignalsForInterface(act.payload.interfaceName)" :key="sig" :label="sig" :value="sig" /></el-select><el-button link class="btn-aliyun-danger-link" :icon="Close" title="移除动作" @click="row.actions.splice(aIdx, 1)" /></div><el-button size="small" class="btn-aliyun compact-action-btn" :icon="Plus" @click="ensureTransitionAction(row)">添加动作</el-button></div></template></el-table-column>
+                <el-table-column label="操作" width="64" fixed="right" align="center"><template #default="{ row }"><el-button link class="btn-aliyun-danger-link" :icon="Delete" title="删除规则" @click="removeObjectRow(draft.stateTransitions, row)" /></template></el-table-column>
               </el-table>
             </section>
 
@@ -482,7 +482,7 @@
                   <p class="section-note">设备自动监测的参数限制。配置此处的违规状态会被引擎识别为异常状态跳转规则并内部闭环触发，无需在功能状态转移中重复配置。</p>
                 </div>
                 <div class="section-actions">
-                  <el-button type="primary" plain size="small" :icon="Plus" @click="addIntrinsicConstraint">新增约束</el-button>
+                  <el-button class="btn-aliyun-primary" size="small" :icon="Plus" @click="addIntrinsicConstraint">新增约束</el-button>
                 </div>
               </div>
               <div v-if="draft.intrinsicConstraints.length === 0" class="compact-empty block-empty">暂无内置约束，可使用上方按钮添加</div>
@@ -504,7 +504,7 @@
                   <template #default="{ row }"><state-select v-model="row.violationStateName" :options="exceptionOpStateNameOptions" /></template>
                 </el-table-column>
                 <el-table-column label="操作" width="64" fixed="right" align="center">
-                  <template #default="{ $index }"><el-button link type="danger" :icon="Delete" @click="removeRow(draft.intrinsicConstraints, $index)" /></template>
+                  <template #default="{ $index }"><el-button link class="btn-aliyun-danger-link" :icon="Delete" @click="removeRow(draft.intrinsicConstraints, $index)" /></template>
                 </el-table-column>
               </el-table>
             </section>
@@ -515,7 +515,7 @@
             <section class="drawer-section">
               <div class="section-title">
                 <h3>BOM 清单</h3>
-                <el-button type="primary" plain size="small" :icon="Plus" @click="addBomComponent">新增组件</el-button>
+                <el-button class="btn-aliyun-primary" size="small" :icon="Plus" @click="addBomComponent">新增组件</el-button>
               </div>
               <div v-if="draft.componentsBom.length === 0" class="compact-empty block-empty">暂无组件，可使用上方按钮添加</div>
               <el-table v-else :data="draft.componentsBom" border size="small" class="editor-table bom-table">
@@ -543,7 +543,7 @@
                   <template #default="{ row }"><el-input v-model="row.description" size="small" placeholder="说明" /></template>
                 </el-table-column>
                 <el-table-column label="" width="54" fixed="right">
-                  <template #default="{ $index }"><el-button link type="danger" :icon="Delete" @click="removeRow(draft.componentsBom, $index)" /></template>
+                  <template #default="{ $index }"><el-button link class="btn-aliyun-danger-link" :icon="Delete" @click="removeRow(draft.componentsBom, $index)" /></template>
                 </el-table-column>
               </el-table>
             </section>
@@ -571,7 +571,7 @@
                     <div id="edit-file" class="anchor-section industrial-section">
             <h2 class="section-heading"><span class="section-index">09</span>模型文件</h2>
             <div style="margin-bottom: 12px; display: flex; justify-content: flex-end;">
-              <el-button type="primary" plain size="small" :loading="generatingPreview" @click="generatePreview">生成 / 刷新预览</el-button>
+              <el-button class="btn-aliyun-primary" size="small" :loading="generatingPreview" @click="generatePreview">生成 / 刷新预览</el-button>
             </div>
             <section class="model-json-grid">
               <div class="json-panel">
@@ -591,8 +591,8 @@
 
       <template #footer>
         <div class="drawer-footer">
-          <el-button @click="drawerVisible = false">取消</el-button>
-          <el-button type="primary" :loading="saving" @click="saveDraft">保存模型</el-button>
+          <el-button class="btn-aliyun" @click="drawerVisible = false">取消</el-button>
+          <el-button class="btn-aliyun-cta" :loading="saving" @click="saveDraft">保存模型</el-button>
         </div>
       </template>
     </el-drawer>

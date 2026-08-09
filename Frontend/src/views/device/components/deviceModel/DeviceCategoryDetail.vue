@@ -7,8 +7,7 @@
             <div class="detail-actions">
               <el-button
                 v-if="canCreateModel"
-                type="primary"
-                plain
+                class="btn-aliyun-cta"
                 :icon="Plus"
                 :disabled="!selectedCategoryCanCreateModel"
                 @click="openCreateDrawerWithCategory({ categoryId: category.id })"
@@ -71,7 +70,7 @@
               <el-table v-else :data="categoryModels" border size="small" class="industrial-table compact-category-table">
                 <el-table-column label="模型名称" min-width="180">
                   <template #default="{ row }">
-                    <el-button link type="primary" @click="selectModel(row.modelId)">{{ row.modelName || '-' }}</el-button>
+                    <el-button link class="btn-aliyun-link" @click="selectModel(row.modelId)">{{ row.modelName || '-' }}</el-button>
                   </template>
                 </el-table-column>
                 <el-table-column label="所属类别" min-width="150">

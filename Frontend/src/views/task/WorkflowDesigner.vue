@@ -3,41 +3,26 @@
     <div class="designer-grid">
       <aside class="resource-panel">
         <el-tabs v-model="tab" class="resource-tabs" stretch>
-          <el-tab-pane label="流程控制" name="control">
-            <div class="tab-scroll-body">
-              <el-alert v-if="contractError" class="contract-error" type="error" :closable="false" :title="contractError" />
-              <div class="control-tool-grid">
-                <button
-                  v-for="item in palette"
-                  :key="item.type"
-                  class="tool-btn"
-                  :disabled="!contractReady"
-                  :draggable="contractReady"
-                  @dragstart="drag($event,{kind:'function',type:item.type})"
-                  @click="addResource({kind:'function',type:item.type})"
-                >
-                  <span class="tool-icon" :class="item.type.toLowerCase()">{{ item.glyph }}</span>
-                  <span class="tool-name">{{ item.label }}</span>
-                </button>
-              </div>
-            </div>
-          </el-tab-pane>
-
-          <el-tab-pane label="设备资产" name="devices">
+          <el-tab-pane label="设备库" name="devices">
             <div class="resource-search">
               <el-input v-model="resourceKeyword" :prefix-icon="Search" clearable placeholder="搜索模型或实例..." />
             </div>
             <div class="tab-scroll-body">
               <el-tree v-if="filteredDeviceTree.length" :data="filteredDeviceTree" node-key="key" default-expand-all :expand-on-click-node="false" class="resource-tree">
                 <template #default="{ data }">
-                  <div class="tree-item" :class="{ draggable: (data.kind==='model' || data.kind==='instance') && contractReady }" :draggable="(data.kind==='model' || data.kind==='instance') && contractReady" @dragstart="drag($event,data)">
+                  <div
+                    class="tree-item"
+                    :class="{ draggable: (data.kind==='model' || data.kind==='instance') && contractReady }"
+                    :draggable="(data.kind==='model' || data.kind==='instance') && contractReady"
+                    @dragstart="drag($event,data)"
+                    @dblclick="addResource(data.kind==='model' ? {kind:'model',model:data.model} : {kind:'instance',instance:data.instance,model:data.model})"
+                    title="按住拖拽至画布，或双击添加"
+                  >
                     <span class="tree-label">
                       <span class="tree-dot" :class="data.kind"></span>
                       <span class="node-title">{{ data.label }}</span>
                       <span v-if="data.kind==='instance'" class="instance-badge">实例</span>
                     </span>
-                    <el-button v-if="data.kind==='model'" link class="btn-aliyun-link" title="接入设备模型" :disabled="!contractReady" @click.stop="addResource({kind:'model',model:data.model})">＋</el-button>
-                    <el-button v-else-if="data.kind==='instance'" link class="btn-aliyun-link" title="接入预绑定实例" :disabled="!contractReady" @click.stop="addResource({kind:'instance',instance:data.instance,model:data.model})">＋</el-button>
                   </div>
                 </template>
               </el-tree>
@@ -45,15 +30,28 @@
             </div>
           </el-tab-pane>
 
-          <el-tab-pane label="复合模块" name="workflows">
+          <el-tab-pane label="流程库" name="workflows">
             <div class="resource-search">
               <el-input v-model="resourceKeyword" :prefix-icon="Search" clearable placeholder="搜索子流程..." />
             </div>
             <div class="tab-scroll-body">
               <div v-if="filteredWorkflows.length" class="flow-list">
-                <button v-for="item in filteredWorkflows" :key="item.id" class="flow-item" :disabled="!contractReady" :draggable="contractReady" @dragstart="drag($event,{kind:'workflow',workflow:item})" @click="addResource({kind:'workflow',workflow:item})">
-                  <span class="flow-icon">↳</span><span><strong>{{ item.flowName }}</strong><small>{{ item.description || '作为子流程节点引用' }}</small></span><span class="add-mark">＋</span>
-                </button>
+                <div
+                  v-for="item in filteredWorkflows"
+                  :key="item.id"
+                  class="flow-item clickable-flow-item"
+                  :disabled="!contractReady"
+                  :draggable="contractReady"
+                  @dragstart="drag($event,{kind:'workflow',workflow:item})"
+                  @click="loadWorkflow(item.id)"
+                  title="点击查看流程定义；按住拖拽至画布接入为子流程节点"
+                >
+                  <span class="flow-icon">↳</span>
+                  <span>
+                    <strong>{{ item.flowName }}</strong>
+                    <small>V{{ item.version || 1 }} · 点击查看流程 / 拖拽为节点</small>
+                  </span>
+                </div>
               </div>
               <el-empty v-else description="没有可引用的流程" :image-size="48" />
             </div>
@@ -108,6 +106,26 @@
         </div>
 
         <div class="flow-stage" @dragover.prevent @drop="drop">
+          <!-- 画布右上角流程控制算子工具栏 -->
+          <div class="canvas-floating-controls">
+            <span class="control-bar-label">控制算子</span>
+            <div class="control-btn-group">
+              <button
+                v-for="item in palette"
+                :key="item.type"
+                class="flow-control-tool"
+                :title="`拖拽或点击添加【${item.label}】`"
+                :disabled="!contractReady"
+                :draggable="contractReady"
+                @dragstart="drag($event,{kind:'function',type:item.type})"
+                @click="addResource({kind:'function',type:item.type})"
+              >
+                <span class="tool-icon" :class="item.type.toLowerCase()">{{ item.glyph }}</span>
+                <span class="tool-name">{{ item.label }}</span>
+              </button>
+            </div>
+          </div>
+
           <VueFlow v-model:nodes="flowNodes" v-model:edges="flowEdges" class="workflow-flow" :min-zoom="0.35" :max-zoom="1.8" :default-edge-options="defaultEdgeOptions" :delete-key-code="null" :fit-view-on-init="true" @connect="connectNodes" @node-click="selectCanvasNode" @pane-click="clearSelection" @node-drag-stop="persistLayout" @edge-click="selectEdge" @edges-delete="removeDeletedEdges">
             <Background pattern-color="#cbd8e8" :gap="20" :size="1.2" />
             <Controls position="bottom-left" />
@@ -209,7 +227,7 @@ type FlowNode = Record<string, any>
 type FlowEdge = Record<string, any>
 type ValidationIssue = { code:string, severity:'error'|'warning', title:string, detail:string, nodeName?:string, path?:string }
 
-const tab = ref('control')
+const tab = ref('devices')
 const workflows = ref<any[]>([])
 const models = ref<any[]>([])
 const instances = ref<any[]>([])
@@ -1019,14 +1037,18 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
 .function-list.vertical .function-item:hover{border-color:#4096ff;background:#f0f7ff}
 .instance-badge{display:inline-block;padding:1px 5px;margin-left:4px;border:1px solid #d9d9d9;border-radius:2px;background:#f5f5f5;color:#595959;font-size:10px;font-weight:normal;line-height:14px}
 .tree-item .node-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
-.control-tool-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:6px 2px}
-.control-tool-grid .tool-btn{height:54px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border:1px solid #e1e7f0;border-radius:5px;background:#fff;color:#1e293b;cursor:grab;transition:all .16s ease}
-.control-tool-grid .tool-btn:hover{border-color:#2563eb;background:#f0f7ff;box-shadow:0 2px 8px rgba(37,99,235,.12);transform:translateY(-1px)}
-.control-tool-grid .tool-btn:disabled{cursor:not-allowed;opacity:.5}
-.control-tool-grid .tool-icon{width:22px;height:22px;display:grid;place-items:center;border-radius:4px;background:#eef4fb;color:#3978bd;font-size:10px;font-weight:800}
-.control-tool-grid .tool-icon.start{background:#eaf8f0;color:#218654}
-.control-tool-grid .tool-icon.end{background:#f1f3f6;color:#536073}
-.control-tool-grid .tool-icon.branch{background:#fff5df;color:#ad7213}
-.control-tool-grid .tool-icon.aggregate{background:#f2edff;color:#7251b6}
-.control-tool-grid .tool-name{font-size:11px;font-weight:600}
+.canvas-floating-controls{position:absolute;top:10px;right:16px;z-index:9;display:flex;align-items:center;gap:8px;padding:4px 8px;border:1px solid rgba(217,222,230,.9);border-radius:6px;background:rgba(255,255,255,.94);backdrop-filter:blur(8px);box-shadow:0 2px 10px rgba(24,34,48,.06)}
+.control-bar-label{font-size:10px;font-weight:700;color:#64748b;letter-spacing:.02em}
+.control-btn-group{display:flex;align-items:center;gap:5px}
+.flow-control-tool{height:28px;padding:0 8px;display:flex;align-items:center;gap:5px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;color:#1e293b;cursor:grab;transition:all .15s ease}
+.flow-control-tool:hover{border-color:#2563eb;background:#f0f7ff;transform:translateY(-1px);box-shadow:0 2px 6px rgba(37,99,235,.1)}
+.flow-control-tool:disabled{cursor:not-allowed;opacity:.5}
+.flow-control-tool .tool-icon{width:18px;height:18px;display:grid;place-items:center;border-radius:3px;background:#eef4fb;color:#3978bd;font-size:9px;font-weight:800}
+.flow-control-tool .tool-icon.start{background:#eaf8f0;color:#218654}
+.flow-control-tool .tool-icon.end{background:#f1f3f6;color:#536073}
+.flow-control-tool .tool-icon.branch{background:#fff5df;color:#ad7213}
+.flow-control-tool .tool-icon.aggregate{background:#f2edff;color:#7251b6}
+.flow-control-tool .tool-name{font-size:11px;font-weight:600}
+.clickable-flow-item{cursor:pointer;transition:all .15s ease}
+.clickable-flow-item:hover{border-color:#2563eb;background:#f0f7ff}
 </style>

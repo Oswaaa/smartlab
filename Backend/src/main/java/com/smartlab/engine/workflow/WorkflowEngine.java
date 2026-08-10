@@ -173,16 +173,44 @@ public class WorkflowEngine {
             throw new IllegalArgumentException("节点输入接口不存在或不是IN: " + inputInterfaceName);
         }
         ObjectNode variables = actionVariables(task, step, inputInterface, node);
-        return executeActions(task, step, node, collectMatchedActions(node, inputInterface, variables), variables);
+        return executeActions(task, step, node, collectMatchedActions(step, node, inputInterface, variables), variables);
     }
 
-    List<JsonNode> collectMatchedActions(FlowNode node, JsonNode inputInterface, ObjectNode variables) {
+    List<JsonNode> collectMatchedActions(TaskStep step, FlowNode node, JsonNode inputInterface, ObjectNode variables) {
         java.util.LinkedHashMap<String, JsonNode> matched = new java.util.LinkedHashMap<>();
+        JsonNode variableSpace = step.getVariableSpace();
+        ObjectNode triggerStates = (variableSpace != null && variableSpace.has("_triggerStates") && variableSpace.path("_triggerStates").isObject())
+                ? (ObjectNode) variableSpace.path("_triggerStates").deepCopy()
+                : JsonNodeSupport.objectNode();
+
+        boolean stateChanged = false;
+        int triggerIndex = 0;
         for (JsonNode trigger : iterable(inputInterface.path("bindingTriggers"))) {
-            if (!conditionEvaluator.evaluate(trigger.path("condition"), variables)) continue;
-            String actionName = trigger.path("action").asText("");
-            matched.putIfAbsent(actionName, actionByName(node, actionName));
+            String triggerKey = inputInterface.path("name").asText("") + "::" + triggerIndex;
+            boolean lastState = triggerStates.path(triggerKey).asBoolean(false);
+            boolean currentState = conditionEvaluator.evaluate(trigger.path("condition"), variables);
+
+            if (currentState && !lastState) {
+                String actionName = trigger.path("action").asText("");
+                JsonNode action = actionByName(node, actionName);
+                if (action != null) {
+                    matched.putIfAbsent(actionName, action);
+                }
+                triggerStates.put(triggerKey, true);
+                stateChanged = true;
+            } else if (!currentState && lastState) {
+                triggerStates.put(triggerKey, false);
+                stateChanged = true;
+            }
+            triggerIndex++;
         }
+
+        if (stateChanged) {
+            ObjectNode updateSpace = JsonNodeSupport.objectNode();
+            updateSpace.set("_triggerStates", triggerStates);
+            runtime.mergeVariableSpace(step, updateSpace);
+        }
+
         return List.copyOf(matched.values());
     }
 

@@ -15,7 +15,6 @@ import com.smartlab.management.entity.workflow.FlowNode;
 import com.smartlab.management.entity.workflow.Task;
 import com.smartlab.management.entity.workflow.TaskStep;
 import com.smartlab.management.service.db.workflow.FlowNodeService;
-import com.smartlab.management.service.db.workflow.TaskService;
 import com.smartlab.management.service.db.workflow.WorkflowRuntimeService;
 import com.smartlab.management.service.db.workflow.WorkflowService;
 import org.junit.jupiter.api.Test;
@@ -50,7 +49,7 @@ class WorkflowEngineExecutionTest {
                 executor("EMIT", WorkflowActionResult.emitWorkflowSignal("workflow-out", "ACTIVE"))));
         WorkflowEngine lifecycleEngine = new WorkflowEngine(runtime, workflows, flowNodes,
                 new WorkflowConditionEvaluator(), new ConstraintExpressionEvaluator(), lifecycleRegistry,
-                operations, mock(TaskService.class));
+                operations);
         when(runtime.pollableSteps(task.getId())).thenReturn(List.of(step));
         when(runtime.task(task.getId())).thenReturn(task);
         when(flowNodes.getById(step.getFlowNodeId())).thenReturn(node);
@@ -131,7 +130,7 @@ class WorkflowEngineExecutionTest {
             executor("EMIT", WorkflowActionResult.emitWorkflowSignal("Interface_workflow_out", "ACTIVE"))));
     private final WorkflowEngine engine = new WorkflowEngine(runtime, workflows,
             flowNodes, new WorkflowConditionEvaluator(), new ConstraintExpressionEvaluator(),
-            registry, operations, mock(TaskService.class));
+            registry, operations);
 
     @Test
     void pendingStepIsPolledWithoutEngineAutoStart() {
@@ -259,11 +258,11 @@ class WorkflowEngineExecutionTest {
                 eq("端口temperatureOut绑定变量measured尚无值"));
     }
 
-    private WorkflowActionExecutor executor(String actionType, WorkflowActionResult result) {
+    private WorkflowActionExecutor executor(String actionName, WorkflowActionResult result) {
         return new WorkflowActionExecutor() {
             @Override
             public String actionName() {
-                return actionType;
+                return actionName;
             }
 
             @Override
@@ -407,8 +406,7 @@ class WorkflowEngineExecutionTest {
 
     private WorkflowEngine engine(WorkflowService workflows) {
         return new WorkflowEngine(runtime, workflows, mock(FlowNodeService.class),
-                new WorkflowConditionEvaluator(), new ConstraintExpressionEvaluator(), registry, operations,
-                mock(TaskService.class));
+                new WorkflowConditionEvaluator(), new ConstraintExpressionEvaluator(), registry, operations);
     }
 
     private FlowNode nodeWithPort(long flowModelId, long nodeRef, String variableName, String dataType,

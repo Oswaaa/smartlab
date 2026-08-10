@@ -54,11 +54,11 @@ public class SchemaMetadataService {
         return Arrays.stream(ConstraintOperator.values()).map(ConstraintOperator::value).toList();
     }
 
-    public String workflowActionPayloadDefinition(String actionType) {
-        return switch (actionType) {
+    public String workflowActionPayloadDefinition(String actionName) {
+        return switch (actionName) {
             case "EMIT" -> "targetInterfaceName,signalName";
-            case "UPDATE" -> "internalVariableName,valueExpression";
-            default -> throw new IllegalArgumentException("工作流动作类型不存在: " + actionType);
+            case "UPDATE" -> "updateType,targetName,value|valueExpression";
+            default -> throw new IllegalArgumentException("工作流动作类型不存在: " + actionName);
         };
     }
 

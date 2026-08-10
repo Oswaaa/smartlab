@@ -14,7 +14,6 @@ import com.smartlab.management.entity.workflow.FlowNode;
 import com.smartlab.management.entity.workflow.Task;
 import com.smartlab.management.entity.workflow.TaskStep;
 import com.smartlab.management.service.db.workflow.FlowNodeService;
-import com.smartlab.management.service.db.workflow.TaskService;
 import com.smartlab.management.service.db.workflow.WorkflowRuntimeService;
 import com.smartlab.management.service.db.workflow.WorkflowService;
 import java.time.Instant;
@@ -43,12 +42,11 @@ public class WorkflowEngine {
     private final ConstraintExpressionEvaluator expressionEvaluator;
     private final WorkflowActionRegistry actionRegistry;
     private final WorkflowExecutionOperations executionOperations;
-    private final TaskService taskService;
 
     public WorkflowEngine(WorkflowRuntimeService runtime, WorkflowService workflowService,
             FlowNodeService flowNodeService, WorkflowConditionEvaluator conditionEvaluator,
             ConstraintExpressionEvaluator expressionEvaluator, WorkflowActionRegistry actionRegistry,
-            WorkflowExecutionOperations executionOperations, TaskService taskService) {
+            WorkflowExecutionOperations executionOperations) {
         this.runtime = runtime;
         this.workflowService = workflowService;
         this.flowNodeService = flowNodeService;
@@ -56,7 +54,6 @@ public class WorkflowEngine {
         this.expressionEvaluator = expressionEvaluator;
         this.actionRegistry = actionRegistry;
         this.executionOperations = executionOperations;
-        this.taskService = taskService;
     }
 
     @Scheduled(fixedDelay = 1000)
@@ -180,64 +177,6 @@ public class WorkflowEngine {
         route(task, step, node, result.emittedInterfaceName(), result.emittedSignalName());
     }
 
-    /** START没有上游接口输入，任务启动就是它的固定系统输入，因此只在这里直接执行声明的初始化动作 */
-    private ActionRunResult executeStartActions(Task task, TaskStep step, FlowNode node) {
-        ObjectNode variables = actionVariables(task, step, null, node);
-        return executeActions(task, step, node, node.getActions(), variables);
-    }
-
-    private ActionRunResult executeBindingTriggers(Task task, TaskStep step, FlowNode node, String inputInterfaceName) {
-        if (inputInterfaceName == null || inputInterfaceName.isBlank()) {
-            if ("END".equals(functionType(node)))
-                return ActionRunResult.continueWithoutEmission();
-            throw new IllegalStateException("节点缺少实际进入的输入接口");
-        }
-        JsonNode inputInterface = interfaceByName(node, inputInterfaceName);
-        if (inputInterface == null || !"IN".equals(inputInterface.path("direction").asText())) {
-            throw new IllegalArgumentException("节点输入接口不存在或不是IN: " + inputInterfaceName);
-        }
-        ObjectNode variables = actionVariables(task, step, inputInterface, node);
-        return executeActions(task, step, node, collectMatchedActions(step, node, inputInterface, variables), variables);
-    }
-
-    List<JsonNode> collectMatchedActions(TaskStep step, FlowNode node, JsonNode inputInterface, ObjectNode variables) {
-        java.util.LinkedHashMap<String, JsonNode> matched = new java.util.LinkedHashMap<>();
-        JsonNode variableSpace = step.getVariableSpace();
-        ObjectNode triggerStates = (variableSpace != null && variableSpace.has("_triggerStates") && variableSpace.path("_triggerStates").isObject())
-                ? (ObjectNode) variableSpace.path("_triggerStates").deepCopy()
-                : JsonNodeSupport.objectNode();
-
-        boolean stateChanged = false;
-        int triggerIndex = 0;
-        for (JsonNode trigger : iterable(inputInterface.path("bindingTriggers"))) {
-            String triggerKey = inputInterface.path("name").asText("") + "::" + triggerIndex;
-            boolean lastState = triggerStates.path(triggerKey).asBoolean(false);
-            boolean currentState = conditionEvaluator.evaluate(trigger.path("condition"), variables);
-
-            if (currentState && !lastState) {
-                String actionName = trigger.path("action").asText("");
-                JsonNode action = actionByName(node, actionName);
-                if (action != null) {
-                    matched.putIfAbsent(actionName, action);
-                }
-                triggerStates.put(triggerKey, true);
-                stateChanged = true;
-            } else if (!currentState && lastState) {
-                triggerStates.put(triggerKey, false);
-                stateChanged = true;
-            }
-            triggerIndex++;
-        }
-
-        if (stateChanged) {
-            ObjectNode updateSpace = JsonNodeSupport.objectNode();
-            updateSpace.set("_triggerStates", triggerStates);
-            runtime.mergeVariableSpace(step, updateSpace);
-        }
-
-        return List.copyOf(matched.values());
-    }
-
     private ObjectNode actionVariables(Task task, TaskStep step, JsonNode inputInterface, FlowNode node) {
         ObjectNode variables = (ObjectNode) mergeVariables(task, step);
         ObjectNode mapped = executionOperations.resolveMappedVariables(task, step, node);
@@ -306,15 +245,6 @@ public class WorkflowEngine {
         return result;
     }
 
-    private void settleEmittedWorkflowSignal(Task task, TaskStep step, FlowNode node, ActionRunResult result) {
-        if (!result.hasEmission())
-            return;
-        ObjectNode output = JsonNodeSupport.objectNode();
-        output.put("signalName", result.signalName());
-        output.set("payload", result.variables().deepCopy());
-        completeAndRoute(task, step, node, result.interfaceName(), result.signalName(), output);
-    }
-
     private void mergeObject(ObjectNode target, JsonNode updates) {
         updates.fields().forEachRemaining(entry -> {
             JsonNode existing = target.get(entry.getKey());
@@ -323,34 +253,6 @@ public class WorkflowEngine {
             else
                 target.set(entry.getKey(), entry.getValue().deepCopy());
         });
-    }
-
-    private void executeSubFlow(Task task, TaskStep step, FlowNode node) {
-        boolean hasChildren = runtime.steps(task.getId()).stream()
-                .anyMatch(child -> step.getId().equals(child.getParentStepId()));
-        if (!hasChildren)
-            startFlow(task, node.getSubFlowModelId(), step.getId(), step.getStepDepth() + 1);
-    }
-
-    private void finishFlow(Task task, TaskStep endStep, FlowNode endNode) {
-        runtime.completeStep(endStep, JsonNodeSupport.objectNode());
-        if (endStep.getParentStepId() == null) {
-            runtime.completeTask(task);
-            return;
-        }
-        TaskStep parentStep = runtime.step(endStep.getParentStepId());
-        if (parentStep == null)
-            throw new IllegalStateException("子流程父步骤不存在");
-        FlowNode parentNode = flowNodeService.getById(parentStep.getFlowNodeId());
-        runtime.completeStep(parentStep, JsonNodeSupport.objectNode().put("subFlowModelId", endNode.getFlowModelId()));
-        String output = workflowOutputInterface(parentNode);
-        completeAndRoute(task, parentStep, parentNode, output, "ACTIVE", parentStep.getInterfaceOutSnapshot());
-    }
-
-    private void completeAndRoute(Task task, TaskStep step, FlowNode node, String sourceInterface, String signalName,
-            JsonNode output) {
-        runtime.completeStep(step, output);
-        route(task, step, node, sourceInterface, signalName);
     }
 
     private void route(Task task, TaskStep completed, FlowNode node, String sourceInterface, String signalName) {
@@ -548,21 +450,6 @@ public class WorkflowEngine {
         return selected;
     }
 
-    private String workflowOutputInterface(FlowNode node) {
-        String selected = null;
-        for (JsonNode item : iterable(node.getInterfaces())) {
-            if (!"OUT".equals(item.path("direction").asText())
-                    || !"WORKFLOW".equals(item.path("interfaceType").asText()))
-                continue;
-            if (selected != null)
-                throw new IllegalArgumentException("节点存在多个WORKFLOW输出接口，必须由EMIT动作明确选择: " + node.getNodeIdRef());
-            selected = item.path("name").asText();
-        }
-        if (selected == null || selected.isBlank())
-            throw new IllegalArgumentException("节点缺少WORKFLOW输出接口: " + node.getNodeIdRef());
-        return selected;
-    }
-
     private boolean aggregateReady(Task task, TaskStep aggregateStep, FlowNode node) {
         var compiled = workflowService.compileDefinition(node.getFlowModelId());
         Set<Long> predecessors = new HashSet<>();
@@ -582,14 +469,6 @@ public class WorkflowEngine {
         return true;
     }
 
-    private JsonNode actionByName(FlowNode node, String actionName) {
-        for (JsonNode action : iterable(node.getActions())) {
-            if (actionName.equals(action.path("actionName").asText()))
-                return action;
-        }
-        throw new IllegalArgumentException("接口触发器引用不存在动作: " + actionName);
-    }
-
     private JsonNode interfaceByName(FlowNode node, String name) {
         for (JsonNode item : iterable(node.getInterfaces()))
             if (name.equals(item.path("name").asText()))
@@ -604,10 +483,6 @@ public class WorkflowEngine {
             if (signalName.equals(item.asText()))
                 return true;
         return false;
-    }
-
-    private boolean isStartNode(FlowNode node) {
-        return "FUNC_NODE".equals(node.getNodeType()) && "START".equals(functionType(node));
     }
 
     private String functionType(FlowNode node) {

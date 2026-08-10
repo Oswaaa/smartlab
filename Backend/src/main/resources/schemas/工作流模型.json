@@ -206,7 +206,14 @@
                       },
                       "required": [ "object", "operator", "threshold" ]
                     },
-                    "action": { "type": "string", "description": "引用所属节点actions[].actionName，后端编译阶段校验引用存在" }
+                    "action": {
+                      "description": "触发器内联动作对象，格式遵循WorkflowNodeAction；其actionName必须包含在所属节点actions[]中，由后端编译阶段校验",
+                      "allOf": [
+                        {
+                          "$ref": "#/definitions/WorkflowNodeAction"
+                        }
+                      ]
+                    }
                   },
                   "required": [ "condition", "action" ]
                 }
@@ -234,8 +241,9 @@
         },
         "actions": {
           "type": "array",
-          "description": "此节点支持的动作定义列表，bindingTriggers中的actionName须引用其中某项actionName",
-          "items": { "$ref": "#/definitions/WorkflowNodeAction" }
+          "uniqueItems": true,
+          "description": "当前节点允许使用的动作名集合；接口触发器内联动作的actionName必须包含在该集合中",
+          "items": { "$ref": "#/definitions/WorkflowNodeAction/properties/actionName" }
         }
       },
       "required": [ "name", "interfaces", "ports", "actions" ]
@@ -279,7 +287,7 @@
               "enum": [ "START", "END", "BRANCH", "AGGREGATE" ],
               "description": "功能节点类型：START起始节点、END终止节点、BRANCH分支节点、AGGREGATE聚合节点"
             },
-            "expression": { "type": "string", "description": "自定义表达式（可选）；任意functionType均可使用，由后端表达式求值器解析，可引用节点internalVariables中的变量名" }
+            "expression": { "type": "string", "description": "自定义表达式（可选）；functionType的BRANCH、AGGREGATE可使用，由后端表达式求值器解析，可引用节点internalVariables中的变量名" }
           },
           "required": [ "nodeType", "functionType" ]
         }
@@ -302,19 +310,26 @@
     },
     "WorkflowNodeAction": {
       "type": "object",
-      "description": "工作流节点动作定义actionType为EMIT时使用targetInterfaceName和signalName；actionType为UPDATE时使用internalVariableName和valueExpression",
+      "description": "工作流节点内联动作定义；actionName为EMIT时payload使用targetInterfaceName和signalName，actionName为UPDATE时payload使用updateType、targetName，并按更新类型选择value或valueExpression",
       "properties": {
         "actionName": {
           "type": "string",
           "enum": [ "EMIT", "UPDATE" ],
-          "description": "动作标识名，EMIT：从目标输出接口发送信号；UPDATE：更新节点内部变量"
+          "description": "动作标识名，EMIT：通过输出接口向外发送信号；UPDATE：更新节点属性"
         },
-        "targetInterfaceName": { "type": "string", "description": "EMIT目标OUT接口名，须为节点interfaces[].name" },
-        "signalName": { "type": "string", "description": "EMIT发送的信号名，须包含在目标接口allowedSignals中" },
-        "internalVariableName": { "type": "string", "description": "UPDATE目标内部变量名，须为节点internalVariables[].name" },
-        "valueExpression": { "type": "string", "description": "UPDATE写入值表达式，可引用当前输入信号payload和节点internalVariables" }
+        "payload": {
+          "type": "object",
+          "properties": {
+            "targetInterfaceName": { "type": "string", "description": "EMIT可选，目标OUT接口名，须为节点interfaces[].name" },
+            "signalName": { "type": "string", "description": "EMIT可选，发送的信号名，须包含在目标接口allowedSignals中" },
+            "updateType": { "type":"string", "enum": [ "INTERNAL_VARIABLE", "NODE_LIFECYCLE" ], "description": "UPDATE可选，更新的类型，INTERNAL_VARIABLE或者NODE_LIFECYCLE" },
+            "targetName": { "type": "string", "description": "UPDATE可选，更新目标名，如果updateType为INTERNAL_VARIABLE则是内部变量名internalVariables[].name，如果updateType为NODE_LIFECYCLE则是更新后的节点生命周期状态（转变规则需要符合transitions）" },
+            "valueExpression": { "type": "string", "description": "UPDATE可选，updateType为INTERNAL_VARIABLE的写入值表达式，可引用当前输入信号payload和节点internalVariables" },
+            "value": { "description": "UPDATE可选；updateType为INTERNAL_VARIABLE且直接写入常量时使用。允许任意JSON值，后端根据targetName对应internalVariables[].dataType校验类型；不得与valueExpression同时存在" }
+          }
+        }
       },
-      "required": [ "actionName", "actionType" ]
+      "required": [ "actionName", "payload" ]
     }
   }
 }

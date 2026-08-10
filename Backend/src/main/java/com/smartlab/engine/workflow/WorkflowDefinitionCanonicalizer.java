@@ -10,7 +10,10 @@ import com.smartlab.management.dto.workflow.WorkflowSaveRequest;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /** Replaces system-owned workflow definitions with the backend contract. */
@@ -49,6 +52,85 @@ public class WorkflowDefinitionCanonicalizer {
         node.set("lifecycle", canonicalLifecycle);
         mergeInterfaces(node, template.path("interfaces"), path, issues);
         mergeActions(node, template.path("actions"), path, issues);
+        normalizeActionModel(node);
+    }
+
+    ObjectNode canonicalizeTemplate(ObjectNode template) {
+        ObjectNode normalized = template.deepCopy();
+        normalizeActionModel(normalized);
+        return normalized;
+    }
+
+    private void normalizeActionModel(ObjectNode node) {
+        Map<String, ObjectNode> legacyActions = new LinkedHashMap<>();
+        LinkedHashSet<String> allowedActions = new LinkedHashSet<>();
+        for (JsonNode item : items(node.path("actions"))) {
+            if (item.isTextual()) {
+                if (!item.asText().isBlank()) allowedActions.add(item.asText());
+                continue;
+            }
+            if (!item.isObject()) continue;
+            String legacyName = text(item, "actionName");
+            ObjectNode canonical = canonicalAction(item);
+            if (!legacyName.isBlank()) legacyActions.put(legacyName, canonical);
+            String actionName = text(canonical, "actionName");
+            if (!actionName.isBlank()) allowedActions.add(actionName);
+        }
+        for (JsonNode interfaceNode : items(node.path("interfaces"))) {
+            if (!(interfaceNode instanceof ObjectNode objectInterface)) continue;
+            for (JsonNode triggerNode : items(objectInterface.path("bindingTriggers"))) {
+                if (!(triggerNode instanceof ObjectNode trigger)) continue;
+                JsonNode rawAction = trigger.get("action");
+                ObjectNode canonical;
+                if (rawAction != null && rawAction.isTextual()) {
+                    canonical = legacyActions.get(rawAction.asText());
+                    if (canonical == null) {
+                        canonical = JsonNodeSupport.objectNode();
+                        canonical.put("actionName", rawAction.asText());
+                        canonical.putObject("payload");
+                    } else {
+                        canonical = canonical.deepCopy();
+                    }
+                } else {
+                    canonical = canonicalAction(rawAction);
+                }
+                trigger.set("action", canonical);
+            }
+        }
+        ArrayNode actions = JsonNodeSupport.arrayNode();
+        allowedActions.forEach(actions::add);
+        node.set("actions", actions);
+    }
+
+    private ObjectNode canonicalAction(JsonNode source) {
+        ObjectNode action = JsonNodeSupport.objectNode();
+        if (source == null || !source.isObject()) return action;
+        String actionName = text(source, "actionType");
+        if (actionName.isBlank()) actionName = text(source, "actionName");
+        action.put("actionName", actionName);
+        if (source.path("payload").isObject()) {
+            action.set("payload", source.path("payload").deepCopy());
+            return action;
+        }
+        ObjectNode payload = action.putObject("payload");
+        if ("EMIT".equals(actionName)) {
+            copyField(source, payload, "targetInterfaceName");
+            copyField(source, payload, "signalName");
+        } else if ("UPDATE".equals(actionName)) {
+            String updateType = text(source, "updateType");
+            if (updateType.isBlank()) updateType = "INTERNAL_VARIABLE";
+            payload.put("updateType", updateType);
+            String targetName = text(source, "targetName");
+            if (targetName.isBlank()) targetName = text(source, "internalVariableName");
+            if (!targetName.isBlank()) payload.put("targetName", targetName);
+            copyField(source, payload, "valueExpression");
+            copyField(source, payload, "value");
+        }
+        return action;
+    }
+
+    private void copyField(JsonNode source, ObjectNode target, String field) {
+        if (source.has(field)) target.set(field, source.path(field).deepCopy());
     }
 
     private void mergeInterfaces(ObjectNode node, JsonNode expectedItems, String path, List<WorkflowIssue> issues) {

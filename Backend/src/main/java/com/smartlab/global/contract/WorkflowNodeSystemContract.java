@@ -65,14 +65,8 @@ public final class WorkflowNodeSystemContract {
 
     private static ObjectNode branchTemplate() {
         ObjectNode template = baseTemplate();
-        ArrayNode triggers = JsonNodeSupport.arrayNode();
-        triggers.add(trigger("branch.true", "expression", "=", true, "emitTrue"));
-        triggers.add(trigger("branch.false", "expression", "=", false, "emitFalse"));
-        template.withArray("interfaces").add(workflowInterface("branch.workflowIn", "Interface_workflow_in", "IN", triggers));
-        template.withArray("interfaces").add(workflowInterface("branch.trueOut", "Interface_true_out", "OUT", List.of()));
-        template.withArray("interfaces").add(workflowInterface("branch.falseOut", "Interface_false_out", "OUT", List.of()));
-        template.withArray("actions").add(emitAction("branch.emitTrue", "emitTrue", "Interface_true_out", WorkflowNodeSignal.ACTIVE.name()));
-        template.withArray("actions").add(emitAction("branch.emitFalse", "emitFalse", "Interface_false_out", WorkflowNodeSignal.ACTIVE.name()));
+        template.withArray("interfaces").add(workflowInterface(
+                "branch.workflowIn", "Interface_workflow_in", "IN", List.of()));
         return template;
     }
 

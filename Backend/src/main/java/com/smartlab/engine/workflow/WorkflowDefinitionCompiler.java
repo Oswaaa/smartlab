@@ -122,7 +122,7 @@ public class WorkflowDefinitionCompiler {
         Map<String, JsonNode> variables = indexNamedItems(variablesNode, "name", name, "internalVariables");
         Map<String, JsonNode> interfaces = indexNamedItems(interfacesNode, "name", name, "interfaces");
         Map<String, JsonNode> ports = indexNamedItems(portsNode, "name", name, "ports");
-        Map<String, JsonNode> actions = indexNamedItems(actionsNode, "actionName", name, "actions");
+        Set<String> actions = indexActionNames(actionsNode, name);
 
         int position = 0;
         for (JsonNode variable : variablesNode) {
@@ -189,44 +189,21 @@ public class WorkflowDefinitionCompiler {
         }
         ObjectNode expected = WorkflowNodeSystemContract.template(index.nodeType(), functionType);
         validateTemplateLifecycle(node.path("lifecycle"), expected.path("lifecycle"), name);
-        Set<String> systemActionNames = namedItems(expected.path("actions"), "actionName").keySet();
-        validateSystemInterfaces(index, node.path("interfaces"), expected.path("interfaces"), systemActionNames);
+        expected = canonicalizer.canonicalizeTemplate(expected);
+        validateSystemInterfaces(index, node.path("interfaces"), expected.path("interfaces"));
         validateSystemActions(index, node.path("actions"), expected.path("actions"));
     }
     private void validateActions(NodeIndex index, JsonNode node, String path) {
-        int position = 0;
-        for (JsonNode action : node.path("actions")) {
-            String actionPath = "actions[" + position + "]";
-            String type = requiredText(action, "actionType", nodePath(index.nodeName(), actionPath + ".actionType") + ": 不能为空");
-            if (!ACTION_TYPES.contains(type)) throw nodeError(index.nodeName(), actionPath + ".actionType", "只允许EMIT或UPDATE: " + type);
-            if (WorkflowNodeActionType.EMIT.name().equals(type)) {
-                String targetName = requiredText(action, "targetInterfaceName", nodePath(index.nodeName(), actionPath + ".targetInterfaceName") + ": 不能为空");
-                JsonNode target = index.interfaces().get(targetName);
-                if (target == null) throw nodeError(index.nodeName(), actionPath + ".targetInterfaceName", "EMIT目标接口不存在: " + targetName);
-                if (!"OUT".equals(target.path("direction").asText())) throw nodeError(index.nodeName(), actionPath + ".targetInterfaceName", "EMIT目标必须是OUT接口: " + targetName);
-                String signal = requiredText(action, "signalName", nodePath(index.nodeName(), actionPath + ".signalName") + ": 不能为空");
-                if (!contains(target.path("allowedSignals"), signal)) throw nodeError(index.nodeName(), actionPath + ".signalName", "EMIT信号不在接口allowedSignals中: " + signal);
-            } else {
-                String variable = requiredText(action, "internalVariableName", nodePath(index.nodeName(), actionPath + ".internalVariableName") + ": 不能为空");
-                if (!index.variables().containsKey(variable)) throw nodeError(index.nodeName(), actionPath + ".internalVariableName", "UPDATE引用不存在的内部变量: " + variable);
-                requiredText(action, "valueExpression", nodePath(index.nodeName(), actionPath + ".valueExpression") + ": 不能为空");
-            }
-            position++;
-        }
+        // action-name membership is validated while indexing; payloads live on triggers.
     }
 
     private void validateTriggers(NodeIndex index, JsonNode node, String path) {
         int interfacePosition = 0;
         for (JsonNode item : node.path("interfaces")) {
             JsonNode triggers = item.path("bindingTriggers");
-            if (triggers.isArray() && !triggers.isEmpty() && !"IN".equals(item.path("direction").asText())) {
-                throw nodeError(index.nodeName(), "interfaces[" + interfacePosition + "].bindingTriggers", "OUT接口不能声明bindingTriggers");
-            }
             int triggerPosition = 0;
             for (JsonNode trigger : iterable(triggers)) {
                 String triggerPath = "interfaces[" + interfacePosition + "].bindingTriggers[" + triggerPosition + "]";
-                String actionName = requiredText(trigger, "action", nodePath(index.nodeName(), triggerPath + ".action") + ": 不能为空");
-                if (!index.actions().containsKey(actionName)) throw nodeError(index.nodeName(), triggerPath + ".action", "引用不存在的动作: " + actionName);
                 JsonNode condition = trigger.path("condition");
                 if (!condition.isObject()) throw nodeError(index.nodeName(), triggerPath + ".condition", "必须是对象");
                 String object = requiredText(condition, "object", nodePath(index.nodeName(), triggerPath + ".condition.object") + ": 不能为空");
@@ -238,10 +215,70 @@ public class WorkflowDefinitionCompiler {
                     throw nodeError(index.nodeName(), triggerPath + ".condition.threshold",
                             "与内部变量" + object + "的数据类型不一致");
                 }
+                validateTriggerAction(index, node, trigger.path("action"), triggerPath + ".action");
                 triggerPosition++;
             }
             interfacePosition++;
         }
+    }
+
+    private void validateTriggerAction(NodeIndex index, JsonNode node, JsonNode action, String actionPath) {
+        if (!action.isObject()) throw nodeError(index.nodeName(), actionPath, "必须是对象");
+        String actionName = requiredText(action, "actionName",
+                nodePath(index.nodeName(), actionPath + ".actionName") + ": 不能为空");
+        if (!index.actions().contains(actionName)) {
+            throw nodeError(index.nodeName(), actionPath + ".actionName", "动作未在node.actions中声明: " + actionName);
+        }
+        JsonNode payload = action.path("payload");
+        if (!payload.isObject()) throw nodeError(index.nodeName(), actionPath + ".payload", "必须是对象");
+        if (WorkflowNodeActionType.EMIT.name().equals(actionName)) {
+            String targetName = requiredText(payload, "targetInterfaceName",
+                    nodePath(index.nodeName(), actionPath + ".payload.targetInterfaceName") + ": 不能为空");
+            JsonNode target = index.interfaces().get(targetName);
+            if (target == null) throw nodeError(index.nodeName(), actionPath + ".payload.targetInterfaceName", "EMIT目标接口不存在: " + targetName);
+            if (!"OUT".equals(target.path("direction").asText())) throw nodeError(index.nodeName(), actionPath + ".payload.targetInterfaceName", "EMIT目标必须是OUT接口: " + targetName);
+            String signal = requiredText(payload, "signalName",
+                    nodePath(index.nodeName(), actionPath + ".payload.signalName") + ": 不能为空");
+            if (!contains(target.path("allowedSignals"), signal)) throw nodeError(index.nodeName(), actionPath + ".payload.signalName", "EMIT信号不在接口allowedSignals中: " + signal);
+            return;
+        }
+        if (!WorkflowNodeActionType.UPDATE.name().equals(actionName)) {
+            throw nodeError(index.nodeName(), actionPath + ".actionName", "只允许EMIT或UPDATE: " + actionName);
+        }
+        String updateType = requiredText(payload, "updateType",
+                nodePath(index.nodeName(), actionPath + ".payload.updateType") + ": 不能为空");
+        String targetName = requiredText(payload, "targetName",
+                nodePath(index.nodeName(), actionPath + ".payload.targetName") + ": 不能为空");
+        if ("INTERNAL_VARIABLE".equals(updateType)) {
+            JsonNode variable = index.variables().get(targetName);
+            if (variable == null) throw nodeError(index.nodeName(), actionPath + ".payload.targetName", "UPDATE引用不存在的内部变量: " + targetName);
+            boolean hasValue = payload.has("value");
+            boolean hasExpression = payload.has("valueExpression")
+                    && payload.path("valueExpression").isTextual()
+                    && !payload.path("valueExpression").asText().isBlank();
+            if (hasValue == hasExpression) {
+                throw nodeError(index.nodeName(), actionPath + ".payload", "value与valueExpression必须且只能存在一个");
+            }
+            if (hasValue && !matchesUpdateValue(payload.get("value"), variable.path("dataType").asText())) {
+                throw nodeError(index.nodeName(), actionPath + ".payload.value", "与内部变量" + targetName + "的数据类型不一致");
+            }
+            return;
+        }
+        if ("NODE_LIFECYCLE".equals(updateType)) {
+            if (payload.has("value") || payload.has("valueExpression")) {
+                throw nodeError(index.nodeName(), actionPath + ".payload", "生命周期UPDATE不能包含value或valueExpression");
+            }
+            if (!contains(node.path("lifecycle").path("states"), targetName)) {
+                throw nodeError(index.nodeName(), actionPath + ".payload.targetName", "目标生命周期状态未声明: " + targetName);
+            }
+            boolean declaredTarget = false;
+            for (JsonNode transition : iterable(node.path("lifecycle").path("transitions"))) {
+                if (targetName.equals(transition.path("toStateName").asText())) declaredTarget = true;
+            }
+            if (!declaredTarget) throw nodeError(index.nodeName(), actionPath + ".payload.targetName", "没有任何transition可到达目标状态: " + targetName);
+            return;
+        }
+        throw nodeError(index.nodeName(), actionPath + ".payload.updateType", "只允许INTERNAL_VARIABLE或NODE_LIFECYCLE: " + updateType);
     }
 
     private void validateInterfaceConnections(JsonNode connections, Map<String, Long> refs,
@@ -395,8 +432,7 @@ public class WorkflowDefinitionCompiler {
         return result;
     }
 
-    private void validateSystemInterfaces(NodeIndex index, JsonNode actualInterfaces, JsonNode expectedInterfaces,
-            Set<String> systemActionNames) {
+    private void validateSystemInterfaces(NodeIndex index, JsonNode actualInterfaces, JsonNode expectedInterfaces) {
         Map<String, JsonNode> expectedByName = namedItems(expectedInterfaces, "name");
         for (JsonNode expected : iterable(expectedInterfaces)) {
             String interfaceName = expected.path("name").asText();
@@ -405,13 +441,9 @@ public class WorkflowDefinitionCompiler {
                 throw nodeError(index.nodeName(), "interfaces." + interfaceName, "系统接口定义被修改");
             }
             validateSystemTriggers(index, interfaceName, actual.path("bindingTriggers"),
-                    expected.path("bindingTriggers"), systemActionNames);
+                    expected.path("bindingTriggers"));
         }
-        for (JsonNode actual : iterable(actualInterfaces)) {
-            if (!expectedByName.containsKey(actual.path("name").asText())) {
-                throw nodeError(index.nodeName(), "interfaces", "不允许新增接口");
-            }
-        }
+        // System interfaces are mandatory; additional user interfaces are valid trigger channels.
     }
 
     private boolean matchesSystemInterface(JsonNode actual, JsonNode expected) {
@@ -426,7 +458,7 @@ public class WorkflowDefinitionCompiler {
     }
 
     private void validateSystemTriggers(NodeIndex nodeIndex, String interfaceName,
-            JsonNode actualTriggers, JsonNode expectedTriggers, Set<String> systemActionNames) {
+            JsonNode actualTriggers, JsonNode expectedTriggers) {
         List<JsonNode> actualItems = nodeList(actualTriggers);
         Set<Integer> matchedIndexes = new HashSet<>();
         for (JsonNode expected : iterable(expectedTriggers)) {
@@ -451,53 +483,20 @@ public class WorkflowDefinitionCompiler {
                 throw nodeError(nodeIndex.nodeName(), "interfaces." + interfaceName + ".bindingTriggers",
                         "存在未知或已篡改的系统触发器");
             }
-            if (!matchedIndexes.contains(index)) {
-                JsonNode trigger = actualItems.get(index);
-                String actionName = trigger.path("action").asText("");
-                JsonNode action = nodeIndex.actions().get(actionName);
-                if (action == null || systemActionNames.contains(actionName)
-                        || claimsSystemIdentity(action)
-                        || !WorkflowNodeActionType.UPDATE.name().equals(action.path("actionType").asText())) {
-                    throw nodeError(nodeIndex.nodeName(),
-                            "interfaces." + interfaceName + ".bindingTriggers[" + index + "].action",
-                            "自定义触发器只能调用非系统UPDATE动作: " + actionName);
-                }
-            }
         }
     }
 
     private boolean triggerBusinessEquals(JsonNode actual, JsonNode expected) {
         return actual != null && actual.isObject()
-                && sameTextField(actual, expected, "action")
+                && expected.path("action").equals(actual.path("action"))
                 && expected.path("condition").equals(actual.path("condition"));
     }
 
     private void validateSystemActions(NodeIndex index, JsonNode actualActions, JsonNode expectedActions) {
-        Map<String, JsonNode> expectedByName = namedItems(expectedActions, "actionName");
-        for (JsonNode expected : iterable(expectedActions)) {
-            String actionName = expected.path("actionName").asText();
-            JsonNode actual = index.actions().get(actionName);
-            if (!matchesSystemAction(actual, expected)) {
-                throw nodeError(index.nodeName(), "actions." + actionName, "系统动作定义被修改");
-            }
+        Set<String> expected = uniqueTextSet(expectedActions);
+        if (expected == null || !index.actions().containsAll(expected)) {
+            throw nodeError(index.nodeName(), "actions", "系统动作能力声明缺失");
         }
-        for (JsonNode actual : iterable(actualActions)) {
-            String actionName = actual.path("actionName").asText();
-            if (expectedByName.containsKey(actionName)) continue;
-            if (claimsSystemIdentity(actual)
-                    || !WorkflowNodeActionType.UPDATE.name().equals(actual.path("actionType").asText())) {
-                throw nodeError(index.nodeName(), "actions." + actionName, "只允许新增非系统UPDATE动作");
-            }
-        }
-    }
-
-    private boolean matchesSystemAction(JsonNode actual, JsonNode expected) {
-        return actual != null && actual.isObject()
-                && matchesOptionalSystemIdentity(actual, expected)
-                && sameTextField(actual, expected, "actionName")
-                && sameTextField(actual, expected, "actionType")
-                && sameTextField(actual, expected, "targetInterfaceName")
-                && sameTextField(actual, expected, "signalName");
     }
 
     private boolean matchesOptionalSystemIdentity(JsonNode actual, JsonNode expected) {
@@ -586,6 +585,25 @@ public class WorkflowDefinitionCompiler {
         return Map.copyOf(result);
     }
 
+    private Set<String> indexActionNames(JsonNode items, String nodeName) {
+        Set<String> result = new java.util.LinkedHashSet<>();
+        int position = 0;
+        for (JsonNode item : items) {
+            if (!item.isTextual() || item.asText().isBlank()) {
+                throw nodeError(nodeName, "actions[" + position + "]", "必须是EMIT或UPDATE字符串");
+            }
+            String actionName = item.asText();
+            if (!ACTION_TYPES.contains(actionName)) {
+                throw nodeError(nodeName, "actions[" + position + "]", "只允许EMIT或UPDATE: " + actionName);
+            }
+            if (!result.add(actionName)) {
+                throw nodeError(nodeName, "actions[" + position + "]", "动作声明重复: " + actionName);
+            }
+            position++;
+        }
+        return Set.copyOf(result);
+    }
+
     private JsonNode requireArray(JsonNode node, String field, String nodeName) {
         JsonNode value = node.path(field);
         if (!value.isArray()) throw nodeError(nodeName, field, "必须是数组");
@@ -617,6 +635,13 @@ public class WorkflowDefinitionCompiler {
             case BOOLEAN -> value.isBoolean();
             case JSON -> value.isObject() || value.isArray();
         };
+    }
+
+    private boolean matchesUpdateValue(JsonNode value, String dataType) {
+        if (value == null) return false;
+        if (DataType.JSON.name().equals(dataType)) return true;
+        if (value.isNull()) return false;
+        return matchesDataType(value, dataType);
     }
 
     private boolean contains(JsonNode values, String value) {
@@ -655,8 +680,8 @@ public class WorkflowDefinitionCompiler {
     }
 
     private record NodeIndex(String nodeName, String nodeType, Map<String, JsonNode> variables,
-                             Map<String, JsonNode> interfaces, Map<String, JsonNode> ports,
-                             Map<String, JsonNode> actions) {
+                              Map<String, JsonNode> interfaces, Map<String, JsonNode> ports,
+                              Set<String> actions) {
     }
 
     public record Connection(long sourceNodeIdRef, String sourceInterface, long targetNodeIdRef, String targetInterface) {

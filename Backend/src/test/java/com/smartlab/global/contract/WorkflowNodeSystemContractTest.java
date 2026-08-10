@@ -46,17 +46,12 @@ class WorkflowNodeSystemContractTest {
     }
 
     @Test
-    void branchTemplateContainsMutuallyExclusiveOutputs() {
+    void branchTemplateLeavesOutputInterfacesAndRoutingTriggersToTheUser() {
         JsonNode template = WorkflowNodeSystemContract.template("FUNC_NODE", "BRANCH");
-        assertEquals(List.of("Interface_workflow_in", "Interface_true_out", "Interface_false_out"),
-                names(template.path("interfaces")));
-        assertEquals(List.of(true, false),
-                template.path("interfaces").get(0).path("bindingTriggers").findValues("threshold")
-                        .stream().map(JsonNode::asBoolean).toList());
-        assertEquals(List.of("emitTrue", "emitFalse"), actionNames(template.path("actions")));
-        assertEquals(List.of("branch.workflowIn", "branch.trueOut", "branch.falseOut"),
-                directSystemKeys(template.path("interfaces")));
-        assertEquals(List.of("branch.emitTrue", "branch.emitFalse"), directSystemKeys(template.path("actions")));
+        assertEquals(List.of("Interface_workflow_in"), names(template.path("interfaces")));
+        assertTrue(template.path("interfaces").get(0).path("bindingTriggers").isEmpty());
+        assertTrue(template.path("actions").isEmpty());
+        assertEquals(List.of("branch.workflowIn"), directSystemKeys(template.path("interfaces")));
     }
 
     @Test

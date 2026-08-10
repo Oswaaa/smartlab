@@ -51,10 +51,10 @@ class WorkflowDefinitionCompilerTest {
                 .filter(item -> "candidate".equals(item.path("name").asText()))
                 .findFirst()
                 .orElseThrow();
-        assertEquals(List.of("EMIT", "UPDATE"), JsonNodeSupport.MAPPER.convertValue(
+        assertEquals(List.of("UPDATE", "EMIT"), JsonNodeSupport.MAPPER.convertValue(
                 compiledAggregate.path("actions"), List.class));
-        assertEquals("UPDATE", compiledAggregate.path("interfaces").get(1)
-                .path("bindingTriggers").get(0).path("action").path("actionName").asText());
+        assertEquals("UPDATE", findTriggerByUpdateTarget(compiledAggregate, "ready")
+                .path("action").path("actionName").asText());
     }
 
     @Test
@@ -208,24 +208,27 @@ class WorkflowDefinitionCompilerTest {
 
         JsonNode node = result.normalized().getNodesDef().get(1);
         assertEquals("aggregate.lifecycle", node.path("lifecycle").path("_systemKey").asText());
-        assertEquals("UPDATE", node.path("actions").get(1).asText());
+        assertEquals(List.of("UPDATE", "EMIT"), JsonNodeSupport.MAPPER.convertValue(
+                node.path("actions"), List.class));
         assertEquals("counter", node.path("internalVariables").get(0).path("name").asText());
         assertEquals("counterOut", node.path("ports").get(0).path("name").asText());
-        assertEquals("UPDATE", node.path("interfaces").get(0).path("bindingTriggers").get(1)
-                .path("action").path("actionName").asText());
-        assertEquals("counter", node.path("interfaces").get(0).path("bindingTriggers").get(1)
-                .path("action").path("payload").path("targetName").asText());
-        assertTrue(result.issues().stream().noneMatch(WorkflowIssue::blocking));
+        JsonNode customTrigger = findTriggerByUpdateTarget(node, "counter");
+        assertEquals("UPDATE", customTrigger.path("action").path("actionName").asText());
+        assertEquals("counter", customTrigger.path("action").path("payload").path("targetName").asText());
+        assertTrue(result.issues().stream().noneMatch(WorkflowIssue::blocking), result.issues().toString());
     }
 
     @Test
-    void publishPreparationRejectsBusinessItemUsingReservedSystemIdentity() {
+    void publishPreparationNormalizesLegacyActionNameToUpdateCapability() {
         WorkflowSaveRequest request = definitionWithCustomActionNamed("emitActive");
 
         WorkflowPreparation result = compiler.prepare(request, WorkflowPreparation.Mode.PUBLISH);
 
-        assertTrue(result.issues().stream().anyMatch(issue ->
-                issue.code().equals("WORKFLOW_SYSTEM_NAME_RESERVED") && issue.blocking()));
+        assertTrue(result.issues().stream().noneMatch(WorkflowIssue::blocking), result.issues().toString());
+        result.normalized().getNodesDef().get(1).path("actions")
+                .forEach(action -> assertTrue(action.isTextual()));
+        assertTrue(JsonNodeSupport.MAPPER.convertValue(
+                result.normalized().getNodesDef().get(1).path("actions"), List.class).contains("UPDATE"));
     }
 
     private ObjectNode node(NodeCase c) { ObjectNode n=WorkflowNodeSystemContract.template(c.type(),c.function()).deepCopy(); n.put("name","candidate"); n.put("nodeType",c.type()); n.putArray("internalVariables"); n.putArray("ports"); if(c.function()!=null)n.put("functionType",c.function()); if("BRANCH".equals(c.function()))n.put("expression","x > 1"); if("DEV_NODE".equals(c.type())){n.put("deviceModelId",1);n.putObject("capability").put("capabilityName","mix");} if("SUBFLOW_NODE".equals(c.type()))n.put("subFlowModelId",2); return n; }
@@ -287,6 +290,12 @@ class WorkflowDefinitionCompilerTest {
                 .put("actionType", "UPDATE")
                 .put("internalVariableName", "counter")
                 .put("valueExpression", "1");
+        aggregate.path("interfaces").forEach(interfaceNode ->
+                interfaceNode.path("bindingTriggers").forEach(trigger -> {
+                    if ("setCounter".equals(trigger.path("action").asText())) {
+                        ((ObjectNode) trigger).put("action", actionName);
+                    }
+                }));
         return request;
     }
 
@@ -297,6 +306,17 @@ class WorkflowDefinitionCompilerTest {
         } else if (node.isArray()) {
             node.elements().forEachRemaining(this::removeSystemMarkers);
         }
+    }
+
+    private JsonNode findTriggerByUpdateTarget(JsonNode node, String targetName) {
+        for (JsonNode interfaceNode : node.path("interfaces")) {
+            for (JsonNode trigger : interfaceNode.path("bindingTriggers")) {
+                if (targetName.equals(trigger.path("action").path("payload").path("targetName").asText())) {
+                    return trigger;
+                }
+            }
+        }
+        throw new AssertionError("missing UPDATE target=" + targetName);
     }
     private WorkflowSaveRequest validDefinition() throws Exception {
         WorkflowSaveRequest request = new WorkflowSaveRequest();

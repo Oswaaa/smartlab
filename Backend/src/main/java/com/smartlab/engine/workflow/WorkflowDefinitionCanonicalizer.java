@@ -191,6 +191,13 @@ public class WorkflowDefinitionCanonicalizer {
 
     private void mergeActions(ObjectNode node, JsonNode expectedItems, String path, List<WorkflowIssue> issues) {
         List<JsonNode> source = items(node.path("actions"));
+        if (items(expectedItems).stream().allMatch(JsonNode::isTextual)) {
+            ArrayNode result = JsonNodeSupport.arrayNode();
+            items(expectedItems).forEach(item -> result.add(item.asText()));
+            source.forEach(item -> result.add(item.deepCopy()));
+            node.set("actions", result);
+            return;
+        }
         Set<Integer> consumed = new HashSet<>();
         ArrayNode result = JsonNodeSupport.arrayNode();
         for (JsonNode expected : expectedItems) {

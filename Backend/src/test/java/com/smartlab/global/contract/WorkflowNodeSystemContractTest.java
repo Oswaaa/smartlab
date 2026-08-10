@@ -26,21 +26,25 @@ class WorkflowNodeSystemContractTest {
     }
 
     @Test
-    void startTemplateHasOnlyWorkflowOutputAndEmitActive() {
+    void startTemplateHasOnlyWorkflowOutputAndCanonicalActions() {
         JsonNode template = WorkflowNodeSystemContract.template("FUNC_NODE", "START");
         assertEquals(List.of("Interface_workflow_out"), names(template.path("interfaces")));
-        assertEquals(List.of("emitActive"), actionNames(template.path("actions")));
+        assertEquals(List.of("UPDATE", "EMIT"), textValues(template.path("actions")));
         assertEquals("OUT", interfaceByName(template, "Interface_workflow_out").path("direction").asText());
-        assertEquals("ACTIVE", actionByName(template, "emitActive").path("signalName").asText());
+        assertEquals(List.of("PENDING", "RUNNING", "RUNNING"), triggerThresholds(
+                interfaceByName(template, "Interface_workflow_out")));
+        assertEquals("ACTIVE", firstAction(template, "Interface_workflow_out", "EMIT")
+                .path("payload").path("signalName").asText());
         assertEquals("start.workflowOut", interfaceByName(template, "Interface_workflow_out").path("_systemKey").asText());
-        assertEquals("start.emitActive", actionByName(template, "emitActive").path("_systemKey").asText());
     }
 
     @Test
-    void endTemplateHasOnlyWorkflowInputAndNoEmit() {
+    void endTemplateHasOnlyWorkflowInputAndLifecycleUpdates() {
         JsonNode template = WorkflowNodeSystemContract.template("FUNC_NODE", "END");
         assertEquals(List.of("Interface_workflow_in"), names(template.path("interfaces")));
-        assertTrue(template.path("actions").isEmpty());
+        assertEquals(List.of("UPDATE"), textValues(template.path("actions")));
+        assertEquals(List.of("ACTIVE", "RUNNING"), triggerThresholds(
+                interfaceByName(template, "Interface_workflow_in")));
         assertEquals("IN", interfaceByName(template, "Interface_workflow_in").path("direction").asText());
         assertEquals("end.workflowIn", interfaceByName(template, "Interface_workflow_in").path("_systemKey").asText());
     }
@@ -49,8 +53,8 @@ class WorkflowNodeSystemContractTest {
     void branchTemplateLeavesOutputInterfacesAndRoutingTriggersToTheUser() {
         JsonNode template = WorkflowNodeSystemContract.template("FUNC_NODE", "BRANCH");
         assertEquals(List.of("Interface_workflow_in"), names(template.path("interfaces")));
-        assertTrue(template.path("interfaces").get(0).path("bindingTriggers").isEmpty());
-        assertTrue(template.path("actions").isEmpty());
+        assertEquals(List.of("ACTIVE", "RUNNING"), triggerThresholds(template.path("interfaces").get(0)));
+        assertEquals(List.of("UPDATE"), textValues(template.path("actions")));
         assertEquals(List.of("branch.workflowIn"), directSystemKeys(template.path("interfaces")));
     }
 
@@ -63,9 +67,10 @@ class WorkflowNodeSystemContractTest {
         assertEquals(List.of("ACTIVE"), textValues(input.path("allowedSignals")));
         assertEquals("ACTIVE", input.path("bindingTriggers").get(0).path("condition").path("threshold").asText());
         assertEquals(List.of("ACTIVE"), textValues(output.path("allowedSignals")));
-        assertEquals("ACTIVE", actionByName(template, "emitActive").path("signalName").asText());
-        assertEquals("aggregate.active", input.path("bindingTriggers").get(0).path("_systemKey").asText());
-        assertEquals("aggregate.emitActive", actionByName(template, "emitActive").path("_systemKey").asText());
+        assertEquals("ACTIVE", firstAction(template, "Interface_workflow_out", "EMIT")
+                .path("payload").path("signalName").asText());
+        assertEquals("aggregate.activate", input.path("bindingTriggers").get(0).path("_systemKey").asText());
+        assertEquals("aggregate.emitActive", output.path("bindingTriggers").get(0).path("_systemKey").asText());
     }
 
     @Test
@@ -73,25 +78,46 @@ class WorkflowNodeSystemContractTest {
         JsonNode template = WorkflowNodeSystemContract.template("DEV_NODE", null);
         assertEquals(List.of("Interface_workflow_in", "Interface_state_out",
                         "Interface_state_in", "Interface_workflow_out"), names(template.path("interfaces")));
-        assertEquals(List.of("startDevice", "completeNode"), actionNames(template.path("actions")));
+        assertEquals(List.of("UPDATE", "EMIT"), textValues(template.path("actions")));
         assertEquals(List.of("WF_EXECUTE_START"),
                 textValues(interfaceByName(template, "Interface_state_out").path("allowedSignals")));
         assertEquals(List.of("CMD_STATE", "OP_STATE"),
                 textValues(interfaceByName(template, "Interface_state_in").path("allowedSignals")));
-        assertEquals("startDevice", interfaceByName(template, "Interface_workflow_in")
-                .path("bindingTriggers").get(0).path("action").asText());
-        assertEquals("completeNode", interfaceByName(template, "Interface_state_in")
-                .path("bindingTriggers").get(0).path("action").asText());
+        assertEquals("UPDATE", interfaceByName(template, "Interface_workflow_in")
+                .path("bindingTriggers").get(0).path("action").path("actionName").asText());
+        assertEquals("UPDATE", interfaceByName(template, "Interface_state_in")
+                .path("bindingTriggers").get(0).path("action").path("actionName").asText());
         assertEquals(List.of("device.workflowIn", "device.stateOut", "device.stateIn", "device.workflowOut"),
                 directSystemKeys(template.path("interfaces")));
-        assertEquals(List.of("device.startDevice", "device.completeNode"), directSystemKeys(template.path("actions")));
     }
 
     @Test
-    void subflowTemplateContainsNoSystemEmitAction() {
+    void deviceTemplateUsesLifecycleUpdatesAndInlineActions() {
+        JsonNode template = WorkflowNodeSystemContract.template("DEV_NODE", null);
+
+        assertEquals(List.of("UPDATE", "EMIT"), textValues(template.path("actions")));
+        assertEquals("UPDATE", firstTrigger(template, "Interface_workflow_in")
+                .path("action").path("actionName").asText());
+        assertEquals("RUNNING", firstTrigger(template, "Interface_workflow_in")
+                .path("action").path("payload").path("targetName").asText());
+        assertEquals("EMIT", firstTrigger(template, "Interface_state_out")
+                .path("action").path("actionName").asText());
+        assertEquals("WF_EXECUTE_START", firstTrigger(template, "Interface_state_out")
+                .path("action").path("payload").path("signalName").asText());
+        assertEquals("UPDATE", firstTrigger(template, "Interface_state_in")
+                .path("action").path("actionName").asText());
+        assertEquals("SUCCEEDED", firstTrigger(template, "Interface_state_in")
+                .path("action").path("payload").path("targetName").asText());
+        assertEquals("EMIT", firstTrigger(template, "Interface_workflow_out")
+                .path("action").path("actionName").asText());
+        assertTrue(template.findValues("actionType").isEmpty());
+    }
+
+    @Test
+    void subflowTemplateUsesLifecycleAndEmitCapabilities() {
         JsonNode template = WorkflowNodeSystemContract.template("SUBFLOW_NODE", null);
         assertEquals(List.of("Interface_workflow_in", "Interface_workflow_out"), names(template.path("interfaces")));
-        assertTrue(template.path("actions").isEmpty());
+        assertEquals(List.of("UPDATE", "EMIT"), textValues(template.path("actions")));
         assertEquals(List.of("subflow.workflowIn", "subflow.workflowOut"),
                 directSystemKeys(template.path("interfaces")));
     }
@@ -105,8 +131,11 @@ class WorkflowNodeSystemContractTest {
             assertEquals("PENDING", lifecycle.path("initialStateName").asText());
             assertEquals(LIFECYCLE_STATES, textValues(lifecycle.path("states")));
             assertEquals(LIFECYCLE_TRANSITIONS, lifecycleTransitions(lifecycle.path("transitions")));
-            template.path("interfaces").forEach(this::assertSystemMarker);
-            template.path("actions").forEach(this::assertSystemMarker);
+            template.path("interfaces").forEach(item -> {
+                assertSystemMarker(item);
+                item.path("bindingTriggers").forEach(this::assertSystemMarker);
+            });
+            template.path("actions").forEach(action -> assertTrue(action.isTextual()));
             lifecycle.path("transitions").forEach(this::assertSystemMarker);
         });
     }
@@ -120,10 +149,6 @@ class WorkflowNodeSystemContractTest {
 
     private List<String> names(JsonNode items) {
         return items.findValuesAsText("name");
-    }
-
-    private List<String> actionNames(JsonNode items) {
-        return items.findValuesAsText("actionName");
     }
 
     private List<String> directSystemKeys(JsonNode items) {
@@ -149,8 +174,24 @@ class WorkflowNodeSystemContractTest {
         return findBy(template.path("interfaces"), "name", name);
     }
 
-    private JsonNode actionByName(JsonNode template, String name) {
-        return findBy(template.path("actions"), "actionName", name);
+    private JsonNode firstTrigger(JsonNode template, String interfaceName) {
+        return interfaceByName(template, interfaceName).path("bindingTriggers").get(0);
+    }
+
+    private JsonNode firstAction(JsonNode template, String interfaceName, String actionName) {
+        for (JsonNode trigger : interfaceByName(template, interfaceName).path("bindingTriggers")) {
+            if (actionName.equals(trigger.path("action").path("actionName").asText())) {
+                return trigger.path("action");
+            }
+        }
+        throw new AssertionError("missing inline action=" + actionName);
+    }
+
+    private List<String> triggerThresholds(JsonNode interfaceNode) {
+        List<String> values = new ArrayList<>();
+        interfaceNode.path("bindingTriggers").forEach(trigger ->
+                values.add(trigger.path("condition").path("threshold").asText()));
+        return values;
     }
 
     private JsonNode findBy(JsonNode items, String field, String value) {

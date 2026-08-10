@@ -167,6 +167,11 @@ public class WorkflowRuntimeService {
         stepMapper.updateById(step);
     }
 
+    public void updateOutputSnapshot(TaskStep step, JsonNode snapshot) {
+        step.setInterfaceOutSnapshot(snapshot);
+        stepMapper.updateById(step);
+    }
+
     @Transactional(rollbackFor = Exception.class)
     public void mergeVariableSpace(TaskStep step, JsonNode values) {
         if (values == null || !values.isObject() || values.isEmpty()) return;
@@ -244,25 +249,10 @@ public class WorkflowRuntimeService {
         publishTask(task);
     }
 
-    public TaskStep findRunningDeviceStepByMessageId(String messageId) {
-        if (messageId == null || messageId.isBlank()) return null;
+    public List<TaskStep> runningDeviceSteps() {
         return stepMapper.selectList(Wrappers.<TaskStep>lambdaQuery()
-                        .in(TaskStep::getNodeStatus, "RUNNING", "TERMINATING"))
-                .stream().filter(step -> messageId.equals(
-                        step.getInterfaceInSnapshot() == null ? "" : step.getInterfaceInSnapshot().path("messageId").asText("")))
-                .findFirst().orElse(null);
-    }
-
-    public List<TaskStep> findRunningDeviceStepsByInstanceId(Long deviceInstanceId) {
-        if (deviceInstanceId == null || deviceInstanceId <= 0) return List.of();
-        return runningDeviceSteps().stream().filter(step -> step.getInterfaceInSnapshot() != null
-                && step.getInterfaceInSnapshot().path("deviceInstanceId").canConvertToLong()
-                && deviceInstanceId.equals(step.getInterfaceInSnapshot().path("deviceInstanceId").asLong()))
-                .toList();
-    }
-
-    private List<TaskStep> runningDeviceSteps() {
-        return stepMapper.selectList(Wrappers.<TaskStep>lambdaQuery().eq(TaskStep::getNodeStatus, "RUNNING"));
+                .in(TaskStep::getNodeStatus, "RUNNING", "TERMINATING")
+                .orderByAsc(TaskStep::getId));
     }
 
     private void deepMerge(ObjectNode target, JsonNode values) {

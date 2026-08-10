@@ -1,6 +1,7 @@
 package com.smartlab.engine.workflow;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.engine.constraint.ConstraintExpressionEvaluator;
 import com.smartlab.engine.statemachine.StateMachineInterfaceSignalEvent;
@@ -101,7 +102,7 @@ public class WorkflowEngine {
             throw new IllegalStateException("子流程嵌套超过" + MAX_SUB_FLOW_DEPTH + "层");
         var compiled = workflowService.compileDefinition(flowModelId);
         runtime.createStep(task, nodeByRef(flowModelId, compiled.startNodeIdRef()), parentStepId, depth,
-                JsonNodeSupport.objectNode());
+                null);
     }
 
     private void processStep(Task task, TaskStep step) {
@@ -123,6 +124,7 @@ public class WorkflowEngine {
             }
         }
         for (JsonNode interfaceNode : orderedInterfaces) {
+            ObjectNode interfaceSnapshot = interfaceVariables(step, interfaceNode, frozenSnapshot);
             Map<String, Integer> duplicateOrdinals = new java.util.HashMap<>();
             for (JsonNode trigger : iterable(interfaceNode.path("bindingTriggers"))) {
                 String fingerprint = WorkflowTriggerState.fingerprint(trigger);
@@ -130,16 +132,16 @@ public class WorkflowEngine {
                 String key = WorkflowTriggerState.key(
                         interfaceNode.path("name").asText(""), fingerprint, duplicateOrdinal);
                 boolean previous = triggerStates.path(key).asBoolean(false);
-                boolean current = conditionEvaluator.evaluate(trigger.path("condition"), frozenSnapshot);
+                boolean current = conditionEvaluator.evaluate(trigger.path("condition"), interfaceSnapshot);
                 if (current && !previous) {
-                    WorkflowActionResult result = executeAction(task, step, node, frozenSnapshot,
+                    WorkflowActionResult result = executeAction(task, step, node, interfaceSnapshot,
                             WorkflowActionDefinition.from(trigger.path("action")));
                     if (result.status() != WorkflowActionStatus.WAIT_DEVICE_IDLE) {
                         triggerStates.put(key, true);
                         persistTriggerStates(step, triggerStates);
                     }
                     if (result.emittedInterfaceName() != null && !result.emittedInterfaceName().isBlank()) {
-                        routeEmission(task, step, node, result, frozenSnapshot);
+                        routeEmission(task, step, node, result);
                     }
                 } else if (!current && previous) {
                     triggerStates.put(key, false);
@@ -147,6 +149,25 @@ public class WorkflowEngine {
                 }
             }
         }
+    }
+
+    private ObjectNode interfaceVariables(TaskStep step, JsonNode interfaceNode, ObjectNode frozenSnapshot) {
+        ObjectNode result = frozenSnapshot.deepCopy();
+        String direction = interfaceNode.path("direction").asText("");
+        JsonNode snapshot = "OUT".equals(direction)
+                ? step.getInterfaceOutSnapshot() : step.getInterfaceInSnapshot();
+        JsonNode current = WorkflowInterfaceSnapshots.find(snapshot, interfaceNode.path("name").asText(""));
+        if (current.path("signalName").isTextual()) {
+            result.set("signalName", current.path("signalName").deepCopy());
+        } else {
+            result.putNull("signalName");
+        }
+        if (current.path("payload").isObject()) {
+            result.set("payload", current.path("payload").deepCopy());
+        } else {
+            result.remove("payload");
+        }
+        return result;
     }
 
     private ObjectNode triggerStates(TaskStep step) {
@@ -168,12 +189,11 @@ public class WorkflowEngine {
         persistTriggerStates(step, states);
     }
 
-    private void routeEmission(Task task, TaskStep step, FlowNode node, WorkflowActionResult result,
-            ObjectNode frozenSnapshot) {
-        ObjectNode output = JsonNodeSupport.objectNode();
-        output.put("signalName", result.emittedSignalName());
-        output.set("payload", frozenSnapshot.deepCopy());
-        step.setInterfaceOutSnapshot(output);
+    private void routeEmission(Task task, TaskStep step, FlowNode node, WorkflowActionResult result) {
+        ArrayNode output = WorkflowInterfaceSnapshots.withSignal(
+                step.getInterfaceOutSnapshot(), node.getInterfaces(), "OUT",
+                result.emittedInterfaceName(), result.emittedSignalName(), null);
+        runtime.updateOutputSnapshot(step, output);
         route(task, step, node, result.emittedInterfaceName(), result.emittedSignalName());
     }
 
@@ -183,21 +203,6 @@ public class WorkflowEngine {
         if (mapped != null && !mapped.isEmpty()) {
             runtime.mergeVariableSpace(step, mapped);
             mergeObject(variables, mapped);
-        }
-        JsonNode input = step.getInterfaceInSnapshot();
-        if (input != null && input.isObject()) {
-            variables.set("input", input.deepCopy());
-            variables.put("inputSignalName", input.path("inputSignalName").asText(""));
-            variables.set("inputPayload", input.path("inputPayload").deepCopy());
-            String signalName = input.path("inputSignalName").asText("");
-            if (!signalName.isBlank()) {
-                variables.put(signalName, true);
-                if ("CMD_STATE".equals(signalName)) {
-                    variables.set("CMD_STATE", input.path("inputPayload").path("stateName").deepCopy());
-                } else if ("OP_STATE".equals(signalName)) {
-                    variables.set("OP_STATE", input.path("inputPayload").path("state").deepCopy());
-                }
-            }
         }
         variables.put("nodeLifecycleState", step.getNodeStatus());
         if (inputInterface != null)
@@ -266,17 +271,14 @@ public class WorkflowEngine {
                 throw new IllegalStateException(
                         "目标接口不允许信号: " + target.getNodeIdRef() + "." + connection.targetInterface() + "." + signalName);
             }
-            ObjectNode input = JsonNodeSupport.objectNode();
-            input.put("sourceNodeIdRef", node.getNodeIdRef());
-            input.put("sourceInterface", sourceInterface);
-            input.put("targetInterfaceName", connection.targetInterface());
-            input.put("inputSignalName", signalName);
-            input.set("inputPayload", completed.getInterfaceOutSnapshot() == null ? JsonNodeSupport.objectNode()
-                    : completed.getInterfaceOutSnapshot().deepCopy());
-            if (completed.getInterfaceOutSnapshot() != null)
-                input.set("sourceOutput", completed.getInterfaceOutSnapshot().deepCopy());
             TaskStep targetStep = runtime.createStep(task, target, completed.getParentStepId(),
-                    completed.getStepDepth(), input);
+                    completed.getStepDepth(), null);
+            JsonNode sourceSlot = WorkflowInterfaceSnapshots.find(
+                    completed.getInterfaceOutSnapshot(), sourceInterface);
+            JsonNode payload = sourceSlot.path("payload");
+            ArrayNode input = WorkflowInterfaceSnapshots.withSignal(
+                    targetStep.getInterfaceInSnapshot(), target.getInterfaces(), "IN",
+                    connection.targetInterface(), signalName, payload.isObject() ? payload : null);
             runtime.updateInputSnapshot(targetStep, input);
             runtime.mergeVariableSpace(targetStep, mapPortValues(node, target, completed));
         }
@@ -357,13 +359,11 @@ public class WorkflowEngine {
             return;
 
         if ("CMD_STATE".equals(signalName)) {
-            String messageId = event.executionContext() == null ? ""
-                    : String.valueOf(event.executionContext().getOrDefault("messageId", ""));
-            if (messageId.isBlank())
-                return;
-            TaskStep step = runtime.findRunningDeviceStepByMessageId(messageId);
+            Long taskStepId = longContext(event, "taskStepId");
+            if (taskStepId == null) return;
+            TaskStep step = runtime.step(taskStepId);
             if (step != null)
-                handleStateMachineSignalForStep(event, step, messageId);
+                handleStateMachineSignalForStep(event, step);
             return;
         }
 
@@ -372,13 +372,31 @@ public class WorkflowEngine {
                 : null;
         if (deviceInstanceId == null || deviceInstanceId <= 0)
             return;
-        for (TaskStep step : runtime.findRunningDeviceStepsByInstanceId(deviceInstanceId)) {
-            handleStateMachineSignalForStep(event, step, "");
+        for (TaskStep step : runtime.runningDeviceSteps()) {
+            Task task = runtime.task(step.getTaskId());
+            FlowNode node = flowNodeService.getById(step.getFlowNodeId());
+            if (task == null || node == null || !"DEV_NODE".equals(node.getNodeType())) continue;
+            if (executionOperations.resolveDeviceInstance(task, step, node) == deviceInstanceId) {
+                handleStateMachineSignalForStep(event, step);
+            }
         }
     }
 
-    private void handleStateMachineSignalForStep(StateMachineInterfaceSignalEvent event, TaskStep located,
-            String messageId) {
+    private Long longContext(StateMachineInterfaceSignalEvent event, String key) {
+        if (event.executionContext() == null) return null;
+        Object value = event.executionContext().get(key);
+        if (value instanceof Number number) return number.longValue();
+        if (value instanceof String text) {
+            try {
+                return Long.parseLong(text);
+            } catch (NumberFormatException ignored) {
+                return null;
+            }
+        }
+        return null;
+    }
+
+    private void handleStateMachineSignalForStep(StateMachineInterfaceSignalEvent event, TaskStep located) {
         synchronized (taskLock(located.getTaskId())) {
             TaskStep step = runtime.step(located.getId());
             if (step == null || !("RUNNING".equals(step.getNodeStatus()) || "TERMINATING".equals(step.getNodeStatus())))
@@ -392,13 +410,10 @@ public class WorkflowEngine {
                 runtime.failStep(step, "设备状态回执未声明DEVICE_TO_NODE连接");
                 return;
             }
-            ObjectNode input = step.getInterfaceInSnapshot() != null && step.getInterfaceInSnapshot().isObject()
-                    ? (ObjectNode) step.getInterfaceInSnapshot().deepCopy()
-                    : JsonNodeSupport.objectNode();
-            input.put("targetInterfaceName", inputInterface);
-            input.put("inputSignalName", event.signal().path("signalName").asText());
-            input.set("inputPayload", event.signal().path("payload").deepCopy());
-            input.put("sourceInterface", "Interface_state_out");
+            JsonNode payload = event.signal().path("payload");
+            ArrayNode input = WorkflowInterfaceSnapshots.withSignal(
+                    step.getInterfaceInSnapshot(), node.getInterfaces(), "IN", inputInterface,
+                    event.signal().path("signalName").asText(), payload.isObject() ? payload : null);
             runtime.updateInputSnapshot(step, input);
             ObjectNode mapped = executionOperations.resolveMappedVariables(task, step, node);
             if (mapped != null && !mapped.isEmpty()) {

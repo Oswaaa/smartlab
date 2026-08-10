@@ -43,6 +43,8 @@ class WorkflowEngineExecutionTest {
         FlowNode node = pollingNode(List.of(
                 lifecycleTriggerInterface("workflow-out", "OUT", "SUCCEEDED", "EMIT"),
                 triggerInterface("workflow-in", "IN", "UPDATE")));
+        step.setInterfaceInSnapshot(WorkflowInterfaceSnapshots.initialize(node.getInterfaces(), "IN"));
+        step.setInterfaceOutSnapshot(WorkflowInterfaceSnapshots.initialize(node.getInterfaces(), "OUT"));
         node.setActions(JsonNodeSupport.arrayNode().add("UPDATE").add("EMIT"));
         WorkflowActionRegistry lifecycleRegistry = new WorkflowActionRegistry(List.of(
                 mutatingLifecycleExecutor(),
@@ -78,6 +80,7 @@ class WorkflowEngineExecutionTest {
         TaskStep step = pollingStep("RUNNING");
         FlowNode node = pollingNode(List.of(deviceStateInputInterface()));
         node.setDeviceModelId(21L);
+        step.setInterfaceInSnapshot(WorkflowInterfaceSnapshots.initialize(node.getInterfaces(), "IN"));
         WorkflowDetailResponse definition = new WorkflowDetailResponse();
         ObjectNode connection = JsonNodeSupport.objectNode().put("connectionType", "DEVICE_TO_NODE");
         connection.set("source", JsonNodeSupport.objectNode()
@@ -87,10 +90,11 @@ class WorkflowEngineExecutionTest {
         definition.setInterfaceConnections(JsonNodeSupport.arrayNode().add(connection));
         ObjectNode signal = JsonNodeSupport.objectNode().put("signalName", "CMD_STATE");
         signal.set("payload", JsonNodeSupport.objectNode()
-                .put("deviceInstanceId", 99L).put("stateName", "RUNNING"));
+                .put("deviceModelId", 21L).put("deviceInstanceId", 99L).put("messageId", "m-1")
+                .put("stateName", "RUNNING").put("timestamp", 1L));
         StateMachineInterfaceSignalEvent event = new StateMachineInterfaceSignalEvent(
-                99L, "Interface_state_out", "STATE", signal, Map.of("messageId", "m-1"));
-        when(runtime.findRunningDeviceStepByMessageId("m-1")).thenReturn(step);
+                99L, "Interface_state_out", "STATE", signal,
+                Map.of("messageId", "m-1", "taskStepId", step.getId()));
         when(runtime.step(step.getId())).thenReturn(step);
         when(runtime.task(task.getId())).thenReturn(task);
         when(flowNodes.getById(step.getFlowNodeId())).thenReturn(node);
@@ -108,8 +112,11 @@ class WorkflowEngineExecutionTest {
         ArgumentCaptor<com.fasterxml.jackson.databind.JsonNode> snapshot =
                 ArgumentCaptor.forClass(com.fasterxml.jackson.databind.JsonNode.class);
         verify(runtime).updateInputSnapshot(eq(step), snapshot.capture());
-        assertThat(snapshot.getValue().path("inputSignalName").asText()).isEqualTo("CMD_STATE");
-        assertThat(snapshot.getValue().path("inputPayload").path("stateName").asText()).isEqualTo("RUNNING");
+        assertThat(snapshot.getValue().isArray()).isTrue();
+        assertThat(WorkflowInterfaceSnapshots.find(snapshot.getValue(), "state-in")
+                .path("signalName").asText()).isEqualTo("CMD_STATE");
+        assertThat(WorkflowInterfaceSnapshots.find(snapshot.getValue(), "state-in")
+                .path("payload").path("stateName").asText()).isEqualTo("RUNNING");
         assertThat(executionOrder).isEmpty();
         verify(runtime, never()).failStep(eq(step), org.mockito.ArgumentMatchers.anyString());
 
@@ -118,6 +125,114 @@ class WorkflowEngineExecutionTest {
         engine.processTask(task);
 
         assertThat(executionOrder).containsExactly("UPDATE");
+    }
+
+    @Test
+    void evaluatesEachTriggerAgainstItsOwnInterfaceCurrentValue() {
+        Task task = pollingTask();
+        TaskStep step = pollingStep("RUNNING");
+        FlowNode node = pollingNode(List.of(
+                signalTriggerInterface("workflow-in", "ACTIVE", "workflow-action"),
+                signalTriggerInterface("state-in", "CMD_STATE", "state-action")));
+        ArrayNode input = WorkflowInterfaceSnapshots.initialize(node.getInterfaces(), "IN");
+        input = WorkflowInterfaceSnapshots.withSignal(
+                input, node.getInterfaces(), "IN", "workflow-in", "ACTIVE", null);
+        input = WorkflowInterfaceSnapshots.withSignal(
+                input, node.getInterfaces(), "IN", "state-in", "CMD_STATE",
+                JsonNodeSupport.objectNode().put("stateName", "COMPLETED"));
+        step.setInterfaceInSnapshot(input);
+        stubPoll(task, step, node);
+
+        engine.processTask(task);
+
+        assertThat(executionOrder).containsExactly("workflow-action", "state-action");
+    }
+
+    @Test
+    void emittedWorkflowSignalUpdatesCanonicalSourceAndTargetInterfaceSlots() {
+        Task task = pollingTask();
+        TaskStep sourceStep = pollingStep("RUNNING");
+        FlowNode sourceNode = pollingNode(List.of(
+                lifecycleTriggerInterface("Interface_workflow_out", "OUT", "RUNNING", "EMIT")));
+        sourceStep.setInterfaceOutSnapshot(WorkflowInterfaceSnapshots.initialize(sourceNode.getInterfaces(), "OUT"));
+        FlowNode targetNode = pollingNode(List.of(
+                signalTriggerInterface("Interface_workflow_in", "ACTIVE", "target")));
+        targetNode.setId(8L);
+        targetNode.setNodeIdRef(3L);
+        TaskStep targetStep = pollingStep("PENDING");
+        targetStep.setId(13L);
+        targetStep.setFlowNodeId(8L);
+        targetStep.setNodeIdRef(3L);
+        targetStep.setInterfaceInSnapshot(WorkflowInterfaceSnapshots.initialize(targetNode.getInterfaces(), "IN"));
+        WorkflowDefinitionCompiler.Connection connection = new WorkflowDefinitionCompiler.Connection(
+                2L, "Interface_workflow_out", 3L, "Interface_workflow_in");
+        WorkflowDefinitionCompiler.CompiledWorkflow compiled = new WorkflowDefinitionCompiler.CompiledWorkflow(
+                Map.of(), Map.of(2L, List.of(connection)), Map.of(3L, List.of(connection)),
+                Map.of("source", 2L, "target", 3L), 2L, 3L);
+        stubPoll(task, sourceStep, sourceNode);
+        when(workflows.compileDefinition(3L)).thenReturn(compiled);
+        when(workflows.nodes(3L)).thenReturn(List.of(sourceNode, targetNode));
+        when(runtime.createStep(eq(task), eq(targetNode), eq(null), eq(0),
+                org.mockito.ArgumentMatchers.any())).thenReturn(targetStep);
+        doAnswer(invocation -> {
+            sourceStep.setInterfaceOutSnapshot(invocation.getArgument(1));
+            return null;
+        }).when(runtime).updateOutputSnapshot(eq(sourceStep), org.mockito.ArgumentMatchers.any());
+        doAnswer(invocation -> {
+            targetStep.setInterfaceInSnapshot(invocation.getArgument(1));
+            return null;
+        }).when(runtime).updateInputSnapshot(eq(targetStep), org.mockito.ArgumentMatchers.any());
+
+        engine.processTask(task);
+
+        assertThat(sourceStep.getInterfaceOutSnapshot().isArray()).isTrue();
+        assertThat(WorkflowInterfaceSnapshots.find(sourceStep.getInterfaceOutSnapshot(), "Interface_workflow_out")
+                .path("signalName").asText()).isEqualTo("ACTIVE");
+        assertThat(WorkflowInterfaceSnapshots.find(sourceStep.getInterfaceOutSnapshot(), "Interface_workflow_out")
+                .has("payload")).isFalse();
+        assertThat(targetStep.getInterfaceInSnapshot().isArray()).isTrue();
+        assertThat(WorkflowInterfaceSnapshots.find(targetStep.getInterfaceInSnapshot(), "Interface_workflow_in")
+                .path("signalName").asText()).isEqualTo("ACTIVE");
+        assertThat(targetStep.getInterfaceInSnapshot().toString())
+                .doesNotContain("sourceNodeIdRef", "sourceInterface", "targetInterfaceName",
+                        "inputSignalName", "inputPayload", "sourceOutput");
+        verify(runtime).updateOutputSnapshot(eq(sourceStep), org.mockito.ArgumentMatchers.any());
+        verify(runtime).updateInputSnapshot(eq(targetStep), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void operationStateLocatesActiveDeviceStepByResourceMappingInsteadOfSnapshotMetadata() {
+        Task task = pollingTask();
+        TaskStep step = pollingStep("RUNNING");
+        FlowNode node = pollingNode(List.of(deviceStateInputInterface()));
+        node.setDeviceModelId(21L);
+        step.setInterfaceInSnapshot(WorkflowInterfaceSnapshots.initialize(node.getInterfaces(), "IN"));
+        WorkflowDetailResponse definition = new WorkflowDetailResponse();
+        ObjectNode connection = JsonNodeSupport.objectNode().put("connectionType", "DEVICE_TO_NODE");
+        connection.set("source", JsonNodeSupport.objectNode()
+                .put("deviceModelId", 21L).put("interfaceName", "Interface_state_out"));
+        connection.set("target", JsonNodeSupport.objectNode()
+                .put("nodeName", "device").put("interfaceName", "state-in"));
+        definition.setInterfaceConnections(JsonNodeSupport.arrayNode().add(connection));
+        ObjectNode signal = JsonNodeSupport.objectNode().put("signalName", "OP_STATE");
+        signal.set("payload", JsonNodeSupport.objectNode()
+                .put("deviceModelId", 21L).put("deviceInstanceId", 99L)
+                .put("stateName", "RUNNING").put("timestamp", 1L));
+        StateMachineInterfaceSignalEvent event = new StateMachineInterfaceSignalEvent(
+                99L, "Interface_state_out", "STATE", signal, Map.of());
+        when(runtime.runningDeviceSteps()).thenReturn(List.of(step));
+        when(runtime.step(step.getId())).thenReturn(step);
+        when(runtime.task(task.getId())).thenReturn(task);
+        when(flowNodes.getById(step.getFlowNodeId())).thenReturn(node);
+        when(operations.resolveDeviceInstance(task, step, node)).thenReturn(99L);
+        when(workflows.getDefinition(node.getFlowModelId())).thenReturn(definition);
+        when(workflows.compileDefinition(node.getFlowModelId())).thenReturn(new WorkflowDefinitionCompiler.CompiledWorkflow(
+                Map.of(), Map.of(), Map.of(), Map.of("device", node.getNodeIdRef()), 1L, 2L));
+
+        engine.handleStateMachineSignal(event);
+
+        verify(runtime).updateInputSnapshot(eq(step), org.mockito.ArgumentMatchers.any());
+        verify(runtime).runningDeviceSteps();
     }
 
     private final WorkflowRuntimeService runtime = mock(WorkflowRuntimeService.class);
@@ -317,12 +432,11 @@ class WorkflowEngineExecutionTest {
         step.setTaskId(9L);
         step.setFlowNodeId(7L);
         step.setNodeIdRef(2L);
+        step.setStepDepth(0);
         step.setNodeStatus(status);
         step.setVariableSpace(JsonNodeSupport.objectNode().put("ready", true));
-        step.setInterfaceInSnapshot(JsonNodeSupport.objectNode()
-                .put("targetInterfaceName", "in-a")
-                .put("inputSignalName", "ACTIVE")
-                .set("inputPayload", JsonNodeSupport.objectNode()));
+        step.setInterfaceInSnapshot(JsonNodeSupport.arrayNode());
+        step.setInterfaceOutSnapshot(JsonNodeSupport.arrayNode());
         return step;
     }
 
@@ -376,9 +490,24 @@ class WorkflowEngineExecutionTest {
         item.put("interfaceType", "STATE");
         item.putArray("allowedSignals").add("CMD_STATE").add("OP_STATE");
         ObjectNode trigger = item.putArray("bindingTriggers").addObject();
-        trigger.putObject("condition").put("object", "inputPayload.stateName")
+        trigger.putObject("condition").put("object", "payload.stateName")
                 .put("operator", "=").put("threshold", "RUNNING");
         trigger.set("action", action("UPDATE"));
+        return item;
+    }
+
+    private ObjectNode signalTriggerInterface(String name, String signalName, String trace) {
+        ObjectNode item = JsonNodeSupport.objectNode();
+        item.put("name", name);
+        item.put("direction", "IN");
+        item.put("interfaceType", "WORKFLOW");
+        item.putArray("allowedSignals").add(signalName);
+        ObjectNode trigger = item.putArray("bindingTriggers").addObject();
+        trigger.putObject("condition").put("object", "signalName")
+                .put("operator", "=").put("threshold", signalName);
+        trigger.putObject("action").put("actionName", "UPDATE").putObject("payload")
+                .put("updateType", "INTERNAL_VARIABLE").put("targetName", "ready")
+                .put("value", true).put("trace", trace);
         return item;
     }
 
@@ -398,6 +527,12 @@ class WorkflowEngineExecutionTest {
     }
 
     private void stubPoll(Task task, TaskStep step, FlowNode node) {
+        if (step.getInterfaceInSnapshot() == null || step.getInterfaceInSnapshot().isEmpty()) {
+            step.setInterfaceInSnapshot(WorkflowInterfaceSnapshots.initialize(node.getInterfaces(), "IN"));
+        }
+        if (step.getInterfaceOutSnapshot() == null || step.getInterfaceOutSnapshot().isEmpty()) {
+            step.setInterfaceOutSnapshot(WorkflowInterfaceSnapshots.initialize(node.getInterfaces(), "OUT"));
+        }
         when(runtime.pollableSteps(task.getId())).thenReturn(List.of(step));
         when(runtime.task(task.getId())).thenReturn(task);
         when(flowNodes.getById(step.getFlowNodeId())).thenReturn(node);

@@ -73,6 +73,21 @@ class WorkflowRuntimeServiceTest {
     }
 
     @Test
+    void updatesCanonicalOutputSnapshotWithoutChangingItsShape() {
+        TaskStepMapper steps = mock(TaskStepMapper.class);
+        WorkflowRuntimeService runtime = runtime(steps, mock(FlowNodeMapper.class));
+        TaskStep step = step("RUNNING");
+        ArrayNode snapshot = JsonNodeSupport.arrayNode();
+        snapshot.addObject().put("interfaceName", "workflow-out").put("signalName", "ACTIVE");
+
+        runtime.updateOutputSnapshot(step, snapshot);
+
+        assertTrue(step.getInterfaceOutSnapshot().isArray());
+        assertEquals(snapshot, step.getInterfaceOutSnapshot());
+        verify(steps).updateById(step);
+    }
+
+    @Test
     void explicitlyTransitionsPendingNodeToRunningThroughDeclaredLifecycleEdge() throws Exception {
         TaskStepMapper steps = mock(TaskStepMapper.class);
         FlowNodeMapper nodes = mock(FlowNodeMapper.class);

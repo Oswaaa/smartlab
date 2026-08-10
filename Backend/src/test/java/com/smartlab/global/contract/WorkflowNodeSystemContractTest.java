@@ -26,6 +26,21 @@ class WorkflowNodeSystemContractTest {
     }
 
     @Test
+    void allTriggerConditionsUseCanonicalInterfaceLocalSignalNames() {
+        JsonNode templates = WorkflowNodeSystemContract.templates();
+
+        assertTrue(templates.findValues("object").stream()
+                .map(JsonNode::asText)
+                .noneMatch(value -> value.equals("inputSignalName") || value.startsWith("inputPayload")));
+        assertTrue(templates.findValues("object").stream()
+                .map(JsonNode::asText)
+                .anyMatch(value -> value.equals("signalName")));
+        assertTrue(templates.findValues("object").stream()
+                .map(JsonNode::asText)
+                .anyMatch(value -> value.equals("payload.stateName")));
+    }
+
+    @Test
     void startTemplateHasOnlyWorkflowOutputAndCanonicalActions() {
         JsonNode template = WorkflowNodeSystemContract.template("FUNC_NODE", "START");
         assertEquals(List.of("Interface_workflow_out"), names(template.path("interfaces")));

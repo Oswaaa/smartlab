@@ -53,6 +53,22 @@ class DefaultWorkflowExecutionOperationsTest {
                 .hasMessageContaining("currentTemperature");
     }
 
+    @Test
+    void messageIdIsStableWithoutWritingRuntimeMetadataIntoInterfaceSnapshots() {
+        task.setId(9L);
+        step.setId(12L);
+        step.setTaskId(9L);
+        step.setInterfaceInSnapshot(JsonNodeSupport.arrayNode());
+        step.setInterfaceOutSnapshot(JsonNodeSupport.arrayNode());
+
+        String first = operations.ensureMessageId(step, 21L, "mix");
+        String second = operations.ensureMessageId(step, 21L, "mix");
+
+        assertThat(second).isEqualTo(first);
+        assertThat(step.getInterfaceInSnapshot()).isEqualTo(JsonNodeSupport.arrayNode());
+        assertThat(step.getInterfaceOutSnapshot()).isEqualTo(JsonNodeSupport.arrayNode());
+    }
+
     private void stubTwin(FlowNode node, ObjectNode attributes) {
         DeviceInstances instance = new DeviceInstances();
         instance.setId(101L);

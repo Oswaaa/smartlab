@@ -68,7 +68,7 @@ public final class WorkflowNodeSystemContract {
     private static ObjectNode endTemplate() {
         ObjectNode template = baseTemplate();
         ArrayNode triggers = JsonNodeSupport.arrayNode();
-        triggers.add(trigger("end.activate", "inputSignalName", "=", WorkflowNodeSignal.ACTIVE.name(),
+        triggers.add(trigger("end.activate", "signalName", "=", WorkflowNodeSignal.ACTIVE.name(),
                 updateLifecycleAction("RUNNING")));
         triggers.add(trigger("end.complete", "nodeLifecycleState", "=", "RUNNING",
                 updateLifecycleAction("SUCCEEDED")));
@@ -103,13 +103,13 @@ public final class WorkflowNodeSystemContract {
     private static ObjectNode deviceTemplate() {
         ObjectNode template = baseTemplate();
         ArrayNode workflowTriggers = JsonNodeSupport.arrayNode();
-        workflowTriggers.add(trigger("device.workflowStart", "inputSignalName", "=",
+        workflowTriggers.add(trigger("device.workflowStart", "signalName", "=",
                 WorkflowNodeSignal.ACTIVE.name(), updateLifecycleAction("RUNNING")));
         ArrayNode stateOutputTriggers = JsonNodeSupport.arrayNode();
         stateOutputTriggers.add(trigger("device.execute", "nodeLifecycleState", "=", "RUNNING",
                 emitAction("Interface_state_out", WorkflowControlSignal.WF_EXECUTE_START.name())));
         ArrayNode stateTriggers = JsonNodeSupport.arrayNode();
-        stateTriggers.add(trigger("device.stateCompleted", "inputPayload.stateName", "=", "COMPLETED",
+        stateTriggers.add(trigger("device.stateCompleted", "payload.stateName", "=", "COMPLETED",
                 updateLifecycleAction("SUCCEEDED")));
         ArrayNode workflowOutputTriggers = JsonNodeSupport.arrayNode();
         workflowOutputTriggers.add(trigger("device.completeNode", "nodeLifecycleState", "=", "SUCCEEDED",
@@ -128,7 +128,7 @@ public final class WorkflowNodeSystemContract {
     private static ObjectNode subflowTemplate() {
         ObjectNode template = baseTemplate();
         ArrayNode inputTriggers = JsonNodeSupport.arrayNode();
-        inputTriggers.add(trigger("subflow.activate", "inputSignalName", "=", WorkflowNodeSignal.ACTIVE.name(),
+        inputTriggers.add(trigger("subflow.activate", "signalName", "=", WorkflowNodeSignal.ACTIVE.name(),
                 updateLifecycleAction("RUNNING")));
         ArrayNode outputTriggers = JsonNodeSupport.arrayNode();
         outputTriggers.add(trigger("subflow.complete", "nodeLifecycleState", "=", "SUCCEEDED",
@@ -175,7 +175,8 @@ public final class WorkflowNodeSystemContract {
     private static ObjectNode workflowInterface(String systemKey, String name, String direction, Iterable<? extends JsonNode> bindingTriggers) {
         ArrayNode triggers = JsonNodeSupport.arrayNode();
         bindingTriggers.forEach(triggers::add);
-        return interfaceDefinition(systemKey, name, direction, "WORKFLOW", names(WorkflowNodeSignal.values()), triggers);
+        return interfaceDefinition(systemKey, name, direction, "WORKFLOW",
+                List.of(WorkflowNodeSignal.ACTIVE.name()), triggers);
     }
 
     private static ObjectNode interfaceDefinition(String systemKey, String name, String direction, String interfaceType,
@@ -192,7 +193,7 @@ public final class WorkflowNodeSystemContract {
 
     private static ArrayNode activationAndCompletionTriggers(String prefix) {
         ArrayNode triggers = JsonNodeSupport.arrayNode();
-        triggers.add(trigger(prefix + ".activate", "inputSignalName", "=", WorkflowNodeSignal.ACTIVE.name(),
+        triggers.add(trigger(prefix + ".activate", "signalName", "=", WorkflowNodeSignal.ACTIVE.name(),
                 updateLifecycleAction("RUNNING")));
         triggers.add(trigger(prefix + ".complete", "nodeLifecycleState", "=", "RUNNING",
                 updateLifecycleAction("SUCCEEDED")));

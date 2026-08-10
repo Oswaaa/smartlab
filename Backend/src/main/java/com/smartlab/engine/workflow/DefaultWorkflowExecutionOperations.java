@@ -19,6 +19,7 @@ import org.springframework.stereotype.Service;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.UUID;
+import java.nio.charset.StandardCharsets;
 
 @Service
 public class DefaultWorkflowExecutionOperations implements WorkflowExecutionOperations {
@@ -74,17 +75,9 @@ public class DefaultWorkflowExecutionOperations implements WorkflowExecutionOper
 
     @Override
     public String ensureMessageId(TaskStep step, long deviceInstanceId, String capabilityName) {
-        String existing = step.getInterfaceInSnapshot() == null ? ""
-                : step.getInterfaceInSnapshot().path("messageId").asText("");
-        if (!existing.isBlank()) return existing;
-        String messageId = UUID.randomUUID().toString();
-        ObjectNode snapshot = step.getInterfaceInSnapshot() != null && step.getInterfaceInSnapshot().isObject()
-                ? (ObjectNode) step.getInterfaceInSnapshot().deepCopy() : JsonNodeSupport.objectNode();
-        snapshot.put("messageId", messageId);
-        snapshot.put("deviceInstanceId", deviceInstanceId);
-        snapshot.put("capabilityName", capabilityName);
-        runtime.updateInputSnapshot(step, snapshot);
-        return messageId;
+        String seed = "workflow:" + step.getTaskId() + ":" + step.getId() + ":"
+                + deviceInstanceId + ":" + capabilityName;
+        return UUID.nameUUIDFromBytes(seed.getBytes(StandardCharsets.UTF_8)).toString();
     }
 
     @Override

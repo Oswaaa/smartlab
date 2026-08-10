@@ -164,9 +164,16 @@
                 </el-form-item>
               </el-form>
             </div>
-            <div class="section-heading"><strong>静态建模检查</strong><span>架构与链接状态</span></div>
+            <div class="section-heading"><strong>静态建模检查</strong><span>{{ validationSummary.errors }} 错误 · {{ validationSummary.warnings }} 提醒</span></div>
             <div class="overview-metrics"><div><strong>{{ form.nodesDef.length }}</strong><span>节点</span></div><div><strong>{{ executionConnectionCount }}</strong><span>执行连接</span></div><div><strong>{{ form.portConnections.length }}</strong><span>数据连接</span></div><div><strong>{{ deviceNodeCount }}</strong><span>设备节点</span></div></div>
-            <ul class="check-list"><li :class="{ok:hasSingleStartEnd}"><i></i><span><strong>唯一入口与出口</strong><small>需要且仅需要一个 START 和 END</small></span></li><li :class="{ok:!validationSummary.errors}"><i></i><span><strong>节点与拓扑有效</strong><small>{{ validationSummary.errors ? `${validationSummary.errors} 个问题待处理` : '节点契约、连接和路径正常' }}</small></span></li><li :class="{ok:contractReady}"><i></i><span><strong>系统契约已加载</strong><small>{{ contractReady ? '可安全创建并保存节点' : contractError || '契约加载中' }}</small></span></li></ul>
+            <div v-if="workflowValidationIssues.length" class="issue-list">
+              <button v-for="issue in workflowValidationIssues" :key="issue.code" :class="issue.severity" @click="focusValidationIssue(issue)">
+                <b>{{ issue.severity === 'error' ? '错误' : '提醒' }}</b>
+                <span><strong>{{ issue.title }}</strong><small>{{ issue.detail }}</small></span>
+                <i>›</i>
+              </button>
+            </div>
+            <el-result v-else icon="success" title="建模校验通过" sub-title="节点契约与执行拓扑均满足保存要求" />
           </section>
         </div>
       </aside>

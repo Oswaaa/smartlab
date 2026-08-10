@@ -105,6 +105,40 @@ public class WorkflowRuntimeService {
         publishNode(step);
     }
 
+    @Transactional(rollbackFor = Exception.class)
+    public void transitionNodeLifecycle(Task task, TaskStep step, FlowNode node, String targetState) {
+        if (task == null || step == null || node == null || targetState == null || targetState.isBlank()) {
+            throw new IllegalArgumentException("节点生命周期更新上下文不完整");
+        }
+        TaskStep persisted = stepMapper.selectById(step.getId());
+        TaskStep target = persisted == null ? step : persisted;
+        if (!node.getId().equals(target.getFlowNodeId())) {
+            throw new IllegalArgumentException("任务步骤与生命周期节点不匹配");
+        }
+        if (targetState.equals(target.getNodeStatus())) return;
+        requireLifecycleTransition(target, node, targetState);
+        OffsetDateTime now = OffsetDateTime.now();
+        target.setNodeStatus(targetState);
+        if ("RUNNING".equals(targetState) && target.getStartTime() == null) target.setStartTime(now);
+        if (TERMINAL_NODE_STATES.contains(targetState)) {
+            target.setEndTime(now);
+            if (target.getStartTime() != null) {
+                target.setDurationMs(now.toInstant().toEpochMilli()
+                        - target.getStartTime().toInstant().toEpochMilli());
+            }
+        }
+        stepMapper.updateById(target);
+        if (target != step) copyLifecycleState(target, step);
+        if ("RUNNING".equals(targetState)) {
+            task.setCurrentFlowNodeId(target.getFlowNodeId());
+            task.setCurrentNodeIdRef(rootNodeIdRef(target));
+            taskMapper.updateById(task);
+        }
+        logService.append("TASK", task.getId(), target.getId(), null, "INFO",
+                "节点生命周期更新: " + target.getNodeStatus());
+        publishNode(target);
+    }
+
     public void updateInputSnapshot(TaskStep step, JsonNode snapshot) {
         step.setInterfaceInSnapshot(snapshot);
         stepMapper.updateById(step);
@@ -249,6 +283,10 @@ public class WorkflowRuntimeService {
     private void requireLifecycleTransition(TaskStep step, String toState) {
         FlowNode node = flowNodeMapper.selectById(step.getFlowNodeId());
         if (node == null) throw new IllegalStateException("任务步骤引用的FLOW_NODE不存在: " + step.getFlowNodeId());
+        requireLifecycleTransition(step, node, toState);
+    }
+
+    private void requireLifecycleTransition(TaskStep step, FlowNode node, String toState) {
         JsonNode lifecycle = node.getLifecycle();
         if (lifecycle == null || !lifecycle.isObject() || lifecycle.isEmpty()) return;
         String fromState = step.getNodeStatus();
@@ -260,6 +298,12 @@ public class WorkflowRuntimeService {
                     && toState.equals(transition.path("toStateName").asText())) return;
         }
         throw new IllegalStateException("节点生命周期不允许状态转移: " + fromState + "→" + toState);
+    }
+    private void copyLifecycleState(TaskStep source, TaskStep target) {
+        target.setNodeStatus(source.getNodeStatus());
+        target.setStartTime(source.getStartTime());
+        target.setEndTime(source.getEndTime());
+        target.setDurationMs(source.getDurationMs());
     }
     private void copyTerminalState(TaskStep source, TaskStep target) {
         target.setNodeStatus(source.getNodeStatus());

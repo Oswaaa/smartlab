@@ -14,6 +14,10 @@ public interface WorkflowExecutionOperations {
         return JsonNodeSupport.objectNode();
     }
 
+    default void transitionNodeLifecycle(Task task, TaskStep step, FlowNode node, String targetState) {
+        throw new UnsupportedOperationException("当前执行边界不支持节点生命周期更新");
+    }
+
     long resolveDeviceInstance(Task task, TaskStep step, FlowNode node);
     String ensureMessageId(TaskStep step, long deviceInstanceId, String capabilityRef);
     DeviceDispatchResult dispatchDeviceSignal(Task task, TaskStep step, FlowNode node, long deviceInstanceId,

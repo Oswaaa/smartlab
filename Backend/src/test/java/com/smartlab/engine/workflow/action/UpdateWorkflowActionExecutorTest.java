@@ -3,6 +3,7 @@ package com.smartlab.engine.workflow.action;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.engine.constraint.ConstraintExpressionEvaluator;
+import com.smartlab.engine.workflow.WorkflowExecutionOperations;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.entity.workflow.FlowNode;
 import com.smartlab.management.entity.workflow.Task;
@@ -10,6 +11,9 @@ import com.smartlab.management.entity.workflow.TaskStep;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.lang.reflect.Proxy;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -33,6 +37,52 @@ class UpdateWorkflowActionExecutorTest {
     }
 
     @Test
+    void writesInlineConstantWithoutExpressionEvaluation() {
+        ObjectNode actionNode = JsonNodeSupport.objectNode();
+        actionNode.put("actionName", "UPDATE");
+        actionNode.putObject("payload")
+                .put("updateType", "INTERNAL_VARIABLE")
+                .put("targetName", "target")
+                .put("value", 200);
+
+        WorkflowActionResult result = executor.execute(
+                WorkflowActionDefinition.from(actionNode),
+                context(JsonNodeSupport.objectNode(), variable("target", "INTEGER")));
+
+        assertThat(result.variableUpdates().path("target").asInt()).isEqualTo(200);
+    }
+
+    @Test
+    void requestsNodeLifecycleTransitionWithoutWritingVariableSpace() {
+        List<String> requestedStates = new ArrayList<>();
+        WorkflowExecutionOperations operations = (WorkflowExecutionOperations) Proxy.newProxyInstance(
+                getClass().getClassLoader(),
+                new Class<?>[]{WorkflowExecutionOperations.class},
+                (proxy, method, args) -> {
+                    if ("transitionNodeLifecycle".equals(method.getName())) {
+                        requestedStates.add((String) args[3]);
+                        return null;
+                    }
+                    if (method.getReturnType() == long.class) return 0L;
+                    return null;
+                });
+        ObjectNode actionNode = JsonNodeSupport.objectNode();
+        actionNode.put("actionName", "UPDATE");
+        actionNode.putObject("payload")
+                .put("updateType", "NODE_LIFECYCLE")
+                .put("targetName", "RUNNING");
+        FlowNode node = new FlowNode();
+
+        WorkflowActionResult result = executor.execute(
+                WorkflowActionDefinition.from(actionNode),
+                new WorkflowActionContext(new Task(), new TaskStep(), node,
+                        JsonNodeSupport.objectNode(), Instant.now(), operations));
+
+        assertThat(requestedStates).containsExactly("RUNNING");
+        assertThat(result.variableUpdates()).isEmpty();
+    }
+
+    @Test
     void rejectsUpdateResultThatDoesNotMatchDeclaredType() {
         assertThatThrownBy(() -> executor.execute(
                 action("enabled", "\"true\""),
@@ -42,10 +92,13 @@ class UpdateWorkflowActionExecutorTest {
     }
 
     private WorkflowActionDefinition action(String variableName, String expression) {
-        ObjectNode payload = JsonNodeSupport.objectNode();
-        payload.put("internalVariableName", variableName);
-        payload.put("valueExpression", expression);
-        return new WorkflowActionDefinition("update-" + variableName, "UPDATE", payload);
+        ObjectNode action = JsonNodeSupport.objectNode();
+        action.put("actionName", "UPDATE");
+        action.putObject("payload")
+                .put("updateType", "INTERNAL_VARIABLE")
+                .put("targetName", variableName)
+                .put("valueExpression", expression);
+        return WorkflowActionDefinition.from(action);
     }
 
     private WorkflowActionContext context(ObjectNode variables, ObjectNode variable) {

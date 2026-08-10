@@ -20,11 +20,23 @@ public class UpdateWorkflowActionExecutor implements WorkflowActionExecutor {
 
     @Override
     public WorkflowActionResult execute(WorkflowActionDefinition action, WorkflowActionContext context) {
-        String variableName = action.payload().path("internalVariableName").asText("").trim();
-        String expression = action.payload().path("valueExpression").asText("").trim();
-        if (variableName.isBlank() || expression.isBlank())
+        String updateType = action.payload().path("updateType").asText("").trim();
+        String variableName = action.payload().path("targetName").asText("").trim();
+        if (variableName.isBlank())
             throw new IllegalArgumentException("UPDATE动作字段不完整");
-        JsonNode value = valueResolver.resolveExpression(expression, context.variables());
+        if ("NODE_LIFECYCLE".equals(updateType)) {
+            if (context.operations() == null) throw new IllegalArgumentException("生命周期UPDATE缺少执行边界");
+            context.operations().transitionNodeLifecycle(context.task(), context.step(), context.node(), variableName);
+            return WorkflowActionResult.continueExecution();
+        }
+        if (!"INTERNAL_VARIABLE".equals(updateType)) throw new IllegalArgumentException("UPDATE动作updateType不支持: " + updateType);
+        JsonNode value;
+        if (action.payload().has("value")) {
+            value = action.payload().get("value").deepCopy();
+        } else {
+            String expression = action.payload().path("valueExpression").asText("").trim();
+            value = valueResolver.resolveExpression(expression, context.variables());
+        }
         JsonNode declaration = declaredVariable(context.node().getInVariables(), variableName);
         if (declaration == null) throw new IllegalArgumentException("UPDATE动作引用的内部变量不存在: " + variableName);
         requireCompatibleType(variableName, declaration.path("dataType").asText(""), value);
@@ -42,12 +54,12 @@ public class UpdateWorkflowActionExecutor implements WorkflowActionExecutor {
     }
 
     private void requireCompatibleType(String variableName, String dataType, JsonNode value) {
-        boolean valid = value != null && !value.isNull() && switch (dataType) {
+        boolean valid = value != null && ("JSON".equals(dataType) || !value.isNull()) && switch (dataType) {
             case "INTEGER" -> value.isIntegralNumber();
             case "DOUBLE" -> value.isNumber();
             case "STRING" -> value.isTextual();
             case "BOOLEAN" -> value.isBoolean();
-            case "JSON" -> value.isObject() || value.isArray();
+            case "JSON" -> true;
             default -> throw new IllegalArgumentException("变量" + variableName + "声明了不支持的数据类型" + dataType);
         };
         if (!valid) throw new IllegalArgumentException("变量" + variableName + "要求" + dataType + "，表达式结果类型不一致");

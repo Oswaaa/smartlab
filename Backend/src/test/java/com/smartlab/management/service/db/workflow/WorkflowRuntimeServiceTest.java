@@ -3,6 +3,7 @@ package com.smartlab.management.service.db.workflow;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.entity.workflow.FlowNode;
+import com.smartlab.management.entity.workflow.Task;
 import com.smartlab.management.entity.workflow.TaskStep;
 import com.smartlab.management.mapper.workflow.FlowNodeMapper;
 import com.smartlab.management.mapper.workflow.TaskMapper;
@@ -11,6 +12,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -19,6 +22,27 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 class WorkflowRuntimeServiceTest {
+    @Test
+    void explicitlyTransitionsPendingNodeToRunningThroughDeclaredLifecycleEdge() throws Exception {
+        TaskStepMapper steps = mock(TaskStepMapper.class);
+        FlowNodeMapper nodes = mock(FlowNodeMapper.class);
+        WorkflowRuntimeService runtime = runtime(steps, nodes);
+        TaskStep step = step("PENDING");
+        FlowNode node = node(lifecycle("PENDING", "RUNNING", "RUNNING", "SUCCEEDED"));
+        Task task = new Task();
+        task.setId(5L);
+        task.setTaskStatus("RUNNING");
+        when(steps.selectById(11L)).thenReturn(step);
+
+        runtime.getClass()
+                .getMethod("transitionNodeLifecycle", Task.class, TaskStep.class, FlowNode.class, String.class)
+                .invoke(runtime, task, step, node, "RUNNING");
+
+        assertEquals("RUNNING", step.getNodeStatus());
+        assertNotNull(step.getStartTime());
+        verify(steps).updateById(step);
+    }
+
     @Test
     void rejectsNodeStatusTransitionThatIsNotDeclaredByLifecycle() {
         TaskStepMapper steps = mock(TaskStepMapper.class);

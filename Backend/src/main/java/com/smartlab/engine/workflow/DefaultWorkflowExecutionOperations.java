@@ -62,6 +62,11 @@ public class DefaultWorkflowExecutionOperations implements WorkflowExecutionOper
     }
 
     @Override
+    public void transitionNodeLifecycle(Task task, TaskStep step, FlowNode node, String targetState) {
+        runtime.transitionNodeLifecycle(task, step, node, targetState);
+    }
+
+    @Override
     public long resolveDeviceInstance(Task task, TaskStep step, FlowNode node) {
         DeviceInstances instance = taskResourceService.resolveDeviceInstance(task, step, node);
         return instance.getId();

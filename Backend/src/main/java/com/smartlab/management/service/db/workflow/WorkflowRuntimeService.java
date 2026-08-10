@@ -7,6 +7,7 @@ import com.smartlab.global.event.TaskLifecycleObservationEvent;
 import com.smartlab.global.event.WorkflowNodeObservationEvent;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.engine.workflow.WorkflowTriggerState;
+import com.smartlab.engine.workflow.WorkflowInterfaceSnapshots;
 import com.smartlab.management.entity.workflow.FlowNode;
 import com.smartlab.management.entity.workflow.Task;
 import com.smartlab.management.entity.workflow.TaskStep;
@@ -84,7 +85,13 @@ public class WorkflowRuntimeService {
         step.setParentStepId(parentStepId);
         step.setStepDepth(depth);
         step.setNodeStatus("PENDING");
-        step.setInterfaceInSnapshot(input == null ? JsonNodeSupport.objectNode() : input);
+        JsonNode inputSnapshot = WorkflowInterfaceSnapshots.initialize(node.getInterfaces(), "IN");
+        if (input != null && !input.isNull()) {
+            if (!input.isArray()) throw new IllegalArgumentException("节点输入接口快照必须是JSON数组");
+            inputSnapshot = input.deepCopy();
+        }
+        step.setInterfaceInSnapshot(inputSnapshot);
+        step.setInterfaceOutSnapshot(WorkflowInterfaceSnapshots.initialize(node.getInterfaces(), "OUT"));
         step.setVariableSpace(task.getTaskVariables() == null ? JsonNodeSupport.objectNode() : task.getTaskVariables().deepCopy());
         stepMapper.insert(step);
         logService.append("TASK", task.getId(), step.getId(), null, "INFO", "节点已触发: " + node.getNodeIdRef());

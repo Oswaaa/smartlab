@@ -18,6 +18,21 @@
       "type": "string",
       "enum": [ "PENDING", "RUNNING", "PAUSED", "TERMINATING", "SUCCEEDED", "FAILED", "TERMINATED" ],
       "description": "任务实例整体生命周期状态，对应数据库TASK_STATUS；工作流模型本身不具有运行生命周期"
+    },
+    "WorkflowInterfaceSnapshotItem": {
+      "type": "object",
+      "description": "TASK_STEP接口当前值快照项；signalName为null表示该接口尚无当前信号，非null时signalName与payload须符合协议规范及接口allowedSignals",
+      "properties": {
+        "interfaceName": { "type": "string", "description": "节点interfaces[].name中声明的接口名" },
+        "signalName": { "type": [ "string", "null" ], "description": "接口当前信号名；尚无信号时为null" },
+        "payload": { "type": "object", "additionalProperties": true, "description": "可选协议载荷；signalName为null时不得存在" }
+      },
+      "required": [ "interfaceName", "signalName" ]
+    },
+    "WorkflowInterfaceSnapshot": {
+      "type": "array",
+      "description": "TASK_STEP输入或输出接口当前值数组，每个已声明接口在对应方向数组中恰有一项",
+      "items": { "$ref": "#/definitions/WorkflowInterfaceSnapshotItem" }
     }
   },
   "stateMachineEngine": {

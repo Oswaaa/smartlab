@@ -68,6 +68,23 @@ class SchemaContractConformanceTest {
         assertEquals(contractTransitions, schemaTransitions, "固定系统转移");
     }
 
+    @Test
+    void workflowInterfaceSnapshotDefinitionsUseCanonicalCurrentValueShape() throws Exception {
+        JsonNode definitions = resource("系统执行规范.json").path("definitions");
+        JsonNode item = definitions.path("WorkflowInterfaceSnapshotItem");
+        JsonNode snapshot = definitions.path("WorkflowInterfaceSnapshot");
+
+        assertEquals("object", item.path("type").asText());
+        assertEquals(List.of("interfaceName", "signalName"), textValues(item.path("required")));
+        assertEquals("string", item.path("properties").path("interfaceName").path("type").asText());
+        assertEquals(List.of("string", "null"),
+                textValues(item.path("properties").path("signalName").path("type")));
+        assertEquals("object", item.path("properties").path("payload").path("type").asText());
+        assertEquals("array", snapshot.path("type").asText());
+        assertEquals("#/definitions/WorkflowInterfaceSnapshotItem",
+                snapshot.path("items").path("$ref").asText());
+    }
+
     private JsonNode resource(String name) throws IOException {
         try (InputStream input = getClass().getResourceAsStream("/schemas/" + name)) {
             assertNotNull(input, "缺少Schema资源: " + name);

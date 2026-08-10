@@ -1,5 +1,6 @@
 package com.smartlab.management.service.db.workflow;
 
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.engine.workflow.WorkflowTriggerState;
 import com.smartlab.global.util.JsonNodeSupport;
@@ -18,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
@@ -26,6 +28,29 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 class WorkflowRuntimeServiceTest {
+    @Test
+    void createStepInitializesCanonicalInputAndOutputInterfaceArrays() {
+        TaskStepMapper steps = mock(TaskStepMapper.class);
+        WorkflowRuntimeService runtime = runtime(steps, mock(FlowNodeMapper.class));
+        Task task = new Task();
+        task.setId(5L);
+        task.setTaskVariables(JsonNodeSupport.objectNode());
+        FlowNode node = node(lifecycle("PENDING", "RUNNING", "RUNNING", "SUCCEEDED"));
+        node.setInterfaces(interfaces());
+        when(steps.selectOne(any())).thenReturn(null);
+
+        TaskStep created = runtime.createStep(task, node, null, 0, null);
+
+        assertTrue(created.getInterfaceInSnapshot().isArray());
+        assertTrue(created.getInterfaceOutSnapshot().isArray());
+        assertEquals(2, created.getInterfaceInSnapshot().size());
+        assertEquals("workflow-in", created.getInterfaceInSnapshot().get(0).path("interfaceName").asText());
+        assertTrue(created.getInterfaceInSnapshot().get(0).path("signalName").isNull());
+        assertEquals(1, created.getInterfaceOutSnapshot().size());
+        assertEquals("workflow-out", created.getInterfaceOutSnapshot().get(0).path("interfaceName").asText());
+        assertTrue(created.getInterfaceOutSnapshot().get(0).path("signalName").isNull());
+    }
+
     @Test
     void pollsActiveAndUnobservedTerminalStepsOnly() {
         TaskStepMapper steps = mock(TaskStepMapper.class);
@@ -131,5 +156,20 @@ class WorkflowRuntimeServiceTest {
         transitions.addObject().put("fromStateName", firstFrom).put("toStateName", firstTo);
         transitions.addObject().put("fromStateName", secondFrom).put("toStateName", secondTo);
         return lifecycle;
+    }
+
+    private ArrayNode interfaces() {
+        ArrayNode interfaces = JsonNodeSupport.arrayNode();
+        addInterface(interfaces, "workflow-in", "IN", "ACTIVE");
+        addInterface(interfaces, "state-in", "IN", "CMD_STATE");
+        addInterface(interfaces, "workflow-out", "OUT", "ACTIVE");
+        return interfaces;
+    }
+
+    private void addInterface(ArrayNode interfaces, String name, String direction, String signalName) {
+        ObjectNode definition = interfaces.addObject();
+        definition.put("name", name);
+        definition.put("direction", direction);
+        definition.putArray("allowedSignals").add(signalName);
     }
 }

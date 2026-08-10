@@ -59,6 +59,7 @@ public final class ProtocolContract {
     private static Map<String, SignalPayloadPolicy> signalPayloadPolicies() {
         Map<String, SignalPayloadPolicy> policies = new LinkedHashMap<>();
         policies.put(WorkflowNodeSignal.ACTIVE.name(), SignalPayloadPolicy.NONE);
+        policies.put(WorkflowNodeSignal.SUBFLOW_COMPLETED.name(), SignalPayloadPolicy.NONE);
         policies.put(WorkflowControlSignal.WF_EXECUTE_START.name(), SignalPayloadPolicy.COMMAND);
         policies.put(WorkflowControlSignal.WF_EXECUTE_ABORT.name(), SignalPayloadPolicy.NONE);
         policies.put(ManualControlSignal.MANUAL_EXECUTE_START.name(), SignalPayloadPolicy.COMMAND);

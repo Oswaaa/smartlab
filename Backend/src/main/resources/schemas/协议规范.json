@@ -16,8 +16,8 @@
     },
     "WorkflowNodeSignal": {
       "type": "string",
-      "enum": [ "ACTIVE" ],
-      "description": "工作流节点间的激活信号上游节点通过WORKFLOW类型OUT接口发送ACTIVE，下游节点通过WORKFLOW类型IN接口接收ACTIVE"
+      "enum": [ "ACTIVE", "SUBFLOW_COMPLETED" ],
+      "description": "工作流节点间的激活信号上游节点通过WORKFLOW类型OUT接口发送ACTIVE，下游节点通过WORKFLOW类型IN接口接收ACTIVE；子流程节点完成之后向父节点发送SUBFLOW_COMPLETED"
     },
     "WorkflowControlSignal": {
       "type": "string",

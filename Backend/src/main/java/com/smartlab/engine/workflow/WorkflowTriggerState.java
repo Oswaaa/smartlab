@@ -11,7 +11,9 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-final class WorkflowTriggerState {
+public final class WorkflowTriggerState {
+    public static final String TERMINAL_OBSERVED_KEY = "__terminalObserved";
+
     private WorkflowTriggerState() {
     }
 

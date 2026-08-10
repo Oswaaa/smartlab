@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.global.event.TaskLifecycleObservationEvent;
 import com.smartlab.global.event.WorkflowNodeObservationEvent;
 import com.smartlab.global.util.JsonNodeSupport;
+import com.smartlab.engine.workflow.WorkflowTriggerState;
 import com.smartlab.management.entity.workflow.FlowNode;
 import com.smartlab.management.entity.workflow.Task;
 import com.smartlab.management.entity.workflow.TaskStep;
@@ -103,6 +104,21 @@ public class WorkflowRuntimeService {
         taskMapper.updateById(task);
         logService.append("TASK", task.getId(), step.getId(), null, "INFO", "节点开始执行: " + step.getNodeIdRef());
         publishNode(step);
+    }
+
+    public List<TaskStep> pollableSteps(Long taskId) {
+        return steps(taskId).stream()
+                .filter(step -> ACTIVE_NODE_STATES.contains(step.getNodeStatus())
+                        || (TERMINAL_NODE_STATES.contains(step.getNodeStatus())
+                        && !terminalObservationSettled(step)))
+                .toList();
+    }
+
+    private boolean terminalObservationSettled(TaskStep step) {
+        JsonNode variableSpace = step.getVariableSpace();
+        return variableSpace != null
+                && variableSpace.path("_triggerStates")
+                        .path(WorkflowTriggerState.TERMINAL_OBSERVED_KEY).asBoolean(false);
     }
 
     @Transactional(rollbackFor = Exception.class)

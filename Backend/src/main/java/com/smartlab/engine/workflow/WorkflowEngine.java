@@ -28,14 +28,12 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
-/**
- * 工作流运行时只解释最终工作流模型：WORKFLOW或STATE输入接口收到信号后，计算该接口的bindingTriggers并执行其引用的EMIT或UPDATE动作
- * START节点是唯一没有上游输入的例外，它在任务启动时执行自身声明的初始化动作
- */
+/** 工作流运行时按节点轮询接口触发器；设备事件只持久化输入，由下一轮统一求值。 */
 @Service
 public class WorkflowEngine {
     private static final Logger log = LoggerFactory.getLogger(WorkflowEngine.class);
     private static final int MAX_SUB_FLOW_DEPTH = 32;
+    private static final Set<String> TERMINAL_NODE_STATES = Set.of("SUCCEEDED", "FAILED", "TERMINATED");
     private static final Object[] TASK_LOCKS = createTaskLocks(256);
 
     private final WorkflowRuntimeService runtime;
@@ -80,19 +78,19 @@ public class WorkflowEngine {
     }
 
     private void processTaskLocked(Task task) {
-        List<TaskStep> active = runtime.activeSteps(task.getId());
-        if (active.isEmpty()) {
+        List<TaskStep> pollable = runtime.pollableSteps(task.getId());
+        if (pollable.isEmpty()) {
             if (runtime.steps(task.getId()).isEmpty())
                 startFlow(task, task.getFlowModelId(), null, 0);
-            else
-                runtime.failTask(task, "流程没有活动步骤且尚未到达END");
             return;
         }
-        for (TaskStep step : active) {
+        for (TaskStep step : pollable) {
             if (!"RUNNING".equals(runtime.task(task.getId()).getTaskStatus()))
                 return;
             try {
+                boolean terminalAtPollStart = TERMINAL_NODE_STATES.contains(step.getNodeStatus());
                 processStep(task, step);
+                if (terminalAtPollStart) markTerminalObserved(step);
             } catch (Exception error) {
                 runtime.failStep(step, error.getMessage());
             }
@@ -165,6 +163,12 @@ public class WorkflowEngine {
         ObjectNode update = JsonNodeSupport.objectNode();
         update.set("_triggerStates", triggerStates.deepCopy());
         runtime.mergeVariableSpace(step, update);
+    }
+
+    private void markTerminalObserved(TaskStep step) {
+        ObjectNode states = triggerStates(step);
+        states.put(WorkflowTriggerState.TERMINAL_OBSERVED_KEY, true);
+        persistTriggerStates(step, states);
     }
 
     private void routeEmission(Task task, TaskStep step, FlowNode node, WorkflowActionResult result,
@@ -494,42 +498,9 @@ public class WorkflowEngine {
             input.set("inputPayload", event.signal().path("payload").deepCopy());
             input.put("sourceInterface", "Interface_state_out");
             runtime.updateInputSnapshot(step, input);
-
-            String signalName = event.signal().path("signalName").asText();
-            String cmdState = "CMD_STATE".equals(signalName)
-                    ? event.signal().path("payload").path("stateName").asText("")
-                    : "";
-            if ("FAILED".equals(cmdState)) {
-                runtime.failStep(step, "设备指令状态: " + cmdState);
-                return;
-            }
-            if ("TERMINATING".equals(step.getNodeStatus()) && !"ABORTED".equals(cmdState))
-                return;
-
-            if ("ABORTED".equals(cmdState)) {
-                if ("TERMINATING".equals(task.getTaskStatus())) {
-                    runtime.terminateStep(step,
-                            JsonNodeSupport.objectNode().put("messageId", messageId).put("cmdState", cmdState));
-                    taskService.completeTerminationIfSettled(task.getId());
-                } else {
-                    runtime.failStep(step, "设备指令状态: " + cmdState);
-                }
-                return;
-            }
-
-            ActionRunResult result = executeBindingTriggers(task, step, node, inputInterface);
-            if (result.waiting())
-                return;
-            if (result.hasEmission()) {
-                if ("CMD_STATE".equals(signalName) && !"COMPLETED".equals(cmdState)) {
-                    runtime.failStep(step, "设备指令状态" + cmdState + "不允许通过STATE输入接口提前完成节点");
-                    return;
-                }
-                settleEmittedWorkflowSignal(task, step, node, result);
-                return;
-            }
-            if ("COMPLETED".equals(cmdState)) {
-                runtime.failStep(step, "DEV_NODE收到CMD_STATE=COMPLETED后未通过bindingTriggers发送WORKFLOW信号");
+            ObjectNode mapped = executionOperations.resolveMappedVariables(task, step, node);
+            if (mapped != null && !mapped.isEmpty()) {
+                runtime.mergeVariableSpace(step, mapped);
             }
         }
     }

@@ -1,6 +1,7 @@
 package com.smartlab.management.service.db.workflow;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.smartlab.engine.workflow.WorkflowTriggerState;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.entity.workflow.FlowNode;
 import com.smartlab.management.entity.workflow.Task;
@@ -11,17 +12,41 @@ import com.smartlab.management.mapper.workflow.TaskStepMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
 
+import java.util.List;
+
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.when;
 
 class WorkflowRuntimeServiceTest {
+    @Test
+    void pollsActiveAndUnobservedTerminalStepsOnly() {
+        TaskStepMapper steps = mock(TaskStepMapper.class);
+        WorkflowRuntimeService runtime = runtime(steps, mock(FlowNodeMapper.class));
+        TaskStep pending = stepWithId(11L, "PENDING");
+        TaskStep running = stepWithId(12L, "RUNNING");
+        TaskStep terminating = stepWithId(13L, "TERMINATING");
+        TaskStep succeeded = stepWithId(14L, "SUCCEEDED");
+        TaskStep failed = stepWithId(15L, "FAILED");
+        TaskStep terminated = stepWithId(16L, "TERMINATED");
+        TaskStep observed = stepWithId(17L, "SUCCEEDED");
+        observed.setVariableSpace(JsonNodeSupport.objectNode().set("_triggerStates",
+                JsonNodeSupport.objectNode().put(WorkflowTriggerState.TERMINAL_OBSERVED_KEY, true)));
+        when(steps.selectList(any())).thenReturn(List.of(
+                pending, running, terminating, succeeded, failed, terminated, observed));
+
+        List<TaskStep> pollable = runtime.pollableSteps(5L);
+
+        assertEquals(List.of(pending, running, terminating, succeeded, failed, terminated), pollable);
+    }
+
     @Test
     void explicitlyTransitionsPendingNodeToRunningThroughDeclaredLifecycleEdge() throws Exception {
         TaskStepMapper steps = mock(TaskStepMapper.class);
@@ -76,8 +101,12 @@ class WorkflowRuntimeServiceTest {
     }
 
     private TaskStep step(String status) {
+        return stepWithId(11L, status);
+    }
+
+    private TaskStep stepWithId(Long id, String status) {
         TaskStep step = new TaskStep();
-        step.setId(11L);
+        step.setId(id);
         step.setTaskId(5L);
         step.setFlowNodeId(7L);
         step.setNodeIdRef(1L);

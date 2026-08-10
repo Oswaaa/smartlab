@@ -23,6 +23,10 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
@@ -44,11 +48,15 @@ public class WorkflowEngine {
     private final ConstraintExpressionEvaluator expressionEvaluator;
     private final WorkflowActionRegistry actionRegistry;
     private final WorkflowExecutionOperations executionOperations;
+    private final Executor workflowExecutor;
+    private final Set<Long> inFlightTaskIds = ConcurrentHashMap.newKeySet();
 
+    @Autowired
     public WorkflowEngine(WorkflowRuntimeService runtime, WorkflowService workflowService,
             FlowNodeService flowNodeService, WorkflowConditionEvaluator conditionEvaluator,
             ConstraintExpressionEvaluator expressionEvaluator, WorkflowActionRegistry actionRegistry,
-            WorkflowExecutionOperations executionOperations) {
+            WorkflowExecutionOperations executionOperations,
+            @Qualifier("workflowEngineExecutor") Executor workflowExecutor) {
         this.runtime = runtime;
         this.workflowService = workflowService;
         this.flowNodeService = flowNodeService;
@@ -56,17 +64,44 @@ public class WorkflowEngine {
         this.expressionEvaluator = expressionEvaluator;
         this.actionRegistry = actionRegistry;
         this.executionOperations = executionOperations;
+        this.workflowExecutor = workflowExecutor;
     }
 
-    @Scheduled(fixedDelay = 1000)
+    public WorkflowEngine(WorkflowRuntimeService runtime, WorkflowService workflowService,
+            FlowNodeService flowNodeService, WorkflowConditionEvaluator conditionEvaluator,
+            ConstraintExpressionEvaluator expressionEvaluator, WorkflowActionRegistry actionRegistry,
+            WorkflowExecutionOperations executionOperations) {
+        this(runtime, workflowService, flowNodeService, conditionEvaluator, expressionEvaluator,
+                actionRegistry, executionOperations, Runnable::run);
+    }
+
+    @Scheduled(fixedDelayString = "${smartlab.workflow.poll-interval-ms:100}")
     public void driveWorkflows() {
         for (Task task : runtime.runningTasks()) {
-            try {
-                processTask(task);
-            } catch (Exception error) {
-                log.error("工作流任务{}调度失败", task.getId(), error);
-                runtime.failTask(task, error.getMessage());
-            }
+            dispatchTask(task.getId());
+        }
+    }
+
+    void dispatchTask(Long taskId) {
+        if (taskId == null || !inFlightTaskIds.add(taskId)) return;
+        try {
+            workflowExecutor.execute(() -> {
+                try {
+                    Task task = runtime.task(taskId);
+                    if (task != null && "RUNNING".equals(task.getTaskStatus())) {
+                        processTask(task);
+                    }
+                } catch (Exception error) {
+                    log.error("工作流任务{}调度失败", taskId, error);
+                    Task task = runtime.task(taskId);
+                    if (task != null) runtime.failTask(task, error.getMessage());
+                } finally {
+                    inFlightTaskIds.remove(taskId);
+                }
+            });
+        } catch (RuntimeException error) {
+            inFlightTaskIds.remove(taskId);
+            log.warn("工作流任务{}本轮未进入执行线程池: {}", taskId, error.getMessage());
         }
     }
 

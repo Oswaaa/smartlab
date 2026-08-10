@@ -2,6 +2,7 @@ package com.smartlab.global.config;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 
 import java.util.concurrent.Executor;
@@ -12,6 +13,7 @@ import java.util.concurrent.ThreadPoolExecutor;
  * 这里只提供线程池 Bean，具体工作流执行逻辑不放在 management 模块。
  */
 @Configuration
+@EnableConfigurationProperties(WorkflowEngineProperties.class)
 /**
  * TaskExecutionConfig 领域实体/配置模型类。
  */
@@ -24,6 +26,22 @@ public class TaskExecutionConfig {
         executor.setMaxPoolSize(8);
         executor.setQueueCapacity(200);
         executor.setThreadNamePrefix("workflow-task-");
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
+        executor.initialize();
+        return executor;
+    }
+
+    @Bean(name = "workflowEngineExecutor")
+    public Executor workflowEngineExecutor(WorkflowEngineProperties properties) {
+        if (properties.getCorePoolSize() <= 0 || properties.getMaxPoolSize() < properties.getCorePoolSize()
+                || properties.getQueueCapacity() < 0) {
+            throw new IllegalArgumentException("工作流引擎线程池配置不合法");
+        }
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(properties.getCorePoolSize());
+        executor.setMaxPoolSize(properties.getMaxPoolSize());
+        executor.setQueueCapacity(properties.getQueueCapacity());
+        executor.setThreadNamePrefix("workflow-engine-");
         executor.setRejectedExecutionHandler(new ThreadPoolExecutor.AbortPolicy());
         executor.initialize();
         return executor;

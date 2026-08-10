@@ -31,6 +31,11 @@ smartlab:
     intrinsic-scan-interval-ms: ${SMARTLAB_INTRINSIC_SCAN_INTERVAL_MS:100}
   constraint:
     scan-interval-ms: ${SMARTLAB_CONSTRAINT_SCAN_INTERVAL_MS:200}
+  workflow:
+    poll-interval-ms: ${SMARTLAB_WORKFLOW_POLL_INTERVAL_MS:100}
+    core-pool-size: ${SMARTLAB_WORKFLOW_CORE_POOL_SIZE:4}
+    max-pool-size: ${SMARTLAB_WORKFLOW_MAX_POOL_SIZE:8}
+    queue-capacity: ${SMARTLAB_WORKFLOW_QUEUE_CAPACITY:200}
   auth:
     jwt-secret: ${SMARTLAB_JWT_SECRET:change_me_to_a_256_bit_secret_for_local_dev}
     expiration-ms: ${SMARTLAB_JWT_EXPIRATION_MS:86400000}

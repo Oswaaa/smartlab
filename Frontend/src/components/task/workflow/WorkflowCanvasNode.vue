@@ -73,10 +73,6 @@ const summary = computed(() => {
   return '汇聚上游执行路径'
 })
 function interfaceLabel(item: Item) {
-  if (props.node?.functionType === 'BRANCH' && item.direction === 'OUT') {
-    if (item.name === 'Interface_true_out') return 'true'
-    if (item.name === 'Interface_false_out') return 'false'
-  }
   return item.name
 }
 function sideHandleStyle(index: number, total: number) { return { top: `${((index + 1) * 100) / (total + 1)}%` } }

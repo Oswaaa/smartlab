@@ -27,10 +27,12 @@ describe('Task 6 — Designer Structure', () => {
     assert.doesNotMatch(templateSection, /resourceMap|NODE_TO_DEVICE|DEVICE_TO_NODE|HTTP接口|消息主题/)
   })
 
-  test('system lifecycle and actions are locked while business actions remain editable', () => {
+  test('system lifecycle is locked while inline trigger actions remain editable', () => {
     assert.match(lifecycleSource, /system-lifecycle|_system/, 'lifecycle panel should reference system markers')
     assert.match(lifecycleSource, /readonly|read-only|system-lifecycle/, 'lifecycle should indicate locked state')
-    assert.match(triggersSource, /新增 UPDATE/)
+    assert.match(triggersSource, /动作能力/)
+    assert.match(triggersSource, /orderedInterfaces/)
+    assert.match(triggersSource, /trigger\.action\?\.actionName/)
     assert.match(triggersSource, /isSystemItem/)
   })
 
@@ -41,6 +43,6 @@ describe('Task 6 — Designer Structure', () => {
 
   test('designer has separate draft and publish buttons', () => {
     assert.match(designerSource, /保存草稿/)
-    assert.match(designerSource, /检查并发布/)
+    assert.match(designerSource, /发布启用/)
   })
 })

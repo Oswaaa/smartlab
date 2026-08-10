@@ -32,7 +32,7 @@ const aggregateTemplate = {
       allowedSignals: ['ACTIVE'],
       bindingTriggers: [{
         condition: { object: 'inputSignalName', operator: '=', threshold: 'ACTIVE' },
-        action: 'emitActive',
+        action: { actionName: 'UPDATE', payload: { updateType: 'NODE_LIFECYCLE', targetName: 'RUNNING' } },
         _system: true,
         _systemKey: 'aggregate.activeTrigger',
       }],
@@ -44,19 +44,17 @@ const aggregateTemplate = {
       direction: 'OUT',
       interfaceType: 'WORKFLOW',
       allowedSignals: ['ACTIVE'],
-      bindingTriggers: [],
+      bindingTriggers: [{
+        condition: { object: 'nodeLifecycleState', operator: '=', threshold: 'RUNNING' },
+        action: { actionName: 'EMIT', payload: { targetInterfaceName: 'Interface_workflow_out', signalName: 'ACTIVE' } },
+        _system: true,
+        _systemKey: 'aggregate.emitActive',
+      }],
       _system: true,
       _systemKey: 'aggregate.workflowOut',
     },
   ],
-  actions: [{
-    actionName: 'emitActive',
-    actionType: 'EMIT',
-    targetInterfaceName: 'Interface_workflow_out',
-    signalName: 'ACTIVE',
-    _system: true,
-    _systemKey: 'aggregate.emitActive',
-  }],
+  actions: ['UPDATE', 'EMIT'],
 }
 
 configureWorkflowNodeTemplates({
@@ -72,10 +70,9 @@ test('markerless workflow round trip restores system markers and preserves custo
   const node = createFunctionNode('AGGREGATE', 'aggregate')
   node.internalVariables.push({ name: 'counter', dataType: 'INTEGER' })
   node.ports.push({ name: 'counterOut', direction: 'OUT', internalVariableName: 'counter' })
-  node.actions.push({ actionName: 'setCounter', actionType: 'UPDATE', internalVariableName: 'counter', valueExpression: '1' })
-  node.interfaces[0].bindingTriggers.push({
+  node.interfaces[1].bindingTriggers.push({
     condition: { object: 'counter', operator: '=', threshold: 0 },
-    action: 'setCounter',
+    action: { actionName: 'UPDATE', payload: { updateType: 'INTERNAL_VARIABLE', targetName: 'counter', value: 1 } },
   })
 
   const payload = sanitizeWorkflowPayload({ nodesDef: [node] })
@@ -92,29 +89,27 @@ test('markerless workflow round trip restores system markers and preserves custo
   assert.equal(restored.lifecycle.transitions[0]._systemKey, 'aggregate.lifecycle.pending.running')
   assert.equal(restored.interfaces[0]._systemKey, 'aggregate.workflowIn')
   assert.equal(restored.interfaces[0].bindingTriggers[0]._systemKey, 'aggregate.activeTrigger')
-  assert.equal(restored.actions[0]._systemKey, 'aggregate.emitActive')
+  assert.equal(restored.interfaces[1].bindingTriggers[0]._systemKey, 'aggregate.emitActive')
   assert.deepEqual(restored.internalVariables, node.internalVariables)
   assert.deepEqual(restored.ports, node.ports)
-  assert.deepEqual(restored.actions[1], node.actions[1])
-  assert.deepEqual(restored.interfaces[0].bindingTriggers[1], node.interfaces[0].bindingTriggers[1])
+  assert.deepEqual(restored.actions, ['UPDATE', 'EMIT'])
+  assert.deepEqual(restored.interfaces[1].bindingTriggers[1], node.interfaces[1].bindingTriggers[1])
   assert.deepEqual(validateNodeDefinition(restored), [])
 })
 
-test('custom triggers can target only custom UPDATE actions', () => {
+test('inline triggers support UPDATE constants and EMIT on output interfaces', () => {
   const node = createFunctionNode('AGGREGATE', 'aggregate')
   node.internalVariables.push({ name: 'counter', dataType: 'INTEGER' })
-  node.actions.push({ actionName: 'setCounter', actionType: 'UPDATE', internalVariableName: 'counter', valueExpression: '1' })
-  assert.deepEqual(customTriggerActionNames(node), ['setCounter'])
+  assert.deepEqual(customTriggerActionNames(node), ['UPDATE', 'EMIT'])
 
-  node.interfaces[0].bindingTriggers.push({
+  node.interfaces[1].bindingTriggers.push({
     condition: { object: 'counter', operator: '=', threshold: 0 },
-    action: 'emitActive',
+    action: { actionName: 'UPDATE', payload: { updateType: 'INTERNAL_VARIABLE', targetName: 'counter', value: 200 } },
   })
-  assert.ok(validateNodeDefinition(node).some(error => error.path.endsWith('.action')))
+  assert.deepEqual(validateNodeDefinition(node), [])
 
-  node.interfaces[0].bindingTriggers.pop()
-  node.actions.push({ actionName: 'customEmit', actionType: 'EMIT', targetInterfaceName: 'Interface_workflow_out', signalName: 'ACTIVE' })
-  assert.ok(validateNodeDefinition(node).some(error => error.path === 'actions[2].actionType'))
+  node.interfaces[1].bindingTriggers[1].action.payload.valueExpression = 'counter + 1'
+  assert.ok(validateNodeDefinition(node).some(error => error.path.endsWith('.action.payload')))
 })
 
 test('designer adopts normalized server definitions for drafts and publishing', () => {

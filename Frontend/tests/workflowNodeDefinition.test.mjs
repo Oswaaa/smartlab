@@ -1,50 +1,144 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  createFunctionNode,
-  createDeviceNode,
-  createSubflowNode,
   configureWorkflowNodeTemplates,
-  resetWorkflowNodeTemplatesForTest,
-  workflowNodeTemplates,
-  isSystemItem,
+  createDeviceNode,
+  createFunctionNode,
+  createSubflowNode,
+  customTriggerActionNames,
   normalizeTypedValue,
-  replaceCapability,
-  removeVariable,
+  normalizeWorkflowNodeDefinition,
   removeAction,
+  removeInterface,
   removePort,
-  validateNodeDefinition
+  removeVariable,
+  replaceCapability,
+  resetWorkflowNodeTemplatesForTest,
+  validateNodeDefinition,
+  workflowNodeTemplates,
 } from '../src/utils/workflowNodeDefinition.js'
 
+const states = ['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'TERMINATING', 'TERMINATED']
+const transitions = [
+  ['PENDING', 'RUNNING'], ['PENDING', 'TERMINATED'], ['RUNNING', 'SUCCEEDED'],
+  ['RUNNING', 'FAILED'], ['RUNNING', 'TERMINATING'], ['TERMINATING', 'TERMINATED'],
+  ['TERMINATING', 'FAILED'],
+].map(([fromStateName, toStateName]) => ({ fromStateName, toStateName, _system: true, _systemKey: `lifecycle.${fromStateName}.${toStateName}` }))
+
+function lifecycle(key) {
+  return { initialStateName: 'PENDING', states, transitions, _system: true, _systemKey: `${key}.lifecycle` }
+}
+
+function action(actionName, payload) { return { actionName, payload } }
+function trigger(key, object, threshold, inlineAction) {
+  return { condition: { object, operator: '=', threshold }, action: inlineAction, _system: true, _systemKey: key }
+}
+function iface(key, name, direction, interfaceType, allowedSignals, bindingTriggers = []) {
+  return { name, direction, interfaceType, allowedSignals, bindingTriggers, _system: true, _systemKey: key }
+}
+
 const workflowTemplateFixture = {
-  START: { lifecycle: { _system: true, _systemKey: 'start.lifecycle' }, interfaces: [{ name: 'Interface_workflow_out', direction: 'OUT', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], bindingTriggers: [], _system: true, _systemKey: 'start.workflowOut' }], actions: [{ actionName: 'emitActive', actionType: 'EMIT', targetInterfaceName: 'Interface_workflow_out', signalName: 'ACTIVE', _system: true, _systemKey: 'start.emitActive' }] },
-  END: { lifecycle: { _system: true, _systemKey: 'end.lifecycle' }, interfaces: [{ name: 'Interface_workflow_in', direction: 'IN', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], bindingTriggers: [], _system: true, _systemKey: 'end.workflowIn' }], actions: [] },
-  BRANCH: { lifecycle: { _system: true, _systemKey: 'branch.lifecycle' }, interfaces: [{ name: 'Interface_workflow_in', direction: 'IN', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], bindingTriggers: [{ condition: { object: 'expression', operator: '=', threshold: true }, action: 'emitTrue', _system: true, _systemKey: 'branch.trueTrigger' }, { condition: { object: 'expression', operator: '=', threshold: false }, action: 'emitFalse', _system: true, _systemKey: 'branch.falseTrigger' }], _system: true, _systemKey: 'branch.workflowIn' }, { name: 'Interface_true_out', direction: 'OUT', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], _system: true, _systemKey: 'branch.trueOut' }, { name: 'Interface_false_out', direction: 'OUT', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], _system: true, _systemKey: 'branch.falseOut' }], actions: [{ actionName: 'emitTrue', actionType: 'EMIT', targetInterfaceName: 'Interface_true_out', signalName: 'ACTIVE', _system: true, _systemKey: 'branch.emitTrue' }, { actionName: 'emitFalse', actionType: 'EMIT', targetInterfaceName: 'Interface_false_out', signalName: 'ACTIVE', _system: true, _systemKey: 'branch.emitFalse' }] },
-  AGGREGATE: { lifecycle: { _system: true, _systemKey: 'aggregate.lifecycle' }, interfaces: [{ name: 'Interface_workflow_in', direction: 'IN', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], bindingTriggers: [{ condition: { object: 'inputSignalName', operator: '=', threshold: 'ACTIVE' }, action: 'emitActive', _system: true, _systemKey: 'aggregate.activeTrigger' }], _system: true, _systemKey: 'aggregate.workflowIn' }, { name: 'Interface_workflow_out', direction: 'OUT', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], _system: true, _systemKey: 'aggregate.workflowOut' }], actions: [{ actionName: 'emitActive', actionType: 'EMIT', targetInterfaceName: 'Interface_workflow_out', signalName: 'ACTIVE', _system: true, _systemKey: 'aggregate.emitActive' }] },
-  DEV_NODE: { lifecycle: { initialStateName: 'PENDING', states: ['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'TERMINATING', 'TERMINATED'], transitions: [['PENDING', 'RUNNING', 'lifecycle.pending.running'], ['PENDING', 'TERMINATED', 'lifecycle.pending.terminated'], ['RUNNING', 'SUCCEEDED', 'lifecycle.running.succeeded'], ['RUNNING', 'FAILED', 'lifecycle.running.failed'], ['RUNNING', 'TERMINATING', 'lifecycle.running.terminating'], ['TERMINATING', 'TERMINATED', 'lifecycle.terminating.terminated'], ['TERMINATING', 'FAILED', 'lifecycle.terminating.failed']].map(([fromStateName, toStateName, _systemKey]) => ({ fromStateName, toStateName, _system: true, _systemKey })) }, interfaces: [{ name: 'Interface_workflow_in', direction: 'IN', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], bindingTriggers: [{ condition: { object: 'inputSignalName', operator: '=', threshold: 'ACTIVE' }, action: 'startDevice', _system: true, _systemKey: 'device.startTrigger' }], _system: true, _systemKey: 'device.workflowIn' }, { name: 'Interface_state_out', direction: 'OUT', interfaceType: 'STATE', allowedSignals: ['WF_EXECUTE_START'], _system: true, _systemKey: 'device.stateOut' }, { name: 'Interface_state_in', direction: 'IN', interfaceType: 'STATE', allowedSignals: ['CMD_STATE', 'OP_STATE'], bindingTriggers: [{ condition: { object: 'inputPayload.stateName', operator: '=', threshold: 'COMPLETED' }, action: 'completeNode', _system: true, _systemKey: 'device.completeTrigger' }], _system: true, _systemKey: 'device.stateIn' }, { name: 'Interface_workflow_out', direction: 'OUT', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], _system: true, _systemKey: 'device.workflowOut' }], actions: [{ actionName: 'startDevice', actionType: 'EMIT', targetInterfaceName: 'Interface_state_out', signalName: 'WF_EXECUTE_START', _system: true, _systemKey: 'device.startDevice' }, { actionName: 'completeNode', actionType: 'EMIT', targetInterfaceName: 'Interface_workflow_out', signalName: 'ACTIVE', _system: true, _systemKey: 'device.completeNode' }] },
-  SUBFLOW_NODE: { lifecycle: { initialStateName: 'PENDING', states: ['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'TERMINATING', 'TERMINATED'], transitions: [['PENDING', 'RUNNING', 'lifecycle.pending.running'], ['PENDING', 'TERMINATED', 'lifecycle.pending.terminated'], ['RUNNING', 'SUCCEEDED', 'lifecycle.running.succeeded'], ['RUNNING', 'FAILED', 'lifecycle.running.failed'], ['RUNNING', 'TERMINATING', 'lifecycle.running.terminating'], ['TERMINATING', 'TERMINATED', 'lifecycle.terminating.terminated'], ['TERMINATING', 'FAILED', 'lifecycle.terminating.failed']].map(([fromStateName, toStateName, _systemKey]) => ({ fromStateName, toStateName, _system: true, _systemKey })) }, interfaces: [{ name: 'Interface_workflow_in', direction: 'IN', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], _system: true, _systemKey: 'subflow.workflowIn' }, { name: 'Interface_workflow_out', direction: 'OUT', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], _system: true, _systemKey: 'subflow.workflowOut' }], actions: [] }
+  START: {
+    lifecycle: lifecycle('start'),
+    interfaces: [iface('start.out', 'Interface_workflow_out', 'OUT', 'WORKFLOW', ['ACTIVE'], [
+      trigger('start.begin', 'nodeLifecycleState', 'PENDING', action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'RUNNING' })),
+      trigger('start.emit', 'nodeLifecycleState', 'RUNNING', action('EMIT', { targetInterfaceName: 'Interface_workflow_out', signalName: 'ACTIVE' })),
+    ])],
+    actions: ['UPDATE', 'EMIT'],
+  },
+  END: {
+    lifecycle: lifecycle('end'),
+    interfaces: [iface('end.in', 'Interface_workflow_in', 'IN', 'WORKFLOW', ['ACTIVE'], [
+      trigger('end.activate', 'inputSignalName', 'ACTIVE', action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'RUNNING' })),
+    ])],
+    actions: ['UPDATE'],
+  },
+  BRANCH: {
+    lifecycle: lifecycle('branch'),
+    interfaces: [iface('branch.in', 'Interface_workflow_in', 'IN', 'WORKFLOW', ['ACTIVE'], [
+      trigger('branch.activate', 'inputSignalName', 'ACTIVE', action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'RUNNING' })),
+    ])],
+    actions: ['UPDATE'],
+  },
+  AGGREGATE: {
+    lifecycle: lifecycle('aggregate'),
+    interfaces: [
+      iface('aggregate.in', 'Interface_workflow_in', 'IN', 'WORKFLOW', ['ACTIVE'], [
+        trigger('aggregate.activate', 'inputSignalName', 'ACTIVE', action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'RUNNING' })),
+      ]),
+      iface('aggregate.out', 'Interface_workflow_out', 'OUT', 'WORKFLOW', ['ACTIVE'], [
+        trigger('aggregate.emit', 'nodeLifecycleState', 'RUNNING', action('EMIT', { targetInterfaceName: 'Interface_workflow_out', signalName: 'ACTIVE' })),
+      ]),
+    ],
+    actions: ['UPDATE', 'EMIT'],
+  },
+  DEV_NODE: {
+    lifecycle: lifecycle('device'),
+    interfaces: [
+      iface('device.workflowIn', 'Interface_workflow_in', 'IN', 'WORKFLOW', ['ACTIVE'], [
+        trigger('device.activate', 'inputSignalName', 'ACTIVE', action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'RUNNING' })),
+      ]),
+      iface('device.stateOut', 'Interface_state_out', 'OUT', 'STATE', ['WF_EXECUTE_START'], [
+        trigger('device.execute', 'nodeLifecycleState', 'RUNNING', action('EMIT', { targetInterfaceName: 'Interface_state_out', signalName: 'WF_EXECUTE_START' })),
+      ]),
+      iface('device.stateIn', 'Interface_state_in', 'IN', 'STATE', ['CMD_STATE', 'OP_STATE'], [
+        trigger('device.complete', 'inputPayload.stateName', 'COMPLETED', action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'SUCCEEDED' })),
+      ]),
+      iface('device.workflowOut', 'Interface_workflow_out', 'OUT', 'WORKFLOW', ['ACTIVE'], [
+        trigger('device.route', 'nodeLifecycleState', 'SUCCEEDED', action('EMIT', { targetInterfaceName: 'Interface_workflow_out', signalName: 'ACTIVE' })),
+      ]),
+    ],
+    actions: ['UPDATE', 'EMIT'],
+  },
+  SUBFLOW_NODE: {
+    lifecycle: lifecycle('subflow'),
+    interfaces: [
+      iface('subflow.in', 'Interface_workflow_in', 'IN', 'WORKFLOW', ['ACTIVE']),
+      iface('subflow.out', 'Interface_workflow_out', 'OUT', 'WORKFLOW', ['ACTIVE']),
+    ],
+    actions: ['UPDATE', 'EMIT'],
+  },
 }
 
 test.before(() => configureWorkflowNodeTemplates(workflowTemplateFixture))
 
-test('system templates reject creation before loading and restore fixture', () => {
+test('creation requires templates and always clones them', () => {
   resetWorkflowNodeTemplatesForTest()
   assert.throws(() => createFunctionNode('START', 'start'), /工作流系统模板尚未加载:START/)
   configureWorkflowNodeTemplates(workflowTemplateFixture)
+  const first = createFunctionNode('BRANCH', 'branch-a')
+  first.actions.push('EMIT')
+  assert.deepEqual(workflowNodeTemplates().BRANCH.actions, ['UPDATE'])
 })
 
-test('node creation uses backend fixture and clones DEV_NODE and BRANCH templates', () => {
-  const device = createDeviceNode({ id: 7, capabilities: [] }, 'heater')
-  const branch = createFunctionNode('BRANCH', 'branch')
-  assert.equal(device.interfaces[1].name, workflowTemplateFixture.DEV_NODE.interfaces[1].name)
-  assert.equal(branch.actions[0].actionName, workflowTemplateFixture.BRANCH.actions[0].actionName)
-  device.interfaces[1].allowedSignals.push('MUTATED')
-  branch.actions[0].actionName = 'MUTATED'
-  assert.deepEqual(workflowNodeTemplates().DEV_NODE.interfaces[1].allowedSignals, ['WF_EXECUTE_START'])
-  assert.equal(workflowNodeTemplates().BRANCH.actions[0].actionName, 'emitTrue')
+test('BRANCH starts without fixed true/false outputs and accepts user-defined N-way outputs', () => {
+  const node = createFunctionNode('BRANCH', 'branch')
+  assert.deepEqual(node.interfaces.map(item => item.name), ['Interface_workflow_in'])
+  assert.equal(node.expression, '')
+  node.actions.push('EMIT')
+  for (const name of ['low', 'normal', 'high']) {
+    node.interfaces.push({ name, direction: 'OUT', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], bindingTriggers: [
+      { condition: { object: 'expression', operator: '=', threshold: name }, action: action('EMIT', { targetInterfaceName: name, signalName: 'ACTIVE' }) },
+    ] })
+  }
+  assert.deepEqual(validateNodeDefinition(node), [])
 })
 
-test('能力参数按声明类型序列化且拒绝隐式转换', () => {
+test('DEV_NODE exposes four independent inline lifecycle and signal triggers', () => {
+  const node = createDeviceNode({ id: 7, capabilities: [] }, 'device')
+  assert.deepEqual(node.actions, ['UPDATE', 'EMIT'])
+  assert.deepEqual(node.interfaces.map(item => item.bindingTriggers[0].action.actionName), ['UPDATE', 'EMIT', 'UPDATE', 'EMIT'])
+  assert.equal(node.interfaces[1].bindingTriggers[0].action.payload.signalName, 'WF_EXECUTE_START')
+  assert.equal(node.interfaces[2].bindingTriggers[0].action.payload.targetName, 'SUCCEEDED')
+})
+
+test('switching device capability clears all previous parameters', () => {
+  const node = { capability: { capabilityName: 'old', capabilityParameters: { speed: 3, mode: 'AUTO' } } }
+  const next = replaceCapability(node, { capabilityName: 'new', parameters: [{ name: 'speed', dataType: 'INTEGER' }] })
+  assert.deepEqual(next.capability.capabilityParameters, {})
+})
+
+test('typed values preserve their declared data types', () => {
   assert.equal(normalizeTypedValue('INTEGER', 3), 3)
   assert.equal(normalizeTypedValue('DOUBLE', 3.5), 3.5)
   assert.equal(normalizeTypedValue('BOOLEAN', false), false)
@@ -52,274 +146,82 @@ test('能力参数按声明类型序列化且拒绝隐式转换', () => {
   assert.throws(() => normalizeTypedValue('INTEGER', '3'), /INTEGER参数必须是整数/)
 })
 
-test('BRANCH生成真假两个系统出口及互斥触发器', () => {
-  const node = createFunctionNode('BRANCH', 'branch-1')
-  assert.deepEqual(node.interfaces.map(item => item.name), [
-    'Interface_workflow_in',
-    'Interface_true_out',
-    'Interface_false_out'
-  ])
-  assert.deepEqual(node.actions.map(item => [item.actionName, item.actionType]), [
-    ['emitTrue', 'EMIT'],
-    ['emitFalse', 'EMIT']
-  ])
-  assert.equal(node.interfaces[0].bindingTriggers.length, 2)
-  assert.equal(node.interfaces[0].bindingTriggers[0].condition.object, 'expression')
-  assert.equal(node.interfaces[0].bindingTriggers[0].condition.threshold, true)
-  assert.equal(node.interfaces[0].bindingTriggers[1].condition.threshold, false)
-  assert.ok(node.actions.every(isSystemItem))
+test('constant and expression UPDATE are both valid but mutually exclusive', () => {
+  const node = createFunctionNode('AGGREGATE', 'aggregate')
+  node.internalVariables.push({ name: 'temperature', dataType: 'DOUBLE' })
+  node.interfaces[1].bindingTriggers.push({ condition: { object: 'temperature', operator: '>', threshold: 100 }, action: action('UPDATE', { updateType: 'INTERNAL_VARIABLE', targetName: 'temperature', value: 200 }) })
+  node.interfaces[1].bindingTriggers.push({ condition: { object: 'temperature', operator: '<', threshold: 0 }, action: action('UPDATE', { updateType: 'INTERNAL_VARIABLE', targetName: 'temperature', valueExpression: 'temperature / 100' }) })
+  assert.deepEqual(validateNodeDefinition(node), [])
+  node.interfaces[1].bindingTriggers[2].action.payload.value = 1
+  assert.ok(validateNodeDefinition(node).some(error => error.path.endsWith('.action.payload')))
 })
 
-test('DEV_NODE生成状态机调用与完成回传系统骨架', () => {
-  const model = { id: 7, capabilities: [{ capabilityName: 'heat', parameters: [] }] }
-  const node = createDeviceNode(model, 'heater')
-  assert.equal(node.deviceModelId, 7)
-  assert.deepEqual(node.interfaces.map(item => item.name), [
-    'Interface_workflow_in',
-    'Interface_state_out',
-    'Interface_state_in',
-    'Interface_workflow_out'
-  ])
-  assert.deepEqual(node.actions.map(item => item.actionName), ['startDevice', 'completeNode'])
-  assert.equal(node.lifecycle.initialStateName, 'PENDING')
+test('constant UPDATE preserves number boolean object and array types', () => {
+  const node = createFunctionNode('AGGREGATE', 'aggregate')
+  node.internalVariables.push({ name: 'enabled', dataType: 'BOOLEAN' }, { name: 'payload', dataType: 'JSON' })
+  node.interfaces[1].bindingTriggers.push({ condition: { object: 'enabled', operator: '=', threshold: false }, action: action('UPDATE', { updateType: 'INTERNAL_VARIABLE', targetName: 'enabled', value: true }) })
+  node.interfaces[1].bindingTriggers.push({ condition: { object: 'enabled', operator: '=', threshold: true }, action: action('UPDATE', { updateType: 'INTERNAL_VARIABLE', targetName: 'payload', value: [1, 2] }) })
+  assert.deepEqual(validateNodeDefinition(node), [])
 })
 
-test('SUBFLOW_NODE没有允许绕过子流程的系统EMIT动作', () => {
-  const node = createSubflowNode({ id: 9, flowName: '开盖' }, 'open-lid')
-  assert.equal(node.subFlowModelId, 9)
-  assert.deepEqual(node.actions, [])
-  assert.deepEqual(node.interfaces.map(item => item.name), [
-    'Interface_workflow_in',
-    'Interface_workflow_out'
-  ])
-})
-
-test('切换能力只保留同名同类型参数', () => {
-  const node = { capability: { capabilityName: 'old', capabilityParameters: { speed: 3, mode: 'AUTO', obsolete: true } }, _capabilityParameterTypes: { speed: 'INTEGER', mode: 'STRING', obsolete: 'BOOLEAN' } }
-  const next = replaceCapability(node, { capabilityName: 'new', parameters: [
-    { parameterName: 'speed', dataType: 'INTEGER' }, { parameterName: 'mode', dataType: 'BOOLEAN' }
-  ] })
-  assert.deepEqual(next.capability.capabilityParameters, { speed: 3 })
-})
-
-test('被端口引用的变量不能直接删除', () => {
-  const node = {
-    internalVariables: [{ name: 'temperature', dataType: 'DOUBLE' }],
-    ports: [{ name: 'temperatureOut', direction: 'OUT', internalVariableName: 'temperature' }]
-  }
-  assert.throws(() => removeVariable(node, 'temperature', []), /变量temperature仍被端口temperatureOut引用/)
-})
-
-test('系统动作不能被业务删除', () => {
-  const node = createFunctionNode('START', 'start')
-  assert.throws(() => removeAction(node, 'emitActive'), /系统动作emitActive不可删除/)
-})
-
-test('节点校验拒绝无效变量类型但由服务端校验START系统动作', () => {
-  const node = createFunctionNode('START', 'start')
-  node.internalVariables.push({ name: 'invalid', dataType: 'UNKNOWN' })
-  node.actions = []
-  assert.deepEqual(validateNodeDefinition(node).map(error => error.path), ['internalVariables[0].dataType'])
-})
-test('节点校验仍拒绝触发器引用不存在的业务动作', () => {
-  const node = createFunctionNode('BRANCH', 'branch')
-  node.actions = [node.actions[0]]
-  assert.deepEqual(validateNodeDefinition(node).map(error => error.path), ['interfaces[0].bindingTriggers[1].action'])
-})
-test('START仅生成工作流出口及ACTIVE系统动作', () => {
-  const node = createFunctionNode('START', 'start')
-  assert.deepEqual(node.interfaces.map(item => item.name), ['Interface_workflow_out'])
-  assert.equal(node.interfaces[0].bindingTriggers.length, 0)
-  assert.deepEqual(node.actions.map(({ actionName, actionType, targetInterfaceName, signalName }) => ({ actionName, actionType, targetInterfaceName, signalName })), [
-    { actionName: 'emitActive', actionType: 'EMIT', targetInterfaceName: 'Interface_workflow_out', signalName: 'ACTIVE' }
-  ])
-})
-
-test('END仅生成工作流入口且没有输出动作', () => {
+test('lifecycle UPDATE validates target state and rejects value fields', () => {
   const node = createFunctionNode('END', 'end')
-  assert.deepEqual(node.interfaces.map(item => item.name), ['Interface_workflow_in'])
-  assert.equal(node.interfaces[0].bindingTriggers.length, 0)
-  assert.deepEqual(node.actions, [])
+  node.interfaces[0].bindingTriggers.push({ condition: { object: 'nodeLifecycleState', operator: '=', threshold: 'RUNNING' }, action: action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'UNKNOWN', value: 1 }) })
+  const paths = validateNodeDefinition(node).map(error => error.path)
+  assert.ok(paths.some(path => path.endsWith('.targetName')))
+  assert.ok(paths.some(path => path.endsWith('.action.payload')))
 })
 
-test('AGGREGATE生成ACTIVE触发器和工作流回传', () => {
+test('EMIT validates output interface and allowed signal on any trigger host interface', () => {
   const node = createFunctionNode('AGGREGATE', 'aggregate')
-  assert.deepEqual(node.interfaces.map(item => item.name), ['Interface_workflow_in', 'Interface_workflow_out'])
-  assert.deepEqual(node.actions.map(item => [item.actionName, item.actionType, item.targetInterfaceName, item.signalName]), [
-    ['emitActive', 'EMIT', 'Interface_workflow_out', 'ACTIVE']
-  ])
-  assert.deepEqual(node.interfaces[0].bindingTriggers.map(item => [item.condition.object, item.condition.operator, item.condition.threshold, item.action]), [
-    ['inputSignalName', '=', 'ACTIVE', 'emitActive']
-  ])
+  node.interfaces[0].bindingTriggers.push({ condition: { object: 'inputSignalName', operator: '=', threshold: 'OTHER' }, action: action('EMIT', { targetInterfaceName: 'Interface_workflow_in', signalName: 'ACTIVE' }) })
+  assert.ok(validateNodeDefinition(node).some(error => error.message.includes('必须是OUT接口')))
 })
 
-test('DEV_NODE生成工作流和状态机之间的两个系统触发器', () => {
-  const node = createDeviceNode({ id: 7, capabilities: [] }, 'device')
-  assert.deepEqual(node.actions.map(item => [item.actionName, item.actionType, item.targetInterfaceName, item.signalName]), [
-    ['startDevice', 'EMIT', 'Interface_state_out', 'WF_EXECUTE_START'],
-    ['completeNode', 'EMIT', 'Interface_workflow_out', 'ACTIVE']
-  ])
-  assert.deepEqual(node.interfaces[0].bindingTriggers.map(item => [item.condition.object, item.condition.operator, item.condition.threshold, item.action]), [
-    ['inputSignalName', '=', 'ACTIVE', 'startDevice']
-  ])
-  assert.deepEqual(node.interfaces[2].bindingTriggers.map(item => [item.condition.object, item.condition.operator, item.condition.threshold, item.action]), [
-    ['inputPayload.stateName', '=', 'COMPLETED', 'completeNode']
-  ])
+test('actions are a unique UPDATE/EMIT capability subset', () => {
+  const node = createFunctionNode('AGGREGATE', 'aggregate')
+  assert.deepEqual(customTriggerActionNames(node), ['UPDATE', 'EMIT'])
+  node.actions.push('EMIT', 'CUSTOM')
+  assert.deepEqual(validateNodeDefinition(node).map(error => error.path), ['actions[2]', 'actions[3]'])
 })
 
-test('节点校验把DEV系统骨架完整性留给服务端', () => {
-  const model = { id: 7, capabilities: [{ capabilityName: 'heat', parameters: [] }] }
-  const node = createDeviceNode(model, 'device')
-  node.interfaces = node.interfaces.filter(item => item.name !== 'Interface_state_in')
-  assert.deepEqual(validateNodeDefinition(node, { deviceModel: model }), [])
-})
-
-test('能力参数仅在编辑器类型映射相同的时候保留，INTEGER切DOUBLE会移除', () => {
-  const node = {
-    capability: { capabilityName: 'old', capabilityParameters: { count: 2, speed: 3 } },
-    _capabilityParameterTypes: { count: 'INTEGER', speed: 'INTEGER' }
-  }
-  const next = replaceCapability(node, {
-    capabilityName: 'new',
-    parameters: [{ parameterName: 'count', dataType: 'DOUBLE' }, { parameterName: 'speed', dataType: 'INTEGER' }]
+test('legacy named actions and string references normalize to inline actions', () => {
+  const normalized = normalizeWorkflowNodeDefinition({
+    actions: [{ actionName: 'setTemperature', actionType: 'UPDATE', internalVariableName: 'temperature', valueExpression: 'temperature / 100' }],
+    interfaces: [{ bindingTriggers: [{ condition: { object: 'temperature', operator: '>', threshold: 10 }, action: 'setTemperature' }] }],
   })
-  assert.deepEqual(next.capability.capabilityParameters, { speed: 3 })
-  assert.deepEqual(next._capabilityParameterTypes, { count: 'DOUBLE', speed: 'INTEGER' })
+  assert.deepEqual(normalized.actions, ['UPDATE'])
+  assert.deepEqual(normalized.interfaces[0].bindingTriggers[0].action, action('UPDATE', {
+    updateType: 'INTERNAL_VARIABLE', targetName: 'temperature', valueExpression: 'temperature / 100',
+  }))
 })
 
-test('removeVariable不保留未使用的端口连接参数', () => {
-  assert.equal(removeVariable.length, 2)
-})
-test('接口声明后端类型及允许信号，触发器使用action和等号', () => {
-  const dev = createDeviceNode({ id: 1, capabilities: [] }, 'dev')
-  const workflow = dev.interfaces.filter(item => item.interfaceType === 'WORKFLOW')
-  assert.equal(workflow.length, 2)
-  assert.ok(workflow.every(item => JSON.stringify(item.allowedSignals) === JSON.stringify(['ACTIVE'])))
-  assert.deepEqual(dev.interfaces[1].allowedSignals, ['WF_EXECUTE_START'])
-  assert.deepEqual(dev.interfaces[2].allowedSignals, ['CMD_STATE', 'OP_STATE'])
-  assert.equal(dev.interfaces[0].bindingTriggers[0].action, 'startDevice')
-  assert.equal(dev.interfaces[0].bindingTriggers[0].condition.operator, '=')
+test('used action capability cannot be removed', () => {
+  const node = createFunctionNode('START', 'start')
+  assert.throws(() => removeAction(node, 'EMIT'), /仍被触发器引用/)
 })
 
-test('DEV与SUBFLOW使用后端所需完整生命周期', () => {
-  const expectedStates = ['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'TERMINATING', 'TERMINATED']
-  const expectedTransitions = [
-    { fromStateName: 'PENDING', toStateName: 'RUNNING', _system: true, _systemKey: 'lifecycle.pending.running' },
-    { fromStateName: 'PENDING', toStateName: 'TERMINATED', _system: true, _systemKey: 'lifecycle.pending.terminated' },
-    { fromStateName: 'RUNNING', toStateName: 'SUCCEEDED', _system: true, _systemKey: 'lifecycle.running.succeeded' },
-    { fromStateName: 'RUNNING', toStateName: 'FAILED', _system: true, _systemKey: 'lifecycle.running.failed' },
-    { fromStateName: 'RUNNING', toStateName: 'TERMINATING', _system: true, _systemKey: 'lifecycle.running.terminating' },
-    { fromStateName: 'TERMINATING', toStateName: 'TERMINATED', _system: true, _systemKey: 'lifecycle.terminating.terminated' },
-    { fromStateName: 'TERMINATING', toStateName: 'FAILED', _system: true, _systemKey: 'lifecycle.terminating.failed' }
-  ]
-  for (const node of [createDeviceNode({ id: 1, capabilities: [] }, 'dev'), createSubflowNode({ id: 2 }, 'sub')]) {
-    assert.equal(node.lifecycle.initialStateName, 'PENDING')
-    assert.deepEqual(node.lifecycle.states, expectedStates)
-    assert.deepEqual(node.lifecycle.transitions, expectedTransitions)
-  }
-})
-
-test('系统IN接口允许业务触发器调用自定义UPDATE动作', () => {
-  const node = createFunctionNode('AGGREGATE', 'aggregate')
-  node.internalVariables.push({ name: 'ready', dataType: 'BOOLEAN' })
-  node.interfaces[0].bindingTriggers.push({ action: 'markReady', condition: { object: 'ready', operator: '=', threshold: false } })
-  node.actions.push({ actionName: 'markReady', actionType: 'UPDATE', internalVariableName: 'ready', valueExpression: 'true' })
-  assert.deepEqual(validateNodeDefinition(node), [])
-})
-
-test('节点校验接受合法UPDATE并拒绝非法EMIT目标', () => {
-  const node = createFunctionNode('AGGREGATE', 'aggregate')
-  node.internalVariables.push({ name: 'payload', dataType: 'JSON' })
-  node.actions.push({ actionName: 'setPayload', actionType: 'UPDATE', internalVariableName: 'payload', valueExpression: '{}' })
-  assert.deepEqual(validateNodeDefinition(node), [])
-  node.actions[1] = { actionName: 'badEmit', actionType: 'EMIT', targetInterfaceName: 'Interface_workflow_in', signalName: 'ACTIVE' }
-  assert.ok(validateNodeDefinition(node).some(error => error.path === 'actions[1].targetInterfaceName'))
-})
-
-test('保存重载后传入旧能力声明仍保留同名同类型参数', () => {
-  const node = { capability: { capabilityName: 'old', capabilityParameters: { speed: 3, count: 1 } } }
-  const previous = { capabilityName: 'old', parameters: [{ parameterName: 'speed', dataType: 'INTEGER' }, { parameterName: 'count', dataType: 'INTEGER' }] }
-  const next = replaceCapability(node, { capabilityName: 'new', parameters: [{ parameterName: 'speed', dataType: 'INTEGER' }, { parameterName: 'count', dataType: 'DOUBLE' }] }, previous)
-  assert.deepEqual(next.capability.capabilityParameters, { speed: 3 })
-})
-
-test('removePort删除真实嵌套连接格式中的关联连接', () => {
-  const node = { name: 'n', ports: [{ name: 'out' }] }
+test('referenced variables and ports are protected and connections are cleaned', () => {
+  const node = { name: 'n', internalVariables: [{ name: 'temperature', dataType: 'DOUBLE' }], ports: [{ name: 'out', direction: 'OUT', internalVariableName: 'temperature' }] }
+  assert.throws(() => removeVariable(node, 'temperature'), /仍被端口out引用/)
   const result = removePort(node, 'out', [
     { source: { nodeName: 'n', portName: 'out' }, target: { nodeName: 'x', portName: 'in' } },
-    { source: { nodeName: 'x', portName: 'out' }, target: { nodeName: 'n', portName: 'other' } }
+    { source: { nodeName: 'x', portName: 'out' }, target: { nodeName: 'n', portName: 'other' } },
   ])
   assert.equal(result.portConnections.length, 1)
 })
-test('DEV和SUBFLOW生命周期状态使用编译器所需的纯字符串数组', () => {
-  const expected = ['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'TERMINATING', 'TERMINATED']
-  assert.deepEqual(createDeviceNode({ id: 1, capabilities: [] }, 'dev').lifecycle.states, expected)
-  assert.deepEqual(createSubflowNode({ id: 2 }, 'sub').lifecycle.states, expected)
+
+test('removing a custom branch interface also removes its connections', () => {
+  const node = { name: 'branch', interfaces: [{ name: 'low', direction: 'OUT', interfaceType: 'WORKFLOW' }, { name: 'normal', direction: 'OUT', interfaceType: 'WORKFLOW' }] }
+  const result = removeInterface(node, 'low', [
+    { source: { nodeName: 'branch', interfaceName: 'low' }, target: { nodeName: 'end', interfaceName: 'in' } },
+    { source: { nodeName: 'branch', interfaceName: 'normal' }, target: { nodeName: 'end', interfaceName: 'in' } },
+  ])
+  assert.deepEqual(result.node.interfaces.map(item => item.name), ['normal'])
+  assert.equal(result.interfaceConnections.length, 1)
 })
 
-test('UPDATE使用internalVariableName字段定位内部变量', () => {
-  const node = createFunctionNode('AGGREGATE', 'aggregate')
-  node.internalVariables.push({ name: 'payload', dataType: 'JSON' })
-  node.actions.push({ actionName: 'setPayload', actionType: 'UPDATE', internalVariableName: 'payload', valueExpression: '{}' })
-  assert.deepEqual(validateNodeDefinition(node), [])
-})
-
-test('UPDATE拒绝不存在的internalVariableName', () => {
-  const node = createFunctionNode('AGGREGATE', 'aggregate')
-  node.internalVariables.push({ name: 'payload', dataType: 'JSON' })
-  node.actions.push({ actionName: 'setMissing', actionType: 'UPDATE', internalVariableName: 'missing', valueExpression: '{}' })
-  assert.ok(validateNodeDefinition(node).some(error => error.path === 'actions[1].internalVariableName' && /UPDATE/.test(error.message)))
-})
-
-test('UPDATE拒绝空白的valueExpression', () => {
-  const node = createFunctionNode('AGGREGATE', 'aggregate')
-  node.internalVariables.push({ name: 'payload', dataType: 'JSON' })
-  node.actions.push({ actionName: 'setEmpty', actionType: 'UPDATE', internalVariableName: 'payload', valueExpression: '   ' })
-  assert.ok(validateNodeDefinition(node).some(error => error.path === 'actions[1].valueExpression' && /valueExpression/.test(error.message)))
-})
-
-test('UPDATE拒绝缺失的valueExpression', () => {
-  const node = createFunctionNode('AGGREGATE', 'aggregate')
-  node.internalVariables.push({ name: 'payload', dataType: 'JSON' })
-  node.actions.push({ actionName: 'setMissing', actionType: 'UPDATE', internalVariableName: 'payload' })
-  assert.ok(validateNodeDefinition(node).some(error => error.path === 'actions[1].valueExpression' && /valueExpression/.test(error.message)))
-})
-
-test('DEV状态接口明确声明STATE类型和各自允许信号', () => {
-  const node = createDeviceNode({ id: 1, capabilities: [] }, 'dev')
-  const stateOut = node.interfaces.find(item => item.name === 'Interface_state_out')
-  const stateIn = node.interfaces.find(item => item.name === 'Interface_state_in')
-  assert.equal(stateOut.interfaceType, 'STATE')
-  assert.deepEqual(stateOut.allowedSignals, ['WF_EXECUTE_START'])
-  assert.equal(stateIn.interfaceType, 'STATE')
-  assert.deepEqual(stateIn.allowedSignals, ['CMD_STATE', 'OP_STATE'])
-})
-test('EMIT必须指向本节点OUT接口且信号在allowedSignals中', () => {
-  const node = createFunctionNode('START', 'start')
-  node.actions.push({ actionName: 'badEmit', actionType: 'EMIT', targetInterfaceName: 'missing', signalName: 'UNKNOWN' })
-  const messages = validateNodeDefinition(node).map(item => item.message)
-  assert.ok(messages.includes('EMIT动作badEmit引用的输出接口missing不存在'))
-})
-
-test('UPDATE必须引用真实内部变量且表达式非空', () => {
-  const node = createFunctionNode('AGGREGATE', 'join')
-  node.actions.push({ actionName: 'updateCount', actionType: 'UPDATE', internalVariableName: 'count', valueExpression: '' })
-  const messages = validateNodeDefinition(node).map(item => item.message)
-  assert.ok(messages.includes('UPDATE动作updateCount引用的内部变量count不存在'))
-  assert.ok(messages.includes('UPDATE动作updateCount的valueExpression不能为空'))
-})
-
-test('触发器只能挂在IN接口且动作引用必须存在', () => {
-  const node = createFunctionNode('START', 'start')
-  node.interfaces[0].bindingTriggers = [{ condition: { object: 'inputSignalName', operator: 'EQUALS', threshold: 'ACTIVE' }, action: 'missingAction' }]
-  const messages = validateNodeDefinition(node).map(item => item.message)
-  assert.ok(messages.some(message => message.includes('OUT接口不能声明bindingTriggers')))
-  assert.ok(messages.some(message => message.includes('missingAction不存在')))
-})
-
-test('本地校验不把系统生命周期骨架当作发布条件', () => {
-  const node = createFunctionNode('START', 'start')
-  node.lifecycle = { _system: true, _systemKey: 'start.lifecycle', states: ['HACKED'] }
-
-  assert.deepEqual(validateNodeDefinition(node), [])
+test('device and subflow nodes retain the complete lifecycle state set', () => {
+  assert.deepEqual(createDeviceNode({ id: 1, capabilities: [] }, 'dev').lifecycle.states, states)
+  assert.deepEqual(createSubflowNode({ id: 2 }, 'sub').lifecycle.states, states)
 })

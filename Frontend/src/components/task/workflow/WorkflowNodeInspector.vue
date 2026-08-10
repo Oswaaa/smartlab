@@ -19,7 +19,7 @@
             <dl class="property-list"><div><dt>引用流程模型</dt><dd>ID {{ node.subFlowModelId || '-' }}</dd></div><div><dt>进入条件</dt><dd>上游执行完成后创建子流程执行上下文</dd></div><div><dt>完成条件</dt><dd>子流程到达 END 后继续激活下游节点</dd></div></dl>
           </template>
           <template v-else-if="node.functionType === 'BRANCH'">
-            <el-form label-position="top"><el-form-item label="条件表达式"><el-input :model-value="node.expression" type="textarea" :rows="4" placeholder="例如：temperature >= 80" @update:model-value="updateBasic('expression', $event)" /></el-form-item></el-form>
+            <el-form label-position="top"><el-form-item label="计算表达式"><el-input :model-value="node.expression" type="textarea" :rows="4" placeholder="例如：temperature * 100；分支判断由各接口触发器完成" @update:model-value="updateBasic('expression', $event)" /></el-form-item></el-form>
             <el-alert title="至少连接两条下游执行路径；表达式在分支节点被激活时求值。" type="warning" :closable="false" />
           </template>
           <div v-else class="semantic-card"><strong>{{ nodeGuidance.title }}</strong><span>{{ nodeGuidance.detail }}</span></div>
@@ -31,7 +31,9 @@
         <template #label>接口与端口 <small v-if="tabErrors.contracts">{{ tabErrors.contracts }}</small></template>
         <WorkflowInterfacesPortsPanel
           :node="node"
+          :interface-connections="interfaceConnections"
           @update:node="emit('update:node', $event)"
+          @update:interface-connections="emit('update:interfaceConnections', $event)"
           @remove-port-request="emit('remove-port-request', $event)"
         />
       </el-tab-pane>
@@ -52,8 +54,8 @@ import WorkflowInterfacesPortsPanel from './WorkflowInterfacesPortsPanel.vue'
 import WorkflowLifecyclePanel from './WorkflowLifecyclePanel.vue'
 import { replaceCapability } from '../../../utils/workflowNodeDefinition.js'
 type Item = Record<string, any>
-const props = withDefaults(defineProps<{ visible: boolean, node: Item | null, contractReady?: boolean, errors?: Item[], deviceCapabilities?: Item[], deviceAttributes?: Item[], portConnections?: Item[] }>(), { contractReady: false, errors: () => [], deviceCapabilities: () => [], deviceAttributes: () => [], portConnections: () => [] })
-const emit = defineEmits<{ rename: [name: string], 'update:node': [node: Item], 'update:portConnections': [connections: Item[]], 'remove-port-request': [portName: string], 'remove-node': [], close: [] }>()
+const props = withDefaults(defineProps<{ visible: boolean, node: Item | null, contractReady?: boolean, errors?: Item[], deviceCapabilities?: Item[], deviceAttributes?: Item[], interfaceConnections?: Item[], portConnections?: Item[] }>(), { contractReady: false, errors: () => [], deviceCapabilities: () => [], deviceAttributes: () => [], interfaceConnections: () => [], portConnections: () => [] })
+const emit = defineEmits<{ rename: [name: string], 'update:node': [node: Item], 'update:interfaceConnections': [connections: Item[]], 'update:portConnections': [connections: Item[]], 'remove-port-request': [portName: string], 'remove-node': [], close: [] }>()
 const activeTab = ref('basic')
 const nameDraft = ref('')
 watch(() => props.node?.name, value => { nameDraft.value = value || '' }, { immediate: true })

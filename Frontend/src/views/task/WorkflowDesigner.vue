@@ -142,7 +142,7 @@
           <el-button v-if="hasInspectorSelection" link class="btn-aliyun-link" @click="showOverview">返回配置与总览</el-button>
         </div>
         <div class="inspector-scroll">
-          <WorkflowNodeInspector v-if="nodeDrawerVisible && selectedNode" :visible="nodeDrawerVisible" :node="selectedNode" :errors="selectedNodeIssues" :device-capabilities="selectedDeviceModel?.capabilities || []" :device-attributes="selectedDeviceModel?.attributes || []" :port-connections="form.portConnections" :contract-ready="contractReady" @close="closeNodeDrawer" @rename="renameSelectedNode" @update:node="replaceSelectedNode" @update:port-connections="replacePortConnections" @remove-port-request="confirmRemovePort" @remove-node="removeSelectedNode" />
+          <WorkflowNodeInspector v-if="nodeDrawerVisible && selectedNode" :visible="nodeDrawerVisible" :node="selectedNode" :errors="selectedNodeIssues" :device-capabilities="selectedDeviceModel?.capabilities || []" :device-attributes="selectedDeviceModel?.attributes || []" :interface-connections="form.interfaceConnections" :port-connections="form.portConnections" :contract-ready="contractReady" @close="closeNodeDrawer" @rename="renameSelectedNode" @update:node="replaceSelectedNode" @update:interface-connections="replaceInterfaceConnections" @update:port-connections="replacePortConnections" @remove-port-request="confirmRemovePort" @remove-node="removeSelectedNode" />
           <section v-else-if="selectedEdge" class="edge-view">
             <div class="connection-type" :class="selectedEdge.data?.connectionKind?.toLowerCase()"><span>{{ selectedEdge.data?.connectionKind === 'PORT' ? '数据流' : '执行流' }}</span><b>{{ selectedEdgeEndpoint.source }} → {{ selectedEdgeEndpoint.target }}</b></div>
             <dl class="property-list"><div><dt>源连接点</dt><dd>{{ selectedEdgeEndpoint.sourceHandle }}</dd></div><div><dt>目标连接点</dt><dd>{{ selectedEdgeEndpoint.targetHandle }}</dd></div><div><dt>业务语义</dt><dd>{{ selectedEdge.data?.connectionKind === 'PORT' ? '将上游节点内部变量传递给下游节点' : '上游节点完成后激活下游节点' }}</dd></div></dl>
@@ -747,6 +747,12 @@ function replaceSelectedNode(node:NodeDefinition) {
 
 function replacePortConnections(connections:any[]) {
   form.portConnections = connections
+  markDirty()
+  syncEdges()
+}
+
+function replaceInterfaceConnections(connections:any[]) {
+  form.interfaceConnections = connections
   markDirty()
   syncEdges()
 }

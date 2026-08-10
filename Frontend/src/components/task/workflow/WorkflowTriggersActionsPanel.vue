@@ -1,45 +1,164 @@
 <template>
   <section class="triggers-actions-panel">
-    <div class="panel-heading"><div><strong>动作</strong><span>自定义动作仅支持 UPDATE</span></div><div class="heading-actions"><el-button size="small" @click="addAction">新增 UPDATE</el-button></div></div>
-    <div v-for="action in actions" :key="action.actionName" class="action-card"><div class="action-card-head"><strong>{{ action.actionName || '未命名动作' }}</strong><el-icon v-if="isSystemItem(action)" title="系统动作，禁止编辑"><Lock /></el-icon><el-button v-else link type="danger" @click="removeAction(action.actionName)">删除</el-button></div><div class="form-grid"><el-input :model-value="action.actionName" placeholder="动作名称" :disabled="isSystemItem(action)" @update:model-value="updateAction(action.actionName, 'actionName', $event)" /><el-select :model-value="action.actionType" :disabled="isSystemItem(action)" @update:model-value="updateAction(action.actionName, 'actionType', $event)"><el-option v-if="isSystemItem(action)" label="EMIT" value="EMIT" /><el-option label="UPDATE" value="UPDATE" /></el-select><template v-if="action.actionType === 'EMIT'"><el-select :model-value="action.targetInterfaceName" placeholder="目标 OUT 接口" :disabled="isSystemItem(action)" @update:model-value="updateAction(action.actionName, 'targetInterfaceName', $event)"><el-option v-for="item in outputInterfaces" :key="item.name" :label="item.name" :value="item.name" /></el-select><el-select :model-value="action.signalName" placeholder="信号" :disabled="isSystemItem(action)" @update:model-value="updateAction(action.actionName, 'signalName', $event)"><el-option v-for="signal in allowedSignals(action.targetInterfaceName)" :key="signal" :label="signal" :value="signal" /></el-select></template><template v-else><el-select :model-value="action.internalVariableName" placeholder="内部变量" :disabled="isSystemItem(action)" @update:model-value="updateAction(action.actionName, 'internalVariableName', $event)"><el-option v-for="item in node.internalVariables || []" :key="item.name" :label="item.name" :value="item.name" /></el-select><el-input :model-value="action.valueExpression" placeholder="valueExpression" :disabled="isSystemItem(action)" @update:model-value="updateAction(action.actionName, 'valueExpression', $event)" /></template></div></div>
-    <el-empty v-if="!actions.length" description="尚未定义动作" :image-size="36" />
-    <div class="panel-heading trigger-heading"><div><strong>接口触发器</strong><span>仅 IN 接口可配置</span></div></div>
-    <div v-for="item in inputInterfaces" :key="item.name" class="trigger-group"><div class="trigger-group-head"><strong>{{ item.name }}</strong><el-button size="small" :disabled="!customActionNames.length" @click="addTrigger(item.name)">添加触发器</el-button></div><div v-for="(trigger, index) in item.bindingTriggers || []" :key="trigger._systemKey || index" class="trigger-row"><el-icon v-if="isSystemItem(trigger)" title="系统触发器，禁止编辑"><Lock /></el-icon><el-select :model-value="trigger.condition?.object" filterable allow-create default-first-option placeholder="条件对象" :disabled="isSystemItem(trigger)" @update:model-value="updateTrigger(item.name, index, 'object', $event)"><el-option v-for="object in conditionObjects" :key="object" :label="object" :value="object" /></el-select><el-select :model-value="trigger.condition?.operator" placeholder="操作符" :disabled="isSystemItem(trigger)" @update:model-value="updateTrigger(item.name, index, 'operator', $event)"><el-option v-for="operator in operators" :key="operator" :label="operator" :value="operator" /></el-select><template v-if="trigger.condition?.operator === 'BETWEEN'"><div class="threshold-pair"><el-input :model-value="betweenValues(trigger.condition?.threshold)[0]" placeholder="下限" :disabled="isSystemItem(trigger)" @update:model-value="updateThresholdAt(item.name, index, 0, $event)" /><el-input :model-value="betweenValues(trigger.condition?.threshold)[1]" placeholder="上限" :disabled="isSystemItem(trigger)" @update:model-value="updateThresholdAt(item.name, index, 1, $event)" /></div></template><template v-else-if="trigger.condition?.operator === 'IN'"><div class="threshold-list"><div v-for="(_value, thresholdIndex) in inValues(trigger.condition?.threshold)" :key="thresholdIndex" class="threshold-list-row"><el-input :model-value="inValues(trigger.condition?.threshold)[thresholdIndex]" placeholder="候选值" :disabled="isSystemItem(trigger)" @update:model-value="updateThresholdAt(item.name, index, thresholdIndex, $event)" /><el-button v-if="!isSystemItem(trigger)" link type="danger" @click="removeThresholdValue(item.name, index, thresholdIndex)">删除</el-button></div><el-button v-if="!isSystemItem(trigger)" link type="primary" @click="addThresholdValue(item.name, index)">添加候选值</el-button></div></template><el-input v-else :model-value="scalarThreshold(trigger.condition?.threshold)" placeholder="阈值" :disabled="isSystemItem(trigger)" @update:model-value="updateTrigger(item.name, index, 'threshold', $event)" /><el-select :model-value="trigger.action" placeholder="调用动作" :disabled="isSystemItem(trigger)" @update:model-value="updateTrigger(item.name, index, 'action', $event)"><el-option v-for="name in triggerActionNames(trigger)" :key="name" :label="name" :value="name" /></el-select><el-button v-if="!isSystemItem(trigger)" link type="danger" @click="removeTrigger(item.name, index)">删除</el-button></div><el-empty v-if="!(item.bindingTriggers || []).length" description="尚未定义触发器" :image-size="30" /></div>
+    <div class="panel-heading">
+      <div><strong>动作能力</strong><span>节点只声明可用的 UPDATE / EMIT；具体参数配置在触发器中</span></div>
+      <div class="heading-actions">
+        <el-button v-for="name in missingActions" :key="name" size="small" @click="addAction(name)">启用 {{ name }}</el-button>
+      </div>
+    </div>
+    <div class="action-capabilities">
+      <el-tag v-for="name in actions" :key="name" closable @close="removeAction(name)">{{ name }}</el-tag>
+      <el-empty v-if="!actions.length" description="尚未启用动作能力" :image-size="34" />
+    </div>
+
+    <div class="panel-heading trigger-heading">
+      <div><strong>接口触发器</strong><span>按 OUT → IN 顺序展示；每个触发器独立判断并执行自己的内联动作</span></div>
+    </div>
+    <div v-for="item in orderedInterfaces" :key="item.name" class="trigger-group">
+      <div class="trigger-group-head">
+        <strong>{{ item.name }}</strong>
+        <el-tag size="small" type="info">{{ item.direction }}</el-tag>
+        <el-button size="small" :disabled="!actions.length" @click="addTrigger(item.name)">添加触发器</el-button>
+      </div>
+
+      <div v-for="(trigger, index) in item.bindingTriggers || []" :key="trigger._systemKey || index" class="trigger-card">
+        <div class="trigger-card-head">
+          <el-icon v-if="isSystemItem(trigger)" title="系统触发器，禁止编辑"><Lock /></el-icon>
+          <strong>触发器 {{ index + 1 }}</strong>
+          <el-button v-if="!isSystemItem(trigger)" link type="danger" @click="removeTrigger(item.name, index)">删除</el-button>
+        </div>
+
+        <div class="condition-grid">
+          <el-select :model-value="trigger.condition?.object" filterable allow-create default-first-option placeholder="条件对象" :disabled="isSystemItem(trigger)" @update:model-value="updateCondition(item.name, index, 'object', $event)">
+            <el-option v-for="object in conditionObjects" :key="object" :label="object" :value="object" />
+          </el-select>
+          <el-select :model-value="trigger.condition?.operator" placeholder="操作符" :disabled="isSystemItem(trigger)" @update:model-value="updateCondition(item.name, index, 'operator', $event)">
+            <el-option v-for="operator in operators" :key="operator" :label="operator" :value="operator" />
+          </el-select>
+          <el-input :model-value="displayJson(trigger.condition?.threshold)" placeholder="阈值（支持 JSON）" :disabled="isSystemItem(trigger)" @change="updateThreshold(item.name, index, $event)" />
+        </div>
+
+        <div class="action-editor">
+          <el-select :model-value="trigger.action?.actionName" placeholder="动作" :disabled="isSystemItem(trigger)" @update:model-value="changeAction(item.name, index, $event)">
+            <el-option v-for="name in actions" :key="name" :label="name" :value="name" />
+          </el-select>
+
+          <template v-if="trigger.action?.actionName === 'EMIT'">
+            <el-select :model-value="trigger.action?.payload?.targetInterfaceName" placeholder="目标 OUT 接口" :disabled="isSystemItem(trigger)" @update:model-value="updatePayload(item.name, index, 'targetInterfaceName', $event)">
+              <el-option v-for="output in outputInterfaces" :key="output.name" :label="output.name" :value="output.name" />
+            </el-select>
+            <el-select :model-value="trigger.action?.payload?.signalName" placeholder="信号" :disabled="isSystemItem(trigger)" @update:model-value="updatePayload(item.name, index, 'signalName', $event)">
+              <el-option v-for="signal in allowedSignals(trigger.action?.payload?.targetInterfaceName)" :key="signal" :label="signal" :value="signal" />
+            </el-select>
+          </template>
+
+          <template v-else-if="trigger.action?.actionName === 'UPDATE'">
+            <el-select :model-value="trigger.action?.payload?.updateType" placeholder="更新类型" :disabled="isSystemItem(trigger)" @update:model-value="changeUpdateType(item.name, index, $event)">
+              <el-option label="内部变量" value="INTERNAL_VARIABLE" />
+              <el-option label="节点生命周期" value="NODE_LIFECYCLE" />
+            </el-select>
+
+            <template v-if="trigger.action?.payload?.updateType === 'NODE_LIFECYCLE'">
+              <el-select :model-value="trigger.action?.payload?.targetName" placeholder="目标生命周期" :disabled="isSystemItem(trigger)" @update:model-value="updatePayload(item.name, index, 'targetName', $event)">
+                <el-option v-for="state in node.lifecycle?.states || []" :key="state" :label="state" :value="state" />
+              </el-select>
+            </template>
+
+            <template v-else>
+              <el-select :model-value="trigger.action?.payload?.targetName" placeholder="目标内部变量" :disabled="isSystemItem(trigger)" @update:model-value="updatePayload(item.name, index, 'targetName', $event)">
+                <el-option v-for="variable in node.internalVariables || []" :key="variable.name" :label="variable.name" :value="variable.name" />
+              </el-select>
+              <el-select :model-value="updateSource(trigger)" :disabled="isSystemItem(trigger)" @update:model-value="changeUpdateSource(item.name, index, $event)">
+                <el-option label="直接常量" value="VALUE" />
+                <el-option label="计算表达式" value="EXPRESSION" />
+              </el-select>
+              <el-input v-if="updateSource(trigger) === 'EXPRESSION'" :model-value="trigger.action?.payload?.valueExpression" placeholder="例如 temperature / 100" :disabled="isSystemItem(trigger)" @update:model-value="updatePayload(item.name, index, 'valueExpression', $event)" />
+              <el-input v-else :model-value="displayJson(trigger.action?.payload?.value)" placeholder="常量（支持数字、布尔和 JSON）" :disabled="isSystemItem(trigger)" @change="updateConstant(item.name, index, $event)" />
+            </template>
+          </template>
+        </div>
+      </div>
+      <el-empty v-if="!(item.bindingTriggers || []).length" description="尚未定义触发器" :image-size="30" />
+    </div>
   </section>
 </template>
+
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Lock } from '@element-plus/icons-vue'
-import { customTriggerActionNames as nodeCustomTriggerActionNames, isSystemItem, removeAction as removeNodeAction } from '../../../utils/workflowNodeDefinition.js'
+import { isSystemItem, removeAction as removeNodeAction } from '../../../utils/workflowNodeDefinition.js'
+
 type Item = Record<string, any>
 const props = defineProps<{ node: Item }>()
 const emit = defineEmits<{ 'update:node': [node: Item] }>()
 const operators = ['>', '<', '>=', '<=', '=', '!=', 'BETWEEN', 'IN']
-const actions = computed(() => props.node.actions || [])
+const actions = computed<string[]>(() => props.node.actions || [])
+const missingActions = computed(() => ['UPDATE', 'EMIT'].filter(name => !actions.value.includes(name)))
 const outputInterfaces = computed(() => (props.node.interfaces || []).filter((item: Item) => item.direction === 'OUT'))
-const inputInterfaces = computed(() => (props.node.interfaces || []).filter((item: Item) => item.direction === 'IN'))
-const actionNames = computed(() => actions.value.map((item: Item) => item.actionName).filter(Boolean))
-const customActionNames = computed(() => nodeCustomTriggerActionNames(props.node))
-const conditionObjects = computed(() => ['inputSignalName', 'inputPayload.stateName', 'inputPayload.state', 'nodeLifecycleState', 'expression', ...(props.node.internalVariables || []).map((item: Item) => item.name)])
+const orderedInterfaces = computed(() => [
+  ...(props.node.interfaces || []).filter((item: Item) => item.direction === 'OUT'),
+  ...(props.node.interfaces || []).filter((item: Item) => item.direction === 'IN'),
+])
+const conditionObjects = computed(() => [
+  'inputSignalName', 'inputPayload.stateName', 'inputPayload.state', 'nodeLifecycleState',
+  ...(['BRANCH', 'AGGREGATE'].includes(props.node.functionType) ? ['expression'] : []),
+  ...(props.node.internalVariables || []).map((item: Item) => item.name),
+])
+
 function publish(next: Item) { emit('update:node', next) }
+function addAction(name: string) { publish({ ...props.node, actions: [...actions.value, name] }) }
+function removeAction(name: string) { try { publish(removeNodeAction(props.node, name)) } catch {} }
 function allowedSignals(interfaceName: string) { return outputInterfaces.value.find((item: Item) => item.name === interfaceName)?.allowedSignals || [] }
-function uniqueActionName(prefix: string) { let index = 1; while (actionNames.value.includes(`${prefix}${index}`)) index += 1; return `${prefix}${index}` }
-function addAction() { const action = { actionName: uniqueActionName('update'), actionType: 'UPDATE', internalVariableName: props.node.internalVariables?.[0]?.name || '', valueExpression: '' }; publish({ ...props.node, actions: [...actions.value, action] }) }
-function updateAction(actionName: string, field: string, value: any) { if (field === 'actionName' && actions.value.some((item: Item) => item.actionName === value && item.actionName !== actionName)) return; const nextActions = actions.value.map((item: Item) => item.actionName === actionName ? { ...item, [field]: value } : item); if (field === 'actionType') { const edited = nextActions.find((item: Item) => item.actionName === actionName); if (edited) Object.assign(edited, value === 'EMIT' ? { targetInterfaceName: outputInterfaces.value[0]?.name || '', signalName: outputInterfaces.value[0]?.allowedSignals?.[0] || '' } : { internalVariableName: props.node.internalVariables?.[0]?.name || '', valueExpression: '' }) }; publish({ ...props.node, actions: nextActions }) }
-function removeAction(actionName: string) { try { publish(removeNodeAction(props.node, actionName)) } catch {} }
-function triggerActionNames(trigger: Item) { return isSystemItem(trigger) ? [trigger.action] : customActionNames.value }
-function addTrigger(interfaceName: string) { const interfaces = (props.node.interfaces || []).map((item: Item) => item.name === interfaceName ? { ...item, bindingTriggers: [...(item.bindingTriggers || []), { condition: { object: 'inputSignalName', operator: '=', threshold: '' }, action: customActionNames.value[0] || '' }] } : item); publish({ ...props.node, interfaces }) }
-function updateTrigger(interfaceName: string, index: number, field: string, value: any) { const interfaces = (props.node.interfaces || []).map((item: Item) => { if (item.name !== interfaceName) return item; const bindingTriggers = (item.bindingTriggers || []).map((trigger: Item, triggerIndex: number) => { if (triggerIndex !== index) return trigger; if (field === 'action') return { ...trigger, action: value }; const condition = { ...trigger.condition, [field]: value }; if (field === 'operator') condition.threshold = thresholdForOperator(value, trigger.condition?.threshold); return { ...trigger, condition } }); return { ...item, bindingTriggers } }); publish({ ...props.node, interfaces }) }
-function updateThresholdAt(interfaceName: string, index: number, thresholdIndex: number, value: any) { const trigger = inputInterfaces.value.find((item: Item) => item.name === interfaceName)?.bindingTriggers?.[index]; const values = trigger?.condition?.operator === 'BETWEEN' ? betweenValues(trigger.condition?.threshold) : inValues(trigger?.condition?.threshold); values[thresholdIndex] = value; updateTrigger(interfaceName, index, 'threshold', values) }
-function addThresholdValue(interfaceName: string, index: number) { const trigger = inputInterfaces.value.find((item: Item) => item.name === interfaceName)?.bindingTriggers?.[index]; updateTrigger(interfaceName, index, 'threshold', [...inValues(trigger?.condition?.threshold), '']) }
-function removeThresholdValue(interfaceName: string, index: number, thresholdIndex: number) { const trigger = inputInterfaces.value.find((item: Item) => item.name === interfaceName)?.bindingTriggers?.[index]; updateTrigger(interfaceName, index, 'threshold', inValues(trigger?.condition?.threshold).filter((_value: unknown, valueIndex: number) => valueIndex !== thresholdIndex)) }
-function thresholdForOperator(operator: string, value: unknown) { if (operator === 'BETWEEN') { const values = Array.isArray(value) ? value.slice(0, 2) : [value ?? '']; return [values[0] ?? '', values[1] ?? ''] }; if (operator === 'IN') return Array.isArray(value) ? [...value] : value == null || value === '' ? [] : [value]; return Array.isArray(value) ? value[0] ?? '' : value ?? '' }
-function betweenValues(value: unknown) { return thresholdForOperator('BETWEEN', value) }
-function inValues(value: unknown) { return thresholdForOperator('IN', value) }
-function scalarThreshold(value: unknown) { return Array.isArray(value) ? value[0] ?? '' : value ?? '' }
-function removeTrigger(interfaceName: string, index: number) { const interfaces = (props.node.interfaces || []).map((item: Item) => item.name === interfaceName ? { ...item, bindingTriggers: (item.bindingTriggers || []).filter((_trigger: Item, triggerIndex: number) => triggerIndex !== index) } : item); publish({ ...props.node, interfaces }) }
-function thresholdText(value: unknown) { return Array.isArray(value) ? value.join(', ') : value == null ? '' : String(value) }
+
+function defaultAction(actionName = actions.value[0] || 'UPDATE') {
+  if (actionName === 'EMIT') {
+    const target = outputInterfaces.value[0]
+    return { actionName, payload: { targetInterfaceName: target?.name || '', signalName: target?.allowedSignals?.[0] || '' } }
+  }
+  return { actionName: 'UPDATE', payload: {
+    updateType: 'INTERNAL_VARIABLE', targetName: props.node.internalVariables?.[0]?.name || '', value: null,
+  } }
+}
+
+function addTrigger(interfaceName: string) {
+  editInterface(interfaceName, item => ({ ...item, bindingTriggers: [...(item.bindingTriggers || []), {
+    condition: { object: 'nodeLifecycleState', operator: '=', threshold: 'RUNNING' },
+    action: defaultAction(),
+  }] }))
+}
+
+function editInterface(interfaceName: string, edit: (item: Item) => Item) {
+  publish({ ...props.node, interfaces: (props.node.interfaces || []).map((item: Item) => item.name === interfaceName ? edit(item) : item) })
+}
+
+function editTrigger(interfaceName: string, index: number, edit: (trigger: Item) => Item) {
+  editInterface(interfaceName, item => ({ ...item, bindingTriggers: (item.bindingTriggers || []).map((trigger: Item, triggerIndex: number) => triggerIndex === index ? edit(trigger) : trigger) }))
+}
+
+function updateCondition(interfaceName: string, index: number, field: string, value: unknown) {
+  editTrigger(interfaceName, index, trigger => ({ ...trigger, condition: { ...trigger.condition, [field]: value } }))
+}
+function updateThreshold(interfaceName: string, index: number, value: string) { updateCondition(interfaceName, index, 'threshold', parseTyped(value)) }
+function changeAction(interfaceName: string, index: number, actionName: string) { editTrigger(interfaceName, index, trigger => ({ ...trigger, action: defaultAction(actionName) })) }
+function updatePayload(interfaceName: string, index: number, field: string, value: unknown) { editTrigger(interfaceName, index, trigger => ({ ...trigger, action: { ...trigger.action, payload: { ...trigger.action?.payload, [field]: value } } })) }
+function changeUpdateType(interfaceName: string, index: number, updateType: string) {
+  editTrigger(interfaceName, index, trigger => ({ ...trigger, action: { actionName: 'UPDATE', payload: updateType === 'NODE_LIFECYCLE'
+    ? { updateType, targetName: props.node.lifecycle?.states?.[0] || '' }
+    : { updateType, targetName: props.node.internalVariables?.[0]?.name || '', value: null } } }))
+}
+function updateSource(trigger: Item) { return Object.hasOwn(trigger.action?.payload || {}, 'valueExpression') ? 'EXPRESSION' : 'VALUE' }
+function changeUpdateSource(interfaceName: string, index: number, source: string) {
+  editTrigger(interfaceName, index, trigger => {
+    const { value: _value, valueExpression: _expression, ...payload } = trigger.action?.payload || {}
+    return { ...trigger, action: { ...trigger.action, payload: source === 'EXPRESSION' ? { ...payload, valueExpression: '' } : { ...payload, value: null } } }
+  })
+}
+function updateConstant(interfaceName: string, index: number, value: string) { updatePayload(interfaceName, index, 'value', parseTyped(value)) }
+function removeTrigger(interfaceName: string, index: number) { editInterface(interfaceName, item => ({ ...item, bindingTriggers: (item.bindingTriggers || []).filter((_trigger: Item, triggerIndex: number) => triggerIndex !== index) })) }
+function parseTyped(value: string) { try { return JSON.parse(value) } catch { return value } }
+function displayJson(value: unknown) { return typeof value === 'string' ? value : value === undefined ? '' : JSON.stringify(value) }
 </script>
+
 <style scoped>
-.triggers-actions-panel{display:grid;gap:10px}.panel-heading,.trigger-group-head,.action-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.panel-heading>div:first-child{display:grid;gap:2px}.panel-heading span,.panel-hint{margin:0;color:var(--el-text-color-secondary);font-size:12px}.heading-actions{display:flex;gap:6px}.action-card,.trigger-group{display:grid;gap:8px;padding:10px;border:1px solid var(--el-border-color-lighter);border-radius:7px}.action-card-head{font-size:13px}.form-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.form-grid :deep(.el-select),.trigger-row :deep(.el-select){width:100%}.trigger-heading{margin-top:12px;padding-top:14px;border-top:1px solid var(--el-border-color-lighter)}.trigger-row{display:grid;grid-template-columns:auto minmax(110px,1.2fr) 78px minmax(92px,1fr) minmax(100px,1fr) auto;gap:7px;align-items:center}.trigger-row .el-icon{color:var(--el-text-color-secondary)}.threshold-pair,.threshold-list{display:grid;gap:6px}.threshold-pair{grid-template-columns:1fr 1fr}.threshold-list-row{display:flex;gap:4px;align-items:center}@media(max-width:560px){.form-grid,.trigger-row{grid-template-columns:1fr 1fr}.trigger-row .el-icon{display:none}}
+.triggers-actions-panel{display:grid;gap:10px}.panel-heading,.trigger-group-head,.trigger-card-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.panel-heading>div:first-child{display:grid;gap:2px}.panel-heading span{color:var(--el-text-color-secondary);font-size:12px}.heading-actions,.action-capabilities{display:flex;flex-wrap:wrap;gap:6px}.trigger-heading{margin-top:12px;padding-top:14px;border-top:1px solid var(--el-border-color-lighter)}.trigger-group,.trigger-card{display:grid;gap:8px;padding:10px;border:1px solid var(--el-border-color-lighter);border-radius:7px}.trigger-card{background:var(--el-fill-color-lighter)}.trigger-card-head{justify-content:flex-start}.trigger-card-head .el-button{margin-left:auto}.condition-grid,.action-editor{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}.condition-grid :deep(.el-select),.action-editor :deep(.el-select){width:100%}@media(max-width:700px){.condition-grid,.action-editor{grid-template-columns:1fr}}
 </style>

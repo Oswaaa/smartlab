@@ -4,7 +4,8 @@ const requiredTemplateKeys = ['START', 'END', 'BRANCH', 'AGGREGATE', 'DEV_NODE',
 export function configureWorkflowNodeTemplates(templates) {
   const missingKeys = requiredTemplateKeys.filter(key => !templates?.[key] || typeof templates[key] !== 'object')
   if (missingKeys.length) throw new Error(`工作流系统模板不完整:${missingKeys.join(',')}`)
-  const snapshot = structuredClone(templates)
+  const snapshot = Object.fromEntries(Object.entries(templates)
+    .map(([key, template]) => [key, normalizeWorkflowNodeDefinition(template)]))
   configuredTemplates = snapshot
 }
 
@@ -26,9 +27,7 @@ export function isSystemItem(item) {
 }
 
 export function customTriggerActionNames(node) {
-  return (node?.actions ?? [])
-    .filter(action => !isSystemItem(action) && action.actionType === 'UPDATE' && action.actionName)
-    .map(action => action.actionName)
+  return [...new Set((node?.actions ?? []).filter(action => action === 'UPDATE' || action === 'EMIT'))]
 }
 
 export function rehydrateWorkflowNodes(nodes = []) {
@@ -36,7 +35,7 @@ export function rehydrateWorkflowNodes(nodes = []) {
 }
 
 export function rehydrateWorkflowNode(node) {
-  const restored = structuredClone(node)
+  const restored = normalizeWorkflowNodeDefinition(node)
   const expected = templateCopy(templateKeyForNode(restored))
 
   restoreSystemIdentity(restored.lifecycle, expected.lifecycle)
@@ -46,8 +45,6 @@ export function rehydrateWorkflowNode(node) {
     item => `${item?.fromStateName ?? ''}->${item?.toStateName ?? ''}`,
   )
   restoreMatchedItems(restored.interfaces, expected.interfaces, item => item?.name)
-  restoreMatchedItems(restored.actions, expected.actions, item => item?.actionName)
-
   for (const expectedInterface of expected.interfaces ?? []) {
     const actualInterface = (restored.interfaces ?? [])
       .find(item => item?.name === expectedInterface?.name)
@@ -82,8 +79,67 @@ function triggerBusinessIdentity(trigger) {
     trigger?.condition?.object,
     trigger?.condition?.operator,
     trigger?.condition?.threshold,
-    trigger?.action,
+    canonicalJson(trigger?.action),
   ])
+}
+
+function canonicalJson(value) {
+  if (Array.isArray(value)) return value.map(canonicalJson)
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(Object.keys(value).sort().map(key => [key, canonicalJson(value[key])]))
+}
+
+export function normalizeWorkflowNodeDefinition(node = {}) {
+  const restored = structuredClone(node)
+  const legacyActions = new Map()
+  const actionNames = []
+  for (const action of restored.actions ?? []) {
+    if (typeof action === 'string') {
+      if (action === 'UPDATE' || action === 'EMIT') actionNames.push(action)
+      continue
+    }
+    if (!action || typeof action !== 'object') continue
+    const canonical = canonicalAction(action)
+    if (action.actionName) legacyActions.set(action.actionName, canonical)
+    if (canonical.actionName === 'UPDATE' || canonical.actionName === 'EMIT') actionNames.push(canonical.actionName)
+  }
+  for (const item of restored.interfaces ?? []) {
+    item.bindingTriggers = (item.bindingTriggers ?? []).map(trigger => {
+      const normalized = structuredClone(trigger)
+      if (typeof normalized.action === 'string') {
+        normalized.action = structuredClone(legacyActions.get(normalized.action) ?? {
+          actionName: normalized.action,
+          payload: {},
+        })
+      } else {
+        normalized.action = canonicalAction(normalized.action)
+      }
+      return normalized
+    })
+  }
+  restored.actions = [...new Set(actionNames)]
+  return restored
+}
+
+function canonicalAction(source = {}) {
+  if (!source || typeof source !== 'object') return { actionName: '', payload: {} }
+  const actionName = source.actionType || source.actionName || ''
+  if (source.payload && typeof source.payload === 'object' && !Array.isArray(source.payload)) {
+    return { actionName, payload: structuredClone(source.payload) }
+  }
+  if (actionName === 'EMIT') {
+    return { actionName, payload: {
+      targetInterfaceName: source.targetInterfaceName ?? '',
+      signalName: source.signalName ?? '',
+    } }
+  }
+  const payload = {
+    updateType: source.updateType || 'INTERNAL_VARIABLE',
+    targetName: source.targetName || source.internalVariableName || '',
+  }
+  if (Object.hasOwn(source, 'value')) payload.value = structuredClone(source.value)
+  if (Object.hasOwn(source, 'valueExpression')) payload.valueExpression = source.valueExpression
+  return { actionName, payload }
 }
 
 function restoreSystemIdentity(actual, expected) {
@@ -151,16 +207,10 @@ export function createSubflowNode(workflow, name) {
 }
 
 export function replaceCapability(node, capability, previousCapability) {
-  const oldValues = node.capability?.capabilityParameters ?? {}
-  const oldTypes = Object.fromEntries((previousCapability?.parameters ?? []).map(parameter => [parameter.name, parameter.dataType]))
-  const resolvedOldTypes = Object.keys(oldTypes).length ? oldTypes : (node._capabilityParameterTypes ?? {})
   const nextTypes = Object.fromEntries((capability.parameters ?? []).map(parameter => [parameter.name, parameter.dataType]))
-  const capabilityParameters = Object.fromEntries(Object.entries(nextTypes)
-    .filter(([name, type]) => resolvedOldTypes[name] === type && Object.hasOwn(oldValues, name))
-    .map(([name]) => [name, oldValues[name]]))
   return {
     ...node,
-    capability: { capabilityName: capability.capabilityName, capabilityParameters },
+    capability: { capabilityName: capability.capabilityName, capabilityParameters: {} },
     _capabilityParameterTypes: nextTypes
   }
 }
@@ -183,9 +233,21 @@ export function removePort(node, portName, portConnections) {
 }
 
 export function removeAction(node, actionName) {
-  const action = (node.actions ?? []).find(item => item.actionName === actionName)
-  if (isSystemItem(action)) throw new Error(`系统动作${actionName}不可删除`)
-  return { ...node, actions: (node.actions ?? []).filter(item => item.actionName !== actionName) }
+  const used = (node.interfaces ?? []).some(item => (item.bindingTriggers ?? [])
+    .some(trigger => trigger.action?.actionName === actionName))
+  if (used) throw new Error(`动作能力${actionName}仍被触发器引用`)
+  return { ...node, actions: (node.actions ?? []).filter(item => item !== actionName) }
+}
+
+export function removeInterface(node, interfaceName, interfaceConnections) {
+  const target = (node.interfaces ?? []).find(item => item.name === interfaceName)
+  if (isSystemItem(target)) throw new Error(`系统接口${interfaceName}不可删除`)
+  return {
+    node: { ...node, interfaces: (node.interfaces ?? []).filter(item => item.name !== interfaceName) },
+    interfaceConnections: (interfaceConnections ?? []).filter(connection =>
+      !(connection.source?.nodeName === node.name && connection.source?.interfaceName === interfaceName) &&
+      !(connection.target?.nodeName === node.name && connection.target?.interfaceName === interfaceName)),
+  }
 }
 
 export function validateNodeDefinition(node, context = {}) {
@@ -193,7 +255,7 @@ export function validateNodeDefinition(node, context = {}) {
   uniqueErrors(errors, node.internalVariables, 'name', 'internalVariables')
   uniqueErrors(errors, node.ports, 'name', 'ports')
   uniqueErrors(errors, node.interfaces, 'name', 'interfaces')
-  uniqueErrors(errors, node.actions, 'actionName', 'actions')
+  uniqueActionErrors(errors, node.actions)
   validateVariables(node, errors)
   validatePorts(node, errors)
   validateActions(node, errors)
@@ -224,36 +286,73 @@ function validatePorts(node, errors) {
   })
 }
 
-function validateActions(node, errors) {
-  const interfaces = new Map((node.interfaces ?? []).map(item => [item.name, item]))
-  const variables = new Set((node.internalVariables ?? []).map(item => item.name))
-  ;(node.actions ?? []).forEach((action, index) => {
-    if (!isSystemItem(action) && action.actionType !== 'UPDATE') {
-      errors.push({ path: `actions[${index}].actionType`, message: '自定义动作只允许UPDATE' })
-    }
-    if (action.actionType === 'EMIT') {
-      const target = interfaces.get(action.targetInterfaceName)
-      if (!target) errors.push({ path: `actions[${index}].targetInterfaceName`, message: `EMIT动作${action.actionName}引用的输出接口${action.targetInterfaceName}不存在` })
-      else if (target.direction !== 'OUT') errors.push({ path: `actions[${index}].targetInterfaceName`, message: `EMIT动作${action.actionName}引用的接口${action.targetInterfaceName}必须是OUT接口` })
-      else if (!target.allowedSignals?.includes(action.signalName)) errors.push({ path: `actions[${index}].signalName`, message: `EMIT动作${action.actionName}的信号${action.signalName}不被接口${action.targetInterfaceName}允许` })
-    }
-    if (action.actionType === 'UPDATE') {
-      if (!variables.has(action.internalVariableName)) errors.push({ path: `actions[${index}].internalVariableName`, message: `UPDATE动作${action.actionName}引用的内部变量${action.internalVariableName}不存在` })
-      if (!action.valueExpression?.trim()) errors.push({ path: `actions[${index}].valueExpression`, message: `UPDATE动作${action.actionName}的valueExpression不能为空` })
-    }
-  })
-}
+function validateActions() {}
 function validateTriggers(node, errors) {
-  const actionNames = new Set((node.actions ?? []).map(item => item.actionName))
-  const customActionNames = new Set(customTriggerActionNames(node))
-  ;(node.interfaces ?? []).forEach((item, interfaceIndex) => (item.bindingTriggers ?? []).forEach((bindingTrigger, triggerIndex) => {
+  validateInlineTriggers(node, errors)
+}
+
+function validateInlineTriggers(node, errors) {
+  const actionNames = new Set(node.actions ?? [])
+  const interfaces = new Map((node.interfaces ?? []).map(item => [item.name, item]))
+  const variables = new Map((node.internalVariables ?? []).map(item => [item.name, item]))
+  const lifecycleStates = new Set(node.lifecycle?.states ?? [])
+  ;(node.interfaces ?? []).forEach((item, interfaceIndex) => (item.bindingTriggers ?? []).forEach((trigger, triggerIndex) => {
     const path = `interfaces[${interfaceIndex}].bindingTriggers[${triggerIndex}]`
-    if (item.direction !== 'IN') errors.push({ path, message: `${item.direction}接口不能声明bindingTriggers` })
-    if (!actionNames.has(bindingTrigger.action)) errors.push({ path: `${path}.action`, message: `触发器引用的动作${bindingTrigger.action}不存在` })
-    if (!isSystemItem(bindingTrigger) && !customActionNames.has(bindingTrigger.action)) {
-      errors.push({ path: `${path}.action`, message: '自定义触发器只能调用非系统UPDATE动作' })
+    const action = trigger.action
+    const actionName = action?.actionName
+    const payload = action?.payload
+    if (!action || typeof action !== 'object' || !payload || typeof payload !== 'object') {
+      errors.push({ path: `${path}.action`, message: '触发器action必须是内联对象' })
+      return
     }
+    if (!actionNames.has(actionName)) {
+      errors.push({ path: `${path}.action.actionName`, message: `动作能力${actionName || ''}未在actions中声明` })
+      return
+    }
+    if (actionName === 'EMIT') validateEmitPayload(path, payload, interfaces, errors)
+    if (actionName === 'UPDATE') validateUpdatePayload(path, payload, variables, lifecycleStates, errors)
   }))
+}
+
+function validateEmitPayload(path, payload, interfaces, errors) {
+  const target = interfaces.get(payload.targetInterfaceName)
+  if (!target) errors.push({ path: `${path}.action.payload.targetInterfaceName`, message: `EMIT目标接口${payload.targetInterfaceName || ''}不存在` })
+  else if (target.direction !== 'OUT') errors.push({ path: `${path}.action.payload.targetInterfaceName`, message: `EMIT目标接口${payload.targetInterfaceName}必须是OUT接口` })
+  else if (!target.allowedSignals?.includes(payload.signalName)) errors.push({ path: `${path}.action.payload.signalName`, message: `信号${payload.signalName || ''}不在接口allowedSignals中` })
+}
+
+function validateUpdatePayload(path, payload, variables, lifecycleStates, errors) {
+  if (payload.updateType === 'NODE_LIFECYCLE') {
+    if (!lifecycleStates.has(payload.targetName)) {
+      errors.push({ path: `${path}.action.payload.targetName`, message: `生命周期状态${payload.targetName || ''}不存在` })
+    }
+    if (Object.hasOwn(payload, 'value') || Object.hasOwn(payload, 'valueExpression')) {
+      errors.push({ path: `${path}.action.payload`, message: '生命周期UPDATE不能包含value或valueExpression' })
+    }
+    return
+  }
+  if (payload.updateType !== 'INTERNAL_VARIABLE') {
+    errors.push({ path: `${path}.action.payload.updateType`, message: 'updateType只允许INTERNAL_VARIABLE或NODE_LIFECYCLE' })
+    return
+  }
+  const variable = variables.get(payload.targetName)
+  if (!variable) errors.push({ path: `${path}.action.payload.targetName`, message: `内部变量${payload.targetName || ''}不存在` })
+  const hasValue = Object.hasOwn(payload, 'value')
+  const hasExpression = typeof payload.valueExpression === 'string' && payload.valueExpression.trim() !== ''
+  if (hasValue === hasExpression) {
+    errors.push({ path: `${path}.action.payload`, message: 'INTERNAL_VARIABLE UPDATE必须且只能设置value或valueExpression之一' })
+  } else if (hasValue && variable && !matchesInternalValue(payload.value, variable.dataType)) {
+    errors.push({ path: `${path}.action.payload.value`, message: `常量类型与内部变量${payload.targetName}不一致` })
+  }
+}
+
+function matchesInternalValue(value, dataType) {
+  if (value === null) return false
+  return (dataType === 'INTEGER' && Number.isInteger(value)) ||
+    (dataType === 'DOUBLE' && typeof value === 'number' && Number.isFinite(value)) ||
+    (dataType === 'BOOLEAN' && typeof value === 'boolean') ||
+    (dataType === 'STRING' && typeof value === 'string') ||
+    (dataType === 'JSON' && typeof value === 'object')
 }
 
 function validateDeviceConfiguration(node, model, errors) {
@@ -274,4 +373,16 @@ function sameParameterType(value, dataType) {
     (dataType === 'BOOLEAN' && typeof value === 'boolean') ||
     (dataType === 'STRING' && typeof value === 'string') ||
     (dataType === 'JSON' && value !== null && !Array.isArray(value) && typeof value === 'object')
+}
+
+function uniqueActionErrors(errors, actions = []) {
+  const seen = new Set()
+  actions.forEach((action, index) => {
+    if (action !== 'UPDATE' && action !== 'EMIT') {
+      errors.push({ path: `actions[${index}]`, message: '动作能力只允许UPDATE或EMIT' })
+    } else if (seen.has(action)) {
+      errors.push({ path: `actions[${index}]`, message: '动作能力必须唯一' })
+    }
+    seen.add(action)
+  })
 }

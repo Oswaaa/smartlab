@@ -82,12 +82,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Lock } from '@element-plus/icons-vue'
-import { isSystemItem } from '../../../utils/workflowNodeDefinition.js'
+import { isSystemItem, removeInterface } from '../../../utils/workflowNodeDefinition.js'
 
 type Item = Record<string, any>
 
-const props = defineProps<{ node: Item }>()
-const emit = defineEmits<{ 'update:node': [node: Item], 'remove-port-request': [portName: string] }>()
+const props = withDefaults(defineProps<{ node: Item, interfaceConnections?: Item[] }>(), { interfaceConnections: () => [] })
+const emit = defineEmits<{ 'update:node': [node: Item], 'update:interfaceConnections': [connections: Item[]], 'remove-port-request': [portName: string] }>()
 
 const nodeInterfaces = computed(() => props.node.interfaces || [])
 const nodePorts = computed(() => props.node.ports || [])
@@ -108,16 +108,14 @@ function updateInterface(target: Item, field: string, value: unknown) {
 
 function addInterface() {
   const name = uniqueItemName('interface', nodeInterfaces.value)
-  const item = { name, direction: 'IN', interfaceType: 'WORKFLOW' }
+  const item = { name, direction: props.node.functionType === 'BRANCH' ? 'OUT' : 'IN', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], bindingTriggers: [] }
   publish({ ...props.node, interfaces: [...nodeInterfaces.value, item] })
 }
 
 function deleteInterface(target: Item) {
-  publish({
-    ...props.node,
-    interfaces: nodeInterfaces.value.filter((item: Item) =>
-      (item.name || item._systemKey) !== (target.name || target._systemKey))
-  })
+  const result = removeInterface(props.node, target.name, props.interfaceConnections)
+  publish(result.node)
+  emit('update:interfaceConnections', result.interfaceConnections)
 }
 
 function updatePort(target: Item, field: string, value: unknown) {

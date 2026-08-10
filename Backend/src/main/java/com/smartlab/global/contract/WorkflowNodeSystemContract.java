@@ -130,11 +130,14 @@ public final class WorkflowNodeSystemContract {
         ArrayNode inputTriggers = JsonNodeSupport.arrayNode();
         inputTriggers.add(trigger("subflow.activate", "signalName", "=", WorkflowNodeSignal.ACTIVE.name(),
                 updateLifecycleAction("RUNNING")));
+        inputTriggers.add(trigger("subflow.childCompleted", "signalName", "=",
+                WorkflowNodeSignal.SUBFLOW_COMPLETED.name(), updateLifecycleAction("SUCCEEDED")));
         ArrayNode outputTriggers = JsonNodeSupport.arrayNode();
         outputTriggers.add(trigger("subflow.complete", "nodeLifecycleState", "=", "SUCCEEDED",
                 emitAction("Interface_workflow_out", WorkflowNodeSignal.ACTIVE.name())));
-        template.withArray("interfaces").add(workflowInterface(
-                "subflow.workflowIn", "Interface_workflow_in", "IN", inputTriggers));
+        template.withArray("interfaces").add(interfaceDefinition(
+                "subflow.workflowIn", "Interface_workflow_in", "IN", "WORKFLOW",
+                List.of(WorkflowNodeSignal.ACTIVE.name(), WorkflowNodeSignal.SUBFLOW_COMPLETED.name()), inputTriggers));
         template.withArray("interfaces").add(workflowInterface(
                 "subflow.workflowOut", "Interface_workflow_out", "OUT", outputTriggers));
         addActions(template, WorkflowNodeActionType.UPDATE, WorkflowNodeActionType.EMIT);

@@ -131,8 +131,13 @@ class WorkflowNodeSystemContractTest {
     @Test
     void subflowTemplateUsesLifecycleAndEmitCapabilities() {
         JsonNode template = WorkflowNodeSystemContract.template("SUBFLOW_NODE", null);
+        JsonNode input = interfaceByName(template, "Interface_workflow_in");
         assertEquals(List.of("Interface_workflow_in", "Interface_workflow_out"), names(template.path("interfaces")));
         assertEquals(List.of("UPDATE", "EMIT"), textValues(template.path("actions")));
+        assertEquals(List.of("ACTIVE", "SUBFLOW_COMPLETED"), textValues(input.path("allowedSignals")));
+        assertEquals(List.of("ACTIVE", "SUBFLOW_COMPLETED"), triggerThresholds(input));
+        assertEquals(List.of("RUNNING", "SUCCEEDED"), input.path("bindingTriggers").findValues("targetName")
+                .stream().map(JsonNode::asText).toList());
         assertEquals(List.of("subflow.workflowIn", "subflow.workflowOut"),
                 directSystemKeys(template.path("interfaces")));
     }

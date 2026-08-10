@@ -235,6 +235,95 @@ class WorkflowEngineExecutionTest {
         verify(runtime).runningDeviceSteps();
     }
 
+    @Test
+    void runningSubflowCreatesNestedStartStepInTheSameTask() {
+        Task task = pollingTask();
+        TaskStep parent = pollingStep("RUNNING");
+        parent.setStepDepth(1);
+        FlowNode subflow = pollingNode(List.of());
+        subflow.setNodeType("SUBFLOW_NODE");
+        subflow.setSubFlowModelId(4L);
+        FlowNode childStart = pollingNode(List.of());
+        childStart.setId(40L);
+        childStart.setFlowModelId(4L);
+        childStart.setNodeIdRef(1L);
+        childStart.setNodeType("FUNC_NODE");
+        childStart.setCapability(JsonNodeSupport.objectNode().put("functionType", "START"));
+        stubPoll(task, parent, subflow);
+        when(workflows.compileDefinition(4L)).thenReturn(new WorkflowDefinitionCompiler.CompiledWorkflow(
+                Map.of(), Map.of(), Map.of(), Map.of("start", 1L), 1L, 2L));
+        when(workflows.nodes(4L)).thenReturn(List.of(childStart));
+
+        engine.processTask(task);
+
+        verify(runtime).createStep(eq(task), eq(childStart), eq(parent.getId()), eq(2),
+                org.mockito.ArgumentMatchers.isNull());
+        assertThat(parent.getTaskId()).isEqualTo(task.getId());
+    }
+
+    @Test
+    void pendingSubflowDoesNotStartNestedFlowInTheActivationPoll() {
+        Task task = pollingTask();
+        TaskStep parent = pollingStep("PENDING");
+        FlowNode subflow = pollingNode(List.of(triggerInterface("workflow-in", "IN", "activate")));
+        subflow.setNodeType("SUBFLOW_NODE");
+        subflow.setSubFlowModelId(4L);
+        stubPoll(task, parent, subflow);
+
+        engine.processTask(task);
+
+        verify(workflows, never()).compileDefinition(4L);
+        verify(runtime, never()).createStep(eq(task), org.mockito.ArgumentMatchers.any(), eq(parent.getId()),
+                eq(1), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void successfulRootEndCompletesTaskAfterTerminalTriggerEvaluation() {
+        Task task = pollingTask();
+        TaskStep endStep = pollingStep("SUCCEEDED");
+        FlowNode endNode = functionNode("END", 3L, 2L);
+        stubPoll(task, endStep, endNode);
+
+        engine.processTask(task);
+
+        verify(runtime).completeTask(task);
+    }
+
+    @Test
+    void nestedSuccessfulEndNotifiesParentWithoutCompletingTaskOrChangingParentLifecycle() {
+        Task task = pollingTask();
+        TaskStep childEnd = pollingStep("SUCCEEDED");
+        childEnd.setId(31L);
+        childEnd.setParentStepId(20L);
+        childEnd.setStepDepth(1);
+        FlowNode endNode = functionNode("END", 4L, 2L);
+        childEnd.setFlowNodeId(endNode.getId());
+        TaskStep parent = pollingStep("RUNNING");
+        parent.setId(20L);
+        parent.setFlowNodeId(70L);
+        FlowNode parentNode = pollingNode(List.of(subflowInputInterface()));
+        parentNode.setId(70L);
+        parentNode.setNodeType("SUBFLOW_NODE");
+        parent.setInterfaceInSnapshot(WorkflowInterfaceSnapshots.initialize(parentNode.getInterfaces(), "IN"));
+        stubPoll(task, childEnd, endNode);
+        when(runtime.step(parent.getId())).thenReturn(parent);
+        when(flowNodes.getById(parent.getFlowNodeId())).thenReturn(parentNode);
+        doAnswer(invocation -> {
+            parent.setInterfaceInSnapshot(invocation.getArgument(1));
+            return null;
+        }).when(runtime).updateInputSnapshot(eq(parent), org.mockito.ArgumentMatchers.any());
+
+        engine.processTask(task);
+
+        assertThat(WorkflowInterfaceSnapshots.find(parent.getInterfaceInSnapshot(), "Interface_workflow_in")
+                .path("signalName").asText()).isEqualTo("SUBFLOW_COMPLETED");
+        assertThat(WorkflowInterfaceSnapshots.find(parent.getInterfaceInSnapshot(), "Interface_workflow_in")
+                .has("payload")).isFalse();
+        assertThat(parent.getNodeStatus()).isEqualTo("RUNNING");
+        verify(runtime, never()).completeTask(task);
+        verify(operations, never()).transitionNodeLifecycle(eq(task), eq(parent), eq(parentNode), eq("SUCCEEDED"));
+    }
+
     private final WorkflowRuntimeService runtime = mock(WorkflowRuntimeService.class);
     private final WorkflowExecutionOperations operations = mock(WorkflowExecutionOperations.class);
     private final WorkflowService workflows = mock(WorkflowService.class);
@@ -509,6 +598,25 @@ class WorkflowEngineExecutionTest {
                 .put("updateType", "INTERNAL_VARIABLE").put("targetName", "ready")
                 .put("value", true).put("trace", trace);
         return item;
+    }
+
+    private ObjectNode subflowInputInterface() {
+        ObjectNode item = JsonNodeSupport.objectNode();
+        item.put("name", "Interface_workflow_in");
+        item.put("direction", "IN");
+        item.put("interfaceType", "WORKFLOW");
+        item.putArray("allowedSignals").add("ACTIVE").add("SUBFLOW_COMPLETED");
+        item.putArray("bindingTriggers");
+        return item;
+    }
+
+    private FlowNode functionNode(String functionType, long flowModelId, long nodeRef) {
+        FlowNode node = pollingNode(List.of());
+        node.setNodeType("FUNC_NODE");
+        node.setFlowModelId(flowModelId);
+        node.setNodeIdRef(nodeRef);
+        node.setCapability(JsonNodeSupport.objectNode().put("functionType", functionType));
+        return node;
     }
 
     private WorkflowDefinitionCompiler.CompiledWorkflow emptyCompiledWorkflow() {

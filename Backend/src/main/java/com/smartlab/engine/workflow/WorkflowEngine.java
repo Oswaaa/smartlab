@@ -10,6 +10,7 @@ import com.smartlab.engine.workflow.action.WorkflowActionDefinition;
 import com.smartlab.engine.workflow.action.WorkflowActionRegistry;
 import com.smartlab.engine.workflow.action.WorkflowActionResult;
 import com.smartlab.engine.workflow.action.WorkflowActionStatus;
+import com.smartlab.global.contract.WorkflowNodeSignal;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.entity.workflow.FlowNode;
 import com.smartlab.management.entity.workflow.Task;
@@ -88,7 +89,14 @@ public class WorkflowEngine {
             try {
                 boolean terminalAtPollStart = TERMINAL_NODE_STATES.contains(step.getNodeStatus());
                 processStep(task, step);
-                if (terminalAtPollStart) markTerminalObserved(step);
+                if (terminalAtPollStart) {
+                    FlowNode node = flowNodeService.getById(step.getFlowNodeId());
+                    if (node != null && "SUCCEEDED".equals(step.getNodeStatus())
+                            && "END".equals(functionType(node))) {
+                        settleSuccessfulEnd(task, step);
+                    }
+                    markTerminalObserved(step);
+                }
             } catch (Exception error) {
                 runtime.failStep(step, error.getMessage());
             }
@@ -109,10 +117,33 @@ public class WorkflowEngine {
         FlowNode node = flowNodeService.getById(step.getFlowNodeId());
         if (node == null)
             throw new IllegalArgumentException("找不到FLOW_NODE: " + step.getFlowNodeId());
+        if ("SUBFLOW_NODE".equals(node.getNodeType()) && "RUNNING".equals(step.getNodeStatus())) {
+            int depth = step.getStepDepth() == null ? 0 : step.getStepDepth();
+            startFlow(task, node.getSubFlowModelId(), step.getId(), depth + 1);
+        }
         if ("AGGREGATE".equals(functionType(node)) && !aggregateReady(task, step, node))
             return;
         ObjectNode frozenSnapshot = actionVariables(task, step, null, node);
         evaluateNodeTriggers(task, step, node, frozenSnapshot);
+    }
+
+    private void settleSuccessfulEnd(Task task, TaskStep endStep) {
+        if (endStep.getParentStepId() == null) {
+            runtime.completeTask(task);
+            return;
+        }
+        TaskStep parent = runtime.step(endStep.getParentStepId());
+        if (parent == null || !java.util.Objects.equals(parent.getTaskId(), task.getId())) {
+            throw new IllegalStateException("子流程END引用的父步骤不存在或不属于当前任务");
+        }
+        FlowNode parentNode = flowNodeService.getById(parent.getFlowNodeId());
+        if (parentNode == null || !"SUBFLOW_NODE".equals(parentNode.getNodeType())) {
+            throw new IllegalStateException("子流程END的父步骤不是SUBFLOW_NODE");
+        }
+        ArrayNode input = WorkflowInterfaceSnapshots.withSignal(
+                parent.getInterfaceInSnapshot(), parentNode.getInterfaces(), "IN",
+                "Interface_workflow_in", WorkflowNodeSignal.SUBFLOW_COMPLETED.name(), null);
+        runtime.updateInputSnapshot(parent, input);
     }
 
     private void evaluateNodeTriggers(Task task, TaskStep step, FlowNode node, ObjectNode frozenSnapshot) {

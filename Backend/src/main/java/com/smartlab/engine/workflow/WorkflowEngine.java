@@ -113,47 +113,67 @@ public class WorkflowEngine {
         FlowNode node = flowNodeService.getById(step.getFlowNodeId());
         if (node == null)
             throw new IllegalArgumentException("找不到FLOW_NODE: " + step.getFlowNodeId());
-        if ("PENDING".equals(step.getNodeStatus()))
-            runtime.startStep(task, step);
-        String inputInterface = step.getInterfaceInSnapshot() == null ? ""
-                : step.getInterfaceInSnapshot().path("targetInterfaceName").asText("");
-
-        if (isStartNode(node) && inputInterface.isBlank()) {
-            ActionRunResult result = executeStartActions(task, step, node);
-            settleEmittedWorkflowSignal(task, step, node, result);
-            if (!result.waiting() && !result.hasEmission())
-                throw new IllegalStateException("START节点必须通过EMIT动作发送ACTIVE");
-            return;
-        }
         if ("AGGREGATE".equals(functionType(node)) && !aggregateReady(task, step, node))
             return;
+        ObjectNode frozenSnapshot = actionVariables(task, step, null, node);
+        evaluateNodeTriggers(task, step, node, frozenSnapshot);
+    }
 
-        ActionRunResult result = executeBindingTriggers(task, step, node, inputInterface);
-        if (result.waiting())
-            return;
-        if (result.hasEmission()) {
-            settleEmittedWorkflowSignal(task, step, node, result);
-            return;
+    private void evaluateNodeTriggers(Task task, TaskStep step, FlowNode node, ObjectNode frozenSnapshot) {
+        ObjectNode triggerStates = triggerStates(step);
+        List<JsonNode> orderedInterfaces = new java.util.ArrayList<>();
+        for (String direction : List.of("OUT", "IN")) {
+            for (JsonNode item : iterable(node.getInterfaces())) {
+                if (direction.equals(item.path("direction").asText())) orderedInterfaces.add(item);
+            }
         }
-
-        JsonNode inputInterfaceDef = interfaceByName(node, inputInterface);
-        String interfaceType = inputInterfaceDef != null ? inputInterfaceDef.path("interfaceType").asText("") : "";
-        if ("STATE".equals(interfaceType)) {
-            return;
-        }
-
-        switch (node.getNodeType()) {
-            case "DEV_NODE" -> throw new IllegalStateException("DEV_NODE输入触发器未发送STATE控制信号");
-            case "SUBFLOW_NODE" -> executeSubFlow(task, step, node);
-            case "FUNC_NODE" -> {
-                if ("END".equals(functionType(node)))
-                    finishFlow(task, step, node);
-                else if (!"AGGREGATE".equals(functionType(node))) {
-                    throw new IllegalStateException(functionType(node) + "节点输入触发器未发送WORKFLOW信号");
+        for (JsonNode interfaceNode : orderedInterfaces) {
+            Map<String, Integer> duplicateOrdinals = new java.util.HashMap<>();
+            for (JsonNode trigger : iterable(interfaceNode.path("bindingTriggers"))) {
+                String fingerprint = WorkflowTriggerState.fingerprint(trigger);
+                int duplicateOrdinal = duplicateOrdinals.merge(fingerprint, 1, Integer::sum) - 1;
+                String key = WorkflowTriggerState.key(
+                        interfaceNode.path("name").asText(""), fingerprint, duplicateOrdinal);
+                boolean previous = triggerStates.path(key).asBoolean(false);
+                boolean current = conditionEvaluator.evaluate(trigger.path("condition"), frozenSnapshot);
+                if (current && !previous) {
+                    WorkflowActionResult result = executeAction(task, step, node, frozenSnapshot,
+                            WorkflowActionDefinition.from(trigger.path("action")));
+                    if (result.status() != WorkflowActionStatus.WAIT_DEVICE_IDLE) {
+                        triggerStates.put(key, true);
+                        persistTriggerStates(step, triggerStates);
+                    }
+                    if (result.emittedInterfaceName() != null && !result.emittedInterfaceName().isBlank()) {
+                        routeEmission(task, step, node, result, frozenSnapshot);
+                    }
+                } else if (!current && previous) {
+                    triggerStates.put(key, false);
+                    persistTriggerStates(step, triggerStates);
                 }
             }
-            default -> throw new IllegalArgumentException("不支持的节点类型: " + node.getNodeType());
         }
+    }
+
+    private ObjectNode triggerStates(TaskStep step) {
+        JsonNode variableSpace = step.getVariableSpace();
+        return variableSpace != null && variableSpace.path("_triggerStates").isObject()
+                ? (ObjectNode) variableSpace.path("_triggerStates").deepCopy()
+                : JsonNodeSupport.objectNode();
+    }
+
+    private void persistTriggerStates(TaskStep step, ObjectNode triggerStates) {
+        ObjectNode update = JsonNodeSupport.objectNode();
+        update.set("_triggerStates", triggerStates.deepCopy());
+        runtime.mergeVariableSpace(step, update);
+    }
+
+    private void routeEmission(Task task, TaskStep step, FlowNode node, WorkflowActionResult result,
+            ObjectNode frozenSnapshot) {
+        ObjectNode output = JsonNodeSupport.objectNode();
+        output.put("signalName", result.emittedSignalName());
+        output.set("payload", frozenSnapshot.deepCopy());
+        step.setInterfaceOutSnapshot(output);
+        route(task, step, node, result.emittedInterfaceName(), result.emittedSignalName());
     }
 
     /** START没有上游接口输入，任务启动就是它的固定系统输入，因此只在这里直接执行声明的初始化动作 */
@@ -239,7 +259,10 @@ public class WorkflowEngine {
         variables.put("nodeLifecycleState", step.getNodeStatus());
         if (inputInterface != null)
             variables.put("inputInterfaceName", inputInterface.path("name").asText(""));
-        String expression = "FUNC_NODE".equals(node.getNodeType()) && node.getCapability() != null
+        String functionType = functionType(node);
+        String expression = "FUNC_NODE".equals(node.getNodeType())
+                && ("BRANCH".equals(functionType) || "AGGREGATE".equals(functionType))
+                && node.getCapability() != null
                 ? node.getCapability().path("expression").asText("").trim()
                 : "";
         if (!expression.isBlank()) {
@@ -253,39 +276,28 @@ public class WorkflowEngine {
 
     ActionRunResult executeActions(Task task, TaskStep step, FlowNode node, Iterable<JsonNode> actions,
             ObjectNode variables) {
-        List<WorkflowActionDefinition> updates = new java.util.ArrayList<>();
-        List<WorkflowActionDefinition> emits = new java.util.ArrayList<>();
+        ActionRunResult aggregate = ActionRunResult.continueWithoutEmission();
         for (JsonNode actionNode : actions) {
             WorkflowActionDefinition action = WorkflowActionDefinition.from(actionNode);
-            switch (action.actionType()) {
-                case "UPDATE" -> updates.add(action);
-                case "EMIT" -> emits.add(action);
-                default -> throw new IllegalArgumentException("不支持的工作流动作类型: " + action.actionType());
-            }
-        }
-        if (emits.size() > 1) throw new IllegalStateException("同一输入命中多个EMIT动作");
-        for (WorkflowActionDefinition update : updates) {
-            WorkflowActionResult result = executeAction(task, step, node, variables, update);
+            WorkflowActionResult result = executeAction(task, step, node, variables, action);
             if (result.status() != WorkflowActionStatus.CONTINUE) {
-                throw new IllegalStateException("UPDATE动作不能挂起工作流节点: " + update.actionName());
+                aggregate = ActionRunResult.awaitingExternalSignal();
+                continue;
+            }
+            if (result.emittedInterfaceName() != null && !result.emittedInterfaceName().isBlank()) {
+                aggregate = ActionRunResult.emitted(
+                        result.emittedInterfaceName(), result.emittedSignalName(), variables);
             }
         }
-        if (emits.isEmpty()) return ActionRunResult.continueWithoutEmission();
-        WorkflowActionResult result = executeAction(task, step, node, variables, emits.get(0));
-        if (result.status() != WorkflowActionStatus.CONTINUE) return ActionRunResult.awaitingExternalSignal();
-        if (result.emittedInterfaceName() == null || result.emittedInterfaceName().isBlank()) {
-            throw new IllegalStateException("EMIT动作未产生输出接口: " + emits.get(0).actionName());
-        }
-        return ActionRunResult.emitted(result.emittedInterfaceName(), result.emittedSignalName(), variables);
+        return aggregate;
     }
 
     private WorkflowActionResult executeAction(Task task, TaskStep step, FlowNode node, ObjectNode variables,
             WorkflowActionDefinition action) {
-        WorkflowActionResult result = actionRegistry.required(action.actionType()).execute(
+        WorkflowActionResult result = actionRegistry.required(action.actionName()).execute(
                 action, new WorkflowActionContext(task, step, node, variables, Instant.now(), executionOperations));
         if (!result.variableUpdates().isEmpty()) {
             runtime.mergeVariableSpace(step, result.variableUpdates());
-            mergeObject(variables, result.variableUpdates());
         }
         return result;
     }
@@ -656,7 +668,11 @@ public class WorkflowEngine {
                     .forEachRemaining(entry -> result.set(entry.getKey(), entry.getValue().deepCopy()));
         if (step.getVariableSpace() != null && step.getVariableSpace().isObject())
             step.getVariableSpace().fields()
-                    .forEachRemaining(entry -> result.set(entry.getKey(), entry.getValue().deepCopy()));
+                    .forEachRemaining(entry -> {
+                        if (!"_triggerStates".equals(entry.getKey())) {
+                            result.set(entry.getKey(), entry.getValue().deepCopy());
+                        }
+                    });
         return result;
     }
 

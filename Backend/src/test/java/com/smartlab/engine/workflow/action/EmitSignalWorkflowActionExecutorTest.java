@@ -37,10 +37,12 @@ class EmitSignalWorkflowActionExecutorTest {
     }
 
     private WorkflowActionDefinition action() {
-        ObjectNode payload = JsonNodeSupport.objectNode();
-        payload.put("targetInterfaceName", "Interface_state_out");
-        payload.put("signalName", "WF_EXECUTE_START");
-        return new WorkflowActionDefinition("start", "EMIT", payload);
+        ObjectNode action = JsonNodeSupport.objectNode();
+        action.put("actionName", "EMIT");
+        action.putObject("payload")
+                .put("targetInterfaceName", "Interface_state_out")
+                .put("signalName", "WF_EXECUTE_START");
+        return WorkflowActionDefinition.from(action);
     }
 
     private FlowNode node() {

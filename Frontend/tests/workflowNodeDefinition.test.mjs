@@ -1,6 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  canCustomizeControlInterfaces,
+  canEditControlItem,
   configureWorkflowNodeTemplates,
   createDeviceNode,
   createFunctionNode,
@@ -8,6 +10,7 @@ import {
   customTriggerActionNames,
   normalizeTypedValue,
   normalizeWorkflowNodeDefinition,
+  orderedControlInterfaces,
   removeAction,
   removeInterface,
   removePort,
@@ -101,6 +104,35 @@ const workflowTemplateFixture = {
 }
 
 test.before(() => configureWorkflowNodeTemplates(workflowTemplateFixture))
+
+test('only function nodes customize user control interfaces', () => {
+  const custom = { name: 'custom_out', direction: 'OUT' }
+  const system = { name: 'workflow_in', direction: 'IN', _system: true }
+  assert.equal(canCustomizeControlInterfaces({ nodeType: 'FUNC_NODE' }), true)
+  assert.equal(canCustomizeControlInterfaces({ nodeType: 'DEV_NODE' }), false)
+  assert.equal(canCustomizeControlInterfaces({ nodeType: 'SUBFLOW_NODE' }), false)
+  assert.equal(canEditControlItem({ nodeType: 'FUNC_NODE' }, custom), true)
+  assert.equal(canEditControlItem({ nodeType: 'FUNC_NODE' }, system), false)
+})
+
+test('control interfaces preserve declaration order inside OUT then IN groups', () => {
+  const node = { interfaces: [
+    { name: 'in_a', direction: 'IN' },
+    { name: 'out_a', direction: 'OUT' },
+    { name: 'in_b', direction: 'IN' },
+    { name: 'out_b', direction: 'OUT' },
+  ] }
+  assert.deepEqual(orderedControlInterfaces(node).map(item => item.name), ['out_a', 'out_b', 'in_a', 'in_b'])
+})
+
+test('non-function nodes reject custom control interfaces', () => {
+  const deviceModel = { id: 7, capabilities: [{ capabilityName: 'heat', parameters: [] }] }
+  const node = createDeviceNode(deviceModel, 'device1')
+  node.capability = { capabilityName: 'heat', capabilityParameters: {} }
+  node.interfaces.push({ name: 'user_out', direction: 'OUT', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], bindingTriggers: [] })
+  assert.ok(validateNodeDefinition(node, { deviceModel })
+    .some(error => /非功能节点/.test(error.message)))
+})
 
 test('creation requires templates and always clones them', () => {
   resetWorkflowNodeTemplatesForTest()

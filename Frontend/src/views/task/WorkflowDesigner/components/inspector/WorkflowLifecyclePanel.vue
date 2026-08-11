@@ -11,18 +11,15 @@
     <div v-if="lifecycle.transitions?.length" class="lifecycle-section">
       <div class="section-head"><strong>状态转移</strong><span>{{ lifecycle.transitions.length }} 条规则</span></div>
       <el-table :data="lifecycle.transitions" size="small" class="transitions-table">
-        <el-table-column prop="fromState" label="源状态" width="90" />
-        <el-table-column label="触发器" width="80">
-          <template #default="{ row }">{{ row.trigger || '自动' }}</template>
-        </el-table-column>
-        <el-table-column prop="toState" label="目标状态" width="90" />
+        <el-table-column prop="fromStateName" label="源状态" width="110" />
+        <el-table-column prop="toStateName" label="目标状态" width="110" />
         <el-table-column prop="description" label="说明" min-width="120">
-          <template #default="{ row }">{{ row.description || row.trigger ? '接收到 ' + row.trigger + ' 后转移' : '无条件自动转移' }}</template>
+          <template #default="{ row }">{{ row.description || '仅允许按该规则转移' }}</template>
         </el-table-column>
       </el-table>
     </div>
     <div v-if="!lifecycle.states?.length && !lifecycle.transitions?.length" class="empty-state">
-      <span>该节点类型未定义生命周期</span>
+      <span>此功能节点不使用节点生命周期</span>
     </div>
   </section>
 </template>

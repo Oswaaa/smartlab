@@ -24,8 +24,8 @@ describe('Task 6 — Designer Structure', () => {
     assert.match(taskListSource, /\.\/components\/TaskResourceBindingCanvas\.vue/)
   })
 
-  test('designer exposes interfaces and ports panel but does not expose transport implementation', () => {
-    assert.match(inspectorSource, /接口与端口/, 'inspector should reference interfaces and ports tab')
+  test('designer exposes business control and data panels without transport implementation', () => {
+    assert.match(inspectorSource, /WorkflowDataPortsPanel/)
     assert.match(inspectorSource, /WorkflowInterfacesPortsPanel/)
     assert.match(interfacesPortsSource, /isSystemItem/)
     // Only check user-facing template copy, not internal implementation code
@@ -61,5 +61,13 @@ describe('Task 6 — Designer Structure', () => {
     assert.match(source, /interface-handle/)
     assert.match(source, /port-handle/)
     assert.doesNotMatch(source, /interfaceType === 'WORKFLOW'/)
+  })
+
+  test('node inspector uses the five confirmed business tabs', () => {
+    const source = readSource('views/task/WorkflowDesigner/components/WorkflowNodeInspector.vue')
+    for (const label of ['业务配置', '变量空间', '数据端口', '控制接口', '生命周期']) {
+      assert.match(source, new RegExp(label))
+    }
+    assert.doesNotMatch(source, /触发与动作|接口与端口|数据与端口/)
   })
 })

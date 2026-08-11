@@ -47,4 +47,14 @@ describe('Task 9 — Full-Chain Copy Regression', () => {
     const templateSection = source.split('</template>')[0] || source
     assert.doesNotMatch(templateSection, /messageId|resourceMap|bindingKey/)
   })
+
+  test('task list delegates create flow without losing binding and constraints', () => {
+    const source = readSource('views/task/TaskList/TaskList.vue')
+    const drawer = readSource('views/task/TaskList/components/TaskCreateDrawer.vue')
+    assert.match(source, /TaskCreateDrawer/)
+    assert.match(drawer, /TaskPreflightPanel/)
+    assert.match(drawer, /TaskResourceBindingCanvas/)
+    assert.match(drawer, /TaskConstraintPanel/)
+    assert.match(drawer, /发布启用|已发布|可执行流程/)
+  })
 })

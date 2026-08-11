@@ -12,25 +12,8 @@
         </div>
       </template>
 
-      <section class="task-summary-strip" aria-label="任务状态概览">
-        <button type="button" :class="{ active: !taskStatusFilter }" @click="setTaskStatus('')"><span>全部任务</span><strong>{{ taskSummary.total }}</strong><small>所有执行记录</small></button>
-        <button type="button" :class="{ active: taskStatusFilter === 'PENDING' }" @click="setTaskStatus('PENDING')"><span><i class="summary-dot pending"></i>排队中</span><strong>{{ taskSummary.pending }}</strong><small>等待启动</small></button>
-        <button type="button" :class="{ active: taskStatusFilter === 'RUNNING' }" @click="setTaskStatus('RUNNING')"><span><i class="summary-dot running"></i>运行中</span><strong>{{ taskSummary.running }}</strong><small>正在执行</small></button>
-        <button type="button" :class="{ active: taskStatusFilter === 'SUCCEEDED' }" @click="setTaskStatus('SUCCEEDED')"><span><i class="summary-dot success"></i>已完成</span><strong>{{ taskSummary.succeeded }}</strong><small>执行成功</small></button>
-        <button type="button" :class="{ active: taskStatusFilter === 'FAILED' }" @click="setTaskStatus('FAILED')"><span><i class="summary-dot danger"></i>失败任务</span><strong>{{ taskSummary.failed }}</strong><small>另 {{ taskSummary.terminated }} 项已终止</small></button>
-      </section>
-
-      <div class="task-filter-bar">
-        <div class="task-filter-fields">
-          <el-input v-model="taskKeyword" :prefix-icon="Search" clearable placeholder="搜索任务名称或说明" @keyup.enter="applyTaskFilters" />
-          <el-select v-model="taskStatusFilter" clearable placeholder="全部状态" @change="applyTaskFilters">
-            <el-option label="排队中" value="PENDING"/><el-option label="运行中" value="RUNNING"/><el-option label="已完成" value="SUCCEEDED"/><el-option label="失败" value="FAILED"/><el-option label="已终止" value="TERMINATED"/>
-          </el-select>
-          <el-button class="btn-aliyun-cta" @click="applyTaskFilters">查询</el-button>
-          <el-button v-if="hasTaskFilters" class="btn-aliyun" @click="clearTaskFilters">重置</el-button>
-        </div>
-        <span class="task-result-meta">共 {{ taskTotal }} 条<span v-if="lastUpdatedAt"> · 更新于 {{ lastUpdatedAt }}</span></span>
-      </div>
+      <TaskSummaryStrip :summary="taskSummary" :active-status="taskStatusFilter" @select-status="setTaskStatus" />
+      <TaskFilterBar v-model:keyword="taskKeyword" v-model:status="taskStatusFilter" :total="taskTotal" :last-updated-at="lastUpdatedAt" :has-filters="hasTaskFilters" @query="applyTaskFilters" @reset="clearTaskFilters" />
 
       <el-table
         :data="tasks"
@@ -113,65 +96,7 @@
       </div>
     </el-card>
 
-    <!-- Create Task Drawer -->
-    <el-drawer v-model="createDrawerVisible" title="新建任务" size="78%" class="model-drawer unified-workflow-drawer" destroy-on-close>
-      <div class="drawer-body" style="padding: 0 16px;">
-        <el-form
-          ref="createFormRef"
-          :model="createForm"
-          :rules="createRules"
-          label-width="120px"
-          label-position="top"
-          class="basic-form"
-          style="max-width: 100%;"
-        >
-          <div class="anchor-section industrial-section">
-            <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px;">基础配置</h2>
-            <section class="drawer-section">
-              <el-form-item label="任务名称" prop="taskName">
-                <el-input v-model="createForm.taskName" placeholder="例如：批次PCR扩增与物料搅拌" />
-              </el-form-item>
-              <el-form-item label="关联流程" prop="flowModelId">
-                <el-select
-                  v-model="createForm.flowModelId"
-                  placeholder="请选择流程"
-                  style="width: 100%"
-                  v-loading="loadingWorkflows"
-                  @change="handleTemplateChange"
-                >
-                  <el-option
-                    v-for="tpl in executableProcessTemplates"
-                    :key="tpl.id"
-                    :label="tpl.flowName"
-                    :value="tpl.id"
-                  />
-                </el-select>
-              </el-form-item>
-            </section>
-          </div>
-
-          <div class="anchor-section industrial-section" v-if="selectedDeviceRoutes.length">
-            <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px; margin-top: 24px;">设备实例绑定</h2>
-            <section class="drawer-section resource-binding-section">
-              <el-alert type="info" :closable="false" title="工作流模型只选择设备模型；任务实例按节点出现路径绑定具体设备。同一实例可以被多个节点复用，执行时由状态机IDLE状态统一仲裁" style="margin-bottom: 12px;" />
-              <TaskResourceBindingCanvas :groups="selectedWorkflowGroups" :routes="selectedDeviceRoutes" :errors="selectedWorkflowErrors" :model-value="createForm.resourceBindings" :instances="deviceInstances" :models="deviceModels" @update:model-value="updateResourceBindings" />
-            </section>
-          </div>
-          <div class="anchor-section industrial-section" v-else-if="createForm.flowModelId && workflowHasDeviceNodes[String(createForm.flowModelId)]"><el-alert type="warning" :closable="false" title="该工作流包含DEV_NODE但无法生成设备绑定路径，请先修复工作流模型" /></div>
-          <div class="anchor-section industrial-section">
-            <div class="section-title-row"><h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px; margin-top: 24px;">任务级约束</h2><el-button class="btn-aliyun-cta" plain @click="openTaskConstraint()">添加任务约束</el-button></div>
-            <section class="drawer-section"><el-alert type="info" :closable="false" title="任务级约束随当前任务保存，只能观测或操作本任务及其绑定设备；全局约束仍在约束管理页面配置" style="margin-bottom:12px"/><el-empty v-if="!createForm.taskConstraints.length" description="未配置任务级约束" :image-size="48"/><div v-for="(rule,index) in createForm.taskConstraints" :key="index" class="task-constraint-row"><div><strong>{{ rule.ruleName }}</strong><code>{{ rule.expression }}</code><span>{{ Object.keys(rule.bindings||{}).length }}个变量 · {{ (rule.violationActions||[]).length }}个动作</span></div><div><el-button class="btn-aliyun-link" link @click="openTaskConstraint(index)">编辑</el-button><el-button class="btn-aliyun-danger-link" link @click="createForm.taskConstraints.splice(index,1)">删除</el-button></div></div></section>
-          </div>          </el-form>
-      </div>
-      <template #footer>
-        <div class="drawer-footer">
-          <el-button class="btn-aliyun" @click="createDrawerVisible = false">取消</el-button>
-          <el-button class="btn-aliyun-cta" @click="submitCreateTask" :loading="creating">
-            创建任务
-          </el-button>
-        </div>
-      </template>
-    </el-drawer>
+    <TaskCreateDrawer ref="createFormRef" v-model="createDrawerVisible" :form="createForm" :workflows="executableProcessTemplates" :loading-workflows="loadingWorkflows" :routes="selectedDeviceRoutes" :groups="selectedWorkflowGroups" :errors="selectedWorkflowErrors" :instances="deviceInstances" :models="deviceModels" :has-device-nodes="Boolean(createForm.flowModelId && workflowHasDeviceNodes[String(createForm.flowModelId)])" :preflight-result="preflightResult" :preflighting="preflighting" :creating="creating" @update:task-name="createForm.taskName = $event" @update:flow-model-id="handleTemplateChange" @update:resource-bindings="updateResourceBindings" @edit-constraint="openTaskConstraint" @remove-constraint="createForm.taskConstraints.splice($event, 1)" @preflight="runPreflight" @submit="submitCreateTask" />
 
     <el-dialog v-model="taskConstraintDialogVisible" :title="editingTaskConstraintIndex == null ? '添加任务级约束' : '编辑任务级约束'" width="1040px" append-to-body destroy-on-close @opened="loadTaskConstraintEditor">
       <ConstraintRuleEditor ref="taskConstraintEditorRef" :models="deviceModels" :instances="deviceInstances" :workflows="executableProcessTemplates" :tasks="[]" task-mode :task-resources="selectedTaskResources" :task-workflow-nodes="selectedWorkflowNodes" />
@@ -330,10 +255,12 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
 import axios from 'axios'
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { Plus, Refresh, ArrowRight, Search, Download } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus, Refresh, ArrowRight, Download } from '@element-plus/icons-vue'
 import ConstraintRuleEditor from '../../../components/constraint/ConstraintRuleEditor.vue'
-import TaskResourceBindingCanvas from './components/TaskResourceBindingCanvas.vue'
+import TaskCreateDrawer from './components/TaskCreateDrawer.vue'
+import TaskFilterBar from './components/TaskFilterBar.vue'
+import TaskSummaryStrip from './components/TaskSummaryStrip.vue'
 import { buildDeviceBindings, expandWorkflowDefinition } from '../../../utils/taskResourceBindings.js'
 import { filterExecutableWorkflows, isExecutableWorkflow } from '../../../utils/workflowExecution.js'
 import { taskApi } from '../../../services/taskApi.js'
@@ -430,7 +357,7 @@ const workflowRequirements = ref<any[]>([])
 const preflightResult = ref<any>(null)
 const preflighting = ref(false)
 const requirementsLoading = ref(false)
-const createFormRef = ref<FormInstance>()
+const createFormRef = ref<any>()
 const createForm = ref({
   taskName: '',
   flowModelId: null as number | null,
@@ -484,14 +411,14 @@ async function fetchWorkflowRequirements(flowModelId: number) {
 }
 
 async function runPreflight() {
-  if (!createForm.flowModelId) return
+  if (!createForm.value.flowModelId) return
   preflighting.value = true
   try {
     const payload = {
-      flowModelId: createForm.flowModelId,
-      taskVariables: createForm.taskVariables || {},
-      deviceBindings: buildDeviceBindings(workflowRequirements.value, createForm.resourceBindings),
-      taskConstraints: createForm.taskConstraints || []
+      flowModelId: createForm.value.flowModelId,
+      taskVariables: {},
+      deviceBindings: buildDeviceBindings(workflowRequirements.value, createForm.value.resourceBindings),
+      taskConstraints: createForm.value.taskConstraints || []
     }
     const response = await taskApi.preflight(payload)
     if (response.data?.success) {
@@ -505,10 +432,13 @@ async function runPreflight() {
 }
 
 const handleTemplateChange = async (value: number | null) => {
+  createForm.value.flowModelId = value
   createForm.value.resourceBindings = {}
   createForm.value.taskConstraints = []
+  preflightResult.value = null
   if (value == null) return
   await loadWorkflowRoutes(value)
+  await fetchWorkflowRequirements(value)
   for (const route of workflowDeviceRoutes.value[String(value)] || []) createForm.value.resourceBindings[route.bindingKey] = null
 }
 
@@ -519,6 +449,7 @@ const updateResourceBindings = (next: Record<string, number | null>) => {
     ElMessage.warning('设备实例绑定已变更，原任务约束中的实例引用已清空，请重新配置')
   }
   createForm.value.resourceBindings = next
+  preflightResult.value = null
 }
 
 // Monitor Drawer
@@ -544,12 +475,6 @@ const exportingConstraintModel = ref(false)
 let pollIntervalId: any = null
 let mainListPollIntervalId: any = null
 let latestDetailLogId = 0
-
-// Form rules
-const createRules = ref<FormRules>({
-  taskName: [{ required: true, message: '请输入任务名称', trigger: 'blur' }],
-  flowModelId: [{ required: true, message: '请选择流程', trigger: 'change' }]
-})
 
 // Fetch all task instances. Background refresh stays quiet and preserves active filters.
 const fetchTasks = async (silent = false) => {
@@ -952,45 +877,36 @@ const saveTaskConstraint = () => {
 // Submit Create task
 const submitCreateTask = async () => {
   if (!createFormRef.value) return
-  await createFormRef.value.validate(async (valid) => {
-    if (valid) {
-      creating.value = true
-      try {
-        const selectedWorkflow = processTemplates.value.find(item => item.id === Number(createForm.value.flowModelId))
-        if (!isExecutableWorkflow(selectedWorkflow)) {
-          throw new Error('请选择已启用的工作流；草稿流程不能创建任务')
-        }
-        if (selectedWorkflowErrors.value.length) throw new Error('流程模型存在设备接口连接错误，请先修复流程模型')
-        const deviceBindings: Record<string,{deviceModelId:number,deviceInstanceId:number}> = {}
-        for (const route of selectedDeviceRoutes.value) {
-          const instanceId = Number(createForm.value.resourceBindings[route.bindingKey])
-          if (!Number.isInteger(instanceId) || instanceId <= 0) throw new Error(`请为${route.flowName}/${route.nodeName}绑定设备实例`)
-          deviceBindings[route.bindingKey] = { deviceModelId: route.deviceModelId, deviceInstanceId: instanceId }
-        }
-        const payload = {
-          taskName: createForm.value.taskName,
-          flowModelId: createForm.value.flowModelId,
-          resourceMap: { formatVersion: 1, deviceBindings },
-          taskConstraints: createForm.value.taskConstraints,
-          taskVariables: {}
-        }
-        
-        const res = await axios.post('/api/task/save', payload)
-        if (res.data?.success) {
-          ElMessage.success('任务创建成功')
-          createDrawerVisible.value = false
-          taskPageNo.value = 1
-          refreshTaskList()
-        } else {
-          ElMessage.error(res.data?.message || '任务创建失败')
-        }
-      } catch (error: any) {
-        ElMessage.error('保存失败: ' + error.message)
-      } finally {
-        creating.value = false
-      }
+  try { await createFormRef.value.validate() } catch { return }
+  creating.value = true
+  try {
+    const selectedWorkflow = processTemplates.value.find(item => item.id === Number(createForm.value.flowModelId))
+    if (!isExecutableWorkflow(selectedWorkflow)) throw new Error('请选择已启用的工作流；草稿流程不能创建任务')
+    if (selectedWorkflowErrors.value.length) throw new Error('流程模型存在设备接口连接错误，请先修复流程模型')
+    const deviceBindings: Record<string,{deviceModelId:number,deviceInstanceId:number}> = {}
+    for (const route of selectedDeviceRoutes.value) {
+      const instanceId = Number(createForm.value.resourceBindings[route.bindingKey])
+      if (!Number.isInteger(instanceId) || instanceId <= 0) throw new Error(`请为${route.flowName}/${route.nodeName}绑定设备实例`)
+      deviceBindings[route.bindingKey] = { deviceModelId: route.deviceModelId, deviceInstanceId: instanceId }
     }
-  })
+    const payload = {
+      taskName: createForm.value.taskName,
+      flowModelId: createForm.value.flowModelId,
+      resourceMap: { formatVersion: 1, deviceBindings },
+      taskConstraints: createForm.value.taskConstraints,
+      taskVariables: {}
+    }
+    const res = await axios.post('/api/task/save', payload)
+    if (!res.data?.success) throw new Error(res.data?.message || '任务创建失败')
+    ElMessage.success('任务创建成功')
+    createDrawerVisible.value = false
+    taskPageNo.value = 1
+    refreshTaskList()
+  } catch (error: any) {
+    ElMessage.error('保存失败: ' + error.message)
+  } finally {
+    creating.value = false
+  }
 }
 
 // Format time utility

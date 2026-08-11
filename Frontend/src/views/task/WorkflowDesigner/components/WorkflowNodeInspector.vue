@@ -16,13 +16,12 @@
       <el-tab-pane name="ports"><template #label>数据端口 <small v-if="tabErrors.ports">{{ tabErrors.ports }}</small></template><WorkflowDataPortsPanel :node="node" @update:node="emit('update:node', $event)" @remove-port-request="emit('remove-port-request', $event)" /></el-tab-pane>
       <el-tab-pane name="interfaces">
         <template #label>控制接口 <small v-if="tabErrors.interfaces">{{ tabErrors.interfaces }}</small></template>
-        <WorkflowInterfacesPortsPanel
+        <WorkflowControlInterfacesPanel
           :node="node"
           :interface-connections="interfaceConnections"
           @update:node="emit('update:node', $event)"
           @update:interface-connections="emit('update:interfaceConnections', $event)"
         />
-        <WorkflowTriggersActionsPanel :node="node" @update:node="emit('update:node', $event)" />
       </el-tab-pane>
       <el-tab-pane name="lifecycle">
         <template #label>生命周期 <small v-if="tabErrors.lifecycle">{{ tabErrors.lifecycle }}</small></template>
@@ -37,8 +36,7 @@ import { computed, ref, watch } from 'vue'
 import WorkflowBusinessPanel from './inspector/WorkflowBusinessPanel.vue'
 import WorkflowVariablesPanel from './inspector/WorkflowVariablesPanel.vue'
 import WorkflowDataPortsPanel from './inspector/WorkflowDataPortsPanel.vue'
-import WorkflowTriggersActionsPanel from './inspector/WorkflowTriggersActionsPanel.vue'
-import WorkflowInterfacesPortsPanel from './inspector/WorkflowInterfacesPortsPanel.vue'
+import WorkflowControlInterfacesPanel from './inspector/WorkflowControlInterfacesPanel.vue'
 import WorkflowLifecyclePanel from './inspector/WorkflowLifecyclePanel.vue'
 type Item = Record<string, any>
 const props = withDefaults(defineProps<{ visible: boolean, node: Item | null, contractReady?: boolean, errors?: Item[], deviceCapabilities?: Item[], deviceAttributes?: Item[], interfaceConnections?: Item[], portConnections?: Item[] }>(), { contractReady: false, errors: () => [], deviceCapabilities: () => [], deviceAttributes: () => [], interfaceConnections: () => [], portConnections: () => [] })

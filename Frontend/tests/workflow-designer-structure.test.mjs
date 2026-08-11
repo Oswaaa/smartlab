@@ -13,10 +13,10 @@ function readSource(relativePath) {
 
 describe('Task 6 — Designer Structure', () => {
   const inspectorSource = readSource('views/task/WorkflowDesigner/components/WorkflowNodeInspector.vue')
-  const interfacesPortsSource = readSource('views/task/WorkflowDesigner/components/inspector/WorkflowInterfacesPortsPanel.vue')
+  const controlInterfacesSource = readSource('views/task/WorkflowDesigner/components/inspector/WorkflowControlInterfacesPanel.vue')
   const lifecycleSource = readSource('views/task/WorkflowDesigner/components/inspector/WorkflowLifecyclePanel.vue')
   const designerSource = readSource('views/task/WorkflowDesigner/WorkflowDesigner.vue')
-  const triggersSource = readSource('views/task/WorkflowDesigner/components/inspector/WorkflowTriggersActionsPanel.vue')
+  const triggersSource = readSource('views/task/WorkflowDesigner/components/inspector/WorkflowTriggerEditor.vue')
 
   test('task pages are colocated with page-specific components', () => {
     const taskListSource = readSource('views/task/TaskList/TaskList.vue')
@@ -26,8 +26,8 @@ describe('Task 6 — Designer Structure', () => {
 
   test('designer exposes business control and data panels without transport implementation', () => {
     assert.match(inspectorSource, /WorkflowDataPortsPanel/)
-    assert.match(inspectorSource, /WorkflowInterfacesPortsPanel/)
-    assert.match(interfacesPortsSource, /isSystemItem/)
+    assert.match(inspectorSource, /WorkflowControlInterfacesPanel/)
+    assert.match(controlInterfacesSource, /isSystemItem/)
     // Only check user-facing template copy, not internal implementation code
     const templateSection = designerSource.split('</template>')[0] || designerSource
     assert.doesNotMatch(templateSection, /resourceMap|NODE_TO_DEVICE|DEVICE_TO_NODE|HTTP接口|消息主题/)
@@ -36,8 +36,8 @@ describe('Task 6 — Designer Structure', () => {
   test('system lifecycle is locked while inline trigger actions remain editable', () => {
     assert.match(lifecycleSource, /system-lifecycle|_system/, 'lifecycle panel should reference system markers')
     assert.match(lifecycleSource, /readonly|read-only|system-lifecycle/, 'lifecycle should indicate locked state')
-    assert.match(triggersSource, /动作能力/)
-    assert.match(triggersSource, /orderedInterfaces/)
+    assert.match(controlInterfacesSource, /动作能力/)
+    assert.match(controlInterfacesSource, /orderedControlInterfaces/)
     assert.match(triggersSource, /trigger\.action\?\.actionName/)
     assert.match(triggersSource, /isSystemItem/)
   })
@@ -69,5 +69,19 @@ describe('Task 6 — Designer Structure', () => {
       assert.match(source, new RegExp(label))
     }
     assert.doesNotMatch(source, /触发与动作|接口与端口|数据与端口/)
+  })
+
+  test('control interface editor exposes creation only for function nodes', () => {
+    assert.match(controlInterfacesSource, /canCustomizeControlInterfaces/)
+    assert.match(controlInterfacesSource, /canEditControlItem/)
+    assert.match(controlInterfacesSource, /新增接口/)
+    assert.match(controlInterfacesSource, /系统默认/)
+  })
+
+  test('trigger editor uses interface-local condition names', () => {
+    assert.match(triggersSource, /signalName/)
+    assert.match(triggersSource, /payload/)
+    assert.match(triggersSource, /nodeLifecycleState/)
+    assert.doesNotMatch(triggersSource, /inputSignalName|inputPayload/)
   })
 })

@@ -31,7 +31,7 @@ const aggregateTemplate = {
       interfaceType: 'WORKFLOW',
       allowedSignals: ['ACTIVE'],
       bindingTriggers: [{
-        condition: { object: 'inputSignalName', operator: '=', threshold: 'ACTIVE' },
+        condition: { object: 'signalName', operator: '=', threshold: 'ACTIVE' },
         action: { actionName: 'UPDATE', payload: { updateType: 'NODE_LIFECYCLE', targetName: 'RUNNING' } },
         _system: true,
         _systemKey: 'aggregate.activeTrigger',

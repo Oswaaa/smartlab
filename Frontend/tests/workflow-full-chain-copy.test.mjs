@@ -19,8 +19,8 @@ describe('Task 9 — Full-Chain Copy Regression', () => {
     readSource('views/task/TaskList/components/TaskPreflightPanel.vue'),
     readSource('components/task/TaskExecutionView.vue'),
     readSource('views/task/WorkflowDesigner/components/WorkflowNodeInspector.vue'),
-    readSource('views/task/WorkflowDesigner/components/inspector/WorkflowInterfacesPortsPanel.vue'),
-    readSource('views/task/WorkflowDesigner/components/inspector/WorkflowTriggersActionsPanel.vue'),
+    readSource('views/task/WorkflowDesigner/components/inspector/WorkflowControlInterfacesPanel.vue'),
+    readSource('views/task/WorkflowDesigner/components/inspector/WorkflowTriggerEditor.vue'),
   ]
 
   test('ordinary workflow and task UI hides internal transport vocabulary', () => {

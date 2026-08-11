@@ -288,6 +288,12 @@ function validateControlContractOwnership(node, errors) {
       path: `interfaces[${index}]`,
       message: '非功能节点不能声明自定义控制接口',
     })
+    ;(item.bindingTriggers ?? []).forEach((trigger, triggerIndex) => {
+      if (!isSystemItem(trigger)) errors.push({
+        path: `interfaces[${index}].bindingTriggers[${triggerIndex}]`,
+        message: '非功能节点不能声明自定义触发器',
+      })
+    })
   })
 }
 

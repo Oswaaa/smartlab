@@ -82,7 +82,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Lock } from '@element-plus/icons-vue'
-import { isSystemItem, removeInterface } from '../../../utils/workflowNodeDefinition.js'
+import { isSystemItem, removeInterface } from '../../../../../utils/workflowNodeDefinition.js'
 
 type Item = Record<string, any>
 

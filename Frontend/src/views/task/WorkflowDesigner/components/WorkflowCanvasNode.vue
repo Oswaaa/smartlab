@@ -48,7 +48,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
-import { interfaceHandleId, portHandleId } from '../../../utils/workflowCanvas.js'
+import { interfaceHandleId, portHandleId } from '../../../../utils/workflowCanvas.js'
 
 type Item = Record<string, any>
 const props = withDefaults(defineProps<{ node?: Item | null, selected?: boolean, issues?: Item[] }>(), { node: null, selected: false, issues: () => [] })

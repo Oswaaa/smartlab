@@ -12,11 +12,17 @@ function readSource(relativePath) {
 }
 
 describe('Task 6 — Designer Structure', () => {
-  const inspectorSource = readSource('components/task/workflow/WorkflowNodeInspector.vue')
-  const interfacesPortsSource = readSource('components/task/workflow/WorkflowInterfacesPortsPanel.vue')
-  const lifecycleSource = readSource('components/task/workflow/WorkflowLifecyclePanel.vue')
-  const designerSource = readSource('views/task/WorkflowDesigner.vue')
-  const triggersSource = readSource('components/task/workflow/WorkflowTriggersActionsPanel.vue')
+  const inspectorSource = readSource('views/task/WorkflowDesigner/components/WorkflowNodeInspector.vue')
+  const interfacesPortsSource = readSource('views/task/WorkflowDesigner/components/inspector/WorkflowInterfacesPortsPanel.vue')
+  const lifecycleSource = readSource('views/task/WorkflowDesigner/components/inspector/WorkflowLifecyclePanel.vue')
+  const designerSource = readSource('views/task/WorkflowDesigner/WorkflowDesigner.vue')
+  const triggersSource = readSource('views/task/WorkflowDesigner/components/inspector/WorkflowTriggersActionsPanel.vue')
+
+  test('task pages are colocated with page-specific components', () => {
+    const taskListSource = readSource('views/task/TaskList/TaskList.vue')
+    assert.match(designerSource, /\.\/components\/WorkflowCanvasNode\.vue/)
+    assert.match(taskListSource, /\.\/components\/TaskResourceBindingCanvas\.vue/)
+  })
 
   test('designer exposes interfaces and ports panel but does not expose transport implementation', () => {
     assert.match(inspectorSource, /接口与端口/, 'inspector should reference interfaces and ports tab')

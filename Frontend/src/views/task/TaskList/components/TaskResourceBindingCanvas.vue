@@ -45,7 +45,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { applyInheritedBinding } from '../../utils/taskResourceBindings.js'
+import { applyInheritedBinding } from '../../../../utils/taskResourceBindings.js'
 
 const props = defineProps<{
   groups?: any[]

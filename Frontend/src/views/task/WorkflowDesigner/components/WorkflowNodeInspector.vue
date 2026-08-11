@@ -47,12 +47,12 @@
 </template>
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import WorkflowTypedValueInput from './WorkflowTypedValueInput.vue'
-import WorkflowVariablesPortsPanel from './WorkflowVariablesPortsPanel.vue'
-import WorkflowTriggersActionsPanel from './WorkflowTriggersActionsPanel.vue'
-import WorkflowInterfacesPortsPanel from './WorkflowInterfacesPortsPanel.vue'
-import WorkflowLifecyclePanel from './WorkflowLifecyclePanel.vue'
-import { replaceCapability } from '../../../utils/workflowNodeDefinition.js'
+import WorkflowTypedValueInput from './inspector/WorkflowTypedValueInput.vue'
+import WorkflowVariablesPortsPanel from './inspector/WorkflowVariablesPortsPanel.vue'
+import WorkflowTriggersActionsPanel from './inspector/WorkflowTriggersActionsPanel.vue'
+import WorkflowInterfacesPortsPanel from './inspector/WorkflowInterfacesPortsPanel.vue'
+import WorkflowLifecyclePanel from './inspector/WorkflowLifecyclePanel.vue'
+import { replaceCapability } from '../../../../utils/workflowNodeDefinition.js'
 type Item = Record<string, any>
 const props = withDefaults(defineProps<{ visible: boolean, node: Item | null, contractReady?: boolean, errors?: Item[], deviceCapabilities?: Item[], deviceAttributes?: Item[], interfaceConnections?: Item[], portConnections?: Item[] }>(), { contractReady: false, errors: () => [], deviceCapabilities: () => [], deviceAttributes: () => [], interfaceConnections: () => [], portConnections: () => [] })
 const emit = defineEmits<{ rename: [name: string], 'update:node': [node: Item], 'update:interfaceConnections': [connections: Item[]], 'update:portConnections': [connections: Item[]], 'remove-port-request': [portName: string], 'remove-node': [], close: [] }>()

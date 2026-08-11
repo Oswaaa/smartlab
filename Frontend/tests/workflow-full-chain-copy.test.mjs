@@ -13,14 +13,14 @@ function readSource(relativePath) {
 
 describe('Task 9 — Full-Chain Copy Regression', () => {
   const ordinaryUserSources = [
-    readSource('views/task/TaskList.vue'),
-    readSource('views/task/WorkflowDesigner.vue'),
-    readSource('components/task/TaskResourceBindingCanvas.vue'),
-    readSource('components/task/TaskPreflightPanel.vue'),
+    readSource('views/task/TaskList/TaskList.vue'),
+    readSource('views/task/WorkflowDesigner/WorkflowDesigner.vue'),
+    readSource('views/task/TaskList/components/TaskResourceBindingCanvas.vue'),
+    readSource('views/task/TaskList/components/TaskPreflightPanel.vue'),
     readSource('components/task/TaskExecutionView.vue'),
-    readSource('components/task/workflow/WorkflowNodeInspector.vue'),
-    readSource('components/task/workflow/WorkflowInterfacesPortsPanel.vue'),
-    readSource('components/task/workflow/WorkflowTriggersActionsPanel.vue'),
+    readSource('views/task/WorkflowDesigner/components/WorkflowNodeInspector.vue'),
+    readSource('views/task/WorkflowDesigner/components/inspector/WorkflowInterfacesPortsPanel.vue'),
+    readSource('views/task/WorkflowDesigner/components/inspector/WorkflowTriggersActionsPanel.vue'),
   ]
 
   test('ordinary workflow and task UI hides internal transport vocabulary', () => {
@@ -36,7 +36,7 @@ describe('Task 9 — Full-Chain Copy Regression', () => {
   })
 
   test('preflight panel shows ready/blocked states and check results', () => {
-    const source = readSource('components/task/TaskPreflightPanel.vue')
+    const source = readSource('views/task/TaskList/components/TaskPreflightPanel.vue')
     assert.match(source, /ready|preflight-result/)
     assert.match(source, /checks|preflight-checks/)
   })

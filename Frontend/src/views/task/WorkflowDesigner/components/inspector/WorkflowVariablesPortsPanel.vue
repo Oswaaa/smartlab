@@ -29,7 +29,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { isSystemItem, removePort, removeVariable } from '../../../utils/workflowNodeDefinition.js'
+import { isSystemItem, removePort, removeVariable } from '../../../../../utils/workflowNodeDefinition.js'
 
 type Item = Record<string, any>
 

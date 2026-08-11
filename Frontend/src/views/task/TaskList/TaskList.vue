@@ -332,12 +332,12 @@ import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
 import { Plus, Refresh, ArrowRight, Search, Download } from '@element-plus/icons-vue'
-import ConstraintRuleEditor from '../../components/constraint/ConstraintRuleEditor.vue'
-import TaskResourceBindingCanvas from '../../components/task/TaskResourceBindingCanvas.vue'
-import { buildDeviceBindings, expandWorkflowDefinition } from '../../utils/taskResourceBindings.js'
-import { filterExecutableWorkflows, isExecutableWorkflow } from '../../utils/workflowExecution.js'
-import { taskApi } from '../../services/taskApi.js'
-import { workflowApi } from '../../services/workflowApi.js'
+import ConstraintRuleEditor from '../../../components/constraint/ConstraintRuleEditor.vue'
+import TaskResourceBindingCanvas from './components/TaskResourceBindingCanvas.vue'
+import { buildDeviceBindings, expandWorkflowDefinition } from '../../../utils/taskResourceBindings.js'
+import { filterExecutableWorkflows, isExecutableWorkflow } from '../../../utils/workflowExecution.js'
+import { taskApi } from '../../../services/taskApi.js'
+import { workflowApi } from '../../../services/workflowApi.js'
 
 interface TaskInstance {
   id: number

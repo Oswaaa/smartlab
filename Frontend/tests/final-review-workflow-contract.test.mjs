@@ -113,7 +113,7 @@ test('inline triggers support UPDATE constants and EMIT on output interfaces', (
 })
 
 test('designer adopts normalized server definitions for drafts and publishing', () => {
-  const designer = readFileSync(fileURLToPath(new URL('../src/views/task/WorkflowDesigner.vue', import.meta.url)), 'utf8')
+  const designer = readFileSync(fileURLToPath(new URL('../src/views/task/WorkflowDesigner/WorkflowDesigner.vue', import.meta.url)), 'utf8')
 
   assert.match(designer, /workflowApi\.saveDraft/)
   assert.match(designer, /workflowApi\.publish/)

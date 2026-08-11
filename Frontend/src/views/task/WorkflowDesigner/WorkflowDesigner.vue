@@ -201,13 +201,13 @@ import {
   removeCanvasEdge,
   renameNodeConnections,
   serializeLayout
-} from '../../utils/workflowCanvas.js'
-import WorkflowCanvasNode from '../../components/task/workflow/WorkflowCanvasNode.vue'
-import WorkflowNodeInspector from '../../components/task/workflow/WorkflowNodeInspector.vue'
-import { invalidateFrontendContractMetadata, loadFrontendContractMetadata } from '../../services/frontendContractMetadata.js'
-import { workflowApi } from '../../services/workflowApi.js'
-import { adoptPreparedWorkflow, indexWorkflowIssues, toAuthoringPayload } from '../../utils/workflowAuthoring.js'
-import { configureWorkflowNodeTemplates, createDeviceNode, createFunctionNode, createSubflowNode, removePort, validateNodeDefinition } from '../../utils/workflowNodeDefinition.js'
+} from '../../../utils/workflowCanvas.js'
+import WorkflowCanvasNode from './components/WorkflowCanvasNode.vue'
+import WorkflowNodeInspector from './components/WorkflowNodeInspector.vue'
+import { invalidateFrontendContractMetadata, loadFrontendContractMetadata } from '../../../services/frontendContractMetadata.js'
+import { workflowApi } from '../../../services/workflowApi.js'
+import { adoptPreparedWorkflow, indexWorkflowIssues, toAuthoringPayload } from '../../../utils/workflowAuthoring.js'
+import { configureWorkflowNodeTemplates, createDeviceNode, createFunctionNode, createSubflowNode, removePort, validateNodeDefinition } from '../../../utils/workflowNodeDefinition.js'
 
 type NodeDefinition = Record<string, any>
 type FlowNode = Record<string, any>

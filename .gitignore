@@ -37,6 +37,9 @@ Release/
 # Local package manager installs
 vcpkg_installed/
 
+# Local Git worktrees
+.worktrees/
+
 # Binary/runtime artifacts
 *.exe
 *.dll

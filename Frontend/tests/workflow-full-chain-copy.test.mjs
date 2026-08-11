@@ -72,4 +72,11 @@ describe('Task 9 — Full-Chain Copy Regression', () => {
     assert.match(source, /payload/)
     assert.doesNotMatch(source, /messageId|capabilityRef|sourceNodeIdRef|inputSignalName/)
   })
+
+  test('runtime graph source uses Vue Flow and emits selected step', () => {
+    const source = readSource('views/task/TaskList/components/TaskRuntimeGraph.vue')
+    assert.match(source, /VueFlow/)
+    assert.match(source, /select-step/)
+    assert.match(source, /WAITING/)
+  })
 })

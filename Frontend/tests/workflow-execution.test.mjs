@@ -62,3 +62,11 @@ test('business events exclude engine polling and scheduler diagnostics', () => {
   ])
   assert.deepEqual(events.map(item => item.id), [1])
 })
+
+test('runtime graph groups child steps under the parent subflow step', () => {
+  const graph = buildRuntimeGraph({ nodesDef: [{ name: 'sub', nodeType: 'SUBFLOW_NODE' }], interfaceConnections: [] }, [
+    { id: 10, nodeName: 'sub', nodeStatus: 'RUNNING', parentStepId: null, stepDepth: 0 },
+    { id: 11, nodeName: 'child', nodeStatus: 'RUNNING', parentStepId: 10, stepDepth: 1 },
+  ])
+  assert.equal(graph.nodes[0].children[0].id, 11)
+})

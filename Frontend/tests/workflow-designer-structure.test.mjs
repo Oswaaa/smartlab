@@ -51,4 +51,15 @@ describe('Task 6 — Designer Structure', () => {
     assert.match(designerSource, /保存草稿/)
     assert.match(designerSource, /发布启用/)
   })
+
+  test('canvas nodes render every control interface and every data port', () => {
+    const source = readSource('views/task/WorkflowDesigner/components/WorkflowCanvasNode.vue')
+    assert.match(source, /controlInputs/)
+    assert.match(source, /controlOutputs/)
+    assert.match(source, /inputPorts/)
+    assert.match(source, /outputPorts/)
+    assert.match(source, /interface-handle/)
+    assert.match(source, /port-handle/)
+    assert.doesNotMatch(source, /interfaceType === 'WORKFLOW'/)
+  })
 })

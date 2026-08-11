@@ -51,11 +51,13 @@ describe('Task 9 — Full-Chain Copy Regression', () => {
   test('task list delegates create flow without losing binding and constraints', () => {
     const source = readSource('views/task/TaskList/TaskList.vue')
     const drawer = readSource('views/task/TaskList/components/TaskCreateDrawer.vue')
+    const bindingCanvas = readSource('views/task/TaskList/components/TaskResourceBindingCanvas.vue')
     assert.match(source, /TaskCreateDrawer/)
     assert.match(drawer, /TaskPreflightPanel/)
     assert.match(drawer, /TaskResourceBindingCanvas/)
     assert.match(drawer, /TaskConstraintPanel/)
     assert.match(drawer, /发布启用|已发布|可执行流程/)
+    assert.match(bindingCanvas, /v-for="\(node, index\) in group\.nodes"/)
   })
 
   test('execution drawer exposes the confirmed runtime views', () => {
@@ -78,5 +80,20 @@ describe('Task 9 — Full-Chain Copy Regression', () => {
     assert.match(source, /VueFlow/)
     assert.match(source, /select-step/)
     assert.match(source, /WAITING/)
+    assert.match(source, /index%2/)
+  })
+
+  test('task runtime refreshes only the opened running task at one second', () => {
+    const source = readSource('views/task/TaskList/TaskList.vue')
+    assert.match(source, /1000/)
+    assert.match(source, /monitorDrawerVisible/)
+    assert.match(source, /RUNNING/)
+    assert.match(source, /SUCCEEDED|FAILED|TERMINATED/)
+  })
+
+  test('ordinary task UI does not expose engine scheduling vocabulary', () => {
+    const source = readSource('views/task/TaskList/components/TaskExecutionDrawer.vue')
+    const template = source.split('</template>')[0]
+    assert.doesNotMatch(template, /轮询|线程池|调度器|队列领取|心跳|锁续期/)
   })
 })

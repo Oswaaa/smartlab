@@ -25,7 +25,7 @@ const props=withDefaults(defineProps<{ workflow?:Item|null, steps?:Item[], selec
 const emit=defineEmits<{ 'select-step':[stepId:number|null, node:Item] }>()
 const graph=computed(()=>buildRuntimeGraph(props.workflow||{},props.steps))
 const statuses=['WAITING','PENDING','RUNNING','SUCCEEDED','FAILED','TERMINATED']
-const flowNodes=computed(()=>graph.value.nodes.map((node:Item,index:number)=>({id:`runtime:${node.name}`,type:'runtime',position:node.position||{x:80+(index%3)*280,y:70+Math.floor(index/3)*190},data:node,selectable:true,draggable:false})))
+const flowNodes=computed(()=>graph.value.nodes.map((node:Item,index:number)=>({id:`runtime:${node.name}`,type:'runtime',position:node.position||{x:60+(index%2)*300,y:60+Math.floor(index/2)*170},data:node,selectable:true,draggable:false})))
 const flowEdges=computed(()=>graph.value.edges.map((edge:Item)=>({id:edge.id,source:`runtime:${edge.source}`,target:`runtime:${edge.target}`,animated:false,style:{stroke:edge.kind==='PORT'?'#7c4dce':'#4a7fb8',strokeWidth:edge.kind==='PORT'?1.5:2,strokeDasharray:edge.kind==='PORT'?'6 4':undefined}})))
 function handleNodeClick({node}:{node:Item}){emit('select-step',node.data.stepId??null,node.data)}
 function nodeGlyph(node:Item){if(node.nodeType==='DEV_NODE')return 'D';if(node.nodeType==='SUBFLOW_NODE')return '↳';return ({START:'▶',END:'■',BRANCH:'◇',AGGREGATE:'◆'} as Record<string,string>)[node.functionType]||'N'}

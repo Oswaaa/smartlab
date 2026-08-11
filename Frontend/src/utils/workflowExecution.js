@@ -70,7 +70,7 @@ export function buildRuntimeGraph(workflow, steps) {
   const nodes = definitions.map((definition, index) => {
     const name = definition?.name ?? `node-${index + 1}`
     const idRef = definitionIdRef(definition)
-    const matches = allSteps.filter(step => stepNodeName(step) === name || (idRef != null && (step?.nodeIdRef === idRef || step?.nodeIdRef === String(idRef))))
+    const matches = allSteps.filter(step => stepNodeName(step) === name || (idRef != null && step?.nodeIdRef != null && String(step.nodeIdRef) === String(idRef)))
     const step = latestStep(matches)
     return {
       ...definition,

@@ -7,10 +7,10 @@
       </header>
       <el-alert v-if="effectiveErrors.length" type="error" :closable="false" title="流程模型的设备接口连接不完整"><template #default><div v-for="error in effectiveErrors" :key="error">{{ error }}</div></template></el-alert>
       <div class="flow-groups">
-        <article v-for="group in groups" :key="group.groupKey" class="flow-group" :style="{ marginLeft: Math.min(group.depth, 4) * 20 + 'px' }">
+        <article v-for="group in effectiveGroups" :key="group.groupKey" class="flow-group" :style="{ marginLeft: Math.min(group.depth, 4) * 20 + 'px' }">
           <header class="flow-group-header"><div><el-tag size="small" effect="plain">{{ group.depth ? '子流程' : '主流程' }}</el-tag><strong>{{ group.flowName }}</strong></div><code>{{ group.occurrencePath }}</code></header>
           <div class="node-strip">
-            <template v-for="node in group.nodes" :key="node.occurrenceKey">
+            <template v-for="(node, index) in group.nodes" :key="node.occurrenceKey">
               <button type="button" :class="['workflow-node', node.nodeType.toLowerCase(), { selected: selectedKey === node.bindingKey, bound: node.bindingKey && modelValue[node.bindingKey] }]" :disabled="node.nodeType !== 'DEV_NODE'" @click="selectNode(node)">
                 <span class="node-type">{{ nodeTypeLabel(node.nodeType) }}</span>
                 <strong>{{ node.name }}</strong>

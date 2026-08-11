@@ -54,6 +54,14 @@ test('runtime graph keeps uncreated workflow nodes waiting', () => {
   assert.deepEqual(graph.nodes.map(node => [node.name, node.status]), [['start', 'SUCCEEDED'], ['end', 'WAITING']])
 })
 
+test('runtime graph matches numeric and string node references consistently', () => {
+  const graph = buildRuntimeGraph({ nodesDef: [{ name: 'heater', nodeIdRef: '7' }], interfaceConnections: [] }, [
+    { id: 2, nodeIdRef: 7, nodeStatus: 'RUNNING' },
+  ])
+  assert.equal(graph.nodes[0].status, 'RUNNING')
+  assert.equal(graph.nodes[0].stepId, 2)
+})
+
 test('business events exclude engine polling and scheduler diagnostics', () => {
   const events = businessExecutionEvents([
     { id: 1, sourceType: 'TASK', logInfo: '节点开始执行: 4' },

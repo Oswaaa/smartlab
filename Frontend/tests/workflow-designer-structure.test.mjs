@@ -21,7 +21,7 @@ describe('Task 6 — Designer Structure', () => {
   test('task pages are colocated with page-specific components', () => {
     const taskListSource = readSource('views/task/TaskList/TaskList.vue')
     assert.match(designerSource, /\.\/components\/WorkflowCanvasNode\.vue/)
-    assert.match(taskListSource, /\.\/components\/TaskResourceBindingCanvas\.vue/)
+    assert.match(taskListSource, /\.\/components\/TaskCreateDrawer\.vue/)
   })
 
   test('designer exposes business control and data panels without transport implementation', () => {

@@ -107,10 +107,10 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Plus, Refresh, ArrowRight, Download } from '@element-plus/icons-vue'
+import { Plus, Refresh } from '@element-plus/icons-vue'
 import ConstraintRuleEditor from '../../../components/constraint/ConstraintRuleEditor.vue'
 import TaskCreateDrawer from './components/TaskCreateDrawer.vue'
 import TaskExecutionDrawer from './components/TaskExecutionDrawer.vue'
@@ -229,7 +229,10 @@ const workflowDefinitions = ref<Record<string, any>>({})
 const selectedDeviceRoutes = computed(() => createForm.value.flowModelId == null ? [] : workflowDeviceRoutes.value[String(createForm.value.flowModelId)] || [])
 const selectedWorkflowGroups = computed(() => createForm.value.flowModelId == null ? [] : workflowGroups.value[String(createForm.value.flowModelId)] || [])
 const selectedWorkflowErrors = computed(() => createForm.value.flowModelId == null ? [] : workflowErrors.value[String(createForm.value.flowModelId)] || [])
-const activeDeviceRoutes = computed(() => activeTask.value == null ? [] : (workflowDeviceRoutes.value[String(activeTask.value.flowModelId)] || []).map(route => ({...route,deviceInstanceId:activeTask.value?.resourceMap?.deviceBindings?.[route.bindingKey]?.deviceInstanceId})))
+const activeDeviceRoutes = computed(() => activeTask.value == null ? [] : (workflowDeviceRoutes.value[String(activeTask.value.flowModelId)] || []).map(route => {
+  const deviceInstanceId = activeTask.value?.resourceMap?.deviceBindings?.[route.bindingKey]?.deviceInstanceId
+  return { ...route, deviceInstanceId, instanceName: getInstanceName(deviceInstanceId), deviceModelName: getModelName(route.deviceModelId) }
+}))
 const activeWorkflowDefinition = computed(() => activeTask.value == null ? null : workflowDefinitions.value[String(activeTask.value.flowModelId)] || null)
 const selectedTaskResources = computed(() => {
   const seen = new Set()
@@ -311,11 +314,9 @@ const updateResourceBindings = (next: Record<string, number | null>) => {
 // Monitor Drawer
 const monitorDrawerVisible = ref(false)
 const activeTask = ref<TaskInstance | null>(null)
-const monitorActiveTab = ref('snapshots')
 const nodeSnapshots = ref<TaskStep[]>([])
 const executionLogs = ref<StepLog[]>([])
 const loadingDetails = ref(false)
-const logContainerRef = ref<HTMLElement | null>()
 // All device instances cache for name lookup
 const allInstances = ref<Record<string, string>>({})
 const deviceInstances = ref<any[]>([])
@@ -325,7 +326,6 @@ const taskConstraintEditorRef = ref<any>()
 const editingTaskConstraintIndex = ref<number | null>(null)
 const effectiveConstraintView = ref<any>(null)
 const loadingEffectiveConstraints = ref(false)
-const exportingConstraintModel = ref(false)
 
 // Auto refresh interval id
 let pollIntervalId: any = null
@@ -480,22 +480,9 @@ const getStatusLabel = (status: string) => {
   }
 }
 
-const getNodeStateType = (state: string) => {
-  switch (state) {
-    case 'PENDING': return 'info'
-    case 'RUNNING': return 'warning'
-    case 'SUCCEEDED': return 'success'
-    case 'FAILED': return 'danger'
-    case 'TERMINATING': return 'warning'
-    case 'TERMINATED': return 'warning'
-    default: return 'info'
-  }
-}
-
 // Row click trigger Drawer
 const handleRowClick = (row: TaskInstance) => {
   activeTask.value = row
-  monitorActiveTab.value = 'snapshots'
   nodeSnapshots.value = []
   executionLogs.value = []
   effectiveConstraintView.value = null
@@ -523,44 +510,18 @@ const fetchEffectiveConstraints = async (taskId = activeTask.value?.id, silent =
   }
 }
 
-const exportEffectiveConstraintModel = async () => {
-  if (!activeTask.value) return
-  exportingConstraintModel.value = true
-  try {
-    const taskId = activeTask.value.id
-    const res = await axios.get(`/api/constraint/model/task/${taskId}/export`, { responseType: 'blob' })
-    downloadConstraintBlob(res.data, `task-${taskId}-constraint-model.json`)
-    await fetchEffectiveConstraints(taskId, true)
-    ElMessage.success('任务完整约束模型已导出')
-  } catch (error: any) {
-    ElMessage.error(error.message || '导出任务约束模型失败')
-  } finally {
-    exportingConstraintModel.value = false
-  }
-}
+const TERMINAL_TASK_STATUSES = new Set(['SUCCEEDED', 'FAILED', 'TERMINATED'])
 
-const downloadConstraintBlob = (data: any, filename: string) => {
-  const blob = data instanceof Blob ? data : new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
-}
-
-// Start details polling
-const startDetailsPolling = () => {
+const syncRuntimeRefresh = () => {
   stopDetailsPolling()
+  if (!monitorDrawerVisible.value || activeTask.value?.taskStatus !== 'RUNNING' || TERMINAL_TASK_STATUSES.has(activeTask.value?.taskStatus || '')) return
   pollIntervalId = setInterval(() => {
-    if (monitorDrawerVisible.value && activeTask.value) {
-      // If task is running, actively pull progress
-      fetchLogsAndSnapshots(true)
-    } else {
-      stopDetailsPolling()
-    }
-  }, 3000)
+    if (monitorDrawerVisible.value && activeTask.value?.taskStatus === 'RUNNING') fetchLogsAndSnapshots(true)
+    else stopDetailsPolling()
+  }, 1000)
 }
+
+const startDetailsPolling = syncRuntimeRefresh
 
 const stopDetailsPolling = () => {
   if (pollIntervalId) {
@@ -601,12 +562,6 @@ const fetchLogsAndSnapshots = async (silent = false) => {
       }
       latestDetailLogId = executionLogs.value.reduce((max, log) => Math.max(max, Number(log.id || 0)), latestDetailLogId)
       
-      // Auto scroll terminal to bottom
-      nextTick(() => {
-        if (logContainerRef.value) {
-          logContainerRef.value.scrollTop = logContainerRef.value.scrollHeight
-        }
-      })
     }
     
     // Also sync the task instance itself in case status updated
@@ -765,6 +720,8 @@ const submitCreateTask = async () => {
   }
 }
 
+watch([monitorDrawerVisible, () => activeTask.value?.taskStatus], syncRuntimeRefresh)
+
 // Format time utility
 
 const formatTime = (timeStr: string) => {
@@ -772,24 +729,6 @@ const formatTime = (timeStr: string) => {
   const date = new Date(timeStr)
   return date.toLocaleString()
 }
-const formatRuntimeValue = (value: unknown) => {
-  if (value == null) return 'null'
-  if (typeof value === 'object') {
-    try { return JSON.stringify(value) } catch { return String(value) }
-  }
-  return String(value)
-}
-
-const formatLogTime = (timeStr: string) => {
-  if (!timeStr) return ''
-  const date = new Date(timeStr)
-  return [
-    String(date.getHours()).padStart(2, '0'),
-    String(date.getMinutes()).padStart(2, '0'),
-    String(date.getSeconds()).padStart(2, '0')
-  ].join(':')
-}
-
 const startMainListPolling = () => {
   if (mainListPollIntervalId) return
   mainListPollIntervalId = setInterval(() => {

@@ -17,7 +17,7 @@ describe('Task 9 — Full-Chain Copy Regression', () => {
     readSource('views/task/WorkflowDesigner/WorkflowDesigner.vue'),
     readSource('views/task/TaskList/components/TaskResourceBindingCanvas.vue'),
     readSource('views/task/TaskList/components/TaskPreflightPanel.vue'),
-    readSource('components/task/TaskExecutionView.vue'),
+    readSource('views/task/TaskList/components/TaskExecutionDrawer.vue'),
     readSource('views/task/WorkflowDesigner/components/WorkflowNodeInspector.vue'),
     readSource('views/task/WorkflowDesigner/components/inspector/WorkflowControlInterfacesPanel.vue'),
     readSource('views/task/WorkflowDesigner/components/inspector/WorkflowTriggerEditor.vue'),
@@ -41,9 +41,9 @@ describe('Task 9 — Full-Chain Copy Regression', () => {
     assert.match(source, /checks|preflight-checks/)
   })
 
-  test('execution view maps node status to workflow nodes without exposing internal IDs', () => {
-    const source = readSource('components/task/TaskExecutionView.vue')
-    assert.match(source, /nodeName|taskName/)
+  test('execution view maps node status without exposing transport identifiers', () => {
+    const source = readSource('views/task/TaskList/components/TaskExecutionDrawer.vue')
+    assert.match(source, /taskName|taskStatus/)
     const templateSection = source.split('</template>')[0] || source
     assert.doesNotMatch(templateSection, /messageId|resourceMap|bindingKey/)
   })
@@ -56,5 +56,20 @@ describe('Task 9 — Full-Chain Copy Regression', () => {
     assert.match(drawer, /TaskResourceBindingCanvas/)
     assert.match(drawer, /TaskConstraintPanel/)
     assert.match(drawer, /发布启用|已发布|可执行流程/)
+  })
+
+  test('execution drawer exposes the confirmed runtime views', () => {
+    const source = readSource('views/task/TaskList/components/TaskExecutionDrawer.vue')
+    for (const label of ['运行概览', '执行流程图', '步骤详情', '设备绑定', '任务约束', '业务事件']) {
+      assert.match(source, new RegExp(label))
+    }
+  })
+
+  test('snapshot panel uses canonical fields and no routing envelope', () => {
+    const source = readSource('views/task/TaskList/components/InterfaceSnapshotPanel.vue')
+    assert.match(source, /interfaceName/)
+    assert.match(source, /signalName/)
+    assert.match(source, /payload/)
+    assert.doesNotMatch(source, /messageId|capabilityRef|sourceNodeIdRef|inputSignalName/)
   })
 })

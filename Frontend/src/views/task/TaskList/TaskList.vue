@@ -102,153 +102,7 @@
       <ConstraintRuleEditor ref="taskConstraintEditorRef" :models="deviceModels" :instances="deviceInstances" :workflows="executableProcessTemplates" :tasks="[]" task-mode :task-resources="selectedTaskResources" :task-workflow-nodes="selectedWorkflowNodes" />
       <template #footer><el-button class="btn-aliyun" @click="taskConstraintDialogVisible=false">取消</el-button><el-button class="btn-aliyun-cta" @click="saveTaskConstraint">保存任务约束</el-button></template>
     </el-dialog>
-    <!-- Monitor Tab Drawer -->
-    <el-drawer v-model="monitorDrawerVisible" :title="`任务详情 · ${activeTask?.taskName || ''}`" size="78%" class="unified-workflow-drawer">
-      <div v-if="activeTask" class="monitor-container">
-        <!-- Meta Cards -->
-        <div class="monitor-header-card">
-          <div class="monitor-header-left">
-            <div class="monitor-task-name">{{ activeTask.taskName }}</div>
-            <div class="monitor-task-meta">
-              <span>ID: {{ activeTask.id }}</span>
-              <span>·</span>
-              <span>流程: {{ getWorkflowName(activeTask.flowModelId) }}</span>
-            </div>
-          </div>
-          <div class="monitor-header-right">
-            <el-tag :type="getStatusType(activeTask.taskStatus)" size="large" effect="dark">
-              {{ getStatusLabel(activeTask.taskStatus) }}
-            </el-tag>
-          </div>
-        </div>
-        <el-descriptions border :column="2" size="small" class="mb-4" style="margin-top: 12px;">
-          <el-descriptions-item label="设备路由">
-            <el-tag type="success" size="small" v-if="activeDeviceRoutes.length">{{ activeDeviceRoutes.length }} 条任务绑定</el-tag>
-            <span v-else style="color: #94a3b8;">未声明</span>
-          </el-descriptions-item>
-          <el-descriptions-item label="当前节点">
-            <el-tag type="info" size="small" v-if="activeTask.currentNodeIdRef != null">#{{ activeTask.currentNodeIdRef }}</el-tag>
-            <span v-else style="color: #94a3b8;">-</span>
-          </el-descriptions-item>
-          <el-descriptions-item label="开始时间">{{ formatTime(activeTask.startTime) }}</el-descriptions-item>
-          <el-descriptions-item label="结束时间">{{ activeTask.endTime ? formatTime(activeTask.endTime) : '-' }}</el-descriptions-item>
-        </el-descriptions>
-
-        <!-- Drawer Content Tabs -->
-        <el-tabs v-model="monitorActiveTab" class="monitor-tabs">
-          <!-- Tab 1: Nodes Progress Map -->
-          <el-tab-pane label="步骤执行" name="snapshots">
-            <div class="snapshots-timeline" v-loading="loadingDetails">
-              <div v-for="step in nodeSnapshots" :key="step.id" class="node-snapshot-card">
-                <div class="node-snap-header">
-                  <div style="display: flex; align-items: center; gap: 8px;">
-                    <span class="item-index">{{ step.nodeIdRef }}</span>
-                    <span class="node-name">深度 {{ step.stepDepth || 0 }}</span>
-                  </div>
-                  <el-tag :type="getNodeStateType(step.nodeStatus)" size="small" effect="plain">
-                    {{ step.nodeStatus }}
-                  </el-tag>
-                </div>
-                <div class="node-snap-body">
-                  <div class="snap-row" v-if="step.startTime">
-                    <span class="snap-label">开始：</span>
-                    <span class="snap-val">{{ formatTime(step.startTime) }}</span>
-                  </div>
-                  <div class="snap-row" v-if="step.durationMs != null">
-                    <span class="snap-label">耗时：</span>
-                    <span class="snap-val">{{ step.durationMs }}ms</span>
-                  </div>
-                  <div class="snap-row" v-if="step.parentStepId != null">
-                    <span class="snap-label">父步骤：</span>
-                    <span class="snap-val">#{{ step.parentStepId }}</span>
-                  </div>
-                  <div class="snap-row" v-if="step.interfaceInSnapshot?.messageId">
-                    <span class="snap-label">外部调用：</span>
-                    <span class="snap-val runtime-id">{{ step.interfaceInSnapshot.messageId }}</span>
-                  </div>
-                  <div class="snap-row" v-if="step.interfaceInSnapshot?.capabilityRef">
-                    <span class="snap-label">设备能力：</span>
-                    <span class="snap-val">{{ step.interfaceInSnapshot.capabilityRef }} · 实例 {{ step.interfaceInSnapshot.deviceInstanceId }}</span>
-                  </div>
-                  <div class="snap-row" v-if="step.variableSpace && Object.keys(step.variableSpace).length > 0">
-                    <span class="snap-label">变量空间：</span>
-                    <div class="snap-tags mt-1">
-                      <el-tag
-                        v-for="(val, key) in step.variableSpace"
-                        :key="key" type="info" size="small" class="mr-2 mb-1"
-                      >
-                        {{ key }}: {{ formatRuntimeValue(val) }}
-                      </el-tag>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <el-empty v-if="nodeSnapshots.length === 0" description="暂无执行步骤记录" />
-            </div>
-          </el-tab-pane>
-
-          <!-- Tab 2: Live Log Terminal -->
-          <el-tab-pane label="执行日志" name="logs">
-            <div class="terminal-header">
-              <span>任务执行日志（自动刷新）</span>
-              <el-button link type="primary" size="small" @click="fetchLogsAndSnapshots">
-                手动同步
-              </el-button>
-            </div>
-            <div class="log-container" ref="logContainerRef" v-loading="loadingDetails">
-              <div v-for="log in executionLogs" :key="log.id" class="log-item">
-                <span class="log-time">[{{ formatLogTime(log.logTime) }}]</span>
-                <span class="log-module">[{{ log.sourceType || 'TASK' }}]</span>
-                <span :class="['log-level', (log.logLevel || '').toLowerCase()]">{{ log.logLevel }}</span>
-                <span class="log-msg">{{ log.logInfo }}</span>
-              </div>
-              <div v-if="executionLogs.length === 0" class="empty-terminal">
-                &gt; 暂无任务日志。
-              </div>
-            </div>
-          </el-tab-pane>
-          <!-- Tab 3: Device instances bound by TASK.resource_map -->
-          <el-tab-pane label="设备路由" name="resources">
-            <div class="constraints-section">
-              <div v-if="activeDeviceRoutes.length">
-                <div v-for="route in activeDeviceRoutes" :key="route.bindingKey" class="resource-map-row">
-                  <div class="resource-node-label"><strong>{{ route.nodeName }}</strong><div class="resource-sub">{{ route.flowName }} · {{ getModelName(route.deviceModelId) }}</div></div>
-                  <el-icon style="color: #2563eb;"><ArrowRight /></el-icon>
-                  <div class="resource-instance-label">{{ getInstanceName(route.deviceInstanceId) }}<span style="font-size: 11px; color: #94a3b8; margin-left: 6px;">(ID: {{ route.deviceInstanceId }})</span><div style="font-size: 11px; color: #64748b; margin-top: 3px;">状态机输入: {{ route.deviceInputInterfaceName }}，状态机输出: {{ route.deviceOutputInterfaceName }}</div></div>
-                </div>
-              </div>
-              <el-empty v-else description="该任务没有设备实例绑定" />
-            </div>
-          </el-tab-pane>
-
-
-          <el-tab-pane label="有效约束" name="constraints">
-            <div class="effective-constraint-panel">
-              <div class="effective-constraint-toolbar">
-                <div><strong>当前有效约束模型</strong><span>实时全局约束 + 当前任务固定约束</span></div>
-                <div><el-button :icon="Refresh" :loading="loadingEffectiveConstraints" @click="fetchEffectiveConstraints()">刷新</el-button><el-button type="primary" :icon="Download" :loading="exportingConstraintModel" @click="exportEffectiveConstraintModel">导出完整模型</el-button></div>
-              </div>
-              <el-alert type="info" :closable="false" title="全局约束会随约束管理配置实时变化；任务级约束来自TASK.TASK_CONSTRAINTS，任务启动后保持不变" />
-              <el-skeleton v-if="loadingEffectiveConstraints && !effectiveConstraintView" :rows="5" animated />
-              <template v-else-if="effectiveConstraintView">
-                <div class="effective-model-meta">编译时间 {{ formatTime(effectiveConstraintView.compiledAt) }} · 共 {{ effectiveConstraintView.model?.constraints?.length || 0 }} 条约束、{{ effectiveConstraintView.model?.observableObjects?.length || 0 }} 个可观测对象</div>
-                <section class="effective-constraint-group">
-                  <div class="effective-group-title"><div><el-tag type="primary" effect="plain">全局 · 实时</el-tag><strong>当前启用的全局约束</strong></div><span>{{ effectiveConstraintView.globalConstraints?.length || 0 }} 条</span></div>
-                  <el-empty v-if="!effectiveConstraintView.globalConstraints?.length" description="当前没有启用的全局约束" :image-size="48" />
-                  <div v-for="rule in effectiveConstraintView.globalConstraints || []" :key="`global-${rule.ruleId}`" class="effective-rule-row"><div><strong>{{ rule.ruleName }}</strong><code>{{ rule.expression }}</code><span>{{ rule.bindingCount }} 个变量 · {{ rule.actionCount }} 个动作</span></div><el-tag size="small" type="primary">实时</el-tag></div>
-                </section>
-                <section class="effective-constraint-group">
-                  <div class="effective-group-title"><div><el-tag type="warning" effect="plain">任务 · 固定</el-tag><strong>任务级约束</strong></div><span>{{ effectiveConstraintView.taskConstraints?.length || 0 }} 条</span></div>
-                  <el-empty v-if="!effectiveConstraintView.taskConstraints?.length" description="该任务未配置任务级约束" :image-size="48" />
-                  <div v-for="rule in effectiveConstraintView.taskConstraints || []" :key="`task-${rule.taskRuleIndex}`" class="effective-rule-row"><div><strong>{{ rule.ruleName }}</strong><code>{{ rule.expression }}</code><span>{{ rule.bindingCount }} 个变量 · {{ rule.actionCount }} 个动作</span></div><el-tag size="small" type="warning">固定</el-tag></div>
-                </section>
-              </template>
-              <el-empty v-else description="有效约束模型加载失败，请重试" />
-            </div>
-          </el-tab-pane>
-        </el-tabs>
-      </div>
-    </el-drawer>
+    <TaskExecutionDrawer v-model="monitorDrawerVisible" :task="activeTask" :workflow="activeWorkflowDefinition" :steps="nodeSnapshots" :logs="executionLogs" :bindings="activeDeviceRoutes" :constraints="effectiveConstraintView" :loading="loadingDetails" @refresh="fetchLogsAndSnapshots()" @terminate="activeTask && abortTask(activeTask.id)" />
   </div>
 </template>
 
@@ -259,6 +113,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, ArrowRight, Download } from '@element-plus/icons-vue'
 import ConstraintRuleEditor from '../../../components/constraint/ConstraintRuleEditor.vue'
 import TaskCreateDrawer from './components/TaskCreateDrawer.vue'
+import TaskExecutionDrawer from './components/TaskExecutionDrawer.vue'
 import TaskFilterBar from './components/TaskFilterBar.vue'
 import TaskSummaryStrip from './components/TaskSummaryStrip.vue'
 import { buildDeviceBindings, expandWorkflowDefinition } from '../../../utils/taskResourceBindings.js'
@@ -375,6 +230,7 @@ const selectedDeviceRoutes = computed(() => createForm.value.flowModelId == null
 const selectedWorkflowGroups = computed(() => createForm.value.flowModelId == null ? [] : workflowGroups.value[String(createForm.value.flowModelId)] || [])
 const selectedWorkflowErrors = computed(() => createForm.value.flowModelId == null ? [] : workflowErrors.value[String(createForm.value.flowModelId)] || [])
 const activeDeviceRoutes = computed(() => activeTask.value == null ? [] : (workflowDeviceRoutes.value[String(activeTask.value.flowModelId)] || []).map(route => ({...route,deviceInstanceId:activeTask.value?.resourceMap?.deviceBindings?.[route.bindingKey]?.deviceInstanceId})))
+const activeWorkflowDefinition = computed(() => activeTask.value == null ? null : workflowDefinitions.value[String(activeTask.value.flowModelId)] || null)
 const selectedTaskResources = computed(() => {
   const seen = new Set()
   return selectedDeviceRoutes.value
@@ -1609,4 +1465,3 @@ onUnmounted(() => {
   .task-filter-fields .el-input { flex: 1; width: 220px; }
 }
 </style>
-

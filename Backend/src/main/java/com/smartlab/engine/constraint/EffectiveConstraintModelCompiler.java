@@ -130,6 +130,7 @@ public class EffectiveConstraintModelCompiler {
         }
 
         ObjectNode exportedBindings = JsonNodeSupport.objectNode();
+        ObjectNode observedVariables = JsonNodeSupport.objectNode();
         Map<String, ObservableKey> runtimeBindings = new LinkedHashMap<>();
         int bindingCount = 0;
         var fields = bindings.fields();
@@ -158,6 +159,7 @@ public class EffectiveConstraintModelCompiler {
                 exportedBinding.put("bindingType", "OBSERVABLE");
                 exportedBinding.put("observableName", observableName);
                 exportedBindings.set(variableName, exportedBinding);
+                observedVariables.set(variableName, exportedBinding.deepCopy());
             } else if ("LITERAL".equals(bindingType)) {
                 ObjectNode exportedBinding = JsonNodeSupport.objectNode();
                 exportedBinding.put("bindingType", "LITERAL");
@@ -188,7 +190,7 @@ public class EffectiveConstraintModelCompiler {
                 rule.getViolationActions().size()
         );
         String version = hash(canonical(exportedRule).toString()).substring(0, 16);
-        return new CompiledRuleTemplate(source, Map.copyOf(runtimeBindings), version, summary);
+        return new CompiledRuleTemplate(source, Map.copyOf(runtimeBindings), observedVariables, version, summary);
     }
 
     private void expandRuntime(CompiledRuleTemplate template, List<Task> scopeTasks,
@@ -246,7 +248,8 @@ public class EffectiveConstraintModelCompiler {
         String scope = taskId != null ? "task:" + taskId : deviceId != null ? "device:" + deviceId : "global";
         RuntimeConstraintKey key = new RuntimeConstraintKey(source.origin(), source.stableKey(), scope,
                 template.ruleVersion());
-        target.put(key, new RuntimeConstraint(key, source.rule(), scoped, taskId, null, deviceId));
+        target.put(key, new RuntimeConstraint(key, source.rule(), scoped, taskId, null, deviceId,
+                template.observedVariables()));
     }
 
     private Map<ObservableKey, Set<RuntimeConstraintKey>> dependencyIndex(
@@ -426,8 +429,17 @@ public class EffectiveConstraintModelCompiler {
 
     private record CompiledRuleTemplate(RuleSource source,
                                         Map<String, ObservableKey> runtimeBindings,
+                                        JsonNode observedVariables,
                                         String ruleVersion,
                                         ConstraintModelRuleSummary summary) {
+        private CompiledRuleTemplate {
+            observedVariables = observedVariables.deepCopy();
+        }
+
+        @Override
+        public JsonNode observedVariables() {
+            return observedVariables.deepCopy();
+        }
     }
 
     private record RevisionState(long revision, String fingerprint) {

@@ -49,6 +49,40 @@ class EffectiveConstraintModelCompilerTest {
                         .path("temperature").path("observableName").asText());
         assertFalse(result.jsonModel().path("constraints").get(0).path("bindings")
                 .path("temperature").has("source"));
+        RuntimeConstraint runtime = result.monitoringPlan().constraints().values().stream()
+                .filter(item -> item.rule().getId().equals(12L))
+                .findFirst()
+                .orElseThrow();
+        assertEquals("OBSERVABLE",
+                runtime.observedVariables().path("temperature").path("bindingType").asText());
+        assertEquals("global_12_temperature",
+                runtime.observedVariables().path("temperature").path("observableName").asText());
+        assertFalse(runtime.observedVariables().has("limit"));
+    }
+
+    @Test
+    void retainsEveryObservableBindingForComparativeExpressionsInDeclarationOrder() {
+        ConstraintRuleService globalRules = mock(ConstraintRuleService.class);
+        TaskConstraintService taskRules = mock(TaskConstraintService.class);
+        ConstraintRule comparative = rule(21L, "反应釜温度差", "temperature1 > temperature2", 0);
+        ObjectNode bindings = JsonNodeSupport.objectNode();
+        bindings.set("temperature1", observableBinding(18L, "temperature"));
+        bindings.set("temperature2", observableBinding(19L, "temperature"));
+        comparative.setBindings(bindings);
+        when(globalRules.list(Boolean.TRUE)).thenReturn(List.of(comparative));
+        when(taskRules.activeTasks()).thenReturn(List.of());
+
+        EffectiveConstraintModel result = new EffectiveConstraintModelCompiler(
+                globalRules, taskRules, mock(DeviceTwinSnapshotRegistry.class)).compileGlobal();
+
+        RuntimeConstraint runtime = result.monitoringPlan().constraints().values().iterator().next();
+        List<String> observedNames = new java.util.ArrayList<>();
+        runtime.observedVariables().fieldNames().forEachRemaining(observedNames::add);
+        assertEquals(List.of("temperature1", "temperature2"), observedNames);
+        assertEquals("global_21_temperature1",
+                runtime.observedVariables().path("temperature1").path("observableName").asText());
+        assertEquals("global_21_temperature2",
+                runtime.observedVariables().path("temperature2").path("observableName").asText());
     }
 
     @Test
@@ -99,18 +133,23 @@ class EffectiveConstraintModelCompilerTest {
 
     private ObjectNode bindings(int limit) {
         ObjectNode bindings = JsonNodeSupport.objectNode();
-        ObjectNode observed = bindings.putObject("temperature");
+        bindings.set("temperature", observableBinding(18L, "temperature"));
+        ObjectNode literal = bindings.putObject("limit");
+        literal.put("bindingType", "LITERAL");
+        literal.put("value", limit);
+        return bindings;
+    }
+
+    private ObjectNode observableBinding(Long deviceInstanceId, String targetName) {
+        ObjectNode observed = JsonNodeSupport.objectNode();
         observed.put("bindingType", "OBSERVABLE");
         ObjectNode source = observed.putObject("source");
         source.put("sourceType", "DEVICE_ATTRIBUTE");
         source.put("dataType", "DOUBLE");
         source.put("deviceModelId", 3);
-        source.put("deviceInstanceId", 18);
-        source.put("targetName", "temperature");
-        ObjectNode literal = bindings.putObject("limit");
-        literal.put("bindingType", "LITERAL");
-        literal.put("value", limit);
-        return bindings;
+        source.put("deviceInstanceId", deviceInstanceId);
+        source.put("targetName", targetName);
+        return observed;
     }
 
     private ArrayNode alertActions() {

@@ -7,9 +7,9 @@
     <div v-for="(entry, index) in jsonEntries" :key="entry.id" class="json-entry-row">
       <el-input v-model="entry.key" placeholder="键" @input="emitJson" />
       <el-input v-model="entry.value" placeholder="值" @input="emitJson" />
-      <el-button link type="danger" @click="removeEntry(index)">删除</el-button>
+      <el-button class="btn-aliyun-danger-link" link @click="removeEntry(index)">删除</el-button>
     </div>
-    <el-button @click="addEntry">添加键值</el-button>
+    <el-button class="btn-aliyun" @click="addEntry">添加键值</el-button>
     <p v-if="jsonError" class="json-error">{{ jsonError }}</p>
   </div>
 </template>

@@ -7,10 +7,10 @@
       </header>
       <el-alert v-if="effectiveErrors.length" type="error" :closable="false" title="流程模型的设备接口连接不完整"><template #default><div v-for="error in effectiveErrors" :key="error">{{ error }}</div></template></el-alert>
       <div class="flow-groups">
-        <article v-for="group in groups" :key="group.groupKey" class="flow-group" :style="{ marginLeft: Math.min(group.depth, 4) * 20 + 'px' }">
+        <article v-for="group in effectiveGroups" :key="group.groupKey" class="flow-group" :style="{ marginLeft: Math.min(group.depth, 4) * 20 + 'px' }">
           <header class="flow-group-header"><div><el-tag size="small" effect="plain">{{ group.depth ? '子流程' : '主流程' }}</el-tag><strong>{{ group.flowName }}</strong></div><code>{{ group.occurrencePath }}</code></header>
           <div class="node-strip">
-            <template v-for="node in group.nodes" :key="node.occurrenceKey">
+            <template v-for="(node, index) in group.nodes" :key="node.occurrenceKey">
               <button type="button" :class="['workflow-node', node.nodeType.toLowerCase(), { selected: selectedKey === node.bindingKey, bound: node.bindingKey && modelValue[node.bindingKey] }]" :disabled="node.nodeType !== 'DEV_NODE'" @click="selectNode(node)">
                 <span class="node-type">{{ nodeTypeLabel(node.nodeType) }}</span>
                 <strong>{{ node.name }}</strong>
@@ -35,7 +35,7 @@
           <el-option v-for="instance in instancesForRoute" :key="instance.id" :label="instance.instanceName || instance.deviceName || ('设备实例#' + instance.id)" :value="Number(instance.id)"><span>{{ instance.instanceName || instance.deviceName || ('设备实例#' + instance.id) }}</span><small class="instance-option">{{ instance.onlineStatus || '在线状态未知' }}</small></el-option>
         </el-select>
         <el-checkbox v-model="inheritRepeatedSubflows" class="inherit-checkbox">同一子流程再次出现时默认继承该绑定</el-checkbox>
-        <el-button native-type="button" plain style="width:100%" @click="applyToSameModel">应用到所有未绑定的同模型节点</el-button>
+        <el-button class="btn-aliyun" native-type="button" style="width:100%" @click="applyToSameModel">应用到所有未绑定的同模型节点</el-button>
         <p class="binding-help">子流程节点本身不绑定设备，系统展开其内部DEV_NODE。继承只用于预填，所有节点路径仍独立保存，用户可单独覆盖</p>
       </template>
       <el-empty v-else description="点击画布中的设备节点开始绑定" :image-size="72" />
@@ -45,7 +45,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { applyInheritedBinding } from '../../utils/taskResourceBindings.js'
+import { applyInheritedBinding } from '../../../../utils/taskResourceBindings.js'
 
 const props = defineProps<{
   groups?: any[]

@@ -13,14 +13,14 @@ function readSource(relativePath) {
 
 describe('Task 9 — Full-Chain Copy Regression', () => {
   const ordinaryUserSources = [
-    readSource('views/task/TaskList.vue'),
-    readSource('views/task/WorkflowDesigner.vue'),
-    readSource('components/task/TaskResourceBindingCanvas.vue'),
-    readSource('components/task/TaskPreflightPanel.vue'),
-    readSource('components/task/TaskExecutionView.vue'),
-    readSource('components/task/workflow/WorkflowNodeInspector.vue'),
-    readSource('components/task/workflow/WorkflowInterfacesPortsPanel.vue'),
-    readSource('components/task/workflow/WorkflowTriggersActionsPanel.vue'),
+    readSource('views/task/TaskList/TaskList.vue'),
+    readSource('views/task/WorkflowDesigner/WorkflowDesigner.vue'),
+    readSource('views/task/TaskList/components/TaskResourceBindingCanvas.vue'),
+    readSource('views/task/TaskList/components/TaskPreflightPanel.vue'),
+    readSource('views/task/TaskList/components/TaskExecutionDrawer.vue'),
+    readSource('views/task/WorkflowDesigner/components/WorkflowNodeInspector.vue'),
+    readSource('views/task/WorkflowDesigner/components/inspector/WorkflowControlInterfacesPanel.vue'),
+    readSource('views/task/WorkflowDesigner/components/inspector/WorkflowTriggerEditor.vue'),
   ]
 
   test('ordinary workflow and task UI hides internal transport vocabulary', () => {
@@ -36,15 +36,64 @@ describe('Task 9 — Full-Chain Copy Regression', () => {
   })
 
   test('preflight panel shows ready/blocked states and check results', () => {
-    const source = readSource('components/task/TaskPreflightPanel.vue')
+    const source = readSource('views/task/TaskList/components/TaskPreflightPanel.vue')
     assert.match(source, /ready|preflight-result/)
     assert.match(source, /checks|preflight-checks/)
   })
 
-  test('execution view maps node status to workflow nodes without exposing internal IDs', () => {
-    const source = readSource('components/task/TaskExecutionView.vue')
-    assert.match(source, /nodeName|taskName/)
+  test('execution view maps node status without exposing transport identifiers', () => {
+    const source = readSource('views/task/TaskList/components/TaskExecutionDrawer.vue')
+    assert.match(source, /taskName|taskStatus/)
     const templateSection = source.split('</template>')[0] || source
     assert.doesNotMatch(templateSection, /messageId|resourceMap|bindingKey/)
+  })
+
+  test('task list delegates create flow without losing binding and constraints', () => {
+    const source = readSource('views/task/TaskList/TaskList.vue')
+    const drawer = readSource('views/task/TaskList/components/TaskCreateDrawer.vue')
+    const bindingCanvas = readSource('views/task/TaskList/components/TaskResourceBindingCanvas.vue')
+    assert.match(source, /TaskCreateDrawer/)
+    assert.match(drawer, /TaskPreflightPanel/)
+    assert.match(drawer, /TaskResourceBindingCanvas/)
+    assert.match(drawer, /TaskConstraintPanel/)
+    assert.match(drawer, /发布启用|已发布|可执行流程/)
+    assert.match(bindingCanvas, /v-for="\(node, index\) in group\.nodes"/)
+  })
+
+  test('execution drawer exposes the confirmed runtime views', () => {
+    const source = readSource('views/task/TaskList/components/TaskExecutionDrawer.vue')
+    for (const label of ['运行概览', '执行流程图', '步骤详情', '设备绑定', '任务约束', '业务事件']) {
+      assert.match(source, new RegExp(label))
+    }
+  })
+
+  test('snapshot panel uses canonical fields and no routing envelope', () => {
+    const source = readSource('views/task/TaskList/components/InterfaceSnapshotPanel.vue')
+    assert.match(source, /interfaceName/)
+    assert.match(source, /signalName/)
+    assert.match(source, /payload/)
+    assert.doesNotMatch(source, /messageId|capabilityRef|sourceNodeIdRef|inputSignalName/)
+  })
+
+  test('runtime graph source uses Vue Flow and emits selected step', () => {
+    const source = readSource('views/task/TaskList/components/TaskRuntimeGraph.vue')
+    assert.match(source, /VueFlow/)
+    assert.match(source, /select-step/)
+    assert.match(source, /WAITING/)
+    assert.match(source, /index%2/)
+  })
+
+  test('task runtime refreshes only the opened running task at one second', () => {
+    const source = readSource('views/task/TaskList/TaskList.vue')
+    assert.match(source, /1000/)
+    assert.match(source, /monitorDrawerVisible/)
+    assert.match(source, /RUNNING/)
+    assert.match(source, /SUCCEEDED|FAILED|TERMINATED/)
+  })
+
+  test('ordinary task UI does not expose engine scheduling vocabulary', () => {
+    const source = readSource('views/task/TaskList/components/TaskExecutionDrawer.vue')
+    const template = source.split('</template>')[0]
+    assert.doesNotMatch(template, /轮询|线程池|调度器|队列领取|心跳|锁续期/)
   })
 })

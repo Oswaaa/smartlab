@@ -4,41 +4,25 @@
     <el-card class="table-card-fullscreen" shadow="never">
       <template #header>
         <div class="card-header-fullscreen">
-          <h1 class="header-title">任务列表</h1>
+          <div class="header-copy">
+            <h1 class="header-title">任务列表</h1>
+            <p>创建实验任务、绑定设备资源并持续跟踪执行状态</p>
+          </div>
           <div class="header-actions-right">
-            <el-button class="refresh-button btn-aliyun" :icon="Refresh" circle aria-label="刷新任务列表" @click="refreshTaskList" :loading="loading" />
+            <el-button class="btn-aliyun" :icon="Refresh" aria-label="刷新任务列表" @click="refreshTaskList" :loading="loading">刷新</el-button>
             <el-button class="btn-aliyun-cta" :icon="Plus" @click="openCreateDrawer">新建任务</el-button>
           </div>
         </div>
       </template>
 
-      <section class="task-summary-strip" aria-label="任务状态概览">
-        <button type="button" :class="{ active: !taskStatusFilter }" @click="setTaskStatus('')"><span>全部任务</span><strong>{{ taskSummary.total }}</strong><small>所有执行记录</small></button>
-        <button type="button" :class="{ active: taskStatusFilter === 'PENDING' }" @click="setTaskStatus('PENDING')"><span><i class="summary-dot pending"></i>排队中</span><strong>{{ taskSummary.pending }}</strong><small>等待启动</small></button>
-        <button type="button" :class="{ active: taskStatusFilter === 'RUNNING' }" @click="setTaskStatus('RUNNING')"><span><i class="summary-dot running"></i>运行中</span><strong>{{ taskSummary.running }}</strong><small>正在执行</small></button>
-        <button type="button" :class="{ active: taskStatusFilter === 'SUCCEEDED' }" @click="setTaskStatus('SUCCEEDED')"><span><i class="summary-dot success"></i>已完成</span><strong>{{ taskSummary.succeeded }}</strong><small>执行成功</small></button>
-        <button type="button" :class="{ active: taskStatusFilter === 'FAILED' }" @click="setTaskStatus('FAILED')"><span><i class="summary-dot danger"></i>失败任务</span><strong>{{ taskSummary.failed }}</strong><small>另 {{ taskSummary.terminated }} 项已终止</small></button>
-      </section>
-
-      <div class="task-filter-bar">
-        <div class="task-filter-fields">
-          <el-input v-model="taskKeyword" :prefix-icon="Search" clearable placeholder="搜索任务名称或说明" @keyup.enter="applyTaskFilters" />
-          <el-select v-model="taskStatusFilter" clearable placeholder="全部状态" @change="applyTaskFilters">
-            <el-option label="排队中" value="PENDING"/><el-option label="运行中" value="RUNNING"/><el-option label="已完成" value="SUCCEEDED"/><el-option label="失败" value="FAILED"/><el-option label="已终止" value="TERMINATED"/>
-          </el-select>
-          <el-button class="btn-aliyun-cta" @click="applyTaskFilters">查询</el-button>
-          <el-button v-if="hasTaskFilters" class="btn-aliyun" @click="clearTaskFilters">重置</el-button>
-        </div>
-        <span class="task-result-meta">共 {{ taskTotal }} 条<span v-if="lastUpdatedAt"> · 更新于 {{ lastUpdatedAt }}</span></span>
-      </div>
+      <TaskSummaryStrip :summary="taskSummary" :active-status="taskStatusFilter" @select-status="setTaskStatus" />
+      <TaskFilterBar v-model:keyword="taskKeyword" v-model:status="taskStatusFilter" :total="taskTotal" :last-updated-at="lastUpdatedAt" :has-filters="hasTaskFilters" @query="applyTaskFilters" @reset="clearTaskFilters" />
 
       <el-table
         :data="tasks"
         v-loading="loading"
         style="width: 100%; height: 100%;"
         height="100%"
-        highlight-current-row
-        @row-click="handleRowClick"
         class="custom-table"
       >
         <el-table-column prop="id" label="ID" width="72" align="center"><template #default="{ row }"><span class="task-id">#{{ row.id }}</span></template></el-table-column>
@@ -90,10 +74,10 @@
         <el-table-column label="任务约束" width="100" align="center"><template #default="{row}"><el-tag v-if="row.taskConstraints?.length" type="warning" size="small" effect="plain">{{ row.taskConstraints.length }} 条</el-tag><span v-else style="color:#94a3b8;font-size:12px">无</span></template></el-table-column>        <el-table-column label="操作" width="190" fixed="right" align="center">
           <template #default="{ row }">
             <div class="action-buttons" @click.stop>
-              <el-button v-if="row.taskStatus === 'PENDING'" type="primary" size="small" link @click="startTask(row.id)">启动</el-button>
-              <el-button v-if="['RUNNING', 'PAUSED'].includes(row.taskStatus)" type="warning" size="small" link @click="abortTask(row.id)">终止</el-button>
-              <el-button size="small" link @click="handleRowClick(row)">详情</el-button>
-              <el-button type="danger" size="small" link @click="confirmDeleteTask(row.id)">删除</el-button>
+              <el-button v-if="row.taskStatus === 'PENDING'" class="btn-aliyun-link" size="small" link @click="startTask(row.id)">启动</el-button>
+              <el-button v-if="['RUNNING', 'PAUSED'].includes(row.taskStatus)" class="btn-aliyun-danger-link" size="small" link @click="abortTask(row.id)">终止</el-button>
+              <el-button class="detail-button btn-aliyun-link" size="small" link @click="openTaskDetail(row)">详情</el-button>
+              <el-button class="btn-aliyun-danger-link" size="small" link @click="confirmDeleteTask(row.id)">删除</el-button>
             </div>
           </template>
         </el-table-column>
@@ -113,231 +97,30 @@
       </div>
     </el-card>
 
-    <!-- Create Task Drawer -->
-    <el-drawer v-model="createDrawerVisible" title="新建任务" size="78%" class="model-drawer unified-workflow-drawer" destroy-on-close>
-      <div class="drawer-body" style="padding: 0 16px;">
-        <el-form
-          ref="createFormRef"
-          :model="createForm"
-          :rules="createRules"
-          label-width="120px"
-          label-position="top"
-          class="basic-form"
-          style="max-width: 100%;"
-        >
-          <div class="anchor-section industrial-section">
-            <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px;">基础配置</h2>
-            <section class="drawer-section">
-              <el-form-item label="任务名称" prop="taskName">
-                <el-input v-model="createForm.taskName" placeholder="例如：批次PCR扩增与物料搅拌" />
-              </el-form-item>
-              <el-form-item label="关联流程" prop="flowModelId">
-                <el-select
-                  v-model="createForm.flowModelId"
-                  placeholder="请选择流程"
-                  style="width: 100%"
-                  v-loading="loadingWorkflows"
-                  @change="handleTemplateChange"
-                >
-                  <el-option
-                    v-for="tpl in executableProcessTemplates"
-                    :key="tpl.id"
-                    :label="tpl.flowName"
-                    :value="tpl.id"
-                  />
-                </el-select>
-              </el-form-item>
-            </section>
-          </div>
-
-          <div class="anchor-section industrial-section" v-if="selectedDeviceRoutes.length">
-            <h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px; margin-top: 24px;">设备实例绑定</h2>
-            <section class="drawer-section resource-binding-section">
-              <el-alert type="info" :closable="false" title="工作流模型只选择设备模型；任务实例按节点出现路径绑定具体设备。同一实例可以被多个节点复用，执行时由状态机IDLE状态统一仲裁" style="margin-bottom: 12px;" />
-              <TaskResourceBindingCanvas :groups="selectedWorkflowGroups" :routes="selectedDeviceRoutes" :errors="selectedWorkflowErrors" :model-value="createForm.resourceBindings" :instances="deviceInstances" :models="deviceModels" @update:model-value="updateResourceBindings" />
-            </section>
-          </div>
-          <div class="anchor-section industrial-section" v-else-if="createForm.flowModelId && workflowHasDeviceNodes[String(createForm.flowModelId)]"><el-alert type="warning" :closable="false" title="该工作流包含DEV_NODE但无法生成设备绑定路径，请先修复工作流模型" /></div>
-          <div class="anchor-section industrial-section">
-            <div class="section-title-row"><h2 style="margin-bottom: 16px; border-left: 4px solid var(--el-color-primary); padding-left: 12px; margin-top: 24px;">任务级约束</h2><el-button class="btn-aliyun-cta" plain @click="openTaskConstraint()">添加任务约束</el-button></div>
-            <section class="drawer-section"><el-alert type="info" :closable="false" title="任务级约束随当前任务保存，只能观测或操作本任务及其绑定设备；全局约束仍在约束管理页面配置" style="margin-bottom:12px"/><el-empty v-if="!createForm.taskConstraints.length" description="未配置任务级约束" :image-size="48"/><div v-for="(rule,index) in createForm.taskConstraints" :key="index" class="task-constraint-row"><div><strong>{{ rule.ruleName }}</strong><code>{{ rule.expression }}</code><span>{{ Object.keys(rule.bindings||{}).length }}个变量 · {{ (rule.violationActions||[]).length }}个动作</span></div><div><el-button class="btn-aliyun-link" link @click="openTaskConstraint(index)">编辑</el-button><el-button class="btn-aliyun-danger-link" link @click="createForm.taskConstraints.splice(index,1)">删除</el-button></div></div></section>
-          </div>          </el-form>
-      </div>
-      <template #footer>
-        <div class="drawer-footer">
-          <el-button class="btn-aliyun" @click="createDrawerVisible = false">取消</el-button>
-          <el-button class="btn-aliyun-cta" @click="submitCreateTask" :loading="creating">
-            创建任务
-          </el-button>
-        </div>
-      </template>
-    </el-drawer>
+    <TaskCreateDrawer ref="createFormRef" v-model="createDrawerVisible" :form="createForm" :workflows="executableProcessTemplates" :loading-workflows="loadingWorkflows" :routes="selectedDeviceRoutes" :groups="selectedWorkflowGroups" :errors="selectedWorkflowErrors" :instances="deviceInstances" :models="deviceModels" :has-device-nodes="Boolean(createForm.flowModelId && workflowHasDeviceNodes[String(createForm.flowModelId)])" :preflight-result="preflightResult" :preflighting="preflighting" :creating="creating" @update:task-name="createForm.taskName = $event" @update:flow-model-id="handleTemplateChange" @update:resource-bindings="updateResourceBindings" @edit-constraint="openTaskConstraint" @remove-constraint="createForm.taskConstraints.splice($event, 1)" @preflight="runPreflight" @submit="submitCreateTask" />
 
     <el-dialog v-model="taskConstraintDialogVisible" :title="editingTaskConstraintIndex == null ? '添加任务级约束' : '编辑任务级约束'" width="1040px" append-to-body destroy-on-close @opened="loadTaskConstraintEditor">
       <ConstraintRuleEditor ref="taskConstraintEditorRef" :models="deviceModels" :instances="deviceInstances" :workflows="executableProcessTemplates" :tasks="[]" task-mode :task-resources="selectedTaskResources" :task-workflow-nodes="selectedWorkflowNodes" />
       <template #footer><el-button class="btn-aliyun" @click="taskConstraintDialogVisible=false">取消</el-button><el-button class="btn-aliyun-cta" @click="saveTaskConstraint">保存任务约束</el-button></template>
     </el-dialog>
-    <!-- Monitor Tab Drawer -->
-    <el-drawer v-model="monitorDrawerVisible" :title="`任务详情 · ${activeTask?.taskName || ''}`" size="78%" class="unified-workflow-drawer">
-      <div v-if="activeTask" class="monitor-container">
-        <!-- Meta Cards -->
-        <div class="monitor-header-card">
-          <div class="monitor-header-left">
-            <div class="monitor-task-name">{{ activeTask.taskName }}</div>
-            <div class="monitor-task-meta">
-              <span>ID: {{ activeTask.id }}</span>
-              <span>·</span>
-              <span>流程: {{ getWorkflowName(activeTask.flowModelId) }}</span>
-            </div>
-          </div>
-          <div class="monitor-header-right">
-            <el-tag :type="getStatusType(activeTask.taskStatus)" size="large" effect="dark">
-              {{ getStatusLabel(activeTask.taskStatus) }}
-            </el-tag>
-          </div>
-        </div>
-        <el-descriptions border :column="2" size="small" class="mb-4" style="margin-top: 12px;">
-          <el-descriptions-item label="设备路由">
-            <el-tag type="success" size="small" v-if="activeDeviceRoutes.length">{{ activeDeviceRoutes.length }} 条任务绑定</el-tag>
-            <span v-else style="color: #94a3b8;">未声明</span>
-          </el-descriptions-item>
-          <el-descriptions-item label="当前节点">
-            <el-tag type="info" size="small" v-if="activeTask.currentNodeIdRef != null">#{{ activeTask.currentNodeIdRef }}</el-tag>
-            <span v-else style="color: #94a3b8;">-</span>
-          </el-descriptions-item>
-          <el-descriptions-item label="开始时间">{{ formatTime(activeTask.startTime) }}</el-descriptions-item>
-          <el-descriptions-item label="结束时间">{{ activeTask.endTime ? formatTime(activeTask.endTime) : '-' }}</el-descriptions-item>
-        </el-descriptions>
-
-        <!-- Drawer Content Tabs -->
-        <el-tabs v-model="monitorActiveTab" class="monitor-tabs">
-          <!-- Tab 1: Nodes Progress Map -->
-          <el-tab-pane label="步骤执行" name="snapshots">
-            <div class="snapshots-timeline" v-loading="loadingDetails">
-              <div v-for="step in nodeSnapshots" :key="step.id" class="node-snapshot-card">
-                <div class="node-snap-header">
-                  <div style="display: flex; align-items: center; gap: 8px;">
-                    <span class="item-index">{{ step.nodeIdRef }}</span>
-                    <span class="node-name">深度 {{ step.stepDepth || 0 }}</span>
-                  </div>
-                  <el-tag :type="getNodeStateType(step.nodeStatus)" size="small" effect="plain">
-                    {{ step.nodeStatus }}
-                  </el-tag>
-                </div>
-                <div class="node-snap-body">
-                  <div class="snap-row" v-if="step.startTime">
-                    <span class="snap-label">开始：</span>
-                    <span class="snap-val">{{ formatTime(step.startTime) }}</span>
-                  </div>
-                  <div class="snap-row" v-if="step.durationMs != null">
-                    <span class="snap-label">耗时：</span>
-                    <span class="snap-val">{{ step.durationMs }}ms</span>
-                  </div>
-                  <div class="snap-row" v-if="step.parentStepId != null">
-                    <span class="snap-label">父步骤：</span>
-                    <span class="snap-val">#{{ step.parentStepId }}</span>
-                  </div>
-                  <div class="snap-row" v-if="step.interfaceInSnapshot?.messageId">
-                    <span class="snap-label">外部调用：</span>
-                    <span class="snap-val runtime-id">{{ step.interfaceInSnapshot.messageId }}</span>
-                  </div>
-                  <div class="snap-row" v-if="step.interfaceInSnapshot?.capabilityRef">
-                    <span class="snap-label">设备能力：</span>
-                    <span class="snap-val">{{ step.interfaceInSnapshot.capabilityRef }} · 实例 {{ step.interfaceInSnapshot.deviceInstanceId }}</span>
-                  </div>
-                  <div class="snap-row" v-if="step.variableSpace && Object.keys(step.variableSpace).length > 0">
-                    <span class="snap-label">变量空间：</span>
-                    <div class="snap-tags mt-1">
-                      <el-tag
-                        v-for="(val, key) in step.variableSpace"
-                        :key="key" type="info" size="small" class="mr-2 mb-1"
-                      >
-                        {{ key }}: {{ formatRuntimeValue(val) }}
-                      </el-tag>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <el-empty v-if="nodeSnapshots.length === 0" description="暂无执行步骤记录" />
-            </div>
-          </el-tab-pane>
-
-          <!-- Tab 2: Live Log Terminal -->
-          <el-tab-pane label="执行日志" name="logs">
-            <div class="terminal-header">
-              <span>任务执行日志（自动刷新）</span>
-              <el-button link type="primary" size="small" @click="fetchLogsAndSnapshots">
-                手动同步
-              </el-button>
-            </div>
-            <div class="log-container" ref="logContainerRef" v-loading="loadingDetails">
-              <div v-for="log in executionLogs" :key="log.id" class="log-item">
-                <span class="log-time">[{{ formatLogTime(log.logTime) }}]</span>
-                <span class="log-module">[{{ log.sourceType || 'TASK' }}]</span>
-                <span :class="['log-level', (log.logLevel || '').toLowerCase()]">{{ log.logLevel }}</span>
-                <span class="log-msg">{{ log.logInfo }}</span>
-              </div>
-              <div v-if="executionLogs.length === 0" class="empty-terminal">
-                &gt; 暂无任务日志。
-              </div>
-            </div>
-          </el-tab-pane>
-          <!-- Tab 3: Device instances bound by TASK.resource_map -->
-          <el-tab-pane label="设备路由" name="resources">
-            <div class="constraints-section">
-              <div v-if="activeDeviceRoutes.length">
-                <div v-for="route in activeDeviceRoutes" :key="route.bindingKey" class="resource-map-row">
-                  <div class="resource-node-label"><strong>{{ route.nodeName }}</strong><div class="resource-sub">{{ route.flowName }} · {{ getModelName(route.deviceModelId) }}</div></div>
-                  <el-icon style="color: #2563eb;"><ArrowRight /></el-icon>
-                  <div class="resource-instance-label">{{ getInstanceName(route.deviceInstanceId) }}<span style="font-size: 11px; color: #94a3b8; margin-left: 6px;">(ID: {{ route.deviceInstanceId }})</span><div style="font-size: 11px; color: #64748b; margin-top: 3px;">状态机输入: {{ route.deviceInputInterfaceName }}，状态机输出: {{ route.deviceOutputInterfaceName }}</div></div>
-                </div>
-              </div>
-              <el-empty v-else description="该任务没有设备实例绑定" />
-            </div>
-          </el-tab-pane>
-
-
-          <el-tab-pane label="有效约束" name="constraints">
-            <div class="effective-constraint-panel">
-              <div class="effective-constraint-toolbar">
-                <div><strong>当前有效约束模型</strong><span>实时全局约束 + 当前任务固定约束</span></div>
-                <div><el-button :icon="Refresh" :loading="loadingEffectiveConstraints" @click="fetchEffectiveConstraints()">刷新</el-button><el-button type="primary" :icon="Download" :loading="exportingConstraintModel" @click="exportEffectiveConstraintModel">导出完整模型</el-button></div>
-              </div>
-              <el-alert type="info" :closable="false" title="全局约束会随约束管理配置实时变化；任务级约束来自TASK.TASK_CONSTRAINTS，任务启动后保持不变" />
-              <el-skeleton v-if="loadingEffectiveConstraints && !effectiveConstraintView" :rows="5" animated />
-              <template v-else-if="effectiveConstraintView">
-                <div class="effective-model-meta">编译时间 {{ formatTime(effectiveConstraintView.compiledAt) }} · 共 {{ effectiveConstraintView.model?.constraints?.length || 0 }} 条约束、{{ effectiveConstraintView.model?.observableObjects?.length || 0 }} 个可观测对象</div>
-                <section class="effective-constraint-group">
-                  <div class="effective-group-title"><div><el-tag type="primary" effect="plain">全局 · 实时</el-tag><strong>当前启用的全局约束</strong></div><span>{{ effectiveConstraintView.globalConstraints?.length || 0 }} 条</span></div>
-                  <el-empty v-if="!effectiveConstraintView.globalConstraints?.length" description="当前没有启用的全局约束" :image-size="48" />
-                  <div v-for="rule in effectiveConstraintView.globalConstraints || []" :key="`global-${rule.ruleId}`" class="effective-rule-row"><div><strong>{{ rule.ruleName }}</strong><code>{{ rule.expression }}</code><span>{{ rule.bindingCount }} 个变量 · {{ rule.actionCount }} 个动作</span></div><el-tag size="small" type="primary">实时</el-tag></div>
-                </section>
-                <section class="effective-constraint-group">
-                  <div class="effective-group-title"><div><el-tag type="warning" effect="plain">任务 · 固定</el-tag><strong>任务级约束</strong></div><span>{{ effectiveConstraintView.taskConstraints?.length || 0 }} 条</span></div>
-                  <el-empty v-if="!effectiveConstraintView.taskConstraints?.length" description="该任务未配置任务级约束" :image-size="48" />
-                  <div v-for="rule in effectiveConstraintView.taskConstraints || []" :key="`task-${rule.taskRuleIndex}`" class="effective-rule-row"><div><strong>{{ rule.ruleName }}</strong><code>{{ rule.expression }}</code><span>{{ rule.bindingCount }} 个变量 · {{ rule.actionCount }} 个动作</span></div><el-tag size="small" type="warning">固定</el-tag></div>
-                </section>
-              </template>
-              <el-empty v-else description="有效约束模型加载失败，请重试" />
-            </div>
-          </el-tab-pane>
-        </el-tabs>
-      </div>
-    </el-drawer>
+    <TaskExecutionDrawer v-model="monitorDrawerVisible" :task="activeTask" :workflow="activeWorkflowDefinition" :steps="nodeSnapshots" :logs="executionLogs" :bindings="activeDeviceRoutes" :constraints="effectiveConstraintView" :loading="loadingDetails" @refresh="fetchLogsAndSnapshots()" @terminate="activeTask && abortTask(activeTask.id)" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 import axios from 'axios'
-import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus'
-import { Plus, Refresh, ArrowRight, Search, Download } from '@element-plus/icons-vue'
-import ConstraintRuleEditor from '../../components/constraint/ConstraintRuleEditor.vue'
-import TaskResourceBindingCanvas from '../../components/task/TaskResourceBindingCanvas.vue'
-import { buildDeviceBindings, expandWorkflowDefinition } from '../../utils/taskResourceBindings.js'
-import { filterExecutableWorkflows, isExecutableWorkflow } from '../../utils/workflowExecution.js'
-import { taskApi } from '../../services/taskApi.js'
-import { workflowApi } from '../../services/workflowApi.js'
+import { ElMessage, ElMessageBox } from 'element-plus'
+import { Plus, Refresh } from '@element-plus/icons-vue'
+import ConstraintRuleEditor from '../../../components/constraint/ConstraintRuleEditor.vue'
+import TaskCreateDrawer from './components/TaskCreateDrawer.vue'
+import TaskExecutionDrawer from './components/TaskExecutionDrawer.vue'
+import TaskFilterBar from './components/TaskFilterBar.vue'
+import TaskSummaryStrip from './components/TaskSummaryStrip.vue'
+import { buildDeviceBindings, expandWorkflowDefinition } from '../../../utils/taskResourceBindings.js'
+import { filterExecutableWorkflows, isExecutableWorkflow } from '../../../utils/workflowExecution.js'
+import { taskApi } from '../../../services/taskApi.js'
+import { workflowApi } from '../../../services/workflowApi.js'
 
 interface TaskInstance {
   id: number
@@ -430,7 +213,7 @@ const workflowRequirements = ref<any[]>([])
 const preflightResult = ref<any>(null)
 const preflighting = ref(false)
 const requirementsLoading = ref(false)
-const createFormRef = ref<FormInstance>()
+const createFormRef = ref<any>()
 const createForm = ref({
   taskName: '',
   flowModelId: null as number | null,
@@ -447,7 +230,11 @@ const workflowDefinitions = ref<Record<string, any>>({})
 const selectedDeviceRoutes = computed(() => createForm.value.flowModelId == null ? [] : workflowDeviceRoutes.value[String(createForm.value.flowModelId)] || [])
 const selectedWorkflowGroups = computed(() => createForm.value.flowModelId == null ? [] : workflowGroups.value[String(createForm.value.flowModelId)] || [])
 const selectedWorkflowErrors = computed(() => createForm.value.flowModelId == null ? [] : workflowErrors.value[String(createForm.value.flowModelId)] || [])
-const activeDeviceRoutes = computed(() => activeTask.value == null ? [] : (workflowDeviceRoutes.value[String(activeTask.value.flowModelId)] || []).map(route => ({...route,deviceInstanceId:activeTask.value?.resourceMap?.deviceBindings?.[route.bindingKey]?.deviceInstanceId})))
+const activeDeviceRoutes = computed(() => activeTask.value == null ? [] : (workflowDeviceRoutes.value[String(activeTask.value.flowModelId)] || []).map(route => {
+  const deviceInstanceId = activeTask.value?.resourceMap?.deviceBindings?.[route.bindingKey]?.deviceInstanceId
+  return { ...route, deviceInstanceId, instanceName: getInstanceName(deviceInstanceId), deviceModelName: getModelName(route.deviceModelId) }
+}))
+const activeWorkflowDefinition = computed(() => activeTask.value == null ? null : workflowDefinitions.value[String(activeTask.value.flowModelId)] || null)
 const selectedTaskResources = computed(() => {
   const seen = new Set()
   return selectedDeviceRoutes.value
@@ -484,14 +271,14 @@ async function fetchWorkflowRequirements(flowModelId: number) {
 }
 
 async function runPreflight() {
-  if (!createForm.flowModelId) return
+  if (!createForm.value.flowModelId) return
   preflighting.value = true
   try {
     const payload = {
-      flowModelId: createForm.flowModelId,
-      taskVariables: createForm.taskVariables || {},
-      deviceBindings: buildDeviceBindings(workflowRequirements.value, createForm.resourceBindings),
-      taskConstraints: createForm.taskConstraints || []
+      flowModelId: createForm.value.flowModelId,
+      taskVariables: {},
+      deviceBindings: buildDeviceBindings(workflowRequirements.value, createForm.value.resourceBindings),
+      taskConstraints: createForm.value.taskConstraints || []
     }
     const response = await taskApi.preflight(payload)
     if (response.data?.success) {
@@ -505,10 +292,13 @@ async function runPreflight() {
 }
 
 const handleTemplateChange = async (value: number | null) => {
+  createForm.value.flowModelId = value
   createForm.value.resourceBindings = {}
   createForm.value.taskConstraints = []
+  preflightResult.value = null
   if (value == null) return
   await loadWorkflowRoutes(value)
+  await fetchWorkflowRequirements(value)
   for (const route of workflowDeviceRoutes.value[String(value)] || []) createForm.value.resourceBindings[route.bindingKey] = null
 }
 
@@ -519,16 +309,15 @@ const updateResourceBindings = (next: Record<string, number | null>) => {
     ElMessage.warning('设备实例绑定已变更，原任务约束中的实例引用已清空，请重新配置')
   }
   createForm.value.resourceBindings = next
+  preflightResult.value = null
 }
 
 // Monitor Drawer
 const monitorDrawerVisible = ref(false)
 const activeTask = ref<TaskInstance | null>(null)
-const monitorActiveTab = ref('snapshots')
 const nodeSnapshots = ref<TaskStep[]>([])
 const executionLogs = ref<StepLog[]>([])
 const loadingDetails = ref(false)
-const logContainerRef = ref<HTMLElement | null>()
 // All device instances cache for name lookup
 const allInstances = ref<Record<string, string>>({})
 const deviceInstances = ref<any[]>([])
@@ -538,18 +327,11 @@ const taskConstraintEditorRef = ref<any>()
 const editingTaskConstraintIndex = ref<number | null>(null)
 const effectiveConstraintView = ref<any>(null)
 const loadingEffectiveConstraints = ref(false)
-const exportingConstraintModel = ref(false)
 
 // Auto refresh interval id
 let pollIntervalId: any = null
 let mainListPollIntervalId: any = null
 let latestDetailLogId = 0
-
-// Form rules
-const createRules = ref<FormRules>({
-  taskName: [{ required: true, message: '请输入任务名称', trigger: 'blur' }],
-  flowModelId: [{ required: true, message: '请选择流程', trigger: 'change' }]
-})
 
 // Fetch all task instances. Background refresh stays quiet and preserves active filters.
 const fetchTasks = async (silent = false) => {
@@ -699,22 +481,8 @@ const getStatusLabel = (status: string) => {
   }
 }
 
-const getNodeStateType = (state: string) => {
-  switch (state) {
-    case 'PENDING': return 'info'
-    case 'RUNNING': return 'warning'
-    case 'SUCCEEDED': return 'success'
-    case 'FAILED': return 'danger'
-    case 'TERMINATING': return 'warning'
-    case 'TERMINATED': return 'warning'
-    default: return 'info'
-  }
-}
-
-// Row click trigger Drawer
-const handleRowClick = (row: TaskInstance) => {
+const openTaskDetail = (row: TaskInstance) => {
   activeTask.value = row
-  monitorActiveTab.value = 'snapshots'
   nodeSnapshots.value = []
   executionLogs.value = []
   effectiveConstraintView.value = null
@@ -742,44 +510,18 @@ const fetchEffectiveConstraints = async (taskId = activeTask.value?.id, silent =
   }
 }
 
-const exportEffectiveConstraintModel = async () => {
-  if (!activeTask.value) return
-  exportingConstraintModel.value = true
-  try {
-    const taskId = activeTask.value.id
-    const res = await axios.get(`/api/constraint/model/task/${taskId}/export`, { responseType: 'blob' })
-    downloadConstraintBlob(res.data, `task-${taskId}-constraint-model.json`)
-    await fetchEffectiveConstraints(taskId, true)
-    ElMessage.success('任务完整约束模型已导出')
-  } catch (error: any) {
-    ElMessage.error(error.message || '导出任务约束模型失败')
-  } finally {
-    exportingConstraintModel.value = false
-  }
-}
+const TERMINAL_TASK_STATUSES = new Set(['SUCCEEDED', 'FAILED', 'TERMINATED'])
 
-const downloadConstraintBlob = (data: any, filename: string) => {
-  const blob = data instanceof Blob ? data : new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const link = document.createElement('a')
-  link.href = url
-  link.download = filename
-  link.click()
-  URL.revokeObjectURL(url)
-}
-
-// Start details polling
-const startDetailsPolling = () => {
+const syncRuntimeRefresh = () => {
   stopDetailsPolling()
+  if (!monitorDrawerVisible.value || activeTask.value?.taskStatus !== 'RUNNING' || TERMINAL_TASK_STATUSES.has(activeTask.value?.taskStatus || '')) return
   pollIntervalId = setInterval(() => {
-    if (monitorDrawerVisible.value && activeTask.value) {
-      // If task is running, actively pull progress
-      fetchLogsAndSnapshots(true)
-    } else {
-      stopDetailsPolling()
-    }
-  }, 3000)
+    if (monitorDrawerVisible.value && activeTask.value?.taskStatus === 'RUNNING') fetchLogsAndSnapshots(true)
+    else stopDetailsPolling()
+  }, 1000)
 }
+
+const startDetailsPolling = syncRuntimeRefresh
 
 const stopDetailsPolling = () => {
   if (pollIntervalId) {
@@ -799,12 +541,12 @@ const fetchLogsAndSnapshots = async (silent = false) => {
     const taskId = activeTask.value.id
     
     // Concurrently load snapshots & logs
-    const logsUrl = latestDetailLogId > 0
-      ? `/api/task/logs/${taskId}?afterLogId=${latestDetailLogId}&limit=300`
-      : `/api/task/logs/${taskId}`
+    const logParams = latestDetailLogId > 0
+      ? { afterLogId: latestDetailLogId, limit: 300 }
+      : undefined
     const [snapRes, logRes] = await Promise.all([
-      axios.get(`/api/task/snapshots/${taskId}`),
-      axios.get(logsUrl)
+      taskApi.snapshots(taskId),
+      taskApi.executionLogs(taskId, logParams)
     ])
     
     if (snapRes.data?.success) {
@@ -820,16 +562,10 @@ const fetchLogsAndSnapshots = async (silent = false) => {
       }
       latestDetailLogId = executionLogs.value.reduce((max, log) => Math.max(max, Number(log.id || 0)), latestDetailLogId)
       
-      // Auto scroll terminal to bottom
-      nextTick(() => {
-        if (logContainerRef.value) {
-          logContainerRef.value.scrollTop = logContainerRef.value.scrollHeight
-        }
-      })
     }
     
     // Also sync the task instance itself in case status updated
-    const taskRes = await axios.get(`/api/task/${taskId}`)
+    const taskRes = await taskApi.detail(taskId)
     if (taskRes.data?.success && taskRes.data.data) {
       const updated = taskRes.data.data
       activeTask.value.taskStatus = updated.taskStatus
@@ -952,46 +688,39 @@ const saveTaskConstraint = () => {
 // Submit Create task
 const submitCreateTask = async () => {
   if (!createFormRef.value) return
-  await createFormRef.value.validate(async (valid) => {
-    if (valid) {
-      creating.value = true
-      try {
-        const selectedWorkflow = processTemplates.value.find(item => item.id === Number(createForm.value.flowModelId))
-        if (!isExecutableWorkflow(selectedWorkflow)) {
-          throw new Error('请选择已启用的工作流；草稿流程不能创建任务')
-        }
-        if (selectedWorkflowErrors.value.length) throw new Error('流程模型存在设备接口连接错误，请先修复流程模型')
-        const deviceBindings: Record<string,{deviceModelId:number,deviceInstanceId:number}> = {}
-        for (const route of selectedDeviceRoutes.value) {
-          const instanceId = Number(createForm.value.resourceBindings[route.bindingKey])
-          if (!Number.isInteger(instanceId) || instanceId <= 0) throw new Error(`请为${route.flowName}/${route.nodeName}绑定设备实例`)
-          deviceBindings[route.bindingKey] = { deviceModelId: route.deviceModelId, deviceInstanceId: instanceId }
-        }
-        const payload = {
-          taskName: createForm.value.taskName,
-          flowModelId: createForm.value.flowModelId,
-          resourceMap: { formatVersion: 1, deviceBindings },
-          taskConstraints: createForm.value.taskConstraints,
-          taskVariables: {}
-        }
-        
-        const res = await axios.post('/api/task/save', payload)
-        if (res.data?.success) {
-          ElMessage.success('任务创建成功')
-          createDrawerVisible.value = false
-          taskPageNo.value = 1
-          refreshTaskList()
-        } else {
-          ElMessage.error(res.data?.message || '任务创建失败')
-        }
-      } catch (error: any) {
-        ElMessage.error('保存失败: ' + error.message)
-      } finally {
-        creating.value = false
-      }
+  try { await createFormRef.value.validate() } catch { return }
+  creating.value = true
+  try {
+    const selectedWorkflow = processTemplates.value.find(item => item.id === Number(createForm.value.flowModelId))
+    if (!isExecutableWorkflow(selectedWorkflow)) throw new Error('请选择已启用的工作流；草稿流程不能创建任务')
+    if (selectedWorkflowErrors.value.length) throw new Error('流程模型存在设备接口连接错误，请先修复流程模型')
+    const deviceBindings: Record<string,{deviceModelId:number,deviceInstanceId:number}> = {}
+    for (const route of selectedDeviceRoutes.value) {
+      const instanceId = Number(createForm.value.resourceBindings[route.bindingKey])
+      if (!Number.isInteger(instanceId) || instanceId <= 0) throw new Error(`请为${route.flowName}/${route.nodeName}绑定设备实例`)
+      deviceBindings[route.bindingKey] = { deviceModelId: route.deviceModelId, deviceInstanceId: instanceId }
     }
-  })
+    const payload = {
+      taskName: createForm.value.taskName,
+      flowModelId: createForm.value.flowModelId,
+      resourceMap: { formatVersion: 1, deviceBindings },
+      taskConstraints: createForm.value.taskConstraints,
+      taskVariables: {}
+    }
+    const res = await axios.post('/api/task/save', payload)
+    if (!res.data?.success) throw new Error(res.data?.message || '任务创建失败')
+    ElMessage.success('任务创建成功')
+    createDrawerVisible.value = false
+    taskPageNo.value = 1
+    refreshTaskList()
+  } catch (error: any) {
+    ElMessage.error('保存失败: ' + error.message)
+  } finally {
+    creating.value = false
+  }
 }
+
+watch([monitorDrawerVisible, () => activeTask.value?.taskStatus], syncRuntimeRefresh)
 
 // Format time utility
 
@@ -1000,24 +729,6 @@ const formatTime = (timeStr: string) => {
   const date = new Date(timeStr)
   return date.toLocaleString()
 }
-const formatRuntimeValue = (value: unknown) => {
-  if (value == null) return 'null'
-  if (typeof value === 'object') {
-    try { return JSON.stringify(value) } catch { return String(value) }
-  }
-  return String(value)
-}
-
-const formatLogTime = (timeStr: string) => {
-  if (!timeStr) return ''
-  const date = new Date(timeStr)
-  return [
-    String(date.getHours()).padStart(2, '0'),
-    String(date.getMinutes()).padStart(2, '0'),
-    String(date.getSeconds()).padStart(2, '0')
-  ].join(':')
-}
-
 const startMainListPolling = () => {
   if (mainListPollIntervalId) return
   mainListPollIntervalId = setInterval(() => {
@@ -1632,11 +1343,11 @@ onUnmounted(() => {
 .table-card-fullscreen { flex: 1; min-height: 0; height: auto; border: 1px solid #e7e9ee !important; border-radius: 10px !important; overflow: hidden; box-shadow: 0 1px 2px rgba(15, 23, 42, .02); }
 .table-card-fullscreen :deep(.el-card__header) { min-height: 64px; padding: 0 20px; border-bottom-color: #eceef2; background: #fff; }
 .card-header-fullscreen { min-height: 64px; }
+.header-copy { display: grid; gap: 2px; }
 .header-title { margin: 0; color: #1f2329; font-size: 18px; font-weight: 600; letter-spacing: -.01em; line-height: 24px; }
+.header-copy p { margin: 0; color: #8a93a6; font-size: 11px; line-height: 18px; }
 .header-actions-right { gap: 10px; }
-.header-actions-right .el-button:not(.refresh-button) { min-width: 94px; font-weight: 500; }
-.refresh-button { width: 32px; height: 32px; margin: 0; border-color: #d9dde5; color: #4e5969; }
-.refresh-button:hover { border-color: #91caff; color: #1677ff; background: #f0f7ff; }
+.header-actions-right .el-button { min-width: 94px; font-weight: 500; }
 .header-actions-right .el-button + .el-button { margin-left: 0; }
 .task-summary-strip { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border: 0; border-bottom: 1px solid #eceef2; border-radius: 0; background: #fff; }
 .task-summary-strip > button { min-width: 0; min-height: 76px; padding: 12px 20px; border: 0; border-right: 1px solid #f0f1f3; position: relative; display: grid; grid-template-columns: 1fr auto; align-content: center; gap: 2px 10px; color: inherit; text-align: left; background: #fff; cursor: pointer; transition: background .15s ease; }
@@ -1662,7 +1373,7 @@ onUnmounted(() => {
 .custom-table :deep(.el-table__inner-wrapper::before) { display: none; }
 .custom-table :deep(th.el-table__cell) { height: 44px; background: #f7f8fa !important; }
 .custom-table :deep(td.el-table__cell) { height: 58px; padding: 6px 0; border-bottom-color: #f0f1f3; }
-.custom-table :deep(.el-table__row) { cursor: pointer; }
+.custom-table :deep(.el-table__row) { cursor: default; }
 .task-id { color: #8a93a6; font-family: Consolas, monospace; font-size: 11px; }
 .task-name { overflow: hidden; color: #111827; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .task-description { margin-top: 2px; overflow: hidden; color: #8a93a6; font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
@@ -1678,6 +1389,7 @@ onUnmounted(() => {
 .time-label { color: #9ca3af; }
 .action-buttons { gap: 2px; }
 .action-buttons .el-button + .el-button { margin-left: 0; }
+.detail-button { font-weight: 600; }
 .pagination-bar { min-height: 56px; padding: 11px 20px; background: #fff; }
 
 @media (max-width: 1050px) {
@@ -1687,10 +1399,9 @@ onUnmounted(() => {
 @media (max-width: 800px) {
   .task-list-fullscreen { padding: 12px; }
   .table-card-fullscreen :deep(.el-card__header) { padding: 0 14px; }
-  .header-actions-right .el-button:not(.refresh-button) { min-width: auto; }
+  .header-actions-right .el-button { min-width: auto; }
   .task-filter-bar { align-items: stretch; }
   .task-filter-fields { flex: 1; flex-wrap: wrap; }
   .task-filter-fields .el-input { flex: 1; width: 220px; }
 }
 </style>
-

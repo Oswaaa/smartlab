@@ -1,17 +1,19 @@
 import axios from 'axios'
 
 export const taskApi = {
-  list: (params) => axios.get('/api/task/list', { params }),
-  detail: (id) => axios.get(`/api/task/detail/${id}`),
+  list: (params) => axios.get('/api/task/page', { params }),
+  detail: (id) => axios.get(`/api/task/${id}`),
   preflight: (payload) => axios.post('/api/task/preflight', payload),
   create: (payload) => axios.post('/api/task/save', payload),
   start: (id) => axios.post(`/api/task/start/${id}`),
-  abort: (id) => axios.post(`/api/task/abort/${id}`),
-  executionView: (id) => axios.get(`/api/task/${id}/execution-view`),
-  delete: (id) => axios.delete(`/api/task/${id}`),
-  stepLogs: (id) => axios.get(`/api/task/${id}/step-logs`),
-  executionLogs: (id) => axios.get(`/api/task/${id}/logs`),
-  constraints: (id) => axios.get(`/api/task/${id}/constraints`),
-  resourceMap: (id) => axios.get(`/api/task/${id}/resource-map`),
+  pause: (id) => axios.post(`/api/task/pause/${id}`),
+  resume: (id) => axios.post(`/api/task/resume/${id}`),
+  terminate: (id) => axios.post(`/api/task/terminate/${id}`),
+  abort: (id) => axios.post(`/api/task/terminate/${id}`),
+  delete: (id) => axios.delete(`/api/task/delete/${id}`),
+  snapshots: (id) => axios.get(`/api/task/snapshots/${id}`),
+  executionLogs: (id, params) => axios.get(`/api/task/logs/${id}`, { params }),
+  executionView: (id) => axios.get(`/api/task/execution-view/${id}`),
   summary: () => axios.get('/api/task/summary'),
+  monitorSummary: () => axios.get('/api/task/monitor/summary'),
 }

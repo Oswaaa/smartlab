@@ -34,7 +34,7 @@
     </template>
     <el-empty v-else description="尚未执行前置检查" :image-size="48" />
     <div class="preflight-actions" v-if="!loading">
-      <el-button @click="$emit('retry')" :loading="loading">重新检查</el-button>
+      <el-button class="btn-aliyun" @click="$emit('retry')" :loading="loading">重新检查</el-button>
     </div>
   </section>
 </template>

@@ -9,7 +9,7 @@
     <section class="editor-block formula-block">
       <div class="block-head"><div><strong>1.违规表达式</strong><span>变量名前使用@，变量绑定会与表达式自动同步</span></div>
         <el-popover placement="right-start" :width="520" trigger="click">
-          <template #reference><el-button type="primary" plain>插入公式模板</el-button></template>
+          <template #reference><el-button class="btn-aliyun">插入公式模板</el-button></template>
           <div class="formula-panel"><div class="formula-panel-title">选择表达式模板</div><button v-for="item in templates" :key="item.key" type="button" @click="selectTemplate(item.expression)"><strong>{{ item.name }}</strong><code>{{ item.expression }}</code><span>{{ item.description }}</span></button></div>
         </el-popover>
       </div>
@@ -42,8 +42,8 @@
     </section>
 
     <section class="editor-block">
-      <div class="block-head"><div><strong>3.违规动作</strong><span>动作通过表单生成，设备能力按模型→实例→能力选择</span></div><el-button type="primary" plain size="small" @click="addAction">添加动作</el-button></div>
-      <div v-for="(item,index) in form.actions" :key="item.key" class="entry"><div class="entry-title"><strong>动作{{ index + 1 }}</strong><el-button link type="danger" @click="form.actions.splice(index,1)">删除</el-button></div>
+      <div class="block-head"><div><strong>3.违规动作</strong><span>动作通过表单生成，设备能力按模型→实例→能力选择</span></div><el-button class="btn-aliyun" size="small" @click="addAction">添加动作</el-button></div>
+      <div v-for="(item,index) in form.actions" :key="item.key" class="entry"><div class="entry-title"><strong>动作{{ index + 1 }}</strong><el-button class="btn-aliyun-danger-link" link @click="form.actions.splice(index,1)">删除</el-button></div>
         <el-radio-group v-model="item.actionType" @change="resetAction(item)"><el-radio value="SYSTEM">系统处置</el-radio><el-radio value="DEVICE_CAPABILITY">设备能力</el-radio></el-radio-group>
         <el-row v-if="item.actionType === 'SYSTEM'" :gutter="12"><el-col :span="8"><el-form-item label="系统动作"><el-select v-model="item.action"><el-option v-for="name in systemActions" :key="name" :label="name" :value="name" /></el-select></el-form-item></el-col><el-col v-if="!taskMode && item.action !== 'ALERT'" :span="10"><el-form-item label="目标任务"><el-select v-model="item.targetTaskId"><el-option v-for="task in tasks" :key="task.id" :label="(task.taskName || '任务') + '#' + task.id" :value="task.id" /></el-select></el-form-item></el-col><el-col v-if="taskMode" :span="12"><el-alert type="info" :closable="false" title="系统动作自动作用于当前任务" /></el-col></el-row>
         <el-row v-else :gutter="12"><template v-if="taskMode"><el-col :span="8"><el-form-item label="任务设备"><el-select v-model="item.resourceKey" @change="selectActionResource(item)"><el-option v-for="resource in taskResources" :key="resource.bindingKey" :label="resourceLabel(resource)" :value="resource.bindingKey" /></el-select></el-form-item></el-col></template><template v-else><el-col :span="7"><el-form-item label="设备模型"><el-select v-model="item.deviceModelId" @change="resetActionDevice(item)"><el-option v-for="model in models" :key="model.id" :label="model.modelName" :value="model.id" /></el-select></el-form-item></el-col><el-col :span="7"><el-form-item label="设备实例"><el-select v-model="item.deviceInstanceId" @change="item.capabilityName=''"> <el-option v-for="instance in instancesFor(item.deviceModelId)" :key="instance.id" :label="instance.instanceName || instance.id" :value="instance.id" /></el-select></el-form-item></el-col></template><el-col :span="8"><el-form-item label="设备能力"><el-select v-model="item.capabilityName" @change="initParameters(item)"><el-option v-for="capability in capabilitiesFor(item.deviceModelId)" :key="capability.capabilityName" :label="capability.capabilityName" :value="capability.capabilityName" /></el-select></el-form-item></el-col></el-row>

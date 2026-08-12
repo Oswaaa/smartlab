@@ -26,6 +26,22 @@ export function isSystemItem(item) {
   return item?._system === true
 }
 
+export function canCustomizeControlInterfaces(node) {
+  return node?.nodeType === 'FUNC_NODE'
+}
+
+export function canEditControlItem(node, item) {
+  return canCustomizeControlInterfaces(node) && !isSystemItem(item)
+}
+
+export function orderedControlInterfaces(node) {
+  const interfaces = node?.interfaces ?? []
+  return [
+    ...interfaces.filter(item => item.direction === 'OUT'),
+    ...interfaces.filter(item => item.direction === 'IN'),
+  ]
+}
+
 export function customTriggerActionNames(node) {
   return [...new Set((node?.actions ?? []).filter(action => action === 'UPDATE' || action === 'EMIT'))]
 }
@@ -260,8 +276,25 @@ export function validateNodeDefinition(node, context = {}) {
   validatePorts(node, errors)
   validateActions(node, errors)
   validateTriggers(node, errors)
+  validateControlContractOwnership(node, errors)
   if (node.nodeType === 'DEV_NODE') validateDeviceConfiguration(node, context.deviceModel, errors)
   return errors
+}
+
+function validateControlContractOwnership(node, errors) {
+  if (canCustomizeControlInterfaces(node)) return
+  ;(node.interfaces ?? []).forEach((item, index) => {
+    if (!isSystemItem(item)) errors.push({
+      path: `interfaces[${index}]`,
+      message: '非功能节点不能声明自定义控制接口',
+    })
+    ;(item.bindingTriggers ?? []).forEach((trigger, triggerIndex) => {
+      if (!isSystemItem(trigger)) errors.push({
+        path: `interfaces[${index}].bindingTriggers[${triggerIndex}]`,
+        message: '非功能节点不能声明自定义触发器',
+      })
+    })
+  })
 }
 
 function uniqueErrors(errors, items = [], field, path) {

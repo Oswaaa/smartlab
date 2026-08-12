@@ -1,7 +1,7 @@
 <template>
   <div class="canvas-node" :class="[{ selected, warning: issues.length }, meta.className]">
     <div class="handle-layer input-interfaces">
-      <div v-for="(item, index) in workflowInputs" :key="item.name" class="side-handle" :style="sideHandleStyle(index, workflowInputs.length)">
+      <div v-for="(item, index) in controlInputs" :key="item.name" class="side-handle" :style="sideHandleStyle(index, controlInputs.length)">
         <Handle :id="interfaceHandleId(item.name)" type="target" :position="Position.Left" class="workflow-handle interface-handle" />
         <span class="handle-label left" :title="interfaceLabel(item)">{{ interfaceLabel(item) }}</span>
       </div>
@@ -31,7 +31,7 @@
       </div>
     </div>
     <div class="handle-layer output-interfaces">
-      <div v-for="(item, index) in workflowOutputs" :key="item.name" class="side-handle" :style="sideHandleStyle(index, workflowOutputs.length)">
+      <div v-for="(item, index) in controlOutputs" :key="item.name" class="side-handle" :style="sideHandleStyle(index, controlOutputs.length)">
         <span class="handle-label right" :title="interfaceLabel(item)">{{ interfaceLabel(item) }}</span>
         <Handle :id="interfaceHandleId(item.name)" type="source" :position="Position.Right" class="workflow-handle interface-handle" />
       </div>
@@ -48,12 +48,12 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Handle, Position } from '@vue-flow/core'
-import { interfaceHandleId, portHandleId } from '../../../utils/workflowCanvas.js'
+import { interfaceHandleId, portHandleId } from '../../../../utils/workflowCanvas.js'
 
 type Item = Record<string, any>
 const props = withDefaults(defineProps<{ node?: Item | null, selected?: boolean, issues?: Item[] }>(), { node: null, selected: false, issues: () => [] })
-const workflowInputs = computed(() => (props.node?.interfaces || []).filter((item: Item) => item.interfaceType === 'WORKFLOW' && item.direction === 'IN'))
-const workflowOutputs = computed(() => (props.node?.interfaces || []).filter((item: Item) => item.interfaceType === 'WORKFLOW' && item.direction === 'OUT'))
+const controlInputs = computed(() => (props.node?.interfaces || []).filter((item: Item) => item.direction === 'IN'))
+const controlOutputs = computed(() => (props.node?.interfaces || []).filter((item: Item) => item.direction === 'OUT'))
 const inputPorts = computed(() => (props.node?.ports || []).filter((item: Item) => item.direction === 'IN'))
 const outputPorts = computed(() => (props.node?.ports || []).filter((item: Item) => item.direction === 'OUT'))
 const meta = computed(() => {

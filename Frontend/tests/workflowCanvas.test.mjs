@@ -110,6 +110,11 @@ test('端口边为紫色虚线', () => {
   assert.equal(edges[0].style.strokeDasharray, '7 5')
 })
 
+test('状态控制接口与数据端口使用独立的Handle命名空间', () => {
+  assert.equal(interfaceHandleId('Interface_state_out'), 'interface:Interface_state_out')
+  assert.equal(portHandleId('temperatureOut'), 'port:temperatureOut')
+})
+
 test('禁止接口连接点与端口连接点交叉连接', () => {
   assert.throws(() => createCanvasConnection({
     sourceNodeName: 'a', sourceHandle: 'interface:Interface_workflow_out',

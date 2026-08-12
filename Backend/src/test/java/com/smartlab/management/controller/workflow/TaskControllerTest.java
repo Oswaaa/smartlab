@@ -4,6 +4,7 @@ import com.smartlab.engine.workflow.WorkflowTaskControlService;
 import com.smartlab.management.dto.workflow.TaskPreflightRequest;
 import com.smartlab.management.dto.workflow.TaskPreflightResponse;
 import com.smartlab.management.dto.workflow.WorkflowIssue;
+import com.smartlab.management.entity.workflow.TaskStep;
 import com.smartlab.management.service.db.workflow.TaskExecutionViewService;
 import com.smartlab.management.service.db.workflow.TaskService;
 import org.junit.jupiter.api.Test;
@@ -18,11 +19,35 @@ import static org.mockito.ArgumentCaptor.forClass;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 class TaskControllerTest {
+    @Test
+    void snapshotsReturnsTaskStepsForRequestedTask() throws Exception {
+        TaskService service = mock(TaskService.class);
+        TaskStep step = new TaskStep();
+        step.setId(17L);
+        step.setTaskId(6L);
+        step.setNodeIdRef(3L);
+        step.setNodeStatus("SUCCEEDED");
+        when(service.snapshots(6L)).thenReturn(List.of(step));
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new TaskController(service,
+                mock(WorkflowTaskControlService.class), mock(TaskExecutionViewService.class))).build();
+
+        mvc.perform(get("/api/task/snapshots/6"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data[0].id").value(17))
+                .andExpect(jsonPath("$.data[0].taskId").value(6))
+                .andExpect(jsonPath("$.data[0].nodeIdRef").value(3))
+                .andExpect(jsonPath("$.data[0].nodeStatus").value("SUCCEEDED"));
+
+        verify(service).snapshots(6L);
+    }
+
     @Test
     void preflightDeserializesDeviceBindingsAndReturnsStructuredIssues() throws Exception {
         TaskService service = mock(TaskService.class);

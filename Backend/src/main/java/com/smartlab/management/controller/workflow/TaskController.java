@@ -101,6 +101,11 @@ public class TaskController {
         return ApiResponse.ok(taskService.logs(taskId, afterLogId, limit));
     }
 
+    @GetMapping("/snapshots/{taskId}")
+    public ApiResponse<List<TaskStep>> snapshots(@PathVariable Long taskId) {
+        return ApiResponse.ok(taskService.snapshots(taskId));
+    }
+
     @GetMapping("/execution-view/{taskId}")
     public ApiResponse<TaskExecutionView> executionView(@PathVariable Long taskId) {
         try { return ApiResponse.ok(executionViewService.get(taskId)); }

@@ -1,6 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  canCustomizeControlInterfaces,
+  canEditControlItem,
   configureWorkflowNodeTemplates,
   createDeviceNode,
   createFunctionNode,
@@ -8,6 +10,7 @@ import {
   customTriggerActionNames,
   normalizeTypedValue,
   normalizeWorkflowNodeDefinition,
+  orderedControlInterfaces,
   removeAction,
   removeInterface,
   removePort,
@@ -49,14 +52,14 @@ const workflowTemplateFixture = {
   END: {
     lifecycle: lifecycle('end'),
     interfaces: [iface('end.in', 'Interface_workflow_in', 'IN', 'WORKFLOW', ['ACTIVE'], [
-      trigger('end.activate', 'inputSignalName', 'ACTIVE', action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'RUNNING' })),
+      trigger('end.activate', 'signalName', 'ACTIVE', action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'RUNNING' })),
     ])],
     actions: ['UPDATE'],
   },
   BRANCH: {
     lifecycle: lifecycle('branch'),
     interfaces: [iface('branch.in', 'Interface_workflow_in', 'IN', 'WORKFLOW', ['ACTIVE'], [
-      trigger('branch.activate', 'inputSignalName', 'ACTIVE', action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'RUNNING' })),
+      trigger('branch.activate', 'signalName', 'ACTIVE', action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'RUNNING' })),
     ])],
     actions: ['UPDATE'],
   },
@@ -64,7 +67,7 @@ const workflowTemplateFixture = {
     lifecycle: lifecycle('aggregate'),
     interfaces: [
       iface('aggregate.in', 'Interface_workflow_in', 'IN', 'WORKFLOW', ['ACTIVE'], [
-        trigger('aggregate.activate', 'inputSignalName', 'ACTIVE', action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'RUNNING' })),
+        trigger('aggregate.activate', 'signalName', 'ACTIVE', action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'RUNNING' })),
       ]),
       iface('aggregate.out', 'Interface_workflow_out', 'OUT', 'WORKFLOW', ['ACTIVE'], [
         trigger('aggregate.emit', 'nodeLifecycleState', 'RUNNING', action('EMIT', { targetInterfaceName: 'Interface_workflow_out', signalName: 'ACTIVE' })),
@@ -76,13 +79,13 @@ const workflowTemplateFixture = {
     lifecycle: lifecycle('device'),
     interfaces: [
       iface('device.workflowIn', 'Interface_workflow_in', 'IN', 'WORKFLOW', ['ACTIVE'], [
-        trigger('device.activate', 'inputSignalName', 'ACTIVE', action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'RUNNING' })),
+        trigger('device.activate', 'signalName', 'ACTIVE', action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'RUNNING' })),
       ]),
       iface('device.stateOut', 'Interface_state_out', 'OUT', 'STATE', ['WF_EXECUTE_START'], [
         trigger('device.execute', 'nodeLifecycleState', 'RUNNING', action('EMIT', { targetInterfaceName: 'Interface_state_out', signalName: 'WF_EXECUTE_START' })),
       ]),
       iface('device.stateIn', 'Interface_state_in', 'IN', 'STATE', ['CMD_STATE', 'OP_STATE'], [
-        trigger('device.complete', 'inputPayload.stateName', 'COMPLETED', action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'SUCCEEDED' })),
+        trigger('device.complete', 'payload.stateName', 'COMPLETED', action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'SUCCEEDED' })),
       ]),
       iface('device.workflowOut', 'Interface_workflow_out', 'OUT', 'WORKFLOW', ['ACTIVE'], [
         trigger('device.route', 'nodeLifecycleState', 'SUCCEEDED', action('EMIT', { targetInterfaceName: 'Interface_workflow_out', signalName: 'ACTIVE' })),
@@ -101,6 +104,47 @@ const workflowTemplateFixture = {
 }
 
 test.before(() => configureWorkflowNodeTemplates(workflowTemplateFixture))
+
+test('only function nodes customize user control interfaces', () => {
+  const custom = { name: 'custom_out', direction: 'OUT' }
+  const system = { name: 'workflow_in', direction: 'IN', _system: true }
+  assert.equal(canCustomizeControlInterfaces({ nodeType: 'FUNC_NODE' }), true)
+  assert.equal(canCustomizeControlInterfaces({ nodeType: 'DEV_NODE' }), false)
+  assert.equal(canCustomizeControlInterfaces({ nodeType: 'SUBFLOW_NODE' }), false)
+  assert.equal(canEditControlItem({ nodeType: 'FUNC_NODE' }, custom), true)
+  assert.equal(canEditControlItem({ nodeType: 'FUNC_NODE' }, system), false)
+})
+
+test('control interfaces preserve declaration order inside OUT then IN groups', () => {
+  const node = { interfaces: [
+    { name: 'in_a', direction: 'IN' },
+    { name: 'out_a', direction: 'OUT' },
+    { name: 'in_b', direction: 'IN' },
+    { name: 'out_b', direction: 'OUT' },
+  ] }
+  assert.deepEqual(orderedControlInterfaces(node).map(item => item.name), ['out_a', 'out_b', 'in_a', 'in_b'])
+})
+
+test('non-function nodes reject custom control interfaces', () => {
+  const deviceModel = { id: 7, capabilities: [{ capabilityName: 'heat', parameters: [] }] }
+  const node = createDeviceNode(deviceModel, 'device1')
+  node.capability = { capabilityName: 'heat', capabilityParameters: {} }
+  node.interfaces.push({ name: 'user_out', direction: 'OUT', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], bindingTriggers: [] })
+  assert.ok(validateNodeDefinition(node, { deviceModel })
+    .some(error => /非功能节点/.test(error.message)))
+})
+
+test('non-function nodes reject custom triggers on system interfaces', () => {
+  const deviceModel = { id: 7, capabilities: [{ capabilityName: 'heat', parameters: [] }] }
+  const node = createDeviceNode(deviceModel, 'device1')
+  node.capability = { capabilityName: 'heat', capabilityParameters: {} }
+  node.interfaces[0].bindingTriggers.push({
+    condition: { object: 'signalName', operator: '=', threshold: 'RETRY' },
+    action: action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'RUNNING' }),
+  })
+  assert.ok(validateNodeDefinition(node, { deviceModel })
+    .some(error => /非功能节点不能声明自定义触发器/.test(error.message)))
+})
 
 test('creation requires templates and always clones them', () => {
   resetWorkflowNodeTemplatesForTest()
@@ -174,7 +218,7 @@ test('lifecycle UPDATE validates target state and rejects value fields', () => {
 
 test('EMIT validates output interface and allowed signal on any trigger host interface', () => {
   const node = createFunctionNode('AGGREGATE', 'aggregate')
-  node.interfaces[0].bindingTriggers.push({ condition: { object: 'inputSignalName', operator: '=', threshold: 'OTHER' }, action: action('EMIT', { targetInterfaceName: 'Interface_workflow_in', signalName: 'ACTIVE' }) })
+  node.interfaces[0].bindingTriggers.push({ condition: { object: 'signalName', operator: '=', threshold: 'OTHER' }, action: action('EMIT', { targetInterfaceName: 'Interface_workflow_in', signalName: 'ACTIVE' }) })
   assert.ok(validateNodeDefinition(node).some(error => error.message.includes('必须是OUT接口')))
 })
 

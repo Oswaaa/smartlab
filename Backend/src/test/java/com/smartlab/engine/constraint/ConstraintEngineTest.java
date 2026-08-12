@@ -29,6 +29,7 @@ import static org.mockito.ArgumentMatchers.any;
 import org.mockito.ArgumentCaptor;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class ConstraintEngineTest {
 
@@ -77,6 +78,57 @@ class ConstraintEngineTest {
     }
 
     @Test
+    void persistsStructuredViolationEvidenceFromTheRuntimeConstraint() {
+        ConstraintRule rule = rule();
+        ViolationLogService logs = mock(ViolationLogService.class);
+        ConstraintScopeSnapshotReader snapshots = mock(ConstraintScopeSnapshotReader.class);
+        ObjectNode fullScope = JsonNodeSupport.objectNode();
+        fullScope.putObject("tasks").putObject("7").put("taskStatus", "RUNNING");
+        fullScope.putObject("devices");
+        when(snapshots.snapshot(any(), any())).thenReturn(fullScope);
+        ConstraintEngine engine = engine(logs, mock(StateMachineCommandPort.class),
+                mock(ApplicationEventPublisher.class), snapshots);
+        ObservableKey key = temperatureKey();
+
+        engine.evaluate(runtime(rule, key, 7L), Map.of(key, snapshot(key, 82, 1)));
+
+        ArgumentCaptor<ViolationLog> captor = ArgumentCaptor.forClass(ViolationLog.class);
+        verify(logs).save(captor.capture());
+        ViolationLog saved = captor.getValue();
+        assertEquals("global_1_temperature",
+                saved.getObservedVariable().path("temperature").path("observableName").asText());
+        assertFalse(saved.getObservedVariable().has("limit"));
+        assertEquals("temperature > limit", saved.getExpression().asText());
+        assertEquals(82, saved.getActualValue().path("temperature").asInt());
+        assertEquals(80, saved.getActualValue().path("limit").asInt());
+        assertEquals("RUNNING", saved.getVariableSnapshot().path("tasks")
+                .path("7").path("taskStatus").asText());
+    }
+
+    @Test
+    void preservesSnapshotFailureEvidenceAndWritesOneRowPerAction() {
+        ConstraintRule rule = rule();
+        ObjectNode secondAction = JsonNodeSupport.objectNode();
+        secondAction.put("actionType", "SYSTEM");
+        secondAction.put("action", "ALERT");
+        rule.setViolationActions(((com.fasterxml.jackson.databind.node.ArrayNode) rule.getViolationActions())
+                .add(secondAction));
+        ViolationLogService logs = mock(ViolationLogService.class);
+        ConstraintScopeSnapshotReader snapshots = mock(ConstraintScopeSnapshotReader.class);
+        when(snapshots.snapshot(any(), any())).thenThrow(new IllegalStateException("snapshot unavailable"));
+        ConstraintEngine engine = engine(logs, mock(StateMachineCommandPort.class),
+                mock(ApplicationEventPublisher.class), snapshots);
+        ObservableKey key = temperatureKey();
+
+        engine.evaluate(runtime(rule, key, null), Map.of(key, snapshot(key, 82, 1)));
+
+        ArgumentCaptor<ViolationLog> captor = ArgumentCaptor.forClass(ViolationLog.class);
+        verify(logs, org.mockito.Mockito.times(2)).save(captor.capture());
+        captor.getAllValues().forEach(saved -> assertEquals("snapshot unavailable",
+                saved.getVariableSnapshot().path("snapshotError").asText()));
+    }
+
+    @Test
     void evaluatesTemporalFunctionsFromObservationHistory() {
         ConstraintRule rule = rule();
         rule.setExpression("delta(temperature, 30) >= 10");
@@ -119,8 +171,14 @@ class ConstraintEngineTest {
 
     private ConstraintEngine engine(ViolationLogService logs, StateMachineCommandPort commands,
                                     ApplicationEventPublisher events) {
+        return engine(logs, commands, events, mock(ConstraintScopeSnapshotReader.class));
+    }
+
+    private ConstraintEngine engine(ViolationLogService logs, StateMachineCommandPort commands,
+                                    ApplicationEventPublisher events,
+                                    ConstraintScopeSnapshotReader snapshots) {
         return new ConstraintEngine(logs, mock(WorkflowTaskControlService.class), commands,
-                new ConstraintExpressionEvaluator(), events);
+                new ConstraintExpressionEvaluator(), events, snapshots);
     }
 
     private ObservableKey temperatureKey() {
@@ -131,8 +189,12 @@ class ConstraintEngineTest {
     private RuntimeConstraint runtime(ConstraintRule rule, ObservableKey key, Long taskId) {
         String origin = taskId == null ? "GLOBAL" : "TASK";
         String scope = taskId == null ? "device:2" : "task:" + taskId;
+        ObjectNode observedVariables = JsonNodeSupport.objectNode();
+        observedVariables.set("temperature", JsonNodeSupport.objectNode()
+                .put("bindingType", "OBSERVABLE")
+                .put("observableName", "global_1_temperature"));
         return new RuntimeConstraint(new RuntimeConstraintKey(origin, String.valueOf(rule.getId()), scope, "v1"),
-                rule, Map.of("temperature", key), taskId, null, 2L);
+                rule, Map.of("temperature", key), taskId, null, 2L, observedVariables);
     }
 
     private ObservationSnapshot snapshot(ObservableKey key, int value, long revision) {

@@ -36,6 +36,7 @@ public class ConstraintEngine {
     private final StateMachineCommandPort stateMachineCommandPort;
     private final ConstraintExpressionEvaluator expressionEvaluator;
     private final ApplicationEventPublisher eventPublisher;
+    private final ConstraintScopeSnapshotReader scopeSnapshotReader;
     private final Map<String, ScopeState> scopes = new ConcurrentHashMap<>();
     private final Map<String, Instant> expressionTrueSince = new ConcurrentHashMap<>();
     private final Map<String, Boolean> expressionTriggered = new ConcurrentHashMap<>();
@@ -43,12 +44,14 @@ public class ConstraintEngine {
     public ConstraintEngine(ViolationLogService violationLogService,
                             WorkflowTaskControlService taskControlService, StateMachineCommandPort stateMachineCommandPort,
                             ConstraintExpressionEvaluator expressionEvaluator,
-                            ApplicationEventPublisher eventPublisher) {
+                            ApplicationEventPublisher eventPublisher,
+                            ConstraintScopeSnapshotReader scopeSnapshotReader) {
         this.violationLogService = violationLogService;
         this.taskControlService = taskControlService;
         this.stateMachineCommandPort = stateMachineCommandPort;
         this.expressionEvaluator = expressionEvaluator;
         this.eventPublisher = eventPublisher;
+        this.scopeSnapshotReader = scopeSnapshotReader;
     }
 
     public void evaluate(RuntimeConstraint constraint,
@@ -81,7 +84,7 @@ public class ConstraintEngine {
                 }
             }
         }
-        evaluateRule(rule, scope);
+        evaluateRule(constraint, rule, scope);
     }
 
     public void retainRuntimeKeys(java.util.Set<RuntimeConstraintKey> activeKeys) {
@@ -93,7 +96,7 @@ public class ConstraintEngine {
         expressionTriggered.keySet().removeIf(key -> valid.stream().noneMatch(key::startsWith));
     }
 
-    private void evaluateRule(ConstraintRule rule, ScopeState scope) {
+    private void evaluateRule(RuntimeConstraint constraint, ConstraintRule rule, ScopeState scope) {
         synchronized (scope) {
             Map<String, JsonNode> variables = bindings(rule.getBindings(), scope.values);
             if (variables == null) return;
@@ -116,7 +119,7 @@ public class ConstraintEngine {
             Integer windowSeconds = rule.getWindowSeconds();
             if (windowSeconds != null && Instant.now().isBefore(firstTrueAt.plusSeconds(windowSeconds))) return;
             if (Boolean.TRUE.equals(expressionTriggered.putIfAbsent(expressionKey, Boolean.TRUE))) return;
-            executeActions(rule, scope, variables);
+            executeActions(constraint, rule, scope, variables);
         }
     }
 
@@ -154,7 +157,8 @@ public class ConstraintEngine {
         return result;
     }
 
-    private void executeActions(ConstraintRule rule, ScopeState scope, Map<String, JsonNode> values) {
+    private void executeActions(RuntimeConstraint constraint, ConstraintRule rule, ScopeState scope,
+                                Map<String, JsonNode> values) {
         for (JsonNode action : elements(rule.getViolationActions())) {
             String actionTaken;
             try {
@@ -163,7 +167,7 @@ public class ConstraintEngine {
                 actionTaken = "FAILED:" + text(action, "actionType") + ":" + e.getMessage();
                 log.warn("约束动作执行失败, ruleId={}: {}", rule.getId(), e.getMessage());
             }
-            writeViolationLog(rule, action, scope, values, actionTaken);
+            writeViolationLog(constraint, rule, action, scope, values, actionTaken);
         }
     }
 
@@ -200,7 +204,7 @@ public class ConstraintEngine {
     }
 
 
-    private void writeViolationLog(ConstraintRule rule, JsonNode action, ScopeState scope,
+    private void writeViolationLog(RuntimeConstraint constraint, ConstraintRule rule, JsonNode action, ScopeState scope,
                                    Map<String, JsonNode> values, String actionTaken) {
         ViolationLog logEntry = new ViolationLog();
         logEntry.setConstraintRuleId(isTaskRule(rule) ? null : rule.getId());
@@ -208,14 +212,24 @@ public class ConstraintEngine {
         logEntry.setTaskId(scope.taskId == null ? positiveLong(action.get("targetTaskId")) : scope.taskId);
         logEntry.setTaskStepId(scope.taskStepId);
         logEntry.setDeviceInstanceId(scope.deviceInstanceId == null ? positiveLong(action.get("deviceInstanceId")) : scope.deviceInstanceId);
-        logEntry.setObservedVariable(rule.getRuleName());
-        ObjectNode expected = JsonNodeSupport.objectNode();
-        expected.put("expression", rule.getExpression());
-        logEntry.setExpectedCondition(expected);
+        logEntry.setObservedVariable(constraint.observedVariables());
+        logEntry.setExpression(JsonNodeSupport.toNode(rule.getExpression()));
         logEntry.setActualValue(snapshot(values));
-        logEntry.setVariableSnapshot(snapshot(scope.values));
+        logEntry.setVariableSnapshot(scopeSnapshot(constraint, action));
         logEntry.setActionTaken(actionTaken);
         violationLogService.save(logEntry);
+    }
+
+    private ObjectNode scopeSnapshot(RuntimeConstraint constraint, JsonNode action) {
+        try {
+            return scopeSnapshotReader.snapshot(constraint, action);
+        } catch (RuntimeException e) {
+            ObjectNode failed = JsonNodeSupport.objectNode();
+            failed.putObject("tasks");
+            failed.putObject("devices");
+            failed.put("snapshotError", e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage());
+            return failed;
+        }
     }
 
     private ScopeState scope(ConstraintRule rule, String scopeKey, Long taskId, Long taskStepId, Long deviceInstanceId) {

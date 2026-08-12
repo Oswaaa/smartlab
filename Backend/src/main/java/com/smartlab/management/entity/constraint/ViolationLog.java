@@ -34,11 +34,11 @@ public class ViolationLog {
     @TableField("device_instance_id")
     private Long deviceInstanceId;
 
-    @TableField("observed_variable")
-    private String observedVariable;
+    @TableField(value = "observed_variable", typeHandler = PostgresJsonbTypeHandler.class)
+    private JsonNode observedVariable;
 
-    @TableField(value = "expected_condition", typeHandler = PostgresJsonbTypeHandler.class)
-    private JsonNode expectedCondition;
+    @TableField(value = "expression", typeHandler = PostgresJsonbTypeHandler.class)
+    private JsonNode expression;
 
     @TableField(value = "actual_value", typeHandler = PostgresJsonbTypeHandler.class)
     private JsonNode actualValue;

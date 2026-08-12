@@ -12,22 +12,15 @@
         <span class="handle-label top" :title="item.name">{{ item.name }}</span>
       </div>
     </div>
-    <div class="node-accent"></div>
     <div class="node-main">
-      <!-- 第一行：节点类型与节点名称 -->
       <div class="node-topline">
-        <span class="node-glyph">{{ meta.glyph }}</span>
+        <span class="node-type-dot"></span>
         <span class="node-kind">{{ meta.label }}</span>
-        <span class="node-title-sep">·</span>
-        <strong class="node-name" :title="node?.name">{{ node?.name || '未命名节点' }}</strong>
         <span v-if="issues.length" class="warning-dot" :title="issues[0]?.message || '节点配置未完成'">!</span>
       </div>
-      <!-- 第二行：节点能力与业务摘要 -->
       <div class="node-body">
-        <span class="capability-badge" :title="summary">
-          <i class="badge-glyph">⚡</i>
-          <span class="badge-text">{{ summary }}</span>
-        </span>
+        <strong class="node-name" :title="node?.name">{{ node?.name || '未命名节点' }}</strong>
+        <span class="node-summary" :title="summary">{{ summary }}</span>
       </div>
     </div>
     <div class="handle-layer output-interfaces">
@@ -52,8 +45,9 @@ import { interfaceHandleId, portHandleId } from '../../../../utils/workflowCanva
 
 type Item = Record<string, any>
 const props = withDefaults(defineProps<{ node?: Item | null, selected?: boolean, issues?: Item[] }>(), { node: null, selected: false, issues: () => [] })
-const controlInputs = computed(() => (props.node?.interfaces || []).filter((item: Item) => item.direction === 'IN'))
-const controlOutputs = computed(() => (props.node?.interfaces || []).filter((item: Item) => item.direction === 'OUT'))
+const workflowInterfaces = computed(() => (props.node?.interfaces || []).filter((item: Item) => item.interfaceType === 'WORKFLOW'))
+const controlInputs = computed(() => workflowInterfaces.value.filter((item: Item) => item.direction === 'IN'))
+const controlOutputs = computed(() => workflowInterfaces.value.filter((item: Item) => item.direction === 'OUT'))
 const inputPorts = computed(() => (props.node?.ports || []).filter((item: Item) => item.direction === 'IN'))
 const outputPorts = computed(() => (props.node?.ports || []).filter((item: Item) => item.direction === 'OUT'))
 const meta = computed(() => {
@@ -68,7 +62,7 @@ const summary = computed(() => {
   if (props.node?.nodeType === 'DEV_NODE') return props.node.capability?.capabilityName || '请选择执行能力'
   if (props.node?.nodeType === 'SUBFLOW_NODE') return props.node.subFlowModelDescription || `流程模型 ${props.node.subFlowModelId || '-'}`
   if (props.node?.functionType === 'BRANCH') return props.node.expression || '未配置分支表达式'
-  if (props.node?.functionType === 'START') return '发出ACTIVE信号'
+  if (props.node?.functionType === 'START') return '发出激活信号'
   if (props.node?.functionType === 'END') return '接收流程结束信号'
   return '汇聚上游执行路径'
 })
@@ -80,45 +74,16 @@ function horizontalHandleStyle(index: number, total: number) { return { left: `$
 </script>
 
 <style scoped>
-.canvas-node{position:relative;width:240px;min-height:90px;display:flex;border:1px solid #cbd5e1;border-radius:8px;background:#ffffff;box-shadow:0 2px 10px rgba(15,23,42,.06);overflow:visible;transition:all .15s ease;font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif}
-.canvas-node:hover{border-color:#3b82f6;box-shadow:0 4px 14px rgba(37,99,235,.12)}
-.canvas-node.selected{border-color:#2563eb;box-shadow:0 0 0 3px rgba(37,99,235,.16),0 4px 14px rgba(37,99,235,.12)}
-.canvas-node.warning{border-color:#f59e0b}
-.node-accent{width:4px;flex:none;border-radius:7px 0 0 7px;background:#64748b}
-.start .node-accent{background:#10b981}
-.end .node-accent{background:#64748b}
-.branch .node-accent{background:#f59e0b}
-.aggregate .node-accent{background:#8b5cf6}
-.subflow .node-accent{background:#06b6d4}
-.device .node-accent{background:#2563eb}
-.node-main{min-width:0;display:flex;flex:1;flex-direction:column;padding:10px 12px}
-.node-topline{display:flex;align-items:center;gap:5px;min-width:0;margin-bottom:8px}
-.node-glyph{width:18px;height:18px;display:grid;place-items:center;flex:none;border-radius:4px;background:#eff6ff;color:#2563eb;font-size:9px;font-weight:800}
-.start .node-glyph{background:#ecfdf5;color:#059669}
-.end .node-glyph{background:#f1f5f9;color:#475569}
-.branch .node-glyph{background:#fffbe6;color:#d97706}
-.aggregate .node-glyph{background:#f5f3ff;color:#7c3aed}
-.subflow .node-glyph{background:#ecfeff;color:#0891b2}
-.node-kind{color:#64748b;font-size:11px;font-weight:600;flex:none}
-.node-title-sep{color:#cbd5e1;font-size:11px;flex:none}
-.node-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#0f172a;font-size:12px;font-weight:700;flex:1;min-width:0}
-.warning-dot{width:15px;height:15px;display:grid;place-items:center;flex:none;margin-left:auto;border-radius:50%;background:#fef3c7;color:#b45309;font-size:10px;font-weight:800}
-.node-body{display:flex;align-items:center;justify-content:center;min-width:0;padding:2px 0}
-.capability-badge{max-width:130px;display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:4px;background:#f1f5f9;border:1px solid #e2e8f0;color:#1e293b;font-size:11px;font-weight:600;line-height:1.2}
-.device .capability-badge{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
-.start .capability-badge{background:#ecfdf5;border-color:#a7f3d0;color:#047857}
-.end .capability-badge{background:#f8fafc;border-color:#e2e8f0;color:#475569}
-.branch .capability-badge{background:#fffbe6;border-color:#fef08a;color:#b45309}
-.aggregate .capability-badge{background:#f5f3ff;border-color:#ddd6fe;color:#6d28d9}
-.subflow .capability-badge{background:#ecfeff;border-color:#a5f3fc;color:#0e7490}
-.badge-glyph{font-style:normal;font-size:10px;opacity:.85}
-.badge-text{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.canvas-node{position:relative;width:178px;min-height:70px;display:flex;border:1px solid #b8c5d6;border-radius:2px;background:#fff;box-shadow:0 2px 7px rgba(0,0,0,.07);overflow:visible;transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Arial,sans-serif}
+.canvas-node:before{content:'';position:absolute;left:-1px;top:-1px;bottom:-1px;width:3px;border-radius:2px 0 0 2px;background:#1677ff}.canvas-node.start:before{background:#52c41a}.canvas-node.end:before{background:#8c8c8c}.canvas-node.branch:before{background:#faad14}.canvas-node.aggregate:before{background:#722ed1}.canvas-node.subflow:before{background:#13c2c2}
+.canvas-node:hover{border-color:#4096ff;box-shadow:0 4px 12px rgba(22,119,255,.14);transform:translateY(-1px)}.canvas-node.selected{border-color:#1677ff;box-shadow:0 0 0 2px rgba(22,119,255,.18),0 4px 12px rgba(22,119,255,.12)}.canvas-node.warning{border-color:#faad14}
+.node-main{min-width:0;display:flex;flex:1;flex-direction:column;padding:9px 11px 9px 13px}.node-topline{display:flex;align-items:center;gap:5px;min-width:0}.node-type-dot{width:7px;height:7px;flex:none;border-radius:50%;background:#1677ff}.start .node-type-dot{background:#52c41a}.end .node-type-dot{background:#8c8c8c}.branch .node-type-dot{background:#faad14}.aggregate .node-type-dot{background:#722ed1}.subflow .node-type-dot{background:#13c2c2}.node-kind{color:#8c8c8c;font-size:10px;font-weight:400}.warning-dot{width:14px;height:14px;display:grid;place-items:center;flex:none;margin-left:auto;border-radius:50%;background:#fff1b8;color:#ad6800;font-size:9px;font-weight:600}.node-body{display:grid;gap:2px;min-width:0;margin-top:7px}.node-name,.node-summary{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.node-name{color:#262626;font-size:12px;font-weight:500}.node-summary{color:#8c8c8c;font-size:9px}
 .handle-layer{position:absolute;inset:0;pointer-events:none}
 .side-handle,.horizontal-handle{position:absolute;display:flex;align-items:center;color:#94a3b8;font-size:9px;line-height:1;white-space:nowrap;pointer-events:none}
 .side-handle{transform:translateY(-50%)}
 .input-interfaces .side-handle{left:0}
 .output-interfaces .side-handle{right:0}
-.handle-label{max-width:44px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#94a3b8;font-size:8px;font-weight:500;background:rgba(255,255,255,.9);padding:1px 2px;border-radius:2px}
+.handle-label{max-width:48px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#8c8c8c;font-size:8px;font-weight:400;background:rgba(255,255,255,.94);padding:1px 2px;border-radius:1px;opacity:.7;transition:opacity .15s ease}.canvas-node:hover .handle-label{opacity:1}
 .handle-label.left{position:absolute;left:7px}
 .handle-label.right{position:absolute;right:7px}
 .horizontal-handle{transform:translateX(-50%)}
@@ -126,10 +91,10 @@ function horizontalHandleStyle(index: number, total: number) { return { left: `$
 .input-ports .horizontal-handle{bottom:0}
 .handle-label.top{position:absolute;top:7px;transform:translateX(-50%)}
 .handle-label.bottom{position:absolute;bottom:7px;transform:translateX(-50%)}
-.workflow-handle{width:10px!important;height:10px!important;border:2px solid #ffffff!important;background:#3b82f6!important;box-shadow:0 0 0 1px #3b82f6;pointer-events:auto}
+.workflow-handle{width:9px!important;height:9px!important;border:2px solid #fff!important;background:#1677ff!important;box-shadow:0 0 0 1px #1677ff;pointer-events:auto}.interface-handle{border-radius:50%!important}
 .interface-handle.vue-flow__handle-left{left:-5px!important}
 .interface-handle.vue-flow__handle-right{right:-5px!important}
-.port-handle{background:#8b5cf6!important;box-shadow:0 0 0 1px #8b5cf6}
+.port-handle{border-radius:1px!important;background:#722ed1!important;box-shadow:0 0 0 1px #722ed1}
 .port-handle.vue-flow__handle-top{top:-5px!important}
 .port-handle.vue-flow__handle-bottom{bottom:-5px!important}
 </style>

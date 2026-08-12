@@ -19,8 +19,8 @@ class WorkflowDefinitionCompilerTest {
     private final WorkflowDefinitionCompiler compiler = new WorkflowDefinitionCompiler();
 
     @Test
-    void compilesDistinctActionNamesWithTheSameEmitActionType() throws Exception {
-        var compiled = compiler.compile(validDeviceDefinition());
+    void compilesCanonicalDeviceDefinition() {
+        var compiled = compiler.compile(requestWith(new NodeCase("DEV_NODE", null)));
 
         assertEquals(3, compiled.nodes().size());
         assertEquals(1, compiled.outgoing(2).size());
@@ -61,31 +61,32 @@ class WorkflowDefinitionCompilerTest {
     void preservesUserDefinedNWayBranchOutputsWithoutRestoringTrueFalseInterfaces() throws Exception {
         WorkflowSaveRequest request = validBranchDefinition();
         ObjectNode branch = (ObjectNode) request.getNodesDef().get(1);
-        branch.put("expression", "temperature * 100");
+        branch.put("expression", "result = temperature * 100");
         branch.putArray("actions").add("EMIT");
         ArrayNode interfaces = branch.putArray("interfaces");
         interfaces.add(workflowInterface("Interface_workflow_in", "IN"));
+        int threshold = 0;
         for (String name : List.of("low", "normal", "high")) {
             ObjectNode output = workflowInterface(name, "OUT");
             ObjectNode trigger = output.withArray("bindingTriggers").addObject();
             trigger.putObject("condition")
-                    .put("object", "expression")
+                    .put("object", "result")
                     .put("operator", "=")
-                    .put("threshold", name);
+                    .put("threshold", threshold++);
             trigger.putObject("action").put("actionName", "EMIT").putObject("payload")
                     .put("targetInterfaceName", name).put("signalName", "ACTIVE");
             interfaces.add(output);
         }
         request.setInterfaceConnections(JsonNodeSupport.MAPPER.readTree("""
                 [
-                  {"connectionType":"NODE_TO_NODE","source":{"nodeName":"start","interfaceName":"Interface_workflow_out"},"target":{"nodeName":"branch","interfaceName":"Interface_workflow_in"}},
-                  {"connectionType":"NODE_TO_NODE","source":{"nodeName":"branch","interfaceName":"low"},"target":{"nodeName":"end","interfaceName":"Interface_workflow_in"}}
+                  {"connectionType":"NODE_TO_NODE","source":{"nodeName":"start","interfaceName":"Interface_workflow_out"},"target":{"nodeName":"candidate","interfaceName":"Interface_workflow_in"}},
+                  {"connectionType":"NODE_TO_NODE","source":{"nodeName":"candidate","interfaceName":"low"},"target":{"nodeName":"end","interfaceName":"Interface_workflow_in"}}
                 ]
                 """));
 
         WorkflowDefinitionCompiler.CompiledWorkflow compiled = compiler.compile(request);
         JsonNode compiledBranch = compiled.nodes().values().stream()
-                .filter(item -> "branch".equals(item.path("name").asText()))
+                .filter(item -> "candidate".equals(item.path("name").asText()))
                 .findFirst().orElseThrow();
         assertEquals(List.of("Interface_workflow_in", "low", "normal", "high"),
                 JsonNodeSupport.MAPPER.convertValue(compiledBranch.path("interfaces").findValues("name"), List.class));
@@ -112,13 +113,13 @@ class WorkflowDefinitionCompilerTest {
     void acceptsCustomTriggerThatTargetsCustomUpdate() {
         ObjectNode aggregate = node(new NodeCase("FUNC_NODE", "AGGREGATE"));
         aggregate.withArray("internalVariables").addObject()
-                .put("name", "payload")
-                .put("dataType", "JSON");
+                .put("name", "counter")
+                .put("dataType", "INTEGER");
         aggregate.withArray("actions").addObject()
                 .put("actionName", "setPayload")
                 .put("actionType", "UPDATE")
-                .put("internalVariableName", "payload")
-                .put("valueExpression", "{}");
+                .put("internalVariableName", "counter")
+                .put("valueExpression", "1");
         ((ObjectNode) aggregate.withArray("interfaces").get(0)).withArray("bindingTriggers").addObject()
                 .put("action", "setPayload")
                 .putObject("condition")
@@ -164,22 +165,6 @@ class WorkflowDefinitionCompilerTest {
     }
 
     @Test
-    void doesNotRestoreRemovedBranchOutput() throws Exception {
-        WorkflowSaveRequest request = validBranchDefinition();
-        ObjectNode branch = (ObjectNode) request.getNodesDef().get(1);
-        removeNamedItem(branch.withArray("interfaces"), "Interface_false_out");
-        ((ArrayNode) branch.path("interfaces").get(0).path("bindingTriggers")).remove(1);
-        ((ArrayNode) branch.path("actions")).remove(1);
-
-        WorkflowDefinitionCompiler.CompiledWorkflow compiled = compiler.compile(request);
-        JsonNode compiledBranch = compiled.nodes().values().stream()
-                .filter(item -> "branch".equals(item.path("name").asText()))
-                .findFirst().orElseThrow();
-        assertTrue(compiledBranch.path("interfaces").findValuesAsText("name")
-                .stream().noneMatch("Interface_false_out"::equals));
-    }
-
-    @Test
     void rejectsEmitToInputInterface() throws Exception {
         WorkflowSaveRequest request = validDefinition();
         ObjectNode end = (ObjectNode) request.getNodesDef().get(1);
@@ -193,6 +178,125 @@ class WorkflowDefinitionCompilerTest {
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> compiler.compile(request));
         assertTrue(error.getMessage().contains("EMIT"));
         assertTrue(error.getMessage().contains("OUT接口"));
+    }
+
+    @Test
+    void rejectsEmitWhoseTargetDiffersFromTriggerInterface() {
+        ObjectNode aggregate = node(new NodeCase("FUNC_NODE", "AGGREGATE"));
+        ObjectNode host = interfaceNamed(aggregate, "Interface_workflow_out");
+        ObjectNode otherOutput = workflowInterface("other_out", "OUT");
+        aggregate.withArray("interfaces").add(otherOutput);
+        ObjectNode trigger = host.withArray("bindingTriggers").addObject();
+        trigger.putObject("condition")
+                .put("object", "nodeLifecycleState")
+                .put("operator", "=")
+                .put("threshold", "RUNNING");
+        trigger.putObject("action")
+                .put("actionName", "EMIT")
+                .putObject("payload")
+                .put("targetInterfaceName", "other_out")
+                .put("signalName", "ACTIVE");
+
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class,
+                () -> compiler.compile(requestWith(aggregate)));
+
+        assertTrue(error.getMessage().contains("触发器所在接口"));
+        assertTrue(error.getMessage().contains("Interface_workflow_out"));
+    }
+
+    @Test
+    void acceptsNumericWorkflowCalculationExpression() {
+        ObjectNode branch = node(new NodeCase("FUNC_NODE", "BRANCH"));
+        addBranchOutput(branch);
+        branch.withArray("internalVariables").addObject()
+                .put("name", "temperature")
+                .put("dataType", "DOUBLE");
+        branch.withArray("internalVariables").addObject()
+                .put("name", "scaled")
+                .put("dataType", "DOUBLE");
+        branch.put("expression", "scaled = temperature * 100");
+
+        assertDoesNotThrow(() -> compiler.compile(requestWith(branch)));
+    }
+
+    @Test
+    void rejectsWorkflowCalculationExpressionWithUnknownVariable() {
+        ObjectNode branch = node(new NodeCase("FUNC_NODE", "BRANCH"));
+        addBranchOutput(branch);
+        branch.withArray("internalVariables").addObject()
+                .put("name", "scaled")
+                .put("dataType", "DOUBLE");
+        branch.put("expression", "scaled = temperature * 100");
+
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class,
+                () -> compiler.compile(requestWith(branch)));
+
+        assertTrue(error.getMessage().contains("未声明的数值变量"));
+        assertTrue(error.getMessage().contains("temperature"));
+    }
+
+    @Test
+    void acceptsLaboratoryTemporalFunctionInWorkflowCalculationExpression() {
+        ObjectNode branch = node(new NodeCase("FUNC_NODE", "BRANCH"));
+        addBranchOutput(branch);
+        branch.withArray("internalVariables").addObject()
+                .put("name", "temperature")
+                .put("dataType", "DOUBLE");
+        branch.withArray("internalVariables").addObject()
+                .put("name", "temperatureRate")
+                .put("dataType", "DOUBLE");
+        branch.put("expression", "temperatureRate = abs(rate(temperature, 10))");
+
+        assertDoesNotThrow(() -> compiler.compile(requestWith(branch)));
+    }
+
+    @Test
+    void rejectsWorkflowExpressionWithoutAssignmentTarget() {
+        ObjectNode branch = node(new NodeCase("FUNC_NODE", "BRANCH"));
+        addBranchOutput(branch);
+        branch.withArray("internalVariables").addObject()
+                .put("name", "temperature")
+                .put("dataType", "DOUBLE");
+        branch.put("expression", "temperature * 100");
+
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class,
+                () -> compiler.compile(requestWith(branch)));
+
+        assertTrue(error.getMessage().contains("赋值"));
+    }
+
+    @Test
+    void rejectsUnknownVariableInUpdateValueExpression() {
+        ObjectNode aggregate = node(new NodeCase("FUNC_NODE", "AGGREGATE"));
+        aggregate.withArray("internalVariables").addObject().put("name", "temperature").put("dataType", "DOUBLE");
+        ObjectNode output = interfaceNamed(aggregate, "Interface_workflow_out");
+        ObjectNode trigger = output.withArray("bindingTriggers").addObject();
+        trigger.putObject("condition").put("object", "temperature").put("operator", ">").put("threshold", 100);
+        trigger.putObject("action").put("actionName", "UPDATE").putObject("payload")
+                .put("updateType", "INTERNAL_VARIABLE")
+                .put("targetName", "temperature")
+                .put("valueExpression", "unknown / 100");
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> compiler.compile(requestWith(aggregate)));
+
+        assertTrue(error.getMessage().contains("未声明的数值变量"));
+    }
+
+    @Test
+    void rejectsProtocolSignalThatDoesNotMatchInterfaceKind() {
+        ObjectNode aggregate = node(new NodeCase("FUNC_NODE", "AGGREGATE"));
+        ObjectNode customOutput = workflowInterface("custom_out", "OUT");
+        customOutput.putArray("allowedSignals").add("WF_EXECUTE_ABORT");
+        aggregate.withArray("interfaces").add(customOutput);
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> compiler.compile(requestWith(aggregate)));
+
+        assertTrue(error.getMessage().contains("WORKFLOW OUT接口信号不合法"));
     }
 
     @Test void compilerAcceptsEveryBackendSystemTemplate() { for (NodeCase c : cases()) assertDoesNotThrow(() -> compiler.compile(requestWith(c)), c.toString()); }
@@ -231,14 +335,23 @@ class WorkflowDefinitionCompilerTest {
                 result.normalized().getNodesDef().get(1).path("actions"), List.class).contains("UPDATE"));
     }
 
-    private ObjectNode node(NodeCase c) { ObjectNode n=WorkflowNodeSystemContract.template(c.type(),c.function()).deepCopy(); n.put("name","candidate"); n.put("nodeType",c.type()); n.putArray("internalVariables"); n.putArray("ports"); if(c.function()!=null)n.put("functionType",c.function()); if("BRANCH".equals(c.function()))n.put("expression","x > 1"); if("DEV_NODE".equals(c.type())){n.put("deviceModelId",1);n.putObject("capability").put("capabilityName","mix");} if("SUBFLOW_NODE".equals(c.type()))n.put("subFlowModelId",2); return n; }
+    private ObjectNode node(NodeCase c) { ObjectNode n=WorkflowNodeSystemContract.template(c.type(),c.function()).deepCopy(); n.put("name","candidate"); n.put("nodeType",c.type()); n.putArray("internalVariables"); n.putArray("ports"); if(c.function()!=null)n.put("functionType",c.function()); if("BRANCH".equals(c.function())){n.withArray("internalVariables").addObject().put("name","result").put("dataType","DOUBLE");n.put("expression","result = 1");} if("DEV_NODE".equals(c.type())){n.put("deviceModelId",1);n.putObject("capability").put("capabilityName","mix");} if("SUBFLOW_NODE".equals(c.type()))n.put("subFlowModelId",2); return n; }
+    private void addBranchOutput(ObjectNode branch) {
+        branch.withArray("actions").add("EMIT");
+        ObjectNode output = workflowInterface("branch_out", "OUT");
+        ObjectNode trigger = output.withArray("bindingTriggers").addObject();
+        trigger.putObject("condition").put("object", "result").put("operator", ">=").put("threshold", 0);
+        trigger.putObject("action").put("actionName", "EMIT").putObject("payload")
+                .put("targetInterfaceName", "branch_out").put("signalName", "ACTIVE");
+        branch.withArray("interfaces").add(output);
+    }
     private WorkflowSaveRequest requestWith(NodeCase c) {
         ObjectNode candidate = node(c);
         if ("BRANCH".equals(c.function())) {
             candidate.putArray("actions").add("EMIT");
             ObjectNode output = workflowInterface("branch_out", "OUT");
             ObjectNode trigger = output.withArray("bindingTriggers").addObject();
-            trigger.putObject("condition").put("object", "expression").put("operator", "=").put("threshold", true);
+            trigger.putObject("condition").put("object", "result").put("operator", ">=").put("threshold", 0);
             trigger.putObject("action").put("actionName", "EMIT").putObject("payload")
                     .put("targetInterfaceName", "branch_out").put("signalName", "ACTIVE");
             candidate.withArray("interfaces").add(output);
@@ -348,47 +461,11 @@ class WorkflowDefinitionCompilerTest {
     }
 
     private WorkflowSaveRequest validBranchDefinition() throws Exception {
-        WorkflowSaveRequest request = new WorkflowSaveRequest();
-        request.setName("branch-workflow");
-        request.setNodesDef(JsonNodeSupport.MAPPER.readTree("""
-                [
-                  {"name":"start","nodeType":"FUNC_NODE","functionType":"START","internalVariables":[],"interfaces":[{"name":"Interface_workflow_out","direction":"OUT","interfaceType":"WORKFLOW","allowedSignals":["ACTIVE"]}],"ports":[],"actions":[{"actionName":"emitActive","actionType":"EMIT","targetInterfaceName":"Interface_workflow_out","signalName":"ACTIVE"}]},
-                  {"name":"branch","nodeType":"FUNC_NODE","functionType":"BRANCH","expression":"temperature > 30","internalVariables":[],"interfaces":[{"name":"Interface_workflow_in","direction":"IN","interfaceType":"WORKFLOW","allowedSignals":["ACTIVE"],"bindingTriggers":[{"condition":{"object":"expression","operator":"=","threshold":true},"action":"emitTrue"},{"condition":{"object":"expression","operator":"=","threshold":false},"action":"emitFalse"}]},{"name":"Interface_true_out","direction":"OUT","interfaceType":"WORKFLOW","allowedSignals":["ACTIVE"]},{"name":"Interface_false_out","direction":"OUT","interfaceType":"WORKFLOW","allowedSignals":["ACTIVE"]}],"ports":[],"actions":[{"actionName":"emitTrue","actionType":"EMIT","targetInterfaceName":"Interface_true_out","signalName":"ACTIVE"},{"actionName":"emitFalse","actionType":"EMIT","targetInterfaceName":"Interface_false_out","signalName":"ACTIVE"}]},
-                  {"name":"end","nodeType":"FUNC_NODE","functionType":"END","internalVariables":[],"interfaces":[{"name":"Interface_workflow_in","direction":"IN","interfaceType":"WORKFLOW","allowedSignals":["ACTIVE"]}],"ports":[],"actions":[]}
-                ]
-                """));
-        normalize(request);
-        request.setInterfaceConnections(JsonNodeSupport.MAPPER.readTree("""
-                [
-                  {"connectionType":"NODE_TO_NODE","source":{"nodeName":"start","interfaceName":"Interface_workflow_out"},"target":{"nodeName":"branch","interfaceName":"Interface_workflow_in"}},
-                  {"connectionType":"NODE_TO_NODE","source":{"nodeName":"branch","interfaceName":"Interface_true_out"},"target":{"nodeName":"end","interfaceName":"Interface_workflow_in"}}
-                ]
-                """));
-        request.setPortConnections(JsonNodeSupport.arrayNode());
-        return request;
-    }
-
-    private WorkflowSaveRequest validDeviceDefinition() throws Exception {
-        WorkflowSaveRequest request = new WorkflowSaveRequest();
-        request.setName("final-workflow");
-        request.setNodesDef(JsonNodeSupport.MAPPER.readTree("""
-                [
-                  {"name":"start","nodeType":"FUNC_NODE","functionType":"START","internalVariables":[],"interfaces":[{"name":"Interface_workflow_out","direction":"OUT","interfaceType":"WORKFLOW","allowedSignals":["ACTIVE"]}],"ports":[],"actions":[{"actionName":"emitActive","actionType":"EMIT","targetInterfaceName":"Interface_workflow_out","signalName":"ACTIVE"}]},
-                  {"name":"device","nodeType":"DEV_NODE","deviceModelId":1,"capability":{"capabilityName":"mix","capabilityParameters":{}},"internalVariables":[],"lifecycle":{"initialStateName":"PENDING","states":["PENDING","RUNNING","SUCCEEDED","FAILED","TERMINATING","TERMINATED"],"transitions":[{"fromStateName":"PENDING","toStateName":"RUNNING"},{"fromStateName":"PENDING","toStateName":"TERMINATED"},{"fromStateName":"RUNNING","toStateName":"SUCCEEDED"},{"fromStateName":"RUNNING","toStateName":"FAILED"},{"fromStateName":"RUNNING","toStateName":"TERMINATING"},{"fromStateName":"TERMINATING","toStateName":"TERMINATED"},{"fromStateName":"TERMINATING","toStateName":"FAILED"}]},"interfaces":[{"name":"Interface_workflow_in","direction":"IN","interfaceType":"WORKFLOW","allowedSignals":["ACTIVE"],"bindingTriggers":[{"condition":{"object":"inputSignalName","operator":"=","threshold":"ACTIVE"},"action":"startDevice"}]},{"name":"Interface_state_out","direction":"OUT","interfaceType":"STATE","allowedSignals":["WF_EXECUTE_START"]},{"name":"Interface_state_in","direction":"IN","interfaceType":"STATE","allowedSignals":["CMD_STATE","OP_STATE"],"bindingTriggers":[{"condition":{"object":"inputPayload.stateName","operator":"=","threshold":"COMPLETED"},"action":"completeNode"}]},{"name":"Interface_workflow_out","direction":"OUT","interfaceType":"WORKFLOW","allowedSignals":["ACTIVE"]}],"ports":[],"actions":[{"actionName":"startDevice","actionType":"EMIT","targetInterfaceName":"Interface_state_out","signalName":"WF_EXECUTE_START"},{"actionName":"completeNode","actionType":"EMIT","targetInterfaceName":"Interface_workflow_out","signalName":"ACTIVE"}]},
-                  {"name":"end","nodeType":"FUNC_NODE","functionType":"END","internalVariables":[],"interfaces":[{"name":"Interface_workflow_in","direction":"IN","interfaceType":"WORKFLOW","allowedSignals":["ACTIVE"]}],"ports":[],"actions":[]}
-                ]
-                """));
-        normalize(request);
-        request.setInterfaceConnections(JsonNodeSupport.MAPPER.readTree("""
-                [
-                  {"connectionType":"NODE_TO_NODE","source":{"nodeName":"start","interfaceName":"Interface_workflow_out"},"target":{"nodeName":"device","interfaceName":"Interface_workflow_in"}},
-                  {"connectionType":"NODE_TO_NODE","source":{"nodeName":"device","interfaceName":"Interface_workflow_out"},"target":{"nodeName":"end","interfaceName":"Interface_workflow_in"}},
-                  {"connectionType":"NODE_TO_DEVICE","source":{"nodeName":"device","interfaceName":"Interface_state_out"},"target":{"deviceModelId":1,"interfaceName":"Interface_workflow_in"}},
-                  {"connectionType":"DEVICE_TO_NODE","source":{"deviceModelId":1,"interfaceName":"Interface_state_out"},"target":{"nodeName":"device","interfaceName":"Interface_state_in"}}
-                ]
-                """));
-        request.setPortConnections(JsonNodeSupport.arrayNode());
-        return request;
+        ObjectNode branch = node(new NodeCase("FUNC_NODE", "BRANCH"));
+        branch.withArray("internalVariables").addObject()
+                .put("name", "temperature")
+                .put("dataType", "DOUBLE");
+        return requestWith(branch);
     }
 
     private void normalize(WorkflowSaveRequest request) { for (JsonNode n : request.getNodesDef()) { ObjectNode node=(ObjectNode)n; String type=node.path("nodeType").asText(); String function=node.path("functionType").isTextual()?node.path("functionType").asText():null; node.set("lifecycle", WorkflowNodeSystemContract.template(type,function).path("lifecycle")); } }

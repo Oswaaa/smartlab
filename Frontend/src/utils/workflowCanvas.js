@@ -59,8 +59,9 @@ export function buildFlowEdges(interfaceConnections = [], portConnections = []) 
       sourceHandle: interfaceHandleId(connection.source.interfaceName),
       targetHandle: interfaceHandleId(connection.target.interfaceName),
       type: 'smoothstep',
+      class: 'execution-edge',
       data: { connectionKind: 'INTERFACE' },
-      style: { stroke: '#3276d2' }
+      style: { stroke: '#7b96b8' }
     }))
   const portEdges = portConnections.map((connection, index) => ({
     id: edgeId('port', connection.source, connection.target, index),
@@ -69,6 +70,7 @@ export function buildFlowEdges(interfaceConnections = [], portConnections = []) 
     sourceHandle: portHandleId(connection.source.portName),
     targetHandle: portHandleId(connection.target.portName),
     type: 'smoothstep',
+    class: 'data-edge',
     data: { connectionKind: 'PORT' },
     style: { stroke: '#7c4dce', strokeDasharray: '7 5' }
   }))

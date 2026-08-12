@@ -216,10 +216,10 @@ test('lifecycle UPDATE validates target state and rejects value fields', () => {
   assert.ok(paths.some(path => path.endsWith('.action.payload')))
 })
 
-test('EMIT validates output interface and allowed signal on any trigger host interface', () => {
+test('EMIT must use the trigger host output interface', () => {
   const node = createFunctionNode('AGGREGATE', 'aggregate')
-  node.interfaces[0].bindingTriggers.push({ condition: { object: 'signalName', operator: '=', threshold: 'OTHER' }, action: action('EMIT', { targetInterfaceName: 'Interface_workflow_in', signalName: 'ACTIVE' }) })
-  assert.ok(validateNodeDefinition(node).some(error => error.message.includes('必须是OUT接口')))
+  node.interfaces[0].bindingTriggers.push({ condition: { object: 'signalName', operator: '=', threshold: 'OTHER' }, action: action('EMIT', { targetInterfaceName: 'Interface_workflow_out', signalName: 'ACTIVE' }) })
+  assert.ok(validateNodeDefinition(node).some(error => error.message.includes('触发器所在接口')))
 })
 
 test('actions are a unique UPDATE/EMIT capability subset', () => {

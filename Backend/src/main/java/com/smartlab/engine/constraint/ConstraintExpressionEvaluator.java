@@ -12,13 +12,25 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Component
 public class ConstraintExpressionEvaluator {
 
+    private static final Pattern FUNCTION_CALL = Pattern.compile("\\b([A-Za-z_][A-Za-z0-9_]*)\\s*\\(");
+    private static final Set<String> CONSTRAINT_FUNCTIONS = Set.of("delta", "avg", "rate");
+    private static final Set<String> WORKFLOW_FUNCTIONS = Set.of("delta", "avg", "rate", "max", "min", "abs");
+
     public JsonNode evaluateValue(String expression, Map<String, JsonNode> variables,
                                   Map<String, List<TimedValue>> histories, Instant now) {
-        Object result = new Parser(expression, variables, histories, now).parse();
+        Object result = new Parser(expression, variables, histories, now, CONSTRAINT_FUNCTIONS).parse();
+        return JsonNodeSupport.MAPPER.valueToTree(result);
+    }
+
+    public JsonNode evaluateWorkflowValue(String expression, Map<String, JsonNode> variables,
+                                          Map<String, List<TimedValue>> histories, Instant now) {
+        Object result = new Parser(expression, variables, histories, now, WORKFLOW_FUNCTIONS).parse();
         return JsonNodeSupport.MAPPER.valueToTree(result);
     }
 
@@ -45,7 +57,63 @@ public class ConstraintExpressionEvaluator {
         evaluate(expression, variables, histories, now);
     }
 
-    private Set<String> referencedVariables(String expression) {
+    public void validateCalculation(String expression, Map<String, JsonNode> variables) {
+        if (expression == null || expression.isBlank()) {
+            throw new IllegalArgumentException("工作流计算expression不能为空");
+        }
+        Matcher function = FUNCTION_CALL.matcher(expression);
+        if (function.find()) {
+            throw new IllegalArgumentException("工作流计算expression暂不支持函数: " + function.group(1));
+        }
+        Set<String> referenced = referencedVariables(expression);
+        Set<String> unknown = new LinkedHashSet<>(referenced);
+        unknown.removeAll(variables.keySet());
+        if (!unknown.isEmpty()) {
+            throw new IllegalArgumentException("工作流计算expression引用了未声明的数值变量: " + unknown);
+        }
+        for (String name : referenced) {
+            JsonNode value = variables.get(name);
+            if (value == null || !value.isNumber()) {
+                throw new IllegalArgumentException("工作流计算expression只能引用数值变量: " + name);
+            }
+        }
+        JsonNode result = evaluateValue(expression, variables, Map.of(), Instant.now());
+        if (!result.isNumber()) {
+            throw new IllegalArgumentException("工作流计算expression必须返回数值");
+        }
+    }
+
+    public void validateTemporalCalculation(String expression, Map<String, JsonNode> variables) {
+        if (expression == null || expression.isBlank()) {
+            throw new IllegalArgumentException("工作流计算expression不能为空");
+        }
+        Matcher functions = FUNCTION_CALL.matcher(expression);
+        while (functions.find()) {
+            String name = functions.group(1).toLowerCase();
+            if (!WORKFLOW_FUNCTIONS.contains(name)) {
+                throw new IllegalArgumentException("工作流计算expression不支持函数: " + name);
+            }
+        }
+        Set<String> referenced = referencedVariables(expression);
+        Set<String> unknown = new LinkedHashSet<>(referenced);
+        unknown.removeAll(variables.keySet());
+        if (!unknown.isEmpty()) {
+            throw new IllegalArgumentException("工作流计算expression引用了未声明的数值变量: " + unknown);
+        }
+        Instant now = Instant.now();
+        Map<String, List<TimedValue>> histories = new java.util.LinkedHashMap<>();
+        for (String name : referenced) {
+            JsonNode value = variables.get(name);
+            if (value == null || !value.isNumber()) {
+                throw new IllegalArgumentException("工作流计算expression只能引用数值变量: " + name);
+            }
+            histories.put(name, List.of(new TimedValue(now.minusSeconds(1), value), new TimedValue(now, value)));
+        }
+        JsonNode result = evaluateWorkflowValue(expression, variables, histories, now);
+        if (!result.isNumber()) throw new IllegalArgumentException("工作流计算expression必须返回数值");
+    }
+
+    public Set<String> referencedVariables(String expression) {
         if (expression == null || expression.isBlank()) throw new IllegalArgumentException("约束expression不能为空");
         Set<String> result = new LinkedHashSet<>();
         Lexer lexer = new Lexer(expression);
@@ -53,7 +121,8 @@ public class ConstraintExpressionEvaluator {
         do {
             token = lexer.next();
             if (token.type == TokenType.IDENTIFIER
-                    && !List.of("true", "false", "delta", "avg", "rate").contains(token.text.toLowerCase())) {
+                    && !Set.of("true", "false", "delta", "avg", "rate", "max", "min", "abs")
+                    .contains(token.text.toLowerCase())) {
                 result.add(token.text);
             }
         } while (token.type != TokenType.EOF);
@@ -63,20 +132,26 @@ public class ConstraintExpressionEvaluator {
     public record TimedValue(Instant occurredAt, JsonNode value) {
     }
 
+    public static final class TemporalDataUnavailableException extends IllegalArgumentException {
+        public TemporalDataUnavailableException(String message) { super(message); }
+    }
+
     private static final class Parser {
         private final Lexer lexer;
         private final Map<String, JsonNode> variables;
         private final Map<String, List<TimedValue>> histories;
         private final Instant now;
+        private final Set<String> allowedFunctions;
         private Token current;
 
         private Parser(String expression, Map<String, JsonNode> variables,
-                       Map<String, List<TimedValue>> histories, Instant now) {
+                       Map<String, List<TimedValue>> histories, Instant now, Set<String> allowedFunctions) {
             if (expression == null || expression.isBlank()) throw new IllegalArgumentException("约束expression不能为空");
             this.lexer = new Lexer(expression);
             this.variables = variables;
             this.histories = histories;
             this.now = now;
+            this.allowedFunctions = allowedFunctions;
             this.current = lexer.next();
         }
 
@@ -196,8 +271,14 @@ public class ConstraintExpressionEvaluator {
         }
 
         private Object function(String name) {
-            if (!List.of("delta", "avg", "rate").contains(name)) {
+            name = name.toLowerCase();
+            if (!allowedFunctions.contains(name)) {
                 throw error("不支持的约束内置函数: " + name);
+            }
+            if ("abs".equals(name)) {
+                Object value = or();
+                require(")");
+                return decimal(value).abs();
             }
             if (current.type != TokenType.IDENTIFIER) throw error(name + "第一个参数必须是绑定变量名");
             String variableName = current.text;
@@ -213,11 +294,16 @@ public class ConstraintExpressionEvaluator {
             samples.sort(Comparator.comparing(TimedValue::occurredAt));
             Instant threshold = now.minusMillis(seconds.multiply(BigDecimal.valueOf(1000)).longValue());
             List<TimedValue> window = samples.stream().filter(sample -> !sample.occurredAt().isBefore(threshold)).toList();
-            if (window.isEmpty()) throw error(name + "缺少变量历史数据: " + variableName);
+            if (window.isEmpty()) throw new TemporalDataUnavailableException(name + "缺少变量历史数据: " + variableName);
+            if (List.of("rate", "delta").contains(name) && window.size() < 2) {
+                throw new TemporalDataUnavailableException(name + "至少需要两个历史样本: " + variableName);
+            }
             return switch (name) {
                 case "delta" -> decimal(unwrap(window.get(window.size() - 1).value())).subtract(decimal(unwrap(window.get(0).value())));
                 case "avg" -> average(window);
                 case "rate" -> rate(window);
+                case "max" -> window.stream().map(sample -> decimal(unwrap(sample.value()))).max(BigDecimal::compareTo).orElseThrow();
+                case "min" -> window.stream().map(sample -> decimal(unwrap(sample.value()))).min(BigDecimal::compareTo).orElseThrow();
                 default -> throw error("不支持的约束内置函数: " + name);
             };
         }

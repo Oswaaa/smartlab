@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.engine.constraint.ConstraintExpressionEvaluator;
+import com.smartlab.engine.observation.ObservableKey;
+import com.smartlab.engine.observation.ObservableSnapshotReader;
+import com.smartlab.engine.observation.ObservationHistoryStore;
 import com.smartlab.engine.statemachine.StateMachineInterfaceSignalEvent;
 import com.smartlab.engine.workflow.action.WorkflowActionContext;
 import com.smartlab.engine.workflow.action.WorkflowActionDefinition;
@@ -11,6 +14,7 @@ import com.smartlab.engine.workflow.action.WorkflowActionRegistry;
 import com.smartlab.engine.workflow.action.WorkflowActionResult;
 import com.smartlab.engine.workflow.action.WorkflowActionStatus;
 import com.smartlab.global.contract.WorkflowNodeSignal;
+import com.smartlab.global.contract.ObservableObjectType;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.entity.workflow.FlowNode;
 import com.smartlab.management.entity.workflow.Task;
@@ -19,6 +23,9 @@ import com.smartlab.management.service.db.workflow.FlowNodeService;
 import com.smartlab.management.service.db.workflow.WorkflowRuntimeService;
 import com.smartlab.management.service.db.workflow.WorkflowService;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -48,6 +55,7 @@ public class WorkflowEngine {
     private final ConstraintExpressionEvaluator expressionEvaluator;
     private final WorkflowActionRegistry actionRegistry;
     private final WorkflowExecutionOperations executionOperations;
+    private final ObservableSnapshotReader observationReader;
     private final Executor workflowExecutor;
     private final Set<Long> inFlightTaskIds = ConcurrentHashMap.newKeySet();
 
@@ -55,7 +63,7 @@ public class WorkflowEngine {
     public WorkflowEngine(WorkflowRuntimeService runtime, WorkflowService workflowService,
             FlowNodeService flowNodeService, WorkflowConditionEvaluator conditionEvaluator,
             ConstraintExpressionEvaluator expressionEvaluator, WorkflowActionRegistry actionRegistry,
-            WorkflowExecutionOperations executionOperations,
+            WorkflowExecutionOperations executionOperations, ObservableSnapshotReader observationReader,
             @Qualifier("workflowEngineExecutor") Executor workflowExecutor) {
         this.runtime = runtime;
         this.workflowService = workflowService;
@@ -64,6 +72,7 @@ public class WorkflowEngine {
         this.expressionEvaluator = expressionEvaluator;
         this.actionRegistry = actionRegistry;
         this.executionOperations = executionOperations;
+        this.observationReader = observationReader;
         this.workflowExecutor = workflowExecutor;
     }
 
@@ -72,7 +81,23 @@ public class WorkflowEngine {
             ConstraintExpressionEvaluator expressionEvaluator, WorkflowActionRegistry actionRegistry,
             WorkflowExecutionOperations executionOperations) {
         this(runtime, workflowService, flowNodeService, conditionEvaluator, expressionEvaluator,
-                actionRegistry, executionOperations, Runnable::run);
+                actionRegistry, executionOperations, emptyObservationReader(), Runnable::run);
+    }
+
+    public WorkflowEngine(WorkflowRuntimeService runtime, WorkflowService workflowService,
+            FlowNodeService flowNodeService, WorkflowConditionEvaluator conditionEvaluator,
+            ConstraintExpressionEvaluator expressionEvaluator, WorkflowActionRegistry actionRegistry,
+            WorkflowExecutionOperations executionOperations, ObservableSnapshotReader observationReader) {
+        this(runtime, workflowService, flowNodeService, conditionEvaluator, expressionEvaluator,
+                actionRegistry, executionOperations, observationReader, Runnable::run);
+    }
+
+    public WorkflowEngine(WorkflowRuntimeService runtime, WorkflowService workflowService,
+            FlowNodeService flowNodeService, WorkflowConditionEvaluator conditionEvaluator,
+            ConstraintExpressionEvaluator expressionEvaluator, WorkflowActionRegistry actionRegistry,
+            WorkflowExecutionOperations executionOperations, Executor workflowExecutor) {
+        this(runtime, workflowService, flowNodeService, conditionEvaluator, expressionEvaluator,
+                actionRegistry, executionOperations, emptyObservationReader(), workflowExecutor);
     }
 
     @Scheduled(fixedDelayString = "${smartlab.workflow.poll-interval-ms:100}")
@@ -270,22 +295,84 @@ public class WorkflowEngine {
             runtime.mergeVariableSpace(step, mapped);
             mergeObject(variables, mapped);
         }
+        applyNodeExpression(task, step, node, variables);
         variables.put("nodeLifecycleState", step.getNodeStatus());
         if (inputInterface != null)
             variables.put("inputInterfaceName", inputInterface.path("name").asText(""));
-        String functionType = functionType(node);
-        String expression = "FUNC_NODE".equals(node.getNodeType())
-                && ("BRANCH".equals(functionType) || "AGGREGATE".equals(functionType))
-                && node.getCapability() != null
-                ? node.getCapability().path("expression").asText("").trim()
-                : "";
-        if (!expression.isBlank()) {
-            Map<String, JsonNode> expressionVariables = new java.util.LinkedHashMap<>();
-            variables.fields().forEachRemaining(entry -> expressionVariables.put(entry.getKey(), entry.getValue()));
-            variables.put("expression",
-                    expressionEvaluator.evaluate(expression, expressionVariables, Map.of(), Instant.now()));
-        }
         return variables;
+    }
+
+    private void applyNodeExpression(Task task, TaskStep step, FlowNode node, ObjectNode variables) {
+        String type = functionType(node);
+        String source = "FUNC_NODE".equals(node.getNodeType())
+                && ("BRANCH".equals(type) || "AGGREGATE".equals(type))
+                && node.getCapability() != null
+                ? node.getCapability().path("expression").asText("").trim() : "";
+        if (source.isBlank()) return;
+        WorkflowAssignmentExpression assignment = WorkflowAssignmentExpression.parse(source);
+        Instant now = Instant.now();
+        Map<String, JsonNode> values = new LinkedHashMap<>();
+        variables.fields().forEachRemaining(entry -> values.put(entry.getKey(), entry.getValue()));
+        Map<String, List<ConstraintExpressionEvaluator.TimedValue>> histories = expressionHistories(
+                task, node, assignment.valueExpression(), values, now);
+        try {
+            JsonNode result = expressionEvaluator.evaluateWorkflowValue(
+                    assignment.valueExpression(), values, histories, now);
+            result = normalizeExpressionResult(node, assignment.targetName(), result);
+            ObjectNode update = JsonNodeSupport.objectNode();
+            update.set(assignment.targetName(), result.deepCopy());
+            runtime.mergeVariableSpace(step, update);
+            variables.set(assignment.targetName(), result.deepCopy());
+        } catch (ConstraintExpressionEvaluator.TemporalDataUnavailableException unavailable) {
+            variables.remove(assignment.targetName());
+        }
+    }
+
+    private Map<String, List<ConstraintExpressionEvaluator.TimedValue>> expressionHistories(
+            Task task, FlowNode node, String expression, Map<String, JsonNode> values, Instant now) {
+        Map<String, List<ConstraintExpressionEvaluator.TimedValue>> result = new LinkedHashMap<>();
+        if (!expression.matches("(?is).*\\b(?:rate|delta|avg|max|min)\\s*\\(.*")) return result;
+        String nodeName = workflowService.compileDefinition(node.getFlowModelId()).refsByNodeName().entrySet().stream()
+                .filter(entry -> java.util.Objects.equals(entry.getValue(), node.getNodeIdRef()))
+                .map(Map.Entry::getKey).findFirst()
+                .orElseThrow(() -> new IllegalStateException("流程节点缺少名称映射: " + node.getNodeIdRef()));
+        for (String variable : expressionEvaluator.referencedVariables(expression)) {
+            ObservableKey key = new ObservableKey(ObservableObjectType.NODE_INTERNAL_VARIABLE,
+                    null, node.getFlowModelId(), task.getId(), null, nodeName, null, variable);
+            List<ConstraintExpressionEvaluator.TimedValue> samples = new ArrayList<>();
+            observationReader.readHistory(key, now.minus(ObservationHistoryStore.DEFAULT_MAX_SECONDS, ChronoUnit.SECONDS))
+                    .forEach(sample -> samples.add(new ConstraintExpressionEvaluator.TimedValue(
+                            sample.observedAt(), sample.value())));
+            JsonNode current = values.get(variable);
+            if (current != null && current.isNumber()) {
+                samples.add(new ConstraintExpressionEvaluator.TimedValue(now, current.deepCopy()));
+            }
+            result.put(variable, List.copyOf(samples));
+        }
+        return result;
+    }
+
+    private JsonNode normalizeExpressionResult(FlowNode node, String targetName, JsonNode value) {
+        JsonNode definition = requiredNamed(node.getInVariables(), targetName, "表达式目标内部变量");
+        String type = definition.path("dataType").asText("");
+        if ("DOUBLE".equals(type) && value.isNumber()) return value;
+        if ("INTEGER".equals(type) && value.isNumber()) {
+            try {
+                return JsonNodeSupport.toNode(value.decimalValue().longValueExact());
+            } catch (ArithmeticException ignored) {
+                // Fall through to the uniform type error below.
+            }
+        }
+        throw new IllegalStateException("表达式结果与目标内部变量类型不一致: " + targetName);
+    }
+
+    private static ObservableSnapshotReader emptyObservationReader() {
+        return new ObservableSnapshotReader() {
+            public com.smartlab.engine.observation.ObservationSnapshot read(ObservableKey key) { return null; }
+            public Map<ObservableKey, com.smartlab.engine.observation.ObservationSnapshot> readBatch(java.util.Collection<ObservableKey> keys) { return Map.of(); }
+            public List<com.smartlab.engine.observation.ObservationSample> readHistory(ObservableKey key, Instant since) { return List.of(); }
+            public Map<ObservableKey, List<com.smartlab.engine.observation.ObservationSample>> readHistoryBatch(java.util.Collection<ObservableKey> keys, Instant since) { return Map.of(); }
+        };
     }
 
     ActionRunResult executeActions(Task task, TaskStep step, FlowNode node, Iterable<JsonNode> actions,

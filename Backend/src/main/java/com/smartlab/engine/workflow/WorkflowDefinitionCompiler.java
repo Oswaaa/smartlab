@@ -8,8 +8,11 @@ import com.smartlab.global.contract.WorkflowNodeActionType;
 import com.smartlab.global.contract.WorkflowNodeFunctionType;
 import com.smartlab.global.contract.WorkflowNodeSystemContract;
 import com.smartlab.global.contract.WorkflowNodeType;
+import com.smartlab.global.contract.ProtocolContract;
+import com.smartlab.engine.constraint.ConstraintExpressionEvaluator;
 import com.smartlab.management.dto.workflow.WorkflowSaveRequest;
 import com.smartlab.management.dto.workflow.WorkflowIssue;
+import com.smartlab.global.util.JsonNodeSupport;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayDeque;
@@ -32,6 +35,7 @@ public class WorkflowDefinitionCompiler {
 
 
     private final WorkflowDefinitionCanonicalizer canonicalizer = new WorkflowDefinitionCanonicalizer();
+    private final ConstraintExpressionEvaluator expressionEvaluator = new ConstraintExpressionEvaluator();
     private CompiledWorkflow compileStrict(WorkflowSaveRequest request) {
         if (request == null || request.getName() == null || request.getName().isBlank()) {
             throw new IllegalArgumentException("flowModelName不能为空");
@@ -143,8 +147,13 @@ public class WorkflowDefinitionCompiler {
             if (!Set.of("WORKFLOW", "STATE").contains(interfaceType)) throw nodeError(name, itemPath + ".interfaceType", "只允许WORKFLOW或STATE");
             JsonNode allowedSignals = item.path("allowedSignals");
             if (!allowedSignals.isArray()) throw nodeError(name, itemPath + ".allowedSignals", "必须是数组");
+            Set<String> protocolSignals = protocolSignals(interfaceType, direction);
             for (JsonNode signal : allowedSignals) {
                 if (!signal.isTextual() || signal.asText().isBlank()) throw nodeError(name, itemPath + ".allowedSignals", "只能包含非空字符串");
+                if (!protocolSignals.contains(signal.asText())) {
+                    throw nodeError(name, itemPath + ".allowedSignals",
+                            interfaceType + " " + direction + "接口信号不合法: " + signal.asText());
+                }
             }
             if (item.has("bindingTriggers") && !item.path("bindingTriggers").isArray()) {
                 throw nodeError(name, itemPath + ".bindingTriggers", "必须是数组");
@@ -186,6 +195,10 @@ public class WorkflowDefinitionCompiler {
             if (WorkflowNodeFunctionType.BRANCH.name().equals(functionType)) {
                 requiredText(node, "expression", nodePath(name, "expression") + ": 不能为空");
             }
+            if (Set.of(WorkflowNodeFunctionType.BRANCH.name(), WorkflowNodeFunctionType.AGGREGATE.name())
+                    .contains(functionType) && node.has("expression") && !node.path("expression").asText().isBlank()) {
+                validateCalculationExpression(index, node.path("expression").asText(), "expression");
+            }
         }
         ObjectNode expected = WorkflowNodeSystemContract.template(index.nodeType(), functionType);
         validateTemplateLifecycle(node.path("lifecycle"), expected.path("lifecycle"), name);
@@ -195,6 +208,29 @@ public class WorkflowDefinitionCompiler {
     }
     private void validateActions(NodeIndex index, JsonNode node, String path) {
         // action-name membership is validated while indexing; payloads live on triggers.
+    }
+
+    private void validateCalculationExpression(NodeIndex index, String expression, String fieldPath) {
+        Map<String, JsonNode> samples = new LinkedHashMap<>();
+        index.variables().forEach((name, definition) -> {
+            String dataType = definition.path("dataType").asText();
+            if (DataType.INTEGER.name().equals(dataType)) samples.put(name, JsonNodeSupport.toNode(1));
+            if (DataType.DOUBLE.name().equals(dataType)) samples.put(name, JsonNodeSupport.toNode(1.0));
+        });
+        try {
+            WorkflowAssignmentExpression assignment = WorkflowAssignmentExpression.parse(expression);
+            JsonNode target = index.variables().get(assignment.targetName());
+            if (target == null) {
+                throw new IllegalArgumentException("赋值目标不是已声明的内部变量: " + assignment.targetName());
+            }
+            String targetType = target.path("dataType").asText();
+            if (!Set.of(DataType.INTEGER.name(), DataType.DOUBLE.name()).contains(targetType)) {
+                throw new IllegalArgumentException("赋值目标必须是数值内部变量: " + assignment.targetName());
+            }
+            expressionEvaluator.validateTemporalCalculation(assignment.valueExpression(), samples);
+        } catch (IllegalArgumentException error) {
+            throw nodeError(index.nodeName(), fieldPath, error.getMessage());
+        }
     }
 
     private void validateTriggers(NodeIndex index, JsonNode node, String path) {
@@ -215,14 +251,15 @@ public class WorkflowDefinitionCompiler {
                     throw nodeError(index.nodeName(), triggerPath + ".condition.threshold",
                             "与内部变量" + object + "的数据类型不一致");
                 }
-                validateTriggerAction(index, node, trigger.path("action"), triggerPath + ".action");
+                validateTriggerAction(index, node, item.path("name").asText(), trigger.path("action"), triggerPath + ".action");
                 triggerPosition++;
             }
             interfacePosition++;
         }
     }
 
-    private void validateTriggerAction(NodeIndex index, JsonNode node, JsonNode action, String actionPath) {
+    private void validateTriggerAction(NodeIndex index, JsonNode node, String hostInterfaceName,
+                                       JsonNode action, String actionPath) {
         if (!action.isObject()) throw nodeError(index.nodeName(), actionPath, "必须是对象");
         String actionName = requiredText(action, "actionName",
                 nodePath(index.nodeName(), actionPath + ".actionName") + ": 不能为空");
@@ -234,6 +271,10 @@ public class WorkflowDefinitionCompiler {
         if (WorkflowNodeActionType.EMIT.name().equals(actionName)) {
             String targetName = requiredText(payload, "targetInterfaceName",
                     nodePath(index.nodeName(), actionPath + ".payload.targetInterfaceName") + ": 不能为空");
+            if (!hostInterfaceName.equals(targetName)) {
+                throw nodeError(index.nodeName(), actionPath + ".payload.targetInterfaceName",
+                        "EMIT目标必须是触发器所在接口" + hostInterfaceName + ": " + targetName);
+            }
             JsonNode target = index.interfaces().get(targetName);
             if (target == null) throw nodeError(index.nodeName(), actionPath + ".payload.targetInterfaceName", "EMIT目标接口不存在: " + targetName);
             if (!"OUT".equals(target.path("direction").asText())) throw nodeError(index.nodeName(), actionPath + ".payload.targetInterfaceName", "EMIT目标必须是OUT接口: " + targetName);
@@ -262,6 +303,10 @@ public class WorkflowDefinitionCompiler {
             if (hasValue && !matchesUpdateValue(payload.get("value"), variable.path("dataType").asText())) {
                 throw nodeError(index.nodeName(), actionPath + ".payload.value", "与内部变量" + targetName + "的数据类型不一致");
             }
+            if (hasExpression) {
+                validateValueExpression(index, payload.path("valueExpression").asText(),
+                        actionPath + ".payload.valueExpression");
+            }
             return;
         }
         if ("NODE_LIFECYCLE".equals(updateType)) {
@@ -279,6 +324,24 @@ public class WorkflowDefinitionCompiler {
             return;
         }
         throw nodeError(index.nodeName(), actionPath + ".payload.updateType", "只允许INTERNAL_VARIABLE或NODE_LIFECYCLE: " + updateType);
+    }
+
+    private void validateValueExpression(NodeIndex index, String expression, String fieldPath) {
+        try {
+            expressionEvaluator.validateCalculation(expression, numericVariableSamples(index));
+        } catch (IllegalArgumentException error) {
+            throw nodeError(index.nodeName(), fieldPath, error.getMessage());
+        }
+    }
+
+    private Map<String, JsonNode> numericVariableSamples(NodeIndex index) {
+        Map<String, JsonNode> samples = new LinkedHashMap<>();
+        index.variables().forEach((name, definition) -> {
+            String dataType = definition.path("dataType").asText();
+            if (DataType.INTEGER.name().equals(dataType)) samples.put(name, JsonNodeSupport.toNode(1));
+            if (DataType.DOUBLE.name().equals(dataType)) samples.put(name, JsonNodeSupport.toNode(1.0));
+        });
+        return samples;
     }
 
     private void validateInterfaceConnections(JsonNode connections, Map<String, Long> refs,
@@ -647,6 +710,14 @@ public class WorkflowDefinitionCompiler {
     private boolean contains(JsonNode values, String value) {
         for (JsonNode item : iterable(values)) if (value.equals(item.asText())) return true;
         return false;
+    }
+
+    private Set<String> protocolSignals(String interfaceType, String direction) {
+        if ("WORKFLOW".equals(interfaceType)) {
+            return Set.copyOf(ProtocolContract.enumValues("WorkflowNodeSignal"));
+        }
+        return Set.copyOf(ProtocolContract.enumValues(
+                "OUT".equals(direction) ? "WorkflowControlSignal" : "StatusSignal"));
     }
 
     private Iterable<JsonNode> iterable(JsonNode node) {

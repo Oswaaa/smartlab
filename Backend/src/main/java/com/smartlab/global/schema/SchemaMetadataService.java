@@ -75,6 +75,9 @@ public class SchemaMetadataService {
         metadata.set("mqttTopics", JsonNodeSupport.toNode(protocolDictionaryService.mqttTopicConvention()));
         metadata.set("adapterRegisterFormats", textArray(protocolDictionaryService.enumValues("AdapterRegisterRawConfigFormat")));
         metadata.set("communicationProtocols", textArray(protocolDictionaryService.enumValues("CommunicationProtocol")));
+        metadata.set("workflowNodeSignals", textArray(protocolDictionaryService.enumValues("WorkflowNodeSignal")));
+        metadata.set("workflowControlSignals", textArray(protocolDictionaryService.enumValues("WorkflowControlSignal")));
+        metadata.set("statusSignals", textArray(protocolDictionaryService.enumValues("StatusSignal")));
         return metadata;
     }
 
@@ -97,7 +100,20 @@ public class SchemaMetadataService {
         metadata.set("standardNodeInterfaces", nodeInterfaces(SystemExecutionContract.workflowNodeInterfaces()));
         metadata.set("nodeLifecycleStates", textArray(names(NodeLifecycleState.values())));
         metadata.set("nodeTemplates", WorkflowNodeSystemContract.templates());
+        metadata.set("calculationOperators", textArray(List.of("+", "-", "*", "/", "(", ")")));
+        metadata.set("temporalFunctions", temporalFunctions());
         return metadata;
+    }
+
+    private ArrayNode temporalFunctions() {
+        ArrayNode functions = JsonNodeSupport.arrayNode();
+        functions.addObject().put("name", "变化速率").put("functionName", "rate").put("example", "rate(temperature, 10)");
+        functions.addObject().put("name", "变化量").put("functionName", "delta").put("example", "delta(temperature, 10)");
+        functions.addObject().put("name", "窗口平均值").put("functionName", "avg").put("example", "avg(temperature, 60)");
+        functions.addObject().put("name", "窗口最大值").put("functionName", "max").put("example", "max(temperature, 60)");
+        functions.addObject().put("name", "窗口最小值").put("functionName", "min").put("example", "min(temperature, 60)");
+        functions.addObject().put("name", "绝对值").put("functionName", "abs").put("example", "abs(temperature)");
+        return functions;
     }
 
     private ObjectNode constraintMetadata() {

@@ -1,6 +1,6 @@
 <template>
   <el-drawer :model-value="modelValue" title="新建任务" size="78%" class="model-drawer unified-workflow-drawer" destroy-on-close @update:model-value="emit('update:modelValue', $event)">
-    <div class="drawer-body">
+    <div class="drawer-body unified-drawer-scroll">
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
         <section class="drawer-section">
           <div class="section-title"><strong>基础配置</strong><span>仅可选择发布启用的可执行流程</span></div>
@@ -19,7 +19,7 @@
         </section>
         <section v-else-if="form.flowModelId && hasDeviceNodes" class="drawer-section"><el-alert type="warning" :closable="false" title="该流程包含设备能力节点，但当前无法生成设备绑定路径，请先修复流程模型。" /></section>
 
-        <section class="drawer-section"><TaskConstraintPanel :rules="form.taskConstraints || []" @edit="emit('edit-constraint', $event)" @remove="emit('remove-constraint', $event)" /></section>
+        <section class="drawer-section"><TaskConstraintPanel :rules="form.taskConstraints || []" :reviews="constraintReviews" @edit="emit('edit-constraint', $event)" @remove="emit('remove-constraint', $event)" /></section>
         <section v-if="form.flowModelId" class="drawer-section">
           <div class="section-title"><strong>创建前检查</strong><span>校验设备绑定、任务约束和流程执行条件</span></div>
           <TaskPreflightPanel :result="preflightResult" :loading="preflighting" @retry="emit('preflight')" />
@@ -52,7 +52,8 @@ const props = withDefaults(defineProps<{
   preflightResult?: Item | null,
   preflighting?: boolean,
   creating?: boolean,
-}>(), { workflows:()=>[], routes:()=>[], groups:()=>[], errors:()=>[], instances:()=>[], models:()=>[], preflightResult:null })
+  constraintReviews?: Array<string | null>,
+}>(), { workflows:()=>[], routes:()=>[], groups:()=>[], errors:()=>[], instances:()=>[], models:()=>[], preflightResult:null, constraintReviews:()=>[] })
 const emit = defineEmits<{
   'update:modelValue':[value:boolean], 'update:taskName':[value:string], 'update:flowModelId':[value:number|null],
   'update:resourceBindings':[value:Record<string,number|null>], 'edit-constraint':[index?:number], 'remove-constraint':[index:number], preflight:[], submit:[]
@@ -63,5 +64,5 @@ defineExpose({ validate: () => formRef.value?.validate(), clearValidate: () => f
 </script>
 
 <style scoped>
-.drawer-body{padding:0 16px}.drawer-section{display:grid;gap:12px;padding:18px 4px;border-bottom:1px solid #edf0f3}.section-title{display:flex;align-items:baseline;gap:10px;border-left:4px solid #1677ff;padding-left:10px}.section-title strong{font-size:14px}.section-title span{color:#8490a0;font-size:10px}.drawer-section :deep(.el-select){width:100%}.drawer-footer{display:flex;justify-content:flex-end;gap:8px}
+.drawer-body{min-height:0;padding:0 16px;box-sizing:border-box}.drawer-section{display:grid;gap:12px;padding:18px 4px;border-bottom:1px solid #edf0f3}.section-title{display:flex;align-items:baseline;gap:10px;border-left:4px solid #1677ff;padding-left:10px}.section-title strong{font-size:14px}.section-title span{color:#8490a0;font-size:10px}.drawer-section :deep(.el-select){width:100%}.drawer-footer{display:flex;justify-content:flex-end;gap:8px}
 </style>

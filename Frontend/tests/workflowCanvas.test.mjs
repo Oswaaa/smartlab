@@ -86,7 +86,7 @@ test('renders only node-to-node interface connections as flow edges', () => {
   assert.equal(edges[0].targetHandle, 'interface:Interface_workflow_in')
 })
 
-test('接口边为蓝色实线且保留具体接口Handle', () => {
+test('接口边为蓝灰色实线且保留具体接口Handle', () => {
   const edges = buildFlowEdges([{
     connectionType: 'NODE_TO_NODE',
     source: { nodeName: 'branch', interfaceName: 'high' },
@@ -94,7 +94,7 @@ test('接口边为蓝色实线且保留具体接口Handle', () => {
   }], [])
   assert.equal(edges[0].data.connectionKind, 'INTERFACE')
   assert.equal(edges[0].sourceHandle, 'interface:high')
-  assert.equal(edges[0].style.stroke, '#3276d2')
+  assert.equal(edges[0].style.stroke, '#7b96b8')
   assert.equal(edges[0].style.strokeDasharray, undefined)
 })
 

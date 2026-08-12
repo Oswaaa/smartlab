@@ -1,15 +1,16 @@
 <template>
-  <el-input-number v-if="dataType === 'INTEGER'" :model-value="modelValue as number" :precision="0" @update:model-value="emitValue" />
-  <el-input-number v-else-if="dataType === 'DOUBLE'" :model-value="modelValue as number" @update:model-value="emitValue" />
-  <el-switch v-else-if="dataType === 'BOOLEAN'" :model-value="modelValue as boolean" @update:model-value="emitValue" />
-  <el-input v-else-if="dataType === 'STRING'" :model-value="modelValue as string" @update:model-value="emitValue" />
+  <el-select v-if="options.length" :model-value="modelValue" :disabled="disabled" placeholder="请选择" @update:model-value="emitValue"><el-option v-for="option in options" :key="String(option)" :label="String(option)" :value="option" /></el-select>
+  <el-input-number v-else-if="dataType === 'INTEGER'" :model-value="modelValue as number" :disabled="disabled" :precision="0" :controls="false" placeholder="请输入整数" @update:model-value="emitValue" />
+  <el-input-number v-else-if="dataType === 'DOUBLE'" :model-value="modelValue as number" :disabled="disabled" :controls="false" placeholder="请输入数值" @update:model-value="emitValue" />
+  <el-switch v-else-if="dataType === 'BOOLEAN'" :model-value="modelValue as boolean" :disabled="disabled" @update:model-value="emitValue" />
+  <el-input v-else-if="dataType === 'STRING'" :model-value="modelValue as string" :disabled="disabled" @update:model-value="emitValue" />
   <div v-else class="json-entry-list">
     <div v-for="(entry, index) in jsonEntries" :key="entry.id" class="json-entry-row">
-      <el-input v-model="entry.key" placeholder="键" @input="emitJson" />
-      <el-input v-model="entry.value" placeholder="值" @input="emitJson" />
-      <el-button class="btn-aliyun-danger-link" link @click="removeEntry(index)">删除</el-button>
+      <el-input v-model="entry.key" :disabled="disabled" placeholder="键" @input="emitJson" />
+      <el-input v-model="entry.value" :disabled="disabled" placeholder="值" @input="emitJson" />
+      <el-button v-if="!disabled" class="btn-aliyun-danger-link" link @click="removeEntry(index)">删除</el-button>
     </div>
-    <el-button class="btn-aliyun" @click="addEntry">添加键值</el-button>
+    <el-button v-if="!disabled" class="btn-aliyun" @click="addEntry">添加键值</el-button>
     <p v-if="jsonError" class="json-error">{{ jsonError }}</p>
   </div>
 </template>
@@ -20,7 +21,7 @@ import { ref, watch } from 'vue'
 type DataType = 'INTEGER' | 'DOUBLE' | 'STRING' | 'BOOLEAN' | 'JSON'
 type JsonEntry = { id: number, key: string, value: unknown }
 
-const props = defineProps<{ modelValue: unknown, dataType: DataType }>()
+const props = withDefaults(defineProps<{ modelValue: unknown, dataType: DataType, disabled?: boolean, options?: unknown[] }>(), { disabled: false, options: () => [] })
 const emit = defineEmits<{ 'update:modelValue': [value: unknown] }>()
 const jsonEntries = ref<JsonEntry[]>([])
 const jsonError = ref('')
@@ -64,5 +65,5 @@ function emitJson() {
 </script>
 
 <style scoped>
-.json-entry-list{display:grid;gap:8px}.json-entry-row{display:grid;grid-template-columns:1fr 1fr auto;gap:8px}.json-error{margin:0;color:var(--el-color-danger);font-size:12px}
+.json-entry-list{display:grid;gap:10px}.json-entry-row{display:grid;grid-template-columns:minmax(120px,1fr) minmax(160px,2fr) auto;gap:10px;padding:10px;border:1px solid #e5e6eb;background:#fafafa}.json-error{margin:0;color:#ff4d4f;font-size:12px}:deep(.el-input-number),:deep(.el-input),:deep(.el-select){width:100%}
 </style>

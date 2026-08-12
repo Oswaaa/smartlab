@@ -97,7 +97,7 @@
       </div>
     </el-card>
 
-    <TaskCreateDrawer ref="createFormRef" v-model="createDrawerVisible" :form="createForm" :workflows="executableProcessTemplates" :loading-workflows="loadingWorkflows" :routes="selectedDeviceRoutes" :groups="selectedWorkflowGroups" :errors="selectedWorkflowErrors" :instances="deviceInstances" :models="deviceModels" :has-device-nodes="Boolean(createForm.flowModelId && workflowHasDeviceNodes[String(createForm.flowModelId)])" :preflight-result="preflightResult" :preflighting="preflighting" :creating="creating" @update:task-name="createForm.taskName = $event" @update:flow-model-id="handleTemplateChange" @update:resource-bindings="updateResourceBindings" @edit-constraint="openTaskConstraint" @remove-constraint="createForm.taskConstraints.splice($event, 1)" @preflight="runPreflight" @submit="submitCreateTask" />
+    <TaskCreateDrawer ref="createFormRef" v-model="createDrawerVisible" :form="createForm" :workflows="executableProcessTemplates" :loading-workflows="loadingWorkflows" :routes="selectedDeviceRoutes" :groups="selectedWorkflowGroups" :errors="selectedWorkflowErrors" :instances="deviceInstances" :models="deviceModels" :has-device-nodes="Boolean(createForm.flowModelId && workflowHasDeviceNodes[String(createForm.flowModelId)])" :preflight-result="preflightResult" :preflighting="preflighting" :creating="creating" :constraint-reviews="taskConstraintReviews" @update:task-name="createForm.taskName = $event" @update:flow-model-id="handleTemplateChange" @update:resource-bindings="updateResourceBindings" @edit-constraint="openTaskConstraint" @remove-constraint="removeTaskConstraint" @preflight="runPreflight" @submit="submitCreateTask" />
 
     <el-dialog v-model="taskConstraintDialogVisible" :title="editingTaskConstraintIndex == null ? '添加任务级约束' : '编辑任务级约束'" width="1040px" append-to-body destroy-on-close @opened="loadTaskConstraintEditor">
       <ConstraintRuleEditor ref="taskConstraintEditorRef" :models="deviceModels" :instances="deviceInstances" :workflows="executableProcessTemplates" :tasks="[]" task-mode :task-resources="selectedTaskResources" :task-workflow-nodes="selectedWorkflowNodes" />
@@ -121,6 +121,7 @@ import { buildDeviceBindings, expandWorkflowDefinition } from '../../../utils/ta
 import { filterExecutableWorkflows, isExecutableWorkflow } from '../../../utils/workflowExecution.js'
 import { taskApi } from '../../../services/taskApi.js'
 import { workflowApi } from '../../../services/workflowApi.js'
+import { reviewTaskConstraintsAfterBindingChange } from './taskConstraintReview.js'
 
 interface TaskInstance {
   id: number
@@ -220,6 +221,8 @@ const createForm = ref({
   resourceBindings: {} as Record<string, number | null>,
   taskConstraints: [] as any[]
 })
+const taskConstraintReviews = ref<Array<string | null>>([])
+const unresolvedTaskConstraintReviews = computed(() => taskConstraintReviews.value.some(Boolean))
 const creating = ref(false)
 const workflowDeviceRoutes = ref<Record<string, DeviceRoute[]>>({})
 const workflowHasDeviceNodes = ref<Record<string, boolean>>({})
@@ -272,6 +275,7 @@ async function fetchWorkflowRequirements(flowModelId: number) {
 
 async function runPreflight() {
   if (!createForm.value.flowModelId) return
+  if (unresolvedTaskConstraintReviews.value) return ElMessage.warning('请先复核受设备绑定变更影响的任务约束')
   preflighting.value = true
   try {
     const payload = {
@@ -295,6 +299,7 @@ const handleTemplateChange = async (value: number | null) => {
   createForm.value.flowModelId = value
   createForm.value.resourceBindings = {}
   createForm.value.taskConstraints = []
+  taskConstraintReviews.value = []
   preflightResult.value = null
   if (value == null) return
   await loadWorkflowRoutes(value)
@@ -305,8 +310,16 @@ const handleTemplateChange = async (value: number | null) => {
 const updateResourceBindings = (next: Record<string, number | null>) => {
   const changed = JSON.stringify(createForm.value.resourceBindings) !== JSON.stringify(next)
   if (changed && createForm.value.taskConstraints.length) {
-    createForm.value.taskConstraints = []
-    ElMessage.warning('设备实例绑定已变更，原任务约束中的实例引用已清空，请重新配置')
+    const previousReviewCount = taskConstraintReviews.value.filter(Boolean).length
+    taskConstraintReviews.value = reviewTaskConstraintsAfterBindingChange(
+      createForm.value.taskConstraints,
+      createForm.value.resourceBindings,
+      next,
+      taskConstraintReviews.value
+    )
+    if (taskConstraintReviews.value.filter(Boolean).length > previousReviewCount) {
+      ElMessage.warning('设备实例绑定已变更，受影响的任务约束已保留并标记为需要复核')
+    }
   }
   createForm.value.resourceBindings = next
   preflightResult.value = null
@@ -662,6 +675,7 @@ const openCreateDrawer = () => {
     return
   }
   createForm.value = { taskName: '', flowModelId: null, resourceBindings: {}, taskConstraints: [] }
+  taskConstraintReviews.value = []
   createDrawerVisible.value = true
   nextTick(() => {
     createFormRef.value?.clearValidate()
@@ -680,14 +694,26 @@ const saveTaskConstraint = () => {
   try {
     const rule = taskConstraintEditorRef.value?.validateAndBuild()
     if (!rule) return
-    if (editingTaskConstraintIndex.value == null) createForm.value.taskConstraints.push(rule)
-    else createForm.value.taskConstraints.splice(editingTaskConstraintIndex.value,1,rule)
+    if (editingTaskConstraintIndex.value == null) {
+      createForm.value.taskConstraints.push(rule)
+      taskConstraintReviews.value.push(null)
+    } else {
+      createForm.value.taskConstraints.splice(editingTaskConstraintIndex.value,1,rule)
+      taskConstraintReviews.value.splice(editingTaskConstraintIndex.value,1,null)
+    }
+    preflightResult.value = null
     taskConstraintDialogVisible.value = false
   } catch (error:any) { ElMessage.error(error.message || '任务约束配置不完整') }
+}
+const removeTaskConstraint = (index:number) => {
+  createForm.value.taskConstraints.splice(index, 1)
+  taskConstraintReviews.value.splice(index, 1)
+  preflightResult.value = null
 }
 // Submit Create task
 const submitCreateTask = async () => {
   if (!createFormRef.value) return
+  if (unresolvedTaskConstraintReviews.value) return ElMessage.warning('请先复核受设备绑定变更影响的任务约束')
   try { await createFormRef.value.validate() } catch { return }
   creating.value = true
   try {

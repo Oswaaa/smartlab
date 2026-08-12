@@ -287,7 +287,7 @@
               "enum": [ "START", "END", "BRANCH", "AGGREGATE" ],
               "description": "功能节点类型：START起始节点、END终止节点、BRANCH分支节点、AGGREGATE聚合节点"
             },
-            "expression": { "type": "string", "description": "自定义表达式（可选）；functionType的BRANCH、AGGREGATE可使用，由后端表达式求值器解析，可引用节点internalVariables中的变量名" }
+            "expression": { "type": "string", "description": "赋值计算表达式（可选，仅BRANCH、AGGREGATE使用），格式为目标内部变量 = 计算式；可引用节点internalVariables，并支持rate、delta、avg、max、min、abs实验室时序函数。计算结果写入目标内部变量后再进行本轮触发器判断" }
           },
           "required": [ "nodeType", "functionType" ]
         }

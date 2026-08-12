@@ -342,14 +342,15 @@ function validateInlineTriggers(node, errors) {
       errors.push({ path: `${path}.action.actionName`, message: `动作能力${actionName || ''}未在actions中声明` })
       return
     }
-    if (actionName === 'EMIT') validateEmitPayload(path, payload, interfaces, errors)
+    if (actionName === 'EMIT') validateEmitPayload(path, payload, interfaces, item, errors)
     if (actionName === 'UPDATE') validateUpdatePayload(path, payload, variables, lifecycleStates, errors)
   }))
 }
 
-function validateEmitPayload(path, payload, interfaces, errors) {
+function validateEmitPayload(path, payload, interfaces, hostInterface, errors) {
   const target = interfaces.get(payload.targetInterfaceName)
-  if (!target) errors.push({ path: `${path}.action.payload.targetInterfaceName`, message: `EMIT目标接口${payload.targetInterfaceName || ''}不存在` })
+  if (payload.targetInterfaceName !== hostInterface.name) errors.push({ path: `${path}.action.payload.targetInterfaceName`, message: `EMIT目标必须是触发器所在接口${hostInterface.name}` })
+  else if (!target) errors.push({ path: `${path}.action.payload.targetInterfaceName`, message: `EMIT目标接口${payload.targetInterfaceName || ''}不存在` })
   else if (target.direction !== 'OUT') errors.push({ path: `${path}.action.payload.targetInterfaceName`, message: `EMIT目标接口${payload.targetInterfaceName}必须是OUT接口` })
   else if (!target.allowedSignals?.includes(payload.signalName)) errors.push({ path: `${path}.action.payload.signalName`, message: `信号${payload.signalName || ''}不在接口allowedSignals中` })
 }

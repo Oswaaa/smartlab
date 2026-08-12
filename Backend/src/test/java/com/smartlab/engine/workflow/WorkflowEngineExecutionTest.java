@@ -37,6 +37,39 @@ import static org.mockito.Mockito.when;
 class WorkflowEngineExecutionTest {
 
     @Test
+    void nodeAssignmentResultIsPersistedAndVisibleToTriggersInTheSamePoll() {
+        Task task = pollingTask();
+        TaskStep step = pollingStep("RUNNING");
+        step.setVariableSpace(JsonNodeSupport.objectNode().put("temperature", 2.0));
+        ObjectNode output = triggerInterface("branch-out", "OUT", "calculated");
+        output.path("bindingTriggers").get(0).path("condition").deepCopy();
+        ((ObjectNode) output.path("bindingTriggers").get(0).path("condition"))
+                .put("object", "scaled").put("operator", "=").put("threshold", 200.0);
+        FlowNode node = pollingNode(List.of(output));
+        node.setNodeType("FUNC_NODE");
+        node.setCapability(JsonNodeSupport.objectNode()
+                .put("functionType", "BRANCH")
+                .put("expression", "scaled = temperature * 100"));
+        node.setInVariables(JsonNodeSupport.arrayNode()
+                .add(JsonNodeSupport.objectNode().put("name", "temperature").put("dataType", "DOUBLE"))
+                .add(JsonNodeSupport.objectNode().put("name", "scaled").put("dataType", "DOUBLE")));
+        stubPoll(task, step, node);
+        when(workflows.compileDefinition(node.getFlowModelId())).thenReturn(new WorkflowDefinitionCompiler.CompiledWorkflow(
+                Map.of(), Map.of(), Map.of(), Map.of("candidate", node.getNodeIdRef()), 1L, 2L));
+        doAnswer(invocation -> {
+            ObjectNode merged = (ObjectNode) step.getVariableSpace().deepCopy();
+            merge(merged, invocation.getArgument(1));
+            step.setVariableSpace(merged);
+            return null;
+        }).when(runtime).mergeVariableSpace(eq(step), org.mockito.ArgumentMatchers.any());
+
+        engine.processTask(task);
+
+        assertThat(step.getVariableSpace().path("scaled").asDouble()).isEqualTo(200.0);
+        assertThat(executionOrder).containsExactly("calculated");
+    }
+
+    @Test
     void lifecycleUpdateBecomesVisibleToEmitTriggerOnFollowingPollOnly() {
         Task task = pollingTask();
         TaskStep step = pollingStep("RUNNING");

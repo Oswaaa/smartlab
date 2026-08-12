@@ -2,6 +2,9 @@
   <div class="workflow-page">
     <div class="designer-grid">
       <aside class="resource-panel">
+        <div class="panel-titlebar resource-titlebar">
+          <div><strong>节点资源</strong><span>拖拽资源到画布中使用</span></div>
+        </div>
         <el-tabs v-model="tab" class="resource-tabs" stretch>
           <el-tab-pane label="设备库" name="devices">
             <div class="resource-search">
@@ -12,14 +15,14 @@
                 <template #default="{ data }">
                   <div
                     class="tree-item"
-                    :class="[data.kind, { draggable: data.kind==='instance' && contractReady }]"
-                    :draggable="data.kind==='instance' && contractReady"
+                    :class="[data.kind, { draggable: data.kind==='instance' && canEdit }]"
+                    :draggable="data.kind==='instance' && canEdit"
                     @dragstart="drag($event,data)"
                     @dblclick="data.kind==='instance' && addResource({kind:'instance',instance:data.instance,model:data.model})"
                     :title="data.kind==='instance' ? '按住拖拽至画布，或双击添加设备实例' : data.kind==='model' ? '设备模型' : '设备分类'"
                   >
                     <span class="tree-label">
-                      <span class="tree-dot" :class="data.kind"></span>
+                      <el-icon class="tree-resource-icon"><FolderOpened v-if="data.kind==='category'" /><Folder v-else-if="data.kind==='model'" /><Monitor v-else /></el-icon>
                       <span class="node-title">{{ data.label }}</span>
                       <span v-if="data.kind==='model'" class="model-badge">模型</span>
                       <span v-else-if="data.kind==='instance'" class="instance-badge">实例</span>
@@ -36,26 +39,15 @@
               <el-input v-model="resourceKeyword" :prefix-icon="Search" clearable placeholder="搜索流程..." />
             </div>
             <div class="tab-scroll-body">
-              <div v-if="filteredWorkflows.length" class="flow-list">
-                <div
-                  v-for="item in filteredWorkflows"
-                  :key="item.id"
-                  class="flow-item clickable-flow-item"
-                  :class="{ 'is-active-flow': item.id === openedWorkflowId }"
-                  :disabled="!contractReady"
-                  :draggable="contractReady"
-                  @dragstart="drag($event,{kind:'workflow',workflow:item})"
-                  @click="loadWorkflow(item.id)"
-                  title="点击查看流程定义；按住拖拽至画布接入为子流程节点"
-                >
-                  <span class="flow-icon">↳</span>
-                  <span>
-                    <strong>{{ item.flowName }}</strong>
-                    <small>V{{ item.version || 1 }} · 点击查看流程 / 拖拽为节点</small>
-                  </span>
-                  <span v-if="item.id === openedWorkflowId" class="opened-badge">当前</span>
-                </div>
-              </div>
+              <el-tree v-if="workflowTree.length" :data="workflowTree" node-key="key" default-expand-all :expand-on-click-node="false" class="resource-tree workflow-resource-tree">
+                <template #default="{ data }">
+                  <div class="tree-item workflow-tree-item" :class="[{ 'is-active-flow': data.workflow?.id === openedWorkflowId }]" @click="data.workflow && loadWorkflow(data.workflow.id)">
+                    <el-icon class="tree-resource-icon"><FolderOpened v-if="data.children" /><Document v-else /></el-icon>
+                    <span class="node-title">{{ data.label }}</span>
+                    <span v-if="data.workflow?.id === openedWorkflowId" class="opened-badge">当前</span>
+                  </div>
+                </template>
+              </el-tree>
               <el-empty v-else description="没有可引用的流程" :image-size="48" />
             </div>
           </el-tab-pane>
@@ -64,7 +56,7 @@
 
       <main class="canvas-panel">
         <!-- 顶部信息栏 -->
-        <div class="canvas-floating-island">
+        <div class="canvas-commandbar">
           <div class="island-left">
             <div class="flow-title-row">
               <strong>{{ form.name || '未命名流程' }}</strong>
@@ -83,35 +75,21 @@
             <el-tooltip content="导出 JSON" placement="bottom">
               <el-button :disabled="!form.name" class="btn-aliyun" @click="exportWorkflow">导出</el-button>
             </el-tooltip>
+            <el-button v-if="form.id && !isEditing" class="btn-aliyun-cta" @click="startEditing">编辑</el-button>
+            <el-button v-if="canEdit" class="btn-aliyun" :disabled="!form.nodesDef.length" @click="clearCanvas">清空</el-button>
             <el-button class="btn-aliyun" @click="runValidation">校验</el-button>
-            <el-button class="btn-aliyun" :loading="draftSaving" :disabled="!contractReady" @click="saveDraft">保存草稿</el-button>
-            <el-button class="btn-aliyun-cta" :loading="publishSaving" :disabled="!contractReady" @click="publishAndValidate">发布启用</el-button>
+            <el-button class="btn-aliyun" :loading="draftSaving" :disabled="!canEdit" @click="saveDraft">保存草稿</el-button>
+            <el-button class="btn-aliyun-cta" :loading="publishSaving" :disabled="!canEdit" @click="publishAndValidate">发布启用</el-button>
           </div>
         </div>
 
         <div class="flow-stage" @dragover.prevent @drop="drop">
-          <!-- 画布右上角功能节点工具栏 -->
           <div class="canvas-floating-controls">
             <span class="control-bar-label">功能节点</span>
-            <div class="control-btn-group">
-              <button
-                v-for="item in palette"
-                :key="item.type"
-                class="flow-control-tool"
-                :title="`拖拽或点击添加【${item.label}】`"
-                :disabled="!contractReady"
-                :draggable="contractReady"
-                @dragstart="drag($event,{kind:'function',type:item.type})"
-                @click="addResource({kind:'function',type:item.type})"
-              >
-                <span class="tool-icon" :class="item.type.toLowerCase()">{{ item.glyph }}</span>
-                <span class="tool-name">{{ item.label }}</span>
-              </button>
-            </div>
+            <div class="control-btn-group"><button v-for="item in palette" :key="item.type" class="flow-control-tool" :disabled="!canEdit" :draggable="canEdit" @dragstart="drag($event,{kind:'function',type:item.type})" @click="addResource({kind:'function',type:item.type})"><span class="tool-icon" :class="item.type.toLowerCase()">{{ item.glyph }}</span><span class="tool-name">{{ item.label }}</span></button></div>
           </div>
-
-          <VueFlow v-model:nodes="flowNodes" v-model:edges="flowEdges" class="workflow-flow" :min-zoom="0.35" :max-zoom="1.8" :default-edge-options="defaultEdgeOptions" :delete-key-code="null" :fit-view-on-init="true" @connect="connectNodes" @node-click="selectCanvasNode" @pane-click="clearSelection" @node-drag-stop="persistLayout" @edge-click="selectEdge" @edges-delete="removeDeletedEdges">
-            <Background pattern-color="#cbd8e8" :gap="20" :size="1.2" />
+          <VueFlow v-model:nodes="flowNodes" v-model:edges="flowEdges" class="workflow-flow" :nodes-draggable="canEdit" :nodes-connectable="canEdit" :min-zoom="0.35" :max-zoom="1.8" :default-edge-options="defaultEdgeOptions" :delete-key-code="null" :fit-view-on-init="true" @connect="connectNodes" @node-click="selectCanvasNode" @pane-click="clearSelection" @node-drag-stop="persistLayout" @edge-click="selectEdge" @edges-delete="removeDeletedEdges">
+            <Background pattern-color="#d9d9d9" :gap="16" :size="1" />
             <Controls position="bottom-left" :show-interactive="true" :show-zoom="true" :show-fit-view="true">
               <ControlButton title="DAG 自动布局" @click="autoLayout">
                 <el-icon class="auto-layout-icon"><Grid /></el-icon>
@@ -122,9 +100,9 @@
             </template>
           </VueFlow>
           <section v-if="!flowNodes.length" class="empty-workbench">
-            <div class="empty-head"><span>01</span><div><strong>建立流程骨架</strong><small>一个可执行流程从 START 开始，在 END 结束</small></div></div>
+            <div class="empty-head"><span>01</span><div><strong>建立流程骨架</strong><small>一个可执行流程从开始节点进入，在结束节点退出</small></div></div>
             <div class="quick-start single-action">
-              <button :disabled="!contractReady" @click.stop="addResource({kind:'function',type:'START'})"><b>▶</b><span>添加开始节点</span></button>
+              <button :disabled="!canEdit" @click.stop="addResource({kind:'function',type:'START'})"><b>▶</b><span>添加开始节点</span></button>
             </div>
           </section>
         </div>
@@ -136,32 +114,20 @@
           <span><i class="status-dot"></i>布局保存在当前浏览器</span>
         </footer>
       </main>
-      <aside class="inspector-panel">
+      <aside class="inspector-panel workflow-overview-panel">
         <div class="panel-titlebar inspector-titlebar">
-          <div><strong>{{ inspectorTitle }}</strong><span>{{ inspectorSubtitle }}</span></div>
-          <el-button v-if="hasInspectorSelection" link class="btn-aliyun-link" @click="showOverview">返回配置与总览</el-button>
+          <div><strong>流程属性</strong><span>流程级设置与建模检查</span></div>
         </div>
         <div class="inspector-scroll">
-          <WorkflowNodeInspector v-if="nodeDrawerVisible && selectedNode" :visible="nodeDrawerVisible" :node="selectedNode" :errors="selectedNodeIssues" :device-capabilities="selectedDeviceModel?.capabilities || []" :device-attributes="selectedDeviceModel?.attributes || []" :interface-connections="form.interfaceConnections" :port-connections="form.portConnections" :contract-ready="contractReady" @close="closeNodeDrawer" @rename="renameSelectedNode" @update:node="replaceSelectedNode" @update:interface-connections="replaceInterfaceConnections" @update:port-connections="replacePortConnections" @remove-port-request="confirmRemovePort" @remove-node="removeSelectedNode" />
-          <section v-else-if="selectedEdge" class="edge-view">
-            <div class="connection-type" :class="selectedEdge.data?.connectionKind?.toLowerCase()"><span>{{ selectedEdge.data?.connectionKind === 'PORT' ? '数据流' : '执行流' }}</span><b>{{ selectedEdgeEndpoint.source }} → {{ selectedEdgeEndpoint.target }}</b></div>
-            <dl class="property-list"><div><dt>源连接点</dt><dd>{{ selectedEdgeEndpoint.sourceHandle }}</dd></div><div><dt>目标连接点</dt><dd>{{ selectedEdgeEndpoint.targetHandle }}</dd></div><div><dt>业务语义</dt><dd>{{ selectedEdge.data?.connectionKind === 'PORT' ? '将上游节点内部变量传递给下游节点' : '上游节点完成后激活下游节点' }}</dd></div></dl>
-            <el-button class="wide-action btn-aliyun-danger-link" plain @click="deleteSelectedEdge">删除该连接</el-button>
-          </section>
-          <section v-else-if="validationVisible" class="validation-view">
-            <div class="validation-summary"><div><strong>{{ validationSummary.errors }}</strong><span>错误</span></div><div><strong>{{ validationSummary.warnings }}</strong><span>提醒</span></div><div><strong>{{ form.nodesDef.length }}</strong><span>节点</span></div></div>
-            <div v-if="workflowValidationIssues.length" class="issue-list"><button v-for="issue in workflowValidationIssues" :key="issue.code" :class="issue.severity" @click="focusValidationIssue(issue)"><b>{{ issue.severity === 'error' ? '错误' : '提醒' }}</b><span><strong>{{ issue.title }}</strong><small>{{ issue.detail }}</small></span><i>›</i></button></div>
-            <el-result v-else icon="success" title="流程校验通过" sub-title="节点契约与执行拓扑均满足保存要求" />
-          </section>
-          <section v-else class="overview-view">
+          <section class="overview-view">
             <div class="config-section">
               <div class="section-heading"><strong>流程基本配置</strong><span>身份与描述</span></div>
               <el-form label-position="top" class="dense-form">
                 <el-form-item label="流程名称">
-                  <el-input v-model="form.name" maxlength="80" placeholder="例如：恒温反应实验流程" @input="markDirty" />
+                  <el-input v-model="form.name" :disabled="!canEdit" maxlength="80" placeholder="例如：恒温反应实验流程" @input="markDirty" />
                 </el-form-item>
                 <el-form-item label="流程描述">
-                  <el-input v-model="form.description" type="textarea" :rows="3" maxlength="500" placeholder="说明前置条件、执行目标和适用范围" @input="markDirty" />
+                  <el-input v-model="form.description" :disabled="!canEdit" type="textarea" :rows="3" maxlength="500" placeholder="说明前置条件、执行目标和适用范围" @input="markDirty" />
                 </el-form-item>
               </el-form>
             </div>
@@ -179,6 +145,16 @@
         </div>
       </aside>
     </div>
+    <el-drawer v-model="elementDrawerVisible" :with-header="false" class="workflow-element-drawer" size="62vw" append-to-body @closed="clearElementSelection">
+      <div class="workflow-element-drawer-body">
+        <WorkflowNodeInspector v-if="selectedNode" :visible="elementDrawerVisible" :node="selectedNode" :readonly="!canEdit" :protocol-metadata="protocolMetadata" :errors="selectedNodeIssues" :device-capabilities="selectedDeviceModel?.capabilities || []" :device-attributes="selectedDeviceModel?.attributes || []" :interface-connections="form.interfaceConnections" :port-connections="form.portConnections" :contract-ready="contractReady" @close="closeElementDrawer" @rename="renameSelectedNode" @update:node="replaceSelectedNode" @update:interface-connections="replaceInterfaceConnections" @update:port-connections="replacePortConnections" @remove-port-request="confirmRemovePort" @remove-node="removeSelectedNode" />
+        <section v-else-if="selectedEdge" class="edge-view">
+          <div class="connection-type" :class="selectedEdge.data?.connectionKind?.toLowerCase()"><span>{{ selectedEdge.data?.connectionKind === 'PORT' ? '数据流' : '执行流' }}</span><b>{{ selectedEdgeEndpoint.source }} → {{ selectedEdgeEndpoint.target }}</b></div>
+          <dl class="property-list"><div><dt>源连接点</dt><dd>{{ selectedEdgeEndpoint.sourceHandle }}</dd></div><div><dt>目标连接点</dt><dd>{{ selectedEdgeEndpoint.targetHandle }}</dd></div><div><dt>业务语义</dt><dd>{{ selectedEdge.data?.connectionKind === 'PORT' ? '将上游节点内部变量传递给下游节点' : '上游节点完成后激活下游节点' }}</dd></div></dl>
+          <el-button v-if="canEdit" class="wide-action btn-aliyun-danger-link" plain @click="deleteSelectedEdge">删除该连接</el-button>
+        </section>
+      </div>
+    </el-drawer>
   </div>
 </template>
 
@@ -186,7 +162,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Aim, ArrowLeft, ArrowRight, Grid, MagicStick, Plus, Refresh, Search, Setting } from '@element-plus/icons-vue'
+import { Document, Folder, FolderOpened, Grid, Monitor, Plus, Search } from '@element-plus/icons-vue'
 import { VueFlow, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls, ControlButton } from '@vue-flow/controls'
@@ -208,6 +184,7 @@ import { invalidateFrontendContractMetadata, loadFrontendContractMetadata } from
 import { workflowApi } from '../../../services/workflowApi.js'
 import { adoptPreparedWorkflow, indexWorkflowIssues, toAuthoringPayload } from '../../../utils/workflowAuthoring.js'
 import { configureWorkflowNodeTemplates, createDeviceNode, createFunctionNode, createSubflowNode, removePort, validateNodeDefinition } from '../../../utils/workflowNodeDefinition.js'
+import { clearWorkflowCanvas, workflowLibraryGroups } from '../../../utils/workflowDesignerRules.js'
 
 type NodeDefinition = Record<string, any>
 type FlowNode = Record<string, any>
@@ -215,7 +192,6 @@ type FlowEdge = Record<string, any>
 type ValidationIssue = { code:string, severity:'error'|'warning', title:string, detail:string, nodeName?:string, path?:string }
 
 const tab = ref('devices')
-const actionsExpanded = ref(true)
 const workflows = ref<any[]>([])
 const models = ref<any[]>([])
 const instances = ref<any[]>([])
@@ -225,11 +201,11 @@ const publishSaving = ref(false)
 const resourceKeyword = ref('')
 const contractReady = ref(false)
 const contractError = ref('')
+const protocolMetadata = ref<Record<string, any>>({})
+const isEditing = ref(true)
 const openedWorkflowId = ref<number | null>(null)
-const settingsVisible = ref(false)
-const validationVisible = ref(false)
 const dirty = ref(false)
-const nodeDrawerVisible = ref(false)
+const elementDrawerVisible = ref(false)
 const selectedNodeName = ref('')
 const selectedEdgeId = ref('')
 const flowNodes = ref<FlowNode[]>([])
@@ -249,6 +225,7 @@ const palette = [
   { type:'AGGREGATE', label:'汇聚', glyph:'◆', description:'合并路径' }
 ]
 const defaultEdgeOptions = { type:'smoothstep', style:{ stroke:'#6f8fb7', strokeWidth:2 } }
+const canEdit = computed(() => contractReady.value && isEditing.value)
 
 const selectedNode = computed(() => nodeByName(selectedNodeName.value))
 const selectedDeviceModel = computed(() => selectedNode.value?.nodeType === 'DEV_NODE' ? modelById(selectedNode.value.deviceModelId) : null)
@@ -277,20 +254,6 @@ const validationSummary = computed(() => ({
   errors: workflowValidationIssues.value.filter(issue => issue.severity === 'error').length,
   warnings: workflowValidationIssues.value.filter(issue => issue.severity === 'warning').length
 }))
-const hasInspectorSelection = computed(() => nodeDrawerVisible.value || Boolean(selectedEdge.value) || validationVisible.value)
-const inspectorTitle = computed(() => {
-  if (nodeDrawerVisible.value && selectedNode.value) return '节点配置'
-  if (selectedEdge.value) return '连接配置'
-  if (validationVisible.value) return '流程校验'
-  return '流程配置与总览'
-})
-const inspectorSubtitle = computed(() => {
-  if (nodeDrawerVisible.value && selectedNode.value) return `${selectedNode.value.name} · ${nodeBusinessLabel(selectedNode.value)}`
-  if (selectedEdge.value) return selectedEdge.value.data?.connectionKind === 'PORT' ? '端口数据传递关系' : '节点执行顺序关系'
-  if (validationVisible.value) return `${validationSummary.value.errors} 个错误 · ${validationSummary.value.warnings} 个提醒`
-  return '流程名称、描述与建模检查状态'
-})
-
 const deviceTree = computed(() => {
   const map = new Map<any, any>()
   categories.value.forEach((category:any) => map.set(category.id || category.categoryId, { key:'c-'+(category.id || category.categoryId), kind:'category', label:category.categoryName || category.name, children:[] }))
@@ -329,21 +292,33 @@ const filteredWorkflows = computed(() => {
   return workflows.value.filter(item => !keyword || item.flowName?.toLowerCase().includes(keyword) || item.description?.toLowerCase().includes(keyword))
 })
 
-const allFilteredWorkflows = computed(() => {
-  const keyword = resourceKeyword.value.trim().toLowerCase()
-  return workflows.value.filter(item => !keyword || item.flowName?.toLowerCase().includes(keyword) || item.description?.toLowerCase().includes(keyword))
-})
+const workflowTree = computed(() => workflowLibraryGroups(filteredWorkflows.value).map(group => ({
+  key:`workflow-group-${group.key}`,
+  label:group.label,
+  children:group.children.map(item => ({ key:`workflow-${item.id}`, label:item.flowName, workflow:item })),
+})).filter(group => group.children.length))
 
 function newDraftKey() {
   return 'draft-'+Date.now()+'-'+Math.random().toString(36).slice(2, 8)
 }
 
-function workflowOptionLabel(item:any) {
-  return `${item.flowName || '未命名流程'} · V${item.version || 1} · ${item.status === 'ACTIVE' ? '已启用' : '草稿'}`
+function markDirty() {
+  if (!canEdit.value) return
+  dirty.value = true
 }
 
-function markDirty() {
-  dirty.value = true
+function startEditing() { isEditing.value = true }
+
+async function clearCanvas() {
+  if (!canEdit.value || !form.nodesDef.length) return
+  try {
+    await ElMessageBox.confirm('只清空画布中的节点和连线，流程名称与描述会保留。保存前不会影响数据库。', '清空画布', { type:'warning', confirmButtonText:'确认清空', cancelButtonText:'取消' })
+  } catch { return }
+  Object.assign(form, clearWorkflowCanvas(form))
+  closeElementDrawer()
+  flowNodes.value = []
+  flowEdges.value = []
+  markDirty()
 }
 
 function editorNodeName(value:any) {
@@ -365,12 +340,12 @@ function buildWorkflowValidationIssues():ValidationIssue[] {
   const issues:ValidationIssue[] = []
   const push = (issue:ValidationIssue) => issues.push(issue)
   if (!String(form.name || '').trim()) push({ code:'flow-name', severity:'error', title:'流程名称不能为空', detail:'配置用于任务创建和运维识别的流程名称。' })
-  if (!form.nodesDef.length) push({ code:'flow-empty', severity:'error', title:'流程没有任何节点', detail:'先创建 START 与 END，再加入实际执行节点。' })
+  if (!form.nodesDef.length) push({ code:'flow-empty', severity:'error', title:'流程没有任何节点', detail:'先创建开始节点与结束节点，再加入实际执行节点。' })
 
   const starts = form.nodesDef.filter((node:any) => node.functionType === 'START')
   const ends = form.nodesDef.filter((node:any) => node.functionType === 'END')
-  if (starts.length !== 1) push({ code:'start-count', severity:'error', title:'START 节点数量不正确', detail:`当前 ${starts.length} 个，流程需要且仅需要一个入口。`, nodeName:starts[0]?.name })
-  if (ends.length !== 1) push({ code:'end-count', severity:'error', title:'END 节点数量不正确', detail:`当前 ${ends.length} 个，流程需要且仅需要一个出口。`, nodeName:ends[0]?.name })
+  if (starts.length !== 1) push({ code:'start-count', severity:'error', title:'开始节点数量不正确', detail:`当前 ${starts.length} 个，流程需要且仅需要一个入口。`, nodeName:starts[0]?.name })
+  if (ends.length !== 1) push({ code:'end-count', severity:'error', title:'结束节点数量不正确', detail:`当前 ${ends.length} 个，流程需要且仅需要一个出口。`, nodeName:ends[0]?.name })
 
   form.nodesDef.forEach((node:any) => {
     validateNodeDefinition(node, { deviceModel:modelById(node.deviceModelId) }).forEach((issue:any, index:number) => push({
@@ -400,10 +375,10 @@ function buildWorkflowValidationIssues():ValidationIssue[] {
   form.nodesDef.forEach((node:any) => {
     const inCount = incoming.get(node.name)?.length || 0
     const outCount = outgoing.get(node.name)?.length || 0
-    if (node.functionType === 'START' && inCount) push({ code:`start-in-${node.name}`, severity:'error', title:'START 不能有上游节点', detail:'入口只能发起流程，不能被其他节点激活。', nodeName:node.name })
+    if (node.functionType === 'START' && inCount) push({ code:`start-in-${node.name}`, severity:'error', title:'开始节点不能有上游节点', detail:'入口只能发起流程，不能被其他节点激活。', nodeName:node.name })
     if (node.functionType !== 'START' && !inCount) push({ code:`missing-in-${node.name}`, severity:'error', title:`节点 ${node.name} 没有上游路径`, detail:'该节点在运行时不会被激活。', nodeName:node.name })
-    if (node.functionType === 'END' && outCount) push({ code:`end-out-${node.name}`, severity:'error', title:'END 不能有下游节点', detail:'出口表示流程已经结束，不能再激活其他节点。', nodeName:node.name })
-    if (node.functionType !== 'END' && !outCount) push({ code:`missing-out-${node.name}`, severity:'error', title:`节点 ${node.name} 没有下游路径`, detail:'执行到此处后无法抵达 END。', nodeName:node.name })
+    if (node.functionType === 'END' && outCount) push({ code:`end-out-${node.name}`, severity:'error', title:'结束节点不能有下游节点', detail:'出口表示流程已经结束，不能再激活其他节点。', nodeName:node.name })
+    if (node.functionType !== 'END' && !outCount) push({ code:`missing-out-${node.name}`, severity:'error', title:`节点 ${node.name} 没有下游路径`, detail:'执行到此处后无法抵达结束节点。', nodeName:node.name })
     if (node.functionType === 'BRANCH') {
       const branchOutputs = (node.interfaces || []).filter((item:any) => item.direction === 'OUT' && item.interfaceType === 'WORKFLOW')
       const connectedOutputs = new Set(executionConnections.value.filter((item:any) => item.source?.nodeName === node.name).map((item:any) => item.source?.interfaceName))
@@ -422,11 +397,11 @@ function buildWorkflowValidationIssues():ValidationIssue[] {
 
   if (starts.length === 1) {
     const reachable = walkGraph(starts[0].name, outgoing)
-    form.nodesDef.filter((node:any) => !reachable.has(node.name)).forEach((node:any) => push({ code:`unreachable-${node.name}`, severity:'error', title:`节点 ${node.name} 无法从 START 到达`, detail:'连接入口到该节点，或删除孤立节点。', nodeName:node.name }))
+    form.nodesDef.filter((node:any) => !reachable.has(node.name)).forEach((node:any) => push({ code:`unreachable-${node.name}`, severity:'error', title:`节点 ${node.name} 无法从开始节点到达`, detail:'连接入口到该节点，或删除孤立节点。', nodeName:node.name }))
   }
   if (ends.length === 1) {
     const reachesEnd = walkGraph(ends[0].name, incoming)
-    form.nodesDef.filter((node:any) => !reachesEnd.has(node.name)).forEach((node:any) => push({ code:`no-end-${node.name}`, severity:'error', title:`节点 ${node.name} 无法抵达 END`, detail:'补齐后续执行路径，避免任务永久停留。', nodeName:node.name }))
+    form.nodesDef.filter((node:any) => !reachesEnd.has(node.name)).forEach((node:any) => push({ code:`no-end-${node.name}`, severity:'error', title:`节点 ${node.name} 无法抵达结束节点`, detail:'补齐后续执行路径，避免任务永久停留。', nodeName:node.name }))
   }
 
   const indegree = new Map<string,number>([...nodeNames].map(name => [name, incoming.get(name)?.length || 0]))
@@ -455,24 +430,21 @@ function walkGraph(start:string, graph:Map<string,string[]>) {
 }
 
 function runValidation() {
-  settingsVisible.value = false
-  nodeDrawerVisible.value = false
-  selectedNodeName.value = ''
-  selectedEdgeId.value = ''
-  validationVisible.value = true
+  closeElementDrawer()
   if (validationSummary.value.errors) ElMessage.error(`流程有 ${validationSummary.value.errors} 个错误，请按右侧清单处理`)
   else ElMessage.success('流程校验通过')
 }
 
 function focusValidationIssue(issue:ValidationIssue) {
   if (issue.nodeName && nodeByName(issue.nodeName)) openNodeDrawer(issue.nodeName)
-  else if (issue.code === 'flow-name') openSettings()
+  else if (issue.code === 'flow-name') ElMessage.info('请在右侧“流程基本配置”中填写流程名称')
 }
 
-function showOverview() {
-  settingsVisible.value = false
-  nodeDrawerVisible.value = false
-  validationVisible.value = false
+function closeElementDrawer() {
+  elementDrawerVisible.value = false
+}
+
+function clearElementSelection() {
   selectedNodeName.value = ''
   selectedEdgeId.value = ''
 }
@@ -490,6 +462,7 @@ function readLayout() {
 }
 
 function persistLayout() {
+  if (!canEdit.value && form.id) return
   try {
     localStorage.setItem(currentLayoutKey(), JSON.stringify(serializeLayout(flowNodes.value)))
   } catch {
@@ -506,11 +479,8 @@ function rebuildCanvas(layout = readLayout()) {
 
 function reset(value:any, layout = readLayout()) {
   Object.assign(form, empty(), value, { nodesDef:value.nodesDef || [], interfaceConnections:value.interfaceConnections || [], portConnections:value.portConnections || [] })
-  selectedNodeName.value = ''
-  nodeDrawerVisible.value = false
-  settingsVisible.value = false
-  validationVisible.value = false
-  selectedEdgeId.value = ''
+  closeElementDrawer()
+  clearElementSelection()
   openedWorkflowId.value = value.id || null
   rebuildCanvas(layout)
   dirty.value = false
@@ -531,7 +501,7 @@ async function create() {
   draftLayoutKey.value = newDraftKey()
   openedWorkflowId.value = null
   reset(empty())
-  settingsVisible.value = true
+  isEditing.value = true
 }
 
 function exportWorkflow() {
@@ -574,12 +544,13 @@ function createResourceNode(data:any):NodeDefinition | null {
 }
 
 function drag(event:DragEvent, data:any) {
+  if (!canEdit.value) return event.preventDefault()
   if (data.kind === 'model') {
     event.preventDefault()
     return
   }
   const payload = data.kind === 'instance' ? { kind:'instance', instance:data.instance, model:data.model } : data
-  if (!contractReady.value) return
+  if (!canEdit.value) return
   event.dataTransfer?.setData('workflow-resource', JSON.stringify(payload))
   if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy'
 }
@@ -591,7 +562,7 @@ function suggestedPosition() {
 
 function drop(event:DragEvent) {
   try {
-    if (!contractReady.value) return
+    if (!canEdit.value) return
     const data = JSON.parse(event.dataTransfer?.getData('workflow-resource') || '{}')
     const point = screenToFlowCoordinate({ x:event.clientX, y:event.clientY })
     addResource(data, { x:point.x-110, y:point.y-55 })
@@ -601,6 +572,7 @@ function drop(event:DragEvent) {
 }
 
 function addResource(data:any, position = suggestedPosition()) {
+  if (!canEdit.value) return
   if (data.kind === 'model') {
     return ElMessage.warning('设备模型不能直接作为节点放至画布，请展开并拖拽具体的“设备实例”')
   }
@@ -643,6 +615,7 @@ function syncEdges() {
 }
 
 function connectNodes(params:any) {
+  if (!canEdit.value) return
   const sourceNodeName = flowNodes.value.find(node => node.id === params.source)?.data?.nodeName
   const targetNodeName = flowNodes.value.find(node => node.id === params.target)?.data?.nodeName
   try {
@@ -671,25 +644,17 @@ function selectCanvasNode(event:any) {
 function openNodeDrawer(nodeName:string) {
   selectedNodeName.value = nodeName
   selectedEdgeId.value = ''
-  settingsVisible.value = false
-  validationVisible.value = false
-  nodeDrawerVisible.value = true
-}
-
-function closeNodeDrawer() {
-  showOverview()
+  elementDrawerVisible.value = true
 }
 
 function clearSelection() {
-  showOverview()
+  closeElementDrawer()
 }
 
 function selectEdge(event:any) {
   selectedEdgeId.value = event.edge.id
-  nodeDrawerVisible.value = false
   selectedNodeName.value = ''
-  settingsVisible.value = false
-  validationVisible.value = false
+  elementDrawerVisible.value = true
 }
 
 function removeEdge(edge:any) {
@@ -700,19 +665,22 @@ function removeEdge(edge:any) {
 }
 
 function removeDeletedEdges(edges:any[]) {
+  if (!canEdit.value) return syncEdges()
   edges.forEach(removeEdge)
   syncEdges()
 }
 
 function deleteSelectedEdge() {
+  if (!canEdit.value) return
   const edge = flowEdges.value.find(item => item.id === selectedEdgeId.value)
   if (!edge) return
   removeEdge(edge)
-  selectedEdgeId.value = ''
+  closeElementDrawer()
   syncEdges()
 }
 
 function renameSelectedNode(value:string) {
+  if (!canEdit.value) return
   const node = selectedNode.value
   if (!node) return
   const oldName = node.name
@@ -733,6 +701,7 @@ function renameSelectedNode(value:string) {
 }
 
 function replaceSelectedNode(node:NodeDefinition) {
+  if (!canEdit.value) return
   const index = form.nodesDef.findIndex((item:any) => item.name === selectedNodeName.value)
   if (index < 0) return
   markDirty()
@@ -746,12 +715,14 @@ function replaceSelectedNode(node:NodeDefinition) {
 }
 
 function replacePortConnections(connections:any[]) {
+  if (!canEdit.value) return
   form.portConnections = connections
   markDirty()
   syncEdges()
 }
 
 function replaceInterfaceConnections(connections:any[]) {
+  if (!canEdit.value) return
   form.interfaceConnections = connections
   markDirty()
   syncEdges()
@@ -768,6 +739,7 @@ function portConnectionLabel(connection:any) {
 }
 
 async function confirmRemovePort(portName:string) {
+  if (!canEdit.value) return
   const node = selectedNode.value
   if (!node) return
   const connections = portConnectionsFor(node.name, portName)
@@ -782,6 +754,7 @@ async function confirmRemovePort(portName:string) {
 }
 
 async function removeSelectedNode() {
+  if (!canEdit.value) return
   const node = selectedNode.value
   if (!node) return
   try {
@@ -793,15 +766,14 @@ async function removeSelectedNode() {
   form.interfaceConnections = form.interfaceConnections.filter((item:any) => item.source?.nodeName !== node.name && item.target?.nodeName !== node.name)
   form.portConnections = form.portConnections.filter((item:any) => item.source?.nodeName !== node.name && item.target?.nodeName !== node.name)
   flowNodes.value = flowNodes.value.filter(item => item.data?.nodeName !== node.name)
-  nodeDrawerVisible.value = false
-  selectedNodeName.value = ''
-  validationVisible.value = false
+  closeElementDrawer()
   markDirty()
   syncEdges()
   persistLayout()
 }
 
 function autoLayout() {
+  if (!canEdit.value) return
   flowNodes.value = buildFlowNodes(form.nodesDef)
   persistLayout()
   void nextTick(() => fitCanvas())
@@ -809,14 +781,6 @@ function autoLayout() {
 
 function fitCanvas() {
   if (flowNodes.value.length) void fitView({ padding:0.2, duration:260 })
-}
-
-function openSettings() {
-  nodeDrawerVisible.value = false
-  selectedNodeName.value = ''
-  selectedEdgeId.value = ''
-  validationVisible.value = false
-  settingsVisible.value = true
 }
 
 function modelById(id:any) {
@@ -896,6 +860,7 @@ function initializeContract() {
       try {
         const metadata = await loadFrontendContractMetadata()
         configureWorkflowNodeTemplates(metadata?.workflow?.nodeTemplates)
+        protocolMetadata.value = metadata?.protocol || {}
         contractError.value = ''
         contractReady.value = true
       } catch (error:any) {
@@ -923,7 +888,7 @@ async function loadAll() {
 }
 
 async function saveDraft() {
-  if (!contractReady.value) return ElMessage.error(contractError.value || '工作流系统模板尚未加载，不能保存')
+  if (!canEdit.value) return ElMessage.warning('请先点击编辑')
   draftSaving.value = true
   const previousLayoutKey = currentLayoutKey()
   const currentLayout = serializeLayout(flowNodes.value)
@@ -951,7 +916,7 @@ async function saveDraft() {
 
 
 async function publishAndValidate() {
-  if (!contractReady.value) return ElMessage.error(contractError.value || '工作流系统模板尚未加载')
+  if (!canEdit.value) return ElMessage.warning('请先点击编辑')
   publishSaving.value = true
   const previousLayoutKey = currentLayoutKey()
   const currentLayout = serializeLayout(flowNodes.value)
@@ -998,6 +963,7 @@ async function loadWorkflow(id:number | null) {
     const workflow = response.data.data
     setWorkflowIssues([])
     reset(workflow)
+    isEditing.value = false
   } catch (error:any) {
     openedWorkflowId.value = previousId
     ElMessage.error(error.message || '加载流程失败')
@@ -1063,4 +1029,10 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
 .stats-chip{height:18px;display:inline-flex;align-items:center;padding:0 6px;border:1px solid #cbd5e1;border-radius:2px;background:#f8fafc;color:#475569;font-size:9px;font-weight:600}
 .error-badge{height:18px;display:inline-flex;align-items:center;padding:0 6px;border:1px solid #fca5a5;border-radius:2px;background:#fef2f2;color:#dc2626;font-size:9px;font-weight:700}
 .config-section{padding-bottom:12px;border-bottom:1px solid #e2e8f0}
+.workflow-element-drawer-body{height:100%;overflow:hidden;box-sizing:border-box;background:#fff}.workflow-element-drawer-body>.edge-view{min-height:100%;overflow-y:auto}:global(.workflow-element-drawer){min-width:880px;max-width:1180px;box-shadow:-6px 0 20px rgba(0,0,0,.12);transition:transform .2s cubic-bezier(.23,1,.32,1)!important}:global(.workflow-element-drawer .el-drawer__body){min-height:0;padding:0;overflow:hidden;background:#fff}@media(max-width:900px){:global(.workflow-element-drawer){width:100vw!important;min-width:0;max-width:none}}
+
+/* 连续控制台视觉覆盖：资源、画布和流程属性通过分隔线形成一个完整工作台。 */
+.designer-grid{grid-template-columns:218px minmax(430px,1fr) 304px;background:#fff}.resource-panel{border-right-color:#e5e5e5}.inspector-panel{border-left:0;background:#fff}.panel-titlebar{height:45px;padding:0 12px;border-bottom-color:#e5e5e5;background:#fff}.panel-titlebar strong{color:#262626;font-size:13px;font-weight:500}.panel-titlebar span,.panel-titlebar small{color:#8c8c8c;font-size:10px}.resource-titlebar{border-right:0}.resource-tabs :deep(.el-tabs__nav-wrap){padding:0 8px;border-bottom-color:#e5e5e5;background:#fafafa}.resource-tabs :deep(.el-tabs__item){height:36px;color:#595959;font-size:12px}.resource-tabs :deep(.el-tabs__item.is-active){color:#1677ff;font-weight:500}.resource-tabs :deep(.el-tabs__active-bar){height:2px;background:#1677ff}.resource-search{padding:8px 10px;border-bottom-color:#f0f0f0}.resource-tabs :deep(.el-tree-node__content){position:relative;height:36px;padding-right:8px;transition:background-color .15s ease}.resource-tabs :deep(.el-tree-node__content:hover){background:#e6f4ff}.resource-tabs :deep(.el-tree-node.is-current>.el-tree-node__content){background:#e6f4ff;color:#1677ff}.resource-tabs :deep(.el-tree-node.is-current>.el-tree-node__content:before){content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:#1677ff}.tab-scroll-body{padding:0}.flow-item{height:42px;padding:0 10px;border-bottom-color:#f0f0f0;transition:background-color .15s ease}.flow-item:hover,.flow-item.is-active-flow{border-color:#f0f0f0;background:#e6f4ff}.flow-icon{border:1px solid #bae0ff;background:#e6f4ff;color:#1677ff}.canvas-panel{border-right-color:#e5e5e5}.canvas-commandbar{position:static;z-index:10;height:45px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 10px;border-bottom:1px solid #e5e5e5;background:#fff;box-shadow:none}.flow-title-row>strong{color:#262626;font-weight:500}.status-chip,.meta-chip,.dirty-mark,.stats-chip,.error-badge{border-radius:2px}.island-right{gap:0}.island-right :deep(.el-button){height:28px;margin-left:-1px;border-radius:0;transition:border-color .15s ease,color .15s ease,background-color .15s ease}.island-right :deep(.el-button:first-child){margin-left:0}.island-right :deep(.btn-aliyun-cta){margin-left:8px;border-radius:2px;background:#1677ff}.flow-stage{background:#f7f8fa}.canvas-floating-controls{top:10px;right:10px;border-color:#d9d9d9;border-radius:2px;box-shadow:0 2px 8px rgba(0,0,0,.08)}.workflow-flow :deep(.vue-flow__edge-path){stroke:#7b96b8;stroke-width:1.8;transition:stroke .15s ease,stroke-width .15s ease}.workflow-flow :deep(.data-edge .vue-flow__edge-path){stroke:#722ed1;stroke-dasharray:7 5}.workflow-flow :deep(.vue-flow__edge.selected .vue-flow__edge-path){stroke:#1677ff;stroke-width:2.4}.workflow-flow :deep(.vue-flow__controls){border-color:#d9d9d9;border-radius:2px;box-shadow:0 2px 8px rgba(0,0,0,.08)}.canvas-statusbar{height:28px;border-top-color:#e5e5e5;background:#fff;color:#8c8c8c}.legend-line{border-top-color:#7b96b8}.legend-line.data{border-top-color:#722ed1}.inspector-titlebar{height:45px}.section-heading{height:36px;padding:0 12px;border-color:#e5e5e5;background:#fafafa}.section-heading strong{color:#262626;font-size:11px;font-weight:500}.dense-form{padding:12px 12px 2px;border-bottom-color:#e5e5e5}.overview-metrics{border-bottom-color:#e5e5e5}.overview-metrics>div{border-right-color:#f0f0f0}.overview-metrics strong{color:#262626;font-size:16px;font-weight:500}.overview-metrics span{color:#8c8c8c;font-size:10px}.issue-list button{border-bottom-color:#f0f0f0;transition:background-color .15s ease}.issue-list button:hover{background:#fafafa}
+.resource-function-section{border-bottom:1px solid #e5e5e5;background:#fff}.resource-group-heading{height:30px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:#fafafa;color:#595959}.resource-group-heading strong{font-size:11px;font-weight:500}.resource-group-heading span{color:#8c8c8c;font-size:9px}.resource-function-list{display:grid;grid-template-columns:1fr 1fr}.resource-function-item{height:48px;display:grid;grid-template-columns:24px minmax(0,1fr);align-items:center;gap:7px;padding:5px 9px;border:0;border-right:1px solid #f0f0f0;border-bottom:1px solid #f0f0f0;background:#fff;color:#262626;text-align:left;cursor:grab;transition:background-color .15s ease,color .15s ease}.resource-function-item:nth-child(even){border-right:0}.resource-function-item:nth-last-child(-n+2){border-bottom:0}.resource-function-item:hover{background:#e6f4ff;color:#1677ff}.resource-function-item:disabled{cursor:not-allowed;opacity:.5}.resource-function-item>span:last-child{display:grid;min-width:0}.resource-function-item strong,.resource-function-item small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.resource-function-item strong{font-size:11px;font-weight:500}.resource-function-item small{color:#8c8c8c;font-size:9px}.function-mark{width:22px;height:22px;display:grid;place-items:center;border:1px solid #bae0ff;border-radius:2px;background:#e6f4ff;color:#1677ff;font-size:9px}.function-mark.start{border-color:#b7eb8f;background:#f6ffed;color:#389e0d}.function-mark.end{border-color:#d9d9d9;background:#fafafa;color:#595959}.function-mark.branch{border-color:#ffe58f;background:#fffbe6;color:#d48806}.function-mark.aggregate{border-color:#d3adf7;background:#f9f0ff;color:#722ed1}
+.tree-resource-icon{flex:none;color:#8c8c8c;font-size:14px}.tree-item.model .tree-resource-icon,.workflow-tree-item .tree-resource-icon{color:#1677ff}.workflow-tree-item{width:100%;display:flex;align-items:center;gap:7px;min-width:0}.workflow-tree-item.is-active-flow{color:#1677ff}.workflow-tree-item .node-title{flex:1}.canvas-floating-controls{top:10px;left:10px;right:auto;border-radius:2px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.08)}
 </style>

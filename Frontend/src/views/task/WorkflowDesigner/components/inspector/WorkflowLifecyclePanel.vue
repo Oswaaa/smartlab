@@ -35,5 +35,5 @@ const lifecycle = computed(() => props.lifecycle || { states: [], transitions: [
 </script>
 
 <style scoped>
-.lifecycle-panel{display:grid;gap:10px;padding:12px}.lifecycle-section{display:grid;gap:8px}.section-head{display:flex;align-items:center;gap:8px}.section-head strong{font-size:12px}.section-head span{color:#8591a4;font-size:10px}.transitions-table :deep(th){font-size:10px}.transitions-table :deep(td){font-size:10px}.empty-state{display:grid;place-items:center;padding:24px;color:#8d98a8;font-size:11px}
+.lifecycle-panel{display:grid;gap:16px;padding:20px}.lifecycle-section{display:grid;gap:10px;border:1px solid #e5e6eb;background:#fff}.section-head{min-height:46px;display:flex;align-items:center;gap:10px;padding:0 14px;border-bottom:1px solid #e5e6eb;background:#fafafa}.section-head strong{color:#1f2329;font-size:14px;font-weight:600}.section-head span{color:#8f959e;font-size:12px}.lifecycle-section :deep(.el-descriptions){padding:0 14px 14px}.transitions-table :deep(th),.transitions-table :deep(td){font-size:12px}.empty-state{display:grid;place-items:center;padding:40px;color:#8f959e;font-size:12px}
 </style>

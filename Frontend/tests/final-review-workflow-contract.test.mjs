@@ -112,12 +112,12 @@ test('inline triggers support UPDATE constants and EMIT on output interfaces', (
   assert.ok(validateNodeDefinition(node).some(error => error.path.endsWith('.action.payload')))
 })
 
-test('designer adopts normalized server definitions for drafts and publishing', () => {
+test('designer adopts prepared definitions and restores fixed capabilities for persisted details', () => {
   const designer = readFileSync(fileURLToPath(new URL('../src/views/task/WorkflowDesigner/WorkflowDesigner.vue', import.meta.url)), 'utf8')
 
   assert.match(designer, /workflowApi\.saveDraft/)
   assert.match(designer, /workflowApi\.publish/)
   assert.match(designer, /adoptPreparedWorkflow/)
   assert.match(designer, /indexWorkflowIssues/)
-  assert.doesNotMatch(designer, /rehydrateWorkflowNodes/)
+  assert.match(designer, /rehydrateWorkflowNodes/)
 })

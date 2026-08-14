@@ -8,6 +8,33 @@ public class WorkflowConditionEvaluator {
     public boolean evaluate(JsonNode condition, JsonNode variables) {
         if (condition == null || !condition.isObject())
             throw new IllegalArgumentException("触发器condition必须是对象");
+        if (condition.has("logic") || condition.has("conditions")) {
+            return evaluateGroup(condition, variables);
+        }
+        return evaluatePredicate(condition, variables);
+    }
+
+    private boolean evaluateGroup(JsonNode condition, JsonNode variables) {
+        String logic = condition.path("logic").asText("").trim();
+        if (!"AND".equals(logic)) {
+            throw new IllegalArgumentException("不支持的工作流条件组合方式: " + logic);
+        }
+        JsonNode conditions = condition.path("conditions");
+        if (!conditions.isArray() || conditions.isEmpty()) {
+            throw new IllegalArgumentException("AND条件组至少需要一个条件");
+        }
+        for (JsonNode item : conditions) {
+            if (item.has("logic") || item.has("conditions")) {
+                throw new IllegalArgumentException("工作流条件组不支持嵌套");
+            }
+            if (!evaluatePredicate(item, variables)) return false;
+        }
+        return true;
+    }
+
+    private boolean evaluatePredicate(JsonNode condition, JsonNode variables) {
+        if (condition == null || !condition.isObject())
+            throw new IllegalArgumentException("触发器原子条件必须是对象");
         String object = condition.path("object").asText("").trim();
         String operator = condition.path("operator").asText("").trim();
         JsonNode actual = resolve(variables, object);

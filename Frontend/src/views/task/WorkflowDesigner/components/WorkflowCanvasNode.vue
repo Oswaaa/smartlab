@@ -1,13 +1,13 @@
 <template>
-  <div class="canvas-node" :class="[{ selected, warning: issues.length }, meta.className]">
+  <div class="canvas-node" :class="[{ selected, warning: issues.length }, meta.className]" :style="nodeDimensions">
     <div class="handle-layer input-interfaces">
-      <div v-for="(item, index) in controlInputs" :key="item.name" class="side-handle" :style="sideHandleStyle(index, controlInputs.length)">
+      <div v-for="(item, index) in controlInputs" :key="item.name" class="side-handle" :style="sideHandleStyle(index)">
         <Handle :id="interfaceHandleId(item.name)" type="target" :position="Position.Left" class="workflow-handle interface-handle" />
         <span class="handle-label left" :title="interfaceLabel(item)">{{ interfaceLabel(item) }}</span>
       </div>
     </div>
     <div class="handle-layer output-ports">
-      <div v-for="(item, index) in outputPorts" :key="item.name" class="horizontal-handle" :style="horizontalHandleStyle(index, outputPorts.length)">
+      <div v-for="(item, index) in outputPorts" :key="item.name" class="horizontal-handle" :style="horizontalHandleStyle(index)">
         <Handle :id="portHandleId(item.name)" type="source" :position="Position.Top" class="workflow-handle port-handle" />
         <span class="handle-label top" :title="item.name">{{ item.name }}</span>
       </div>
@@ -24,13 +24,13 @@
       </div>
     </div>
     <div class="handle-layer output-interfaces">
-      <div v-for="(item, index) in controlOutputs" :key="item.name" class="side-handle" :style="sideHandleStyle(index, controlOutputs.length)">
+      <div v-for="(item, index) in controlOutputs" :key="item.name" class="side-handle" :style="sideHandleStyle(index)">
         <span class="handle-label right" :title="interfaceLabel(item)">{{ interfaceLabel(item) }}</span>
         <Handle :id="interfaceHandleId(item.name)" type="source" :position="Position.Right" class="workflow-handle interface-handle" />
       </div>
     </div>
     <div class="handle-layer input-ports">
-      <div v-for="(item, index) in inputPorts" :key="item.name" class="horizontal-handle" :style="horizontalHandleStyle(index, inputPorts.length)">
+      <div v-for="(item, index) in inputPorts" :key="item.name" class="horizontal-handle" :style="horizontalHandleStyle(index)">
         <span class="handle-label bottom" :title="item.name">{{ item.name }}</span>
         <Handle :id="portHandleId(item.name)" type="target" :position="Position.Bottom" class="workflow-handle port-handle" />
       </div>
@@ -50,6 +50,9 @@ const controlInputs = computed(() => workflowInterfaces.value.filter((item: Item
 const controlOutputs = computed(() => workflowInterfaces.value.filter((item: Item) => item.direction === 'OUT'))
 const inputPorts = computed(() => (props.node?.ports || []).filter((item: Item) => item.direction === 'IN'))
 const outputPorts = computed(() => (props.node?.ports || []).filter((item: Item) => item.direction === 'OUT'))
+const maxSideCount = computed(() => Math.max(controlInputs.value.length, controlOutputs.value.length))
+const maxPortCount = computed(() => Math.max(inputPorts.value.length, outputPorts.value.length))
+const nodeDimensions = computed(() => ({ minHeight: `${Math.max(70, maxSideCount.value * 18 + 36)}px`, minWidth: `${Math.max(178, maxPortCount.value * 30 + 48)}px` }))
 const meta = computed(() => {
   if (props.node?.nodeType === 'DEV_NODE') return { className: 'device', label: '设备能力', glyph: 'D' }
   if (props.node?.nodeType === 'SUBFLOW_NODE') return { className: 'subflow', label: '子流程', glyph: '↳' }
@@ -69,8 +72,8 @@ const summary = computed(() => {
 function interfaceLabel(item: Item) {
   return item.name
 }
-function sideHandleStyle(index: number, total: number) { return { top: `${((index + 1) * 100) / (total + 1)}%` } }
-function horizontalHandleStyle(index: number, total: number) { return { left: `${((index + 1) * 100) / (total + 1)}%` } }
+function sideHandleStyle(index: number) { return { top: `${18 + index * 18}px` } }
+function horizontalHandleStyle(index: number) { return { left: `${24 + index * 30}px` } }
 </script>
 
 <style scoped>
@@ -80,13 +83,13 @@ function horizontalHandleStyle(index: number, total: number) { return { left: `$
 .node-main{min-width:0;display:flex;flex:1;flex-direction:column;padding:9px 11px 9px 13px}.node-topline{display:flex;align-items:center;gap:5px;min-width:0}.node-type-dot{width:7px;height:7px;flex:none;border-radius:50%;background:#1677ff}.start .node-type-dot{background:#52c41a}.end .node-type-dot{background:#8c8c8c}.branch .node-type-dot{background:#faad14}.aggregate .node-type-dot{background:#722ed1}.subflow .node-type-dot{background:#13c2c2}.node-kind{color:#8c8c8c;font-size:10px;font-weight:400}.warning-dot{width:14px;height:14px;display:grid;place-items:center;flex:none;margin-left:auto;border-radius:50%;background:#fff1b8;color:#ad6800;font-size:9px;font-weight:600}.node-body{display:grid;gap:2px;min-width:0;margin-top:7px}.node-name,.node-summary{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.node-name{color:#262626;font-size:12px;font-weight:500}.node-summary{color:#8c8c8c;font-size:9px}
 .handle-layer{position:absolute;inset:0;pointer-events:none}
 .side-handle,.horizontal-handle{position:absolute;display:flex;align-items:center;color:#94a3b8;font-size:9px;line-height:1;white-space:nowrap;pointer-events:none}
-.side-handle{transform:translateY(-50%)}
+.side-handle{height:18px}
 .input-interfaces .side-handle{left:0}
 .output-interfaces .side-handle{right:0}
 .handle-label{max-width:48px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#8c8c8c;font-size:8px;font-weight:400;background:rgba(255,255,255,.94);padding:1px 2px;border-radius:1px;opacity:.7;transition:opacity .15s ease}.canvas-node:hover .handle-label{opacity:1}
-.handle-label.left{position:absolute;left:7px}
-.handle-label.right{position:absolute;right:7px}
-.horizontal-handle{transform:translateX(-50%)}
+.handle-label.left{margin-left:8px}
+.handle-label.right{margin-right:8px}
+.horizontal-handle{width:30px;height:18px;justify-content:center}
 .output-ports .horizontal-handle{top:0}
 .input-ports .horizontal-handle{bottom:0}
 .handle-label.top{position:absolute;top:7px;transform:translateX(-50%)}
@@ -97,4 +100,5 @@ function horizontalHandleStyle(index: number, total: number) { return { left: `$
 .port-handle{border-radius:1px!important;background:#722ed1!important;box-shadow:0 0 0 1px #722ed1}
 .port-handle.vue-flow__handle-top{top:-5px!important}
 .port-handle.vue-flow__handle-bottom{bottom:-5px!important}
+.port-handle.vue-flow__handle-top,.port-handle.vue-flow__handle-bottom{left:15px!important}
 </style>

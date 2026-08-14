@@ -59,6 +59,7 @@ export function buildFlowEdges(interfaceConnections = [], portConnections = []) 
       sourceHandle: interfaceHandleId(connection.source.interfaceName),
       targetHandle: interfaceHandleId(connection.target.interfaceName),
       type: 'smoothstep',
+      pathOptions: { offset: 28, borderRadius: 4 },
       class: 'execution-edge',
       data: { connectionKind: 'INTERFACE' },
       style: { stroke: '#7b96b8' }
@@ -70,6 +71,7 @@ export function buildFlowEdges(interfaceConnections = [], portConnections = []) 
     sourceHandle: portHandleId(connection.source.portName),
     targetHandle: portHandleId(connection.target.portName),
     type: 'smoothstep',
+    pathOptions: { offset: 28, borderRadius: 4 },
     class: 'data-edge',
     data: { connectionKind: 'PORT' },
     style: { stroke: '#7c4dce', strokeDasharray: '7 5' }

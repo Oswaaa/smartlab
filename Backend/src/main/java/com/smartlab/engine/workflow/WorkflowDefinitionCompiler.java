@@ -192,9 +192,6 @@ public class WorkflowDefinitionCompiler {
             if (!FUNCTION_TYPES.contains(functionType)) {
                 throw nodeError(name, "functionType", "不支持的功能节点类型: " + functionType);
             }
-            if (WorkflowNodeFunctionType.BRANCH.name().equals(functionType)) {
-                requiredText(node, "expression", nodePath(name, "expression") + ": 不能为空");
-            }
             if (Set.of(WorkflowNodeFunctionType.BRANCH.name(), WorkflowNodeFunctionType.AGGREGATE.name())
                     .contains(functionType) && node.has("expression") && !node.path("expression").asText().isBlank()) {
                 validateCalculationExpression(index, node.path("expression").asText(), "expression");
@@ -221,11 +218,11 @@ public class WorkflowDefinitionCompiler {
             WorkflowAssignmentExpression assignment = WorkflowAssignmentExpression.parse(expression);
             JsonNode target = index.variables().get(assignment.targetName());
             if (target == null) {
-                throw new IllegalArgumentException("赋值目标不是已声明的内部变量: " + assignment.targetName());
+                throw new IllegalArgumentException("赋值目标未在变量空间中声明：" + assignment.targetName());
             }
             String targetType = target.path("dataType").asText();
             if (!Set.of(DataType.INTEGER.name(), DataType.DOUBLE.name()).contains(targetType)) {
-                throw new IllegalArgumentException("赋值目标必须是数值内部变量: " + assignment.targetName());
+                throw new IllegalArgumentException("赋值目标必须是数值类型（INTEGER 或 DOUBLE）：" + assignment.targetName());
             }
             expressionEvaluator.validateTemporalCalculation(assignment.valueExpression(), samples);
         } catch (IllegalArgumentException error) {
@@ -242,15 +239,7 @@ public class WorkflowDefinitionCompiler {
                 String triggerPath = "interfaces[" + interfacePosition + "].bindingTriggers[" + triggerPosition + "]";
                 JsonNode condition = trigger.path("condition");
                 if (!condition.isObject()) throw nodeError(index.nodeName(), triggerPath + ".condition", "必须是对象");
-                String object = requiredText(condition, "object", nodePath(index.nodeName(), triggerPath + ".condition.object") + ": 不能为空");
-                String operator = requiredText(condition, "operator", nodePath(index.nodeName(), triggerPath + ".condition.operator") + ": 不能为空");
-                if (!ConstraintOperator.supports(operator)) throw nodeError(index.nodeName(), triggerPath + ".condition.operator", "不支持的运算符: " + operator);
-                if (!condition.has("threshold") || condition.path("threshold").isNull()) throw nodeError(index.nodeName(), triggerPath + ".condition.threshold", "不能为空");
-                JsonNode variable = index.variables().get(object);
-                if (variable != null && !matchesDataType(condition.path("threshold"), variable.path("dataType").asText())) {
-                    throw nodeError(index.nodeName(), triggerPath + ".condition.threshold",
-                            "与内部变量" + object + "的数据类型不一致");
-                }
+                validateTriggerCondition(index, condition, triggerPath + ".condition");
                 validateTriggerAction(index, node, item.path("name").asText(), trigger.path("action"), triggerPath + ".action");
                 triggerPosition++;
             }
@@ -331,6 +320,50 @@ public class WorkflowDefinitionCompiler {
             expressionEvaluator.validateCalculation(expression, numericVariableSamples(index));
         } catch (IllegalArgumentException error) {
             throw nodeError(index.nodeName(), fieldPath, error.getMessage());
+        }
+    }
+
+    private void validateTriggerCondition(NodeIndex index, JsonNode condition, String conditionPath) {
+        if (condition.has("logic") || condition.has("conditions")) {
+            String logic = requiredText(condition, "logic",
+                    nodePath(index.nodeName(), conditionPath + ".logic") + ": 不能为空");
+            if (!"AND".equals(logic)) {
+                throw nodeError(index.nodeName(), conditionPath + ".logic", "条件组合当前只支持AND: " + logic);
+            }
+            JsonNode conditions = condition.path("conditions");
+            if (!conditions.isArray() || conditions.size() < 2) {
+                throw nodeError(index.nodeName(), conditionPath + ".conditions", "AND条件组至少需要两个条件");
+            }
+            int position = 0;
+            for (JsonNode item : conditions) {
+                String itemPath = conditionPath + ".conditions[" + position + "]";
+                if (!item.isObject()) throw nodeError(index.nodeName(), itemPath, "必须是对象");
+                if (item.has("logic") || item.has("conditions")) {
+                    throw nodeError(index.nodeName(), itemPath, "工作流条件组不支持嵌套");
+                }
+                validateTriggerPredicate(index, item, itemPath);
+                position++;
+            }
+            return;
+        }
+        validateTriggerPredicate(index, condition, conditionPath);
+    }
+
+    private void validateTriggerPredicate(NodeIndex index, JsonNode condition, String conditionPath) {
+        String object = requiredText(condition, "object",
+                nodePath(index.nodeName(), conditionPath + ".object") + ": 不能为空");
+        String operator = requiredText(condition, "operator",
+                nodePath(index.nodeName(), conditionPath + ".operator") + ": 不能为空");
+        if (!ConstraintOperator.supports(operator)) {
+            throw nodeError(index.nodeName(), conditionPath + ".operator", "不支持的运算符: " + operator);
+        }
+        if (!condition.has("threshold") || condition.path("threshold").isNull()) {
+            throw nodeError(index.nodeName(), conditionPath + ".threshold", "不能为空");
+        }
+        JsonNode variable = index.variables().get(object);
+        if (variable != null && !matchesDataType(condition.path("threshold"), variable.path("dataType").asText())) {
+            throw nodeError(index.nodeName(), conditionPath + ".threshold",
+                    "与内部变量" + object + "的数据类型不一致");
         }
     }
 

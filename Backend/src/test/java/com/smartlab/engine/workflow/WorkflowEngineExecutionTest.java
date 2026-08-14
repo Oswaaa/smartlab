@@ -234,12 +234,48 @@ class WorkflowEngineExecutionTest {
     }
 
     @Test
-    void operationStateLocatesActiveDeviceStepByResourceMappingInsteadOfSnapshotMetadata() {
+    void workflowSignalRejectedByTargetInterfaceIsSilentlySkipped() {
+        Task task = pollingTask();
+        TaskStep sourceStep = pollingStep("RUNNING");
+        FlowNode sourceNode = pollingNode(List.of(
+                lifecycleTriggerInterface("Interface_workflow_out", "OUT", "RUNNING", "EMIT")));
+        sourceStep.setInterfaceOutSnapshot(WorkflowInterfaceSnapshots.initialize(sourceNode.getInterfaces(), "OUT"));
+        FlowNode targetNode = pollingNode(List.of(
+                signalTriggerInterface("Interface_workflow_in", "SUBFLOW_COMPLETED", "target")));
+        targetNode.setId(8L);
+        targetNode.setNodeIdRef(3L);
+        WorkflowDefinitionCompiler.Connection connection = new WorkflowDefinitionCompiler.Connection(
+                2L, "Interface_workflow_out", 3L, "Interface_workflow_in");
+        WorkflowDefinitionCompiler.CompiledWorkflow compiled = new WorkflowDefinitionCompiler.CompiledWorkflow(
+                Map.of(), Map.of(2L, List.of(connection)), Map.of(3L, List.of(connection)),
+                Map.of("source", 2L, "target", 3L), 2L, 3L);
+        stubPoll(task, sourceStep, sourceNode);
+        when(workflows.compileDefinition(3L)).thenReturn(compiled);
+        when(workflows.nodes(3L)).thenReturn(List.of(sourceNode, targetNode));
+        doAnswer(invocation -> {
+            sourceStep.setInterfaceOutSnapshot(invocation.getArgument(1));
+            return null;
+        }).when(runtime).updateOutputSnapshot(eq(sourceStep), org.mockito.ArgumentMatchers.any());
+
+        engine.processTask(task);
+
+        assertThat(WorkflowInterfaceSnapshots.find(sourceStep.getInterfaceOutSnapshot(), "Interface_workflow_out")
+                .path("signalName").asText()).isEqualTo("ACTIVE");
+        verify(runtime, never()).createStep(eq(task), eq(targetNode), eq(null), eq(0),
+                org.mockito.ArgumentMatchers.any());
+        verify(runtime, never()).failStep(eq(sourceStep), org.mockito.ArgumentMatchers.anyString());
+    }
+
+    @Test
+    void operationStateRejectedByTargetInterfaceDoesNotOverwriteCommandSnapshot() {
         Task task = pollingTask();
         TaskStep step = pollingStep("RUNNING");
         FlowNode node = pollingNode(List.of(deviceStateInputInterface()));
         node.setDeviceModelId(21L);
-        step.setInterfaceInSnapshot(WorkflowInterfaceSnapshots.initialize(node.getInterfaces(), "IN"));
+        ArrayNode existing = WorkflowInterfaceSnapshots.initialize(node.getInterfaces(), "IN");
+        existing = WorkflowInterfaceSnapshots.withSignal(existing, node.getInterfaces(), "IN", "state-in",
+                "CMD_STATE", JsonNodeSupport.objectNode().put("stateName", "RUNNING"));
+        step.setInterfaceInSnapshot(existing);
         WorkflowDetailResponse definition = new WorkflowDetailResponse();
         ObjectNode connection = JsonNodeSupport.objectNode().put("connectionType", "DEVICE_TO_NODE");
         connection.set("source", JsonNodeSupport.objectNode()
@@ -264,8 +300,10 @@ class WorkflowEngineExecutionTest {
 
         engine.handleStateMachineSignal(event);
 
-        verify(runtime).updateInputSnapshot(eq(step), org.mockito.ArgumentMatchers.any());
+        verify(runtime, never()).updateInputSnapshot(eq(step), org.mockito.ArgumentMatchers.any());
         verify(runtime).runningDeviceSteps();
+        assertThat(WorkflowInterfaceSnapshots.find(step.getInterfaceInSnapshot(), "state-in")
+                .path("signalName").asText()).isEqualTo("CMD_STATE");
     }
 
     @Test
@@ -610,10 +648,12 @@ class WorkflowEngineExecutionTest {
         item.put("name", "state-in");
         item.put("direction", "IN");
         item.put("interfaceType", "STATE");
-        item.putArray("allowedSignals").add("CMD_STATE").add("OP_STATE");
+        item.putArray("allowedSignals").add("CMD_STATE");
         ObjectNode trigger = item.putArray("bindingTriggers").addObject();
-        trigger.putObject("condition").put("object", "payload.stateName")
-                .put("operator", "=").put("threshold", "RUNNING");
+        ArrayNode conditions = trigger.putObject("condition").put("logic", "AND").putArray("conditions");
+        conditions.addObject().put("object", "nodeLifecycleState").put("operator", "=").put("threshold", "RUNNING");
+        conditions.addObject().put("object", "signalName").put("operator", "=").put("threshold", "CMD_STATE");
+        conditions.addObject().put("object", "payload.stateName").put("operator", "=").put("threshold", "RUNNING");
         trigger.set("action", action("UPDATE"));
         return item;
     }

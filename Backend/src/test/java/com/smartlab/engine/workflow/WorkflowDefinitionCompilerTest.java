@@ -221,6 +221,30 @@ class WorkflowDefinitionCompilerTest {
     }
 
     @Test
+    void acceptsBranchWithoutOptionalCalculationExpression() {
+        ObjectNode branch = node(new NodeCase("FUNC_NODE", "BRANCH"));
+        branch.remove("expression");
+        addBranchOutput(branch);
+
+        assertDoesNotThrow(() -> compiler.compile(requestWith(branch)));
+    }
+
+    @Test
+    void acceptsUnicodeVariableNamesInWorkflowCalculationExpression() {
+        ObjectNode branch = node(new NodeCase("FUNC_NODE", "BRANCH"));
+        addBranchOutput(branch);
+        branch.withArray("internalVariables").addObject()
+                .put("name", "温度输入")
+                .put("dataType", "DOUBLE");
+        branch.withArray("internalVariables").addObject()
+                .put("name", "温度变量")
+                .put("dataType", "DOUBLE");
+        branch.put("expression", "温度变量 = 温度输入 / 10");
+
+        assertDoesNotThrow(() -> compiler.compile(requestWith(branch)));
+    }
+
+    @Test
     void rejectsWorkflowCalculationExpressionWithUnknownVariable() {
         ObjectNode branch = node(new NodeCase("FUNC_NODE", "BRANCH"));
         addBranchOutput(branch);
@@ -269,6 +293,41 @@ class WorkflowDefinitionCompilerTest {
     }
 
     @Test
+    void reportsUndeclaredWorkflowAssignmentTargetPrecisely() {
+        ObjectNode branch = node(new NodeCase("FUNC_NODE", "BRANCH"));
+        addBranchOutput(branch);
+        branch.withArray("internalVariables").addObject()
+                .put("name", "temperature")
+                .put("dataType", "DOUBLE");
+        branch.put("expression", "missing = temperature / 2");
+
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class,
+                () -> compiler.compile(requestWith(branch)));
+
+        assertTrue(error.getMessage().contains("赋值目标未在变量空间中声明：missing"));
+    }
+
+    @Test
+    void reportsNonNumericWorkflowAssignmentTargetPrecisely() {
+        ObjectNode branch = node(new NodeCase("FUNC_NODE", "BRANCH"));
+        addBranchOutput(branch);
+        branch.withArray("internalVariables").addObject()
+                .put("name", "temperature")
+                .put("dataType", "DOUBLE");
+        branch.withArray("internalVariables").addObject()
+                .put("name", "statusText")
+                .put("dataType", "STRING");
+        branch.put("expression", "statusText = temperature / 2");
+
+        IllegalArgumentException error = assertThrows(
+                IllegalArgumentException.class,
+                () -> compiler.compile(requestWith(branch)));
+
+        assertTrue(error.getMessage().contains("赋值目标必须是数值类型（INTEGER 或 DOUBLE）：statusText"));
+    }
+
+    @Test
     void rejectsUnknownVariableInUpdateValueExpression() {
         ObjectNode aggregate = node(new NodeCase("FUNC_NODE", "AGGREGATE"));
         aggregate.withArray("internalVariables").addObject().put("name", "temperature").put("dataType", "DOUBLE");
@@ -284,6 +343,71 @@ class WorkflowDefinitionCompilerTest {
                 () -> compiler.compile(requestWith(aggregate)));
 
         assertTrue(error.getMessage().contains("未声明的数值变量"));
+    }
+
+    @Test
+    void acceptsOneLevelAndTriggerConditionGroup() {
+        ObjectNode aggregate = node(new NodeCase("FUNC_NODE", "AGGREGATE"));
+        aggregate.withArray("internalVariables").addObject()
+                .put("name", "temperature")
+                .put("dataType", "DOUBLE");
+        ObjectNode output = interfaceNamed(aggregate, "Interface_workflow_out");
+        ObjectNode trigger = output.withArray("bindingTriggers").addObject();
+        ObjectNode condition = trigger.putObject("condition");
+        condition.put("logic", "AND");
+        condition.putArray("conditions")
+                .addObject().put("object", "nodeLifecycleState").put("operator", "=").put("threshold", "RUNNING");
+        condition.withArray("conditions")
+                .addObject().put("object", "temperature").put("operator", ">").put("threshold", 100);
+        trigger.putObject("action").put("actionName", "EMIT").putObject("payload")
+                .put("targetInterfaceName", "Interface_workflow_out").put("signalName", "ACTIVE");
+
+        assertDoesNotThrow(() -> compiler.compile(requestWith(aggregate)));
+    }
+
+    @Test
+    void rejectsUnsupportedOrTriggerConditionGroup() {
+        ObjectNode aggregate = node(new NodeCase("FUNC_NODE", "AGGREGATE"));
+        ObjectNode trigger = interfaceNamed(aggregate, "Interface_workflow_out")
+                .withArray("bindingTriggers").addObject();
+        ObjectNode group = JsonNodeSupport.objectNode();
+        group.put("logic", "OR");
+        var conditions = group.putArray("conditions");
+        conditions
+                .addObject().put("object", "nodeLifecycleState").put("operator", "=").put("threshold", "RUNNING");
+        conditions
+                .addObject().put("object", "nodeLifecycleState").put("operator", "=").put("threshold", "SUCCEEDED");
+        trigger.set("condition", group);
+        trigger.putObject("action").put("actionName", "EMIT").putObject("payload")
+                .put("targetInterfaceName", "Interface_workflow_out").put("signalName", "ACTIVE");
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> compiler.compile(requestWith(aggregate)));
+
+        assertTrue(error.getMessage().contains("只支持AND"));
+    }
+
+    @Test
+    void rejectsNestedTriggerConditionGroup() {
+        ObjectNode aggregate = node(new NodeCase("FUNC_NODE", "AGGREGATE"));
+        ObjectNode trigger = interfaceNamed(aggregate, "Interface_workflow_out")
+                .withArray("bindingTriggers").addObject();
+        ObjectNode outer = JsonNodeSupport.objectNode();
+        outer.put("logic", "AND");
+        var conditions = outer.putArray("conditions");
+        ObjectNode nested = conditions.addObject();
+        nested.put("logic", "AND");
+        nested.putArray("conditions")
+                .addObject().put("object", "nodeLifecycleState").put("operator", "=").put("threshold", "RUNNING");
+        conditions.addObject().put("object", "nodeLifecycleState").put("operator", "=").put("threshold", "RUNNING");
+        trigger.set("condition", outer);
+        trigger.putObject("action").put("actionName", "EMIT").putObject("payload")
+                .put("targetInterfaceName", "Interface_workflow_out").put("signalName", "ACTIVE");
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> compiler.compile(requestWith(aggregate)));
+
+        assertTrue(error.getMessage().contains("不支持嵌套"));
     }
 
     @Test

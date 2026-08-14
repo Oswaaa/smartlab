@@ -74,23 +74,23 @@ public final class WorkflowNodeSystemContract {
                 updateLifecycleAction("SUCCEEDED")));
         template.withArray("interfaces").add(workflowInterface(
                 "end.workflowIn", "Interface_workflow_in", "IN", triggers));
-        addActions(template, WorkflowNodeActionType.UPDATE);
+        addActions(template, WorkflowNodeActionType.UPDATE, WorkflowNodeActionType.EMIT);
         return template;
     }
 
     private static ObjectNode branchTemplate() {
         ObjectNode template = baseTemplate();
-        ArrayNode triggers = activationAndCompletionTriggers("branch");
+        ArrayNode triggers = activationTriggers("branch");
         template.withArray("interfaces").add(workflowInterface(
                 "branch.workflowIn", "Interface_workflow_in", "IN", triggers));
-        addActions(template, WorkflowNodeActionType.UPDATE);
+        addActions(template, WorkflowNodeActionType.UPDATE, WorkflowNodeActionType.EMIT);
         return template;
     }
 
     private static ObjectNode aggregateTemplate() {
         ObjectNode template = baseTemplate();
         template.withArray("interfaces").add(workflowInterface("aggregate.workflowIn", "Interface_workflow_in", "IN",
-                activationAndCompletionTriggers("aggregate")));
+                activationTriggers("aggregate")));
         ArrayNode outputTriggers = JsonNodeSupport.arrayNode();
         outputTriggers.add(trigger("aggregate.emitActive", "nodeLifecycleState", "=", "RUNNING",
                 emitAction("Interface_workflow_out", WorkflowNodeSignal.ACTIVE.name())));
@@ -109,8 +109,10 @@ public final class WorkflowNodeSystemContract {
         stateOutputTriggers.add(trigger("device.execute", "nodeLifecycleState", "=", "RUNNING",
                 emitAction("Interface_state_out", WorkflowControlSignal.WF_EXECUTE_START.name())));
         ArrayNode stateTriggers = JsonNodeSupport.arrayNode();
-        stateTriggers.add(trigger("device.stateCompleted", "payload.stateName", "=", "COMPLETED",
-                updateLifecycleAction("SUCCEEDED")));
+        stateTriggers.add(andTrigger("device.stateCompleted", updateLifecycleAction("SUCCEEDED"),
+                predicate("nodeLifecycleState", "=", "RUNNING"),
+                predicate("signalName", "=", StatusSignal.CMD_STATE.name()),
+                predicate("payload.stateName", "=", "COMPLETED")));
         ArrayNode workflowOutputTriggers = JsonNodeSupport.arrayNode();
         workflowOutputTriggers.add(trigger("device.completeNode", "nodeLifecycleState", "=", "SUCCEEDED",
                 emitAction("Interface_workflow_out", WorkflowNodeSignal.ACTIVE.name())));
@@ -118,7 +120,7 @@ public final class WorkflowNodeSystemContract {
         template.withArray("interfaces").add(interfaceDefinition("device.stateOut", "Interface_state_out", "OUT", "STATE",
                 List.of(WorkflowControlSignal.WF_EXECUTE_START.name()), stateOutputTriggers));
         template.withArray("interfaces").add(interfaceDefinition("device.stateIn", "Interface_state_in", "IN", "STATE",
-                names(StatusSignal.values()), stateTriggers));
+                List.of(StatusSignal.CMD_STATE.name()), stateTriggers));
         template.withArray("interfaces").add(workflowInterface(
                 "device.workflowOut", "Interface_workflow_out", "OUT", workflowOutputTriggers));
         addActions(template, WorkflowNodeActionType.UPDATE, WorkflowNodeActionType.EMIT);
@@ -194,12 +196,10 @@ public final class WorkflowNodeSystemContract {
         return system(systemKey, definition);
     }
 
-    private static ArrayNode activationAndCompletionTriggers(String prefix) {
+    private static ArrayNode activationTriggers(String prefix) {
         ArrayNode triggers = JsonNodeSupport.arrayNode();
         triggers.add(trigger(prefix + ".activate", "signalName", "=", WorkflowNodeSignal.ACTIVE.name(),
                 updateLifecycleAction("RUNNING")));
-        triggers.add(trigger(prefix + ".complete", "nodeLifecycleState", "=", "RUNNING",
-                updateLifecycleAction("SUCCEEDED")));
         return triggers;
     }
 
@@ -213,6 +213,25 @@ public final class WorkflowNodeSystemContract {
         if (threshold instanceof Boolean value) condition.put("threshold", value);
         else condition.put("threshold", (String) threshold);
         return system(systemKey, definition);
+    }
+
+    private static ObjectNode andTrigger(String systemKey, ObjectNode action, ObjectNode... predicates) {
+        ObjectNode definition = JsonNodeSupport.objectNode();
+        definition.set("action", action);
+        ObjectNode condition = definition.putObject("condition");
+        condition.put("logic", "AND");
+        ArrayNode conditions = condition.putArray("conditions");
+        for (ObjectNode predicate : predicates) conditions.add(predicate);
+        return system(systemKey, definition);
+    }
+
+    private static ObjectNode predicate(String object, String operator, Object threshold) {
+        ObjectNode condition = JsonNodeSupport.objectNode();
+        condition.put("object", object);
+        condition.put("operator", operator);
+        if (threshold instanceof Boolean value) condition.put("threshold", value);
+        else condition.put("threshold", String.valueOf(threshold));
+        return condition;
     }
 
     private static ObjectNode emitAction(String targetInterfaceName, String signalName) {

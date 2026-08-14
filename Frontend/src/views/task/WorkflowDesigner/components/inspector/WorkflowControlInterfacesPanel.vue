@@ -7,7 +7,6 @@
     <div class="action-capabilities">
       <span>动作能力</span>
       <el-tag v-for="name in actions" :key="name" size="small">{{ actionLabel(name) }}</el-tag>
-      <el-button v-for="name in missingActions" :key="name" v-if="canAddInterface" class="btn-aliyun-link" size="small" link @click="enableAction(name)">启用 {{ name }}</el-button>
     </div>
     <el-alert v-if="!canAddInterface" title="设备能力节点和子流程节点使用系统默认控制契约，仅供查看。" type="info" :closable="false" />
 
@@ -50,6 +49,7 @@ import {
   isSystemItem,
   orderedControlInterfaces,
   removeInterface,
+  customTriggerActionNames,
 } from '../../../../../utils/workflowNodeDefinition.js'
 
 type Item = Record<string, any>
@@ -57,8 +57,7 @@ const props = withDefaults(defineProps<{ node: Item, readonly?: boolean, protoco
 const emit = defineEmits<{ 'update:node': [node: Item], 'update:interfaceConnections': [connections: Item[]] }>()
 const selectedIdentity = ref('')
 const interfaces = computed(() => orderedControlInterfaces(props.node))
-const actions = computed<string[]>(() => props.node.actions || [])
-const missingActions = computed(() => ['UPDATE', 'EMIT'].filter(name => !actions.value.includes(name)))
+const actions = computed<string[]>(() => customTriggerActionNames(props.node))
 const canAddInterface = computed(() => !props.readonly && canCustomizeControlInterfaces(props.node))
 const selectedInterface = computed(() => interfaces.value.find(item => identity(item) === selectedIdentity.value) || interfaces.value[0] || null)
 const selectedEditable = computed(() => !props.readonly && canEditControlItem(props.node, selectedInterface.value))
@@ -73,11 +72,10 @@ function actionLabel(name: string) { return name }
 function directionLabel(direction: string) { return direction }
 function publish(next: Item) { emit('update:node', next) }
 function uniqueName() { let index = 1; while ((props.node.interfaces || []).some((item: Item) => item.name === `interface${index}`)) index += 1; return `interface${index}` }
-function enableAction(name: string) { publish({ ...props.node, actions: [...actions.value, name] }) }
 function addInterface() {
   if (!canAddInterface.value) return
   const name = uniqueName()
-  publish({ ...props.node, interfaces: [...(props.node.interfaces || []), { name, direction: 'OUT', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], bindingTriggers: [] }] })
+  publish({ ...props.node, actions: customTriggerActionNames(props.node), interfaces: [...(props.node.interfaces || []), { name, direction: 'OUT', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], bindingTriggers: [] }] })
   selectedIdentity.value = name
 }
 function replaceSelectedInterface(nextInterface: Item) {

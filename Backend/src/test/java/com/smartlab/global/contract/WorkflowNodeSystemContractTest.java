@@ -57,7 +57,7 @@ class WorkflowNodeSystemContractTest {
     void endTemplateHasOnlyWorkflowInputAndLifecycleUpdates() {
         JsonNode template = WorkflowNodeSystemContract.template("FUNC_NODE", "END");
         assertEquals(List.of("Interface_workflow_in"), names(template.path("interfaces")));
-        assertEquals(List.of("UPDATE"), textValues(template.path("actions")));
+        assertEquals(List.of("UPDATE", "EMIT"), textValues(template.path("actions")));
         assertEquals(List.of("ACTIVE", "RUNNING"), triggerThresholds(
                 interfaceByName(template, "Interface_workflow_in")));
         assertEquals("IN", interfaceByName(template, "Interface_workflow_in").path("direction").asText());
@@ -68,8 +68,9 @@ class WorkflowNodeSystemContractTest {
     void branchTemplateLeavesOutputInterfacesAndRoutingTriggersToTheUser() {
         JsonNode template = WorkflowNodeSystemContract.template("FUNC_NODE", "BRANCH");
         assertEquals(List.of("Interface_workflow_in"), names(template.path("interfaces")));
-        assertEquals(List.of("ACTIVE", "RUNNING"), triggerThresholds(template.path("interfaces").get(0)));
-        assertEquals(List.of("UPDATE"), textValues(template.path("actions")));
+        assertEquals(List.of("ACTIVE"), triggerThresholds(template.path("interfaces").get(0)));
+        assertEquals(List.of("RUNNING"), inputTriggerTargets(template));
+        assertEquals(List.of("UPDATE", "EMIT"), textValues(template.path("actions")));
         assertEquals(List.of("branch.workflowIn"), directSystemKeys(template.path("interfaces")));
     }
 
@@ -81,6 +82,7 @@ class WorkflowNodeSystemContractTest {
         assertEquals(List.of("Interface_workflow_in", "Interface_workflow_out"), names(template.path("interfaces")));
         assertEquals(List.of("ACTIVE"), textValues(input.path("allowedSignals")));
         assertEquals("ACTIVE", input.path("bindingTriggers").get(0).path("condition").path("threshold").asText());
+        assertEquals(List.of("RUNNING"), inputTriggerTargets(template));
         assertEquals(List.of("ACTIVE"), textValues(output.path("allowedSignals")));
         assertEquals("ACTIVE", firstAction(template, "Interface_workflow_out", "EMIT")
                 .path("payload").path("signalName").asText());
@@ -96,7 +98,7 @@ class WorkflowNodeSystemContractTest {
         assertEquals(List.of("UPDATE", "EMIT"), textValues(template.path("actions")));
         assertEquals(List.of("WF_EXECUTE_START"),
                 textValues(interfaceByName(template, "Interface_state_out").path("allowedSignals")));
-        assertEquals(List.of("CMD_STATE", "OP_STATE"),
+        assertEquals(List.of("CMD_STATE"),
                 textValues(interfaceByName(template, "Interface_state_in").path("allowedSignals")));
         assertEquals("UPDATE", interfaceByName(template, "Interface_workflow_in")
                 .path("bindingTriggers").get(0).path("action").path("actionName").asText());
@@ -123,6 +125,12 @@ class WorkflowNodeSystemContractTest {
                 .path("action").path("actionName").asText());
         assertEquals("SUCCEEDED", firstTrigger(template, "Interface_state_in")
                 .path("action").path("payload").path("targetName").asText());
+        JsonNode completionCondition = firstTrigger(template, "Interface_state_in").path("condition");
+        assertEquals("AND", completionCondition.path("logic").asText());
+        assertEquals(List.of("nodeLifecycleState", "signalName", "payload.stateName"),
+                completionCondition.path("conditions").findValuesAsText("object"));
+        assertEquals(List.of("RUNNING", "CMD_STATE", "COMPLETED"),
+                completionCondition.path("conditions").findValuesAsText("threshold"));
         assertEquals("EMIT", firstTrigger(template, "Interface_workflow_out")
                 .path("action").path("actionName").asText());
         assertTrue(template.findValues("actionType").isEmpty());
@@ -146,6 +154,7 @@ class WorkflowNodeSystemContractTest {
     void everyTemplateHasCompleteLifecycleAndSystemMarkers() {
         WorkflowNodeSystemContract.templates().properties().forEach(entry -> {
             JsonNode template = entry.getValue();
+            assertEquals(List.of("UPDATE", "EMIT"), textValues(template.path("actions")));
             JsonNode lifecycle = template.path("lifecycle");
             assertSystemMarker(lifecycle);
             assertEquals("PENDING", lifecycle.path("initialStateName").asText());
@@ -212,6 +221,13 @@ class WorkflowNodeSystemContractTest {
         interfaceNode.path("bindingTriggers").forEach(trigger ->
                 values.add(trigger.path("condition").path("threshold").asText()));
         return values;
+    }
+
+    private List<String> inputTriggerTargets(JsonNode template) {
+        JsonNode input = interfaceByName(template, "Interface_workflow_in");
+        return input.path("bindingTriggers").findValues("targetName").stream()
+                .map(JsonNode::asText)
+                .toList();
     }
 
     private JsonNode findBy(JsonNode items, String field, String value) {

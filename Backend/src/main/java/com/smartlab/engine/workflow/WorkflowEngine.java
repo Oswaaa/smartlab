@@ -420,10 +420,7 @@ public class WorkflowEngine {
                 continue;
             FlowNode target = nodeByRef(node.getFlowModelId(), connection.targetNodeIdRef());
             JsonNode targetInterface = interfaceByName(target, connection.targetInterface());
-            if (!allows(targetInterface, signalName)) {
-                throw new IllegalStateException(
-                        "目标接口不允许信号: " + target.getNodeIdRef() + "." + connection.targetInterface() + "." + signalName);
-            }
+            if (!allows(targetInterface, signalName)) continue;
             TaskStep targetStep = runtime.createStep(task, target, completed.getParentStepId(),
                     completed.getStepDepth(), null);
             JsonNode sourceSlot = WorkflowInterfaceSnapshots.find(
@@ -563,10 +560,13 @@ public class WorkflowEngine {
                 runtime.failStep(step, "设备状态回执未声明DEVICE_TO_NODE连接");
                 return;
             }
+            JsonNode targetInterface = interfaceByName(node, inputInterface);
+            String signalName = event.signal().path("signalName").asText("");
+            if (!allows(targetInterface, signalName)) return;
             JsonNode payload = event.signal().path("payload");
             ArrayNode input = WorkflowInterfaceSnapshots.withSignal(
                     step.getInterfaceInSnapshot(), node.getInterfaces(), "IN", inputInterface,
-                    event.signal().path("signalName").asText(), payload.isObject() ? payload : null);
+                    signalName, payload.isObject() ? payload : null);
             runtime.updateInputSnapshot(step, input);
             ObjectNode mapped = executionOperations.resolveMappedVariables(task, step, node);
             if (mapped != null && !mapped.isEmpty()) {

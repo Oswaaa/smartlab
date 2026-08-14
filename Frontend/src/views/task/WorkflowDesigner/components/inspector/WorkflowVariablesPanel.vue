@@ -9,7 +9,16 @@
         <template #default="{ row }"><el-select :model-value="row.dataType" :disabled="readonly || isSystemItem(row)" @update:model-value="updateVariable(row, 'dataType', $event)"><el-option v-for="type in dataTypes" :key="type" :label="type" :value="type" /></el-select></template>
       </el-table-column>
       <el-table-column v-if="node.nodeType === 'DEV_NODE'" label="设备属性映射" min-width="240">
-        <template #default="{ row }"><el-select :model-value="row.attributesMapping" clearable :disabled="readonly || isSystemItem(row)" placeholder="绑定设备属性" @update:model-value="mapAttribute(row, $event)"><el-option v-for="attribute in deviceAttributes" :key="attribute.attributeName" :label="attribute.displayName || attribute.attributeName" :value="attribute.attributeName" /></el-select></template>
+        <template #default="{ row }">
+          <div class="attribute-mapping-cell" :class="{ mismatch: mappingTypeError(row) }">
+            <el-select :model-value="row.attributesMapping" clearable :disabled="readonly || isSystemItem(row)" placeholder="绑定设备属性" @update:model-value="mapAttribute(row, $event)"><el-option v-for="attribute in deviceAttributes" :key="attribute.attributeName" :label="attributeOptionLabel(attribute)" :value="attribute.attributeName" /></el-select>
+            <div class="attribute-type-row">
+              <el-tag size="small" type="info">变量 {{ row.dataType }}</el-tag>
+              <el-tag v-if="mappedAttribute(row)" size="small" :type="mappingTypeError(row) ? 'danger' : ''">属性 {{ mappedAttribute(row)?.dataType || '未知' }}</el-tag>
+            </div>
+            <span v-if="mappingTypeError(row)" class="attribute-type-error">数据类型不一致</span>
+          </div>
+        </template>
       </el-table-column>
       <el-table-column label="操作" width="88" align="right">
         <template #default="{ row }"><el-tag v-if="isSystemItem(row)" size="small" type="info">系统</el-tag><el-button v-else-if="!readonly" class="btn-aliyun-danger-link" link @click="deleteVariable(row.name)">删除</el-button></template>
@@ -28,9 +37,10 @@ import { isSystemItem, removeVariable } from '../../../../../utils/workflowNodeD
 type Item = Record<string, any>
 const props = withDefaults(defineProps<{ node: Item, readonly?: boolean, deviceAttributes?: Item[] }>(), { readonly: false, deviceAttributes: () => [] })
 const emit = defineEmits<{ 'update:node': [node: Item] }>()
-const dataTypes = ['INTEGER', 'DOUBLE', 'STRING', 'BOOLEAN', 'JSON']
+const dataTypes = ['INTEGER', 'DOUBLE', 'STRING', 'BOOLEAN']
 const message = ref('')
 const variables = computed(() => props.node.internalVariables || [])
+const attributeByName = computed(() => new Map((props.deviceAttributes || []).map((item: Item) => [item.attributeName, item])))
 
 function publish(internalVariables: Item[]) { if (props.readonly) return; message.value = ''; emit('update:node', { ...props.node, internalVariables }) }
 function uniqueName() { let index = 1; while (variables.value.some((item: Item) => item.name === `variable${index}`)) index += 1; return `variable${index}` }
@@ -39,14 +49,17 @@ function updateVariable(target: Item, field: string, value: unknown) {
   publish(variables.value.map((item: Item) => item === target ? { ...item, [field]: value } : item))
 }
 function mapAttribute(target: Item, attributeName: string) {
-  const attribute = props.deviceAttributes.find(item => item.attributeName === attributeName)
-  publish(variables.value.map((item: Item) => item === target ? { ...item, attributesMapping: attributeName, ...(attribute?.dataType ? { dataType: attribute.dataType } : {}) } : item))
+  publish(variables.value.map((item: Item) => item === target ? { ...item, attributesMapping: attributeName } : item))
 }
+function attributeOptionLabel(attribute: Item) { return attribute.displayName && attribute.displayName !== attribute.attributeName ? `${attribute.displayName} · ${attribute.attributeName} · ${attribute.dataType || '未知'}` : `${attribute.attributeName} · ${attribute.dataType || '未知'}` }
+function mappedAttribute(variable: Item) { return variable.attributesMapping ? attributeByName.value.get(variable.attributesMapping) : null }
+function mappingTypeError(variable: Item) { const attribute = mappedAttribute(variable); return !!variable.attributesMapping && !!attribute?.dataType && attribute.dataType !== variable.dataType }
 function deleteVariable(name: string) {
   try { publish(removeVariable(props.node, name).internalVariables || []) } catch (error: any) { message.value = error.message }
 }
 </script>
 
 <style scoped>
-.variables-panel{display:grid;gap:0;padding:20px}.panel-heading{min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:14px}.panel-heading>div{display:grid;gap:3px}.panel-heading strong{color:#1f2329;font-size:14px;font-weight:600}.panel-heading span{color:#8f959e;font-size:12px}.editable-config-table{width:100%;border:1px solid #e5e6eb}.editable-config-table :deep(.el-table__inner-wrapper::before){display:none}.editable-config-table :deep(.el-table__header th.el-table__cell){height:40px;padding:0;background:#f5f7fa;color:#646a73;font-size:12px;font-weight:500}.editable-config-table :deep(.el-table__body td.el-table__cell){height:56px;padding:8px 0}.editable-config-table :deep(.el-table__cell .cell){padding:0 12px}.editable-config-table :deep(.el-select){width:100%}.editable-config-table :deep(.el-tag){vertical-align:middle}
+.variables-panel{display:grid;gap:0;padding:20px}.panel-heading{min-height:48px;display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:14px}.panel-heading>div{display:grid;gap:3px}.panel-heading strong{color:#1f2329;font-size:14px;font-weight:600}.panel-heading span{color:#8f959e;font-size:12px}.editable-config-table{width:100%;border:1px solid #e5e6eb}.editable-config-table :deep(.el-table__inner-wrapper::before){display:none}.editable-config-table :deep(.el-table__header th.el-table__cell){height:40px;padding:0;background:#f5f7fa;color:#646a73;font-size:12px;font-weight:500}.editable-config-table :deep(.el-table__body td.el-table__cell){min-height:56px;height:auto;padding:8px 0}.editable-config-table :deep(.el-table__cell .cell){padding:0 12px}.editable-config-table :deep(.el-select){width:100%}.editable-config-table :deep(.el-tag){vertical-align:middle}
+.attribute-mapping-cell{display:grid;gap:5px}.attribute-type-row{display:flex;align-items:center;gap:5px}.attribute-type-error{color:#cf1322;font-size:10px}.attribute-mapping-cell.mismatch :deep(.el-select__wrapper){box-shadow:0 0 0 1px #ff4d4f inset}
 </style>

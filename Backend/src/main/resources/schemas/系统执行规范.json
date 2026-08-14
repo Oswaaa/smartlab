@@ -292,12 +292,12 @@
         "allowedSignalsRef": "协议规范.json#/definitions/WorkflowControlSignal"
       },
       {
-        "comment": "设备能力节点的STATE输入接口接收设备状态机广播的CMD_STATE和OP_STATE，接口触发器可据此EMIT下游ACTIVE或UPDATE节点内部变量",
+        "comment": "设备能力节点的STATE输入接口只接收设备状态机广播的CMD_STATE，用于判断设备指令执行周期；OP_STATE仍由状态机广播并提供给约束引擎，但不进入工作流节点接口快照",
         "nodeTypes": [ "DEV_NODE" ],
         "name": "Interface_state_in",
         "direction": "IN",
         "interfaceType": "STATE",
-        "allowedSignalsRef": "协议规范.json#/definitions/StatusSignal"
+        "allowedSignals": [ "CMD_STATE" ]
       }
     ],
     "taskTransitions": [
@@ -312,21 +312,21 @@
     ],
     "nodeInterfaceTriggerExecutionRules": [
       {
-        "comment": "WORKFLOW输入处理：节点收到ACTIVE后，实时计算该输入接口bindingTriggers中的condition；为真则执行actionName引用的动作EMIT按动作定义向目标OUT接口发送信号；UPDATE按动作定义更新内部变量",
+        "comment": "WORKFLOW输入处理：信号到达连接后，目标接口依据allowedSignals决定是否接收；允许的信号写入输入接口快照。下一轮任务轮询遍历该节点接口触发器，condition首次整体成立时执行内联EMIT或UPDATE动作",
         "nodeTypes": [ "DEV_NODE", "FUNC_NODE", "SUBFLOW_NODE" ],
         "inputInterfaceType": "WORKFLOW",
         "inputSignalRef": "协议规范.json#/definitions/WorkflowNodeSignal",
         "conditionSource": "node.interfaces[].bindingTriggers[].condition",
-        "actionSource": "node.interfaces[].bindingTriggers[].actionName→node.actions[].actionName",
+        "actionSource": "node.interfaces[].bindingTriggers[].action；action.actionName须包含在node.actions[]中",
         "allowedActions": [ "EMIT", "UPDATE" ]
       },
       {
-        "comment": "STATE输入处理：DEV_NODE收到CMD_STATE或OP_STATE后，实时计算Interface_state_in上bindingTriggers中的condition；OP_STATE的payload.state为指定区域完整活动状态数组；条件为真则执行actionName引用的EMIT或UPDATE动作节点生命周期由工作流引擎依据任务和设备状态推进，不伪造为节点状态机转移规则",
+        "comment": "STATE输入处理：状态机广播到达DEV_NODE连接后，工作流引擎依据Interface_state_in.allowedSignals判断是否接收；仅CMD_STATE写入接口快照，OP_STATE正常跳过。下一轮任务轮询遍历该节点接口触发器，condition首次整体成立时执行内联EMIT或UPDATE动作；UPDATE节点生命周期时必须通过lifecycle.transitions合法转移校验",
         "nodeTypes": [ "DEV_NODE" ],
         "inputInterfaceType": "STATE",
-        "inputSignalRef": "协议规范.json#/definitions/StatusSignal",
+        "allowedSignals": [ "CMD_STATE" ],
         "conditionSource": "node.interfaces[].bindingTriggers[].condition",
-        "actionSource": "node.interfaces[].bindingTriggers[].actionName→node.actions[].actionName",
+        "actionSource": "node.interfaces[].bindingTriggers[].action；action.actionName须包含在node.actions[]中",
         "allowedActions": [ "EMIT", "UPDATE" ]
       }
     ],
@@ -382,11 +382,11 @@
       "allowedSignalsRef": "协议规范.json#/definitions/WorkflowControlSignal"
     },
     {
-      "comment": "设备状态机通过状态广播接口把CMD_STATE和OP_STATE推送给工作流设备能力节点；OP_STATE.state是指定区域完整活动状态数组",
+      "comment": "设备状态机通过状态广播接口发送CMD_STATE和OP_STATE；投递工作流设备能力节点时由目标Interface_state_in.allowedSignals独立过滤，仅CMD_STATE被接收，OP_STATE不写入工作流接口快照",
       "connectionType": "STATE_MACHINE_TO_WORKFLOW_NODE",
       "source": { "engine": "STATE_MACHINE_ENGINE", "interfaceName": "Interface_state_out" },
       "target": { "engine": "WORKFLOW_ENGINE", "interfaceName": "DEV_NODE.Interface_state_in" },
-      "allowedSignalsRef": "协议规范.json#/definitions/StatusSignal"
+      "allowedSignals": [ "CMD_STATE" ]
     },
     {
       "comment": "约束观察层只能订阅状态机Interface_state_out；CMD_STATE映射DEVICE_COMMAND_LIFECYCLE，OP_STATE按regionName映射DEVICE_OPERATION_STATE并将payload.state数组作为当前值，在内存中维护最新值和有界历史快照",

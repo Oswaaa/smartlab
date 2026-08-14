@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  addWorkflowTriggerCondition,
   canCustomizeControlInterfaces,
   canEditControlItem,
   configureWorkflowNodeTemplates,
@@ -8,16 +9,19 @@ import {
   createFunctionNode,
   createSubflowNode,
   customTriggerActionNames,
+  emptyWorkflowUpdateValue,
   normalizeTypedValue,
   normalizeWorkflowNodeDefinition,
   orderedControlInterfaces,
-  removeAction,
+  removeWorkflowTriggerCondition,
   removeInterface,
   removePort,
   removeVariable,
   replaceCapability,
   resetWorkflowNodeTemplatesForTest,
   validateNodeDefinition,
+  workflowUpdateVariableDataType,
+  workflowTriggerConditions,
   workflowNodeTemplates,
 } from '../src/utils/workflowNodeDefinition.js'
 
@@ -61,7 +65,7 @@ const workflowTemplateFixture = {
     interfaces: [iface('branch.in', 'Interface_workflow_in', 'IN', 'WORKFLOW', ['ACTIVE'], [
       trigger('branch.activate', 'signalName', 'ACTIVE', action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'RUNNING' })),
     ])],
-    actions: ['UPDATE'],
+    actions: ['UPDATE', 'EMIT'],
   },
   AGGREGATE: {
     lifecycle: lifecycle('aggregate'),
@@ -84,8 +88,20 @@ const workflowTemplateFixture = {
       iface('device.stateOut', 'Interface_state_out', 'OUT', 'STATE', ['WF_EXECUTE_START'], [
         trigger('device.execute', 'nodeLifecycleState', 'RUNNING', action('EMIT', { targetInterfaceName: 'Interface_state_out', signalName: 'WF_EXECUTE_START' })),
       ]),
-      iface('device.stateIn', 'Interface_state_in', 'IN', 'STATE', ['CMD_STATE', 'OP_STATE'], [
-        trigger('device.complete', 'payload.stateName', 'COMPLETED', action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'SUCCEEDED' })),
+      iface('device.stateIn', 'Interface_state_in', 'IN', 'STATE', ['CMD_STATE'], [
+        {
+          condition: {
+            logic: 'AND',
+            conditions: [
+              { object: 'nodeLifecycleState', operator: '=', threshold: 'RUNNING' },
+              { object: 'signalName', operator: '=', threshold: 'CMD_STATE' },
+              { object: 'payload.stateName', operator: '=', threshold: 'COMPLETED' },
+            ],
+          },
+          action: action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'SUCCEEDED' }),
+          _system: true,
+          _systemKey: 'device.complete',
+        },
       ]),
       iface('device.workflowOut', 'Interface_workflow_out', 'OUT', 'WORKFLOW', ['ACTIVE'], [
         trigger('device.route', 'nodeLifecycleState', 'SUCCEEDED', action('EMIT', { targetInterfaceName: 'Interface_workflow_out', signalName: 'ACTIVE' })),
@@ -151,15 +167,14 @@ test('creation requires templates and always clones them', () => {
   assert.throws(() => createFunctionNode('START', 'start'), /工作流系统模板尚未加载:START/)
   configureWorkflowNodeTemplates(workflowTemplateFixture)
   const first = createFunctionNode('BRANCH', 'branch-a')
-  first.actions.push('EMIT')
-  assert.deepEqual(workflowNodeTemplates().BRANCH.actions, ['UPDATE'])
+  assert.deepEqual(workflowNodeTemplates().BRANCH.actions, ['UPDATE', 'EMIT'])
 })
 
 test('BRANCH starts without fixed true/false outputs and accepts user-defined N-way outputs', () => {
   const node = createFunctionNode('BRANCH', 'branch')
   assert.deepEqual(node.interfaces.map(item => item.name), ['Interface_workflow_in'])
+  assert.deepEqual(node.interfaces[0].bindingTriggers.map(item => item.action.payload.targetName), ['RUNNING'])
   assert.equal(node.expression, '')
-  node.actions.push('EMIT')
   for (const name of ['low', 'normal', 'high']) {
     node.interfaces.push({ name, direction: 'OUT', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], bindingTriggers: [
       { condition: { object: 'expression', operator: '=', threshold: name }, action: action('EMIT', { targetInterfaceName: name, signalName: 'ACTIVE' }) },
@@ -173,7 +188,44 @@ test('DEV_NODE exposes four independent inline lifecycle and signal triggers', (
   assert.deepEqual(node.actions, ['UPDATE', 'EMIT'])
   assert.deepEqual(node.interfaces.map(item => item.bindingTriggers[0].action.actionName), ['UPDATE', 'EMIT', 'UPDATE', 'EMIT'])
   assert.equal(node.interfaces[1].bindingTriggers[0].action.payload.signalName, 'WF_EXECUTE_START')
+  assert.deepEqual(node.interfaces[2].allowedSignals, ['CMD_STATE'])
+  assert.deepEqual(workflowTriggerConditions(node.interfaces[2].bindingTriggers[0].condition).map(item => item.object), [
+    'nodeLifecycleState', 'signalName', 'payload.stateName',
+  ])
   assert.equal(node.interfaces[2].bindingTriggers[0].action.payload.targetName, 'SUCCEEDED')
+})
+
+test('trigger conditions expand to one-level AND and collapse back to a single predicate', () => {
+  const lifecycle = { object: 'nodeLifecycleState', operator: '=', threshold: 'RUNNING' }
+  const signal = { object: 'signalName', operator: '=', threshold: 'ACTIVE' }
+  const grouped = addWorkflowTriggerCondition(lifecycle, signal)
+  assert.deepEqual(grouped, { logic: 'AND', conditions: [lifecycle, signal] })
+  assert.deepEqual(workflowTriggerConditions(grouped), [lifecycle, signal])
+  assert.deepEqual(removeWorkflowTriggerCondition(grouped, 1), lifecycle)
+  assert.throws(() => removeWorkflowTriggerCondition(lifecycle, 0), /至少保留一个条件/)
+})
+
+test('trigger validation accepts AND and rejects OR or nested groups', () => {
+  const node = createFunctionNode('AGGREGATE', 'aggregate')
+  const trigger = {
+    condition: addWorkflowTriggerCondition(
+      { object: 'nodeLifecycleState', operator: '=', threshold: 'RUNNING' },
+      { object: 'signalName', operator: '=', threshold: 'ACTIVE' },
+    ),
+    action: action('EMIT', { targetInterfaceName: 'Interface_workflow_out', signalName: 'ACTIVE' }),
+  }
+  node.interfaces[1].bindingTriggers.push(trigger)
+  assert.deepEqual(validateNodeDefinition(node), [])
+  trigger.condition.logic = 'OR'
+  assert.ok(validateNodeDefinition(node).some(error => /只支持AND/.test(error.message)))
+  trigger.condition = { logic: 'AND', conditions: [
+    { object: 'signalName', operator: '=', threshold: 'ACTIVE' },
+    { logic: 'AND', conditions: [
+      { object: 'nodeLifecycleState', operator: '=', threshold: 'RUNNING' },
+      { object: 'signalName', operator: '=', threshold: 'ACTIVE' },
+    ] },
+  ] }
+  assert.ok(validateNodeDefinition(node).some(error => /不允许嵌套/.test(error.message)))
 })
 
 test('switching device capability clears all previous parameters', () => {
@@ -200,12 +252,21 @@ test('constant and expression UPDATE are both valid but mutually exclusive', () 
   assert.ok(validateNodeDefinition(node).some(error => error.path.endsWith('.action.payload')))
 })
 
-test('constant UPDATE preserves number boolean object and array types', () => {
+test('constant UPDATE preserves scalar number boolean and string types', () => {
   const node = createFunctionNode('AGGREGATE', 'aggregate')
-  node.internalVariables.push({ name: 'enabled', dataType: 'BOOLEAN' }, { name: 'payload', dataType: 'JSON' })
+  node.internalVariables.push({ name: 'enabled', dataType: 'BOOLEAN' }, { name: 'mode', dataType: 'STRING' })
   node.interfaces[1].bindingTriggers.push({ condition: { object: 'enabled', operator: '=', threshold: false }, action: action('UPDATE', { updateType: 'INTERNAL_VARIABLE', targetName: 'enabled', value: true }) })
-  node.interfaces[1].bindingTriggers.push({ condition: { object: 'enabled', operator: '=', threshold: true }, action: action('UPDATE', { updateType: 'INTERNAL_VARIABLE', targetName: 'payload', value: [1, 2] }) })
+  node.interfaces[1].bindingTriggers.push({ condition: { object: 'mode', operator: '=', threshold: 'AUTO' }, action: action('UPDATE', { updateType: 'INTERNAL_VARIABLE', targetName: 'mode', value: 'MANUAL' }) })
   assert.deepEqual(validateNodeDefinition(node), [])
+})
+
+test('device attribute mapping reports variable and attribute type mismatches', () => {
+  const node = createFunctionNode('AGGREGATE', 'aggregate')
+  node.internalVariables.push({ name: 'temperature', dataType: 'STRING', attributesMapping: 'temperature' })
+  const errors = validateNodeDefinition(node, { deviceAttributes: [{ attributeName: 'temperature', dataType: 'DOUBLE' }] })
+  assert.ok(errors.some(error => /不一致/.test(error.message)))
+  node.internalVariables[0].dataType = 'DOUBLE'
+  assert.deepEqual(validateNodeDefinition(node, { deviceAttributes: [{ attributeName: 'temperature', dataType: 'DOUBLE' }] }), [])
 })
 
 test('lifecycle UPDATE validates target state and rejects value fields', () => {
@@ -222,11 +283,29 @@ test('EMIT must use the trigger host output interface', () => {
   assert.ok(validateNodeDefinition(node).some(error => error.message.includes('触发器所在接口')))
 })
 
-test('actions are a unique UPDATE/EMIT capability subset', () => {
+test('UPDATE and EMIT are fixed workflow action capabilities and old nodes are completed automatically', () => {
   const node = createFunctionNode('AGGREGATE', 'aggregate')
   assert.deepEqual(customTriggerActionNames(node), ['UPDATE', 'EMIT'])
-  node.actions.push('EMIT', 'CUSTOM')
-  assert.deepEqual(validateNodeDefinition(node).map(error => error.path), ['actions[2]', 'actions[3]'])
+  assert.deepEqual(normalizeWorkflowNodeDefinition({ actions: ['UPDATE'], interfaces: [] }).actions, ['UPDATE', 'EMIT'])
+  assert.deepEqual(normalizeWorkflowNodeDefinition({ interfaces: [] }).actions, ['UPDATE', 'EMIT'])
+})
+
+test('UPDATE constant editor derives the target variable type and resets to its empty typed value', () => {
+  const node = { internalVariables: [
+    { name: 'count', dataType: 'INTEGER' },
+    { name: 'temperature', dataType: 'DOUBLE' },
+    { name: 'mode', dataType: 'STRING' },
+    { name: 'enabled', dataType: 'BOOLEAN' },
+  ] }
+  assert.equal(workflowUpdateVariableDataType(node, 'count'), 'INTEGER')
+  assert.equal(workflowUpdateVariableDataType(node, 'temperature'), 'DOUBLE')
+  assert.equal(workflowUpdateVariableDataType(node, 'mode'), 'STRING')
+  assert.equal(workflowUpdateVariableDataType(node, 'enabled'), 'BOOLEAN')
+  assert.equal(workflowUpdateVariableDataType(node, 'missing'), null)
+  assert.equal(emptyWorkflowUpdateValue('INTEGER'), null)
+  assert.equal(emptyWorkflowUpdateValue('DOUBLE'), null)
+  assert.equal(emptyWorkflowUpdateValue('STRING'), '')
+  assert.equal(emptyWorkflowUpdateValue('BOOLEAN'), false)
 })
 
 test('legacy named actions and string references normalize to inline actions', () => {
@@ -234,15 +313,10 @@ test('legacy named actions and string references normalize to inline actions', (
     actions: [{ actionName: 'setTemperature', actionType: 'UPDATE', internalVariableName: 'temperature', valueExpression: 'temperature / 100' }],
     interfaces: [{ bindingTriggers: [{ condition: { object: 'temperature', operator: '>', threshold: 10 }, action: 'setTemperature' }] }],
   })
-  assert.deepEqual(normalized.actions, ['UPDATE'])
+  assert.deepEqual(normalized.actions, ['UPDATE', 'EMIT'])
   assert.deepEqual(normalized.interfaces[0].bindingTriggers[0].action, action('UPDATE', {
     updateType: 'INTERNAL_VARIABLE', targetName: 'temperature', valueExpression: 'temperature / 100',
   }))
-})
-
-test('used action capability cannot be removed', () => {
-  const node = createFunctionNode('START', 'start')
-  assert.throws(() => removeAction(node, 'EMIT'), /仍被触发器引用/)
 })
 
 test('referenced variables and ports are protected and connections are cleaned', () => {

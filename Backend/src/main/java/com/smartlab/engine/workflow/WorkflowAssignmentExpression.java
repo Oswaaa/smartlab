@@ -6,7 +6,7 @@ import java.util.regex.Pattern;
 /** BRANCH/AGGREGATE 节点的单目标赋值表达式。 */
 public record WorkflowAssignmentExpression(String targetName, String valueExpression) {
     private static final Pattern ASSIGNMENT = Pattern.compile(
-            "^\\s*([A-Za-z_][A-Za-z0-9_]*)\\s*=\\s*(.+?)\\s*$");
+            "^\\s*([\\p{L}_][\\p{L}\\p{N}_]*)\\s*=\\s*(.+?)\\s*$");
 
     public static WorkflowAssignmentExpression parse(String source) {
         Matcher matcher = ASSIGNMENT.matcher(source == null ? "" : source);

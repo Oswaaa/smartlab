@@ -41,6 +41,7 @@ describe('Task 6 — Designer Structure', () => {
     assert.match(lifecycleSource, /system-lifecycle|_system/, 'lifecycle panel should reference system markers')
     assert.match(lifecycleSource, /readonly|read-only|system-lifecycle/, 'lifecycle should indicate locked state')
     assert.match(controlInterfacesSource, /动作能力/)
+    assert.doesNotMatch(controlInterfacesSource, /missingActions|enableAction|启用 \{\{ name \}\}/)
     assert.match(controlInterfacesSource, /orderedControlInterfaces/)
     assert.match(triggersSource, /trigger\.action\?\.actionName/)
     assert.match(triggersSource, /isSystemItem/)
@@ -65,6 +66,9 @@ describe('Task 6 — Designer Structure', () => {
     assert.match(source, /interface-handle/)
     assert.match(source, /port-handle/)
     assert.match(source, /interfaceType === 'WORKFLOW'/)
+    assert.match(source, /nodeDimensions/)
+    assert.match(source, /18 \+ index \* 18/)
+    assert.match(source, /24 \+ index \* 30/)
   })
 
   test('canvas distinguishes compact nodes, workflow handles, data handles and edge types', () => {
@@ -96,6 +100,18 @@ describe('Task 6 — Designer Structure', () => {
     assert.doesNotMatch(designerSource, /v-else-if="validationVisible"/)
   })
 
+  test('workflow validation groups flow and node issues while the node drawer receives only node issues', () => {
+    assert.match(designerSource, /flowValidationIssues/)
+    assert.match(designerSource, /nodeValidationIssues/)
+    assert.match(designerSource, /完整检查结果/)
+    assert.match(designerSource, /流程问题/)
+    assert.match(designerSource, /节点问题/)
+    assert.match(designerSource, /const selectedNodeIssues = computed\(\(\) => nodeValidationIssues\.value/)
+    assert.match(designerSource, /issue\.scope === 'node'/)
+    assert.doesNotMatch(designerSource, /const businessIssues = workflowValidationIssues/)
+    assert.doesNotMatch(designerSource, /未配置计算表达式|branch-expression/)
+  })
+
   test('designer keeps resources in the sidebar and restores function nodes to the canvas toolbar', () => {
     assert.match(designerSource, /grid-template-columns:218px minmax\(430px,1fr\) 304px/)
     assert.match(designerSource, /<strong>节点资源<\/strong>/)
@@ -112,6 +128,10 @@ describe('Task 6 — Designer Structure', () => {
     assert.match(designerSource, /max-width:1180px/)
     assert.match(inspectorSource, /class="node-profile-header"/)
     assert.match(inspectorSource, /class="node-config-workspace"/)
+    assert.match(inspectorSource, /class="node-error-summary"/)
+    assert.match(inspectorSource, /node-error-list/)
+    assert.match(inspectorSource, /errorTitle\(error\)/)
+    assert.doesNotMatch(inspectorSource, /<code>{{ error\.path/)
     assert.match(inspectorSource, /class="node-header-actions"[\s\S]*删除节点/)
     assert.match(inspectorSource, /\.node-profile-details\{[^}]*margin:0/)
     assert.match(inspectorSource, /\.node-config-workspace\{[^}]*margin:0/)
@@ -133,14 +153,17 @@ describe('Task 6 — Designer Structure', () => {
     assert.match(businessSource, /class="capability-config-card"/)
     assert.match(businessSource, /class="capability-parameter-form"/)
     assert.match(businessSource, /class="parameter-description"/)
-    assert.match(businessSource, /max-width:360px/)
+    assert.match(businessSource, /parameter\.description/)
+    assert.doesNotMatch(businessSource, /<span>{{ parameter\.name }}<\/span>/)
+    assert.doesNotMatch(businessSource, /<strong>{{ parameter\.displayName \|\| parameter\.name }}<\/strong>/)
+    assert.match(businessSource, /max-width:320px/)
     assert.doesNotMatch(businessSource.split('<script setup')[0], /DEVICE CAPABILITY|PARAMETERS|EXPRESSION/)
   })
 
   test('trigger editor presents every trigger as structured rule rows and locks system fields', () => {
     assert.match(triggersSource, /class="condition-rule-row"/)
     assert.match(triggersSource, /class="action-rule-row"/)
-    assert.match(triggersSource, />当</)
+    assert.match(triggersSource, /'且' : '当'/)
     assert.match(triggersSource, />则</)
     assert.match(triggersSource, /grid-template-columns:32px minmax\(180px,240px\) 96px minmax\(130px,190px\)/)
     assert.match(triggersSource, /grid-template-columns:32px 110px minmax\(180px,240px\) minmax\(130px,190px\)/)
@@ -149,6 +172,15 @@ describe('Task 6 — Designer Structure', () => {
     assert.doesNotMatch(triggersSource, /systemSummary/)
     assert.match(triggersSource, /host-interface-summary/)
     assert.doesNotMatch(triggersSource, /condition-grid|action-grid/)
+    assert.match(triggersSource, /operatorsFor\(/)
+    assert.match(triggersSource, /WorkflowTypedValueInput/)
+    assert.match(triggersSource, /workflowUpdateVariableDataType/)
+    assert.doesNotMatch(triggersSource, /updateConstant/)
+    assert.match(triggersSource, /multiple allow-create filterable/)
+    assert.match(triggersSource, /满足全部条件/)
+    assert.match(triggersSource, /addTriggerCondition/)
+    assert.match(triggersSource, /removeTriggerCondition/)
+    assert.match(triggersSource, /workflowTriggerConditions/)
   })
 
   test('function-node expression editor uses assignment semantics and temporal function menu', () => {
@@ -156,8 +188,31 @@ describe('Task 6 — Designer Structure', () => {
     assert.match(businessSource, /:assignment="true"/)
     assert.match(businessSource, /:temporal="true"/)
     assert.match(expressionSource, /时序函数/)
+    assert.match(expressionSource, />操作符</)
     assert.match(expressionSource, /workflowTemporalFunctions/)
+    assert.match(expressionSource, /item\.description/)
+    assert.match(expressionSource, /operatorTemplates/)
+    assert.match(expressionSource, /label:'='/)
+    assert.match(expressionSource, /formula-plain-input/)
+    assert.match(expressionSource, /formula-input-highlight/)
+    assert.match(expressionSource, /formula-input-token/)
+    assert.match(expressionSource, /formula-result-preview/)
+    assert.match(expressionSource, /compiledFormula/)
+    assert.match(expressionSource, /<code>{{ compiledFormula \|\| '等待输入' }}<\/code>/)
+    assert.doesNotMatch(expressionSource, /formula-token-preview|formula-compiled-preview|>引用<|>编译后</)
+    assert.doesNotMatch(businessSource, /expression-field/)
+    assert.match(businessSource, /class="calculation-editor"/)
+    assert.match(expressionSource, /refreshSuggestions/)
+    assert.match(expressionSource, /selectSuggestion/)
+    assert.match(expressionSource, /bindVariables/)
+    assert.doesNotMatch(expressionSource, /contenteditable/)
     assert.doesNotMatch(expressionSource, /求和|求差|乘积|比值|两项平均值/)
+    assert.doesNotMatch(businessSource, /<h4>计算表达式<\/h4>|<span>表达式内容<\/span>/)
+    assert.match(businessSource, /<h4>计算规则<\/h4>/)
+  })
+
+  test('node issue title and detail stay visually adjacent', () => {
+    assert.match(inspectorSource, /\.node-error-list li\{[^}]*display:flex/)
   })
 
   test('variable and data-port collections use real editable tables', () => {
@@ -166,6 +221,9 @@ describe('Task 6 — Designer Structure', () => {
       assert.match(source, /<el-table-column/)
       assert.doesNotMatch(source, /editor-table-head|class="editor-row"/)
     }
+    assert.match(variablesSource, /attribute-type-row/)
+    assert.match(variablesSource, /attribute-type-error/)
+    assert.doesNotMatch(variablesSource, /'JSON'/)
   })
 
   test('data-port fields use content-sized columns instead of filling the drawer', () => {
@@ -193,6 +251,12 @@ describe('Task 6 — Designer Structure', () => {
     assert.match(controlInterfacesSource, /canEditControlItem/)
     assert.match(controlInterfacesSource, /新增接口/)
     assert.match(controlInterfacesSource, /系统默认/)
+  })
+
+  test('workflow library leaf items are draggable as subflows except for the current workflow', () => {
+    assert.match(designerSource, /canDragWorkflowResource/)
+    assert.match(designerSource, /:draggable="data\.workflow && canDragWorkflowResource/)
+    assert.match(designerSource, /@dragstart\.stop="drag\(\$event,\{ kind:'workflow', workflow:data\.workflow \}\)"/)
   })
 
   test('trigger editor uses interface-local condition names', () => {

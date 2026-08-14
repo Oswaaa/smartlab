@@ -41,7 +41,7 @@
             <div class="tab-scroll-body">
               <el-tree v-if="workflowTree.length" :data="workflowTree" node-key="key" default-expand-all :expand-on-click-node="false" class="resource-tree workflow-resource-tree">
                 <template #default="{ data }">
-                  <div class="tree-item workflow-tree-item" :class="[{ 'is-active-flow': data.workflow?.id === openedWorkflowId }]" @click="data.workflow && loadWorkflow(data.workflow.id)">
+                  <div class="tree-item workflow-tree-item" :class="[{ 'is-active-flow': data.workflow?.id === openedWorkflowId, draggable: data.workflow && canDragWorkflowResource(data.workflow, form.id, canEdit) }]" :draggable="data.workflow && canDragWorkflowResource(data.workflow, form.id, canEdit)" @dragstart.stop="drag($event,{ kind:'workflow', workflow:data.workflow })" @click="data.workflow && loadWorkflow(data.workflow.id)">
                     <el-icon class="tree-resource-icon"><FolderOpened v-if="data.children" /><Document v-else /></el-icon>
                     <span class="node-title">{{ data.label }}</span>
                     <span v-if="data.workflow?.id === openedWorkflowId" class="opened-badge">当前</span>
@@ -131,16 +131,31 @@
                 </el-form-item>
               </el-form>
             </div>
-            <div class="section-heading"><strong>静态建模检查</strong><span>{{ validationSummary.errors }} 错误 · {{ validationSummary.warnings }} 提醒</span></div>
+            <div class="section-heading"><strong>静态建模检查</strong><span>完整检查结果 · {{ validationSummary.errors }} 错误 · {{ validationSummary.warnings }} 提醒</span></div>
             <div class="overview-metrics"><div><strong>{{ form.nodesDef.length }}</strong><span>节点</span></div><div><strong>{{ executionConnectionCount }}</strong><span>执行连接</span></div><div><strong>{{ form.portConnections.length }}</strong><span>数据连接</span></div><div><strong>{{ deviceNodeCount }}</strong><span>设备节点</span></div></div>
-            <div v-if="workflowValidationIssues.length" class="issue-list">
-              <button v-for="issue in workflowValidationIssues" :key="issue.code" :class="issue.severity" @click="focusValidationIssue(issue)">
-                <b>{{ issue.severity === 'error' ? '错误' : '提醒' }}</b>
-                <span><strong>{{ issue.title }}</strong><small>{{ issue.detail }}</small></span>
-                <i>›</i>
-              </button>
+            <div v-if="workflowValidationIssues.length" class="validation-groups">
+              <section v-if="flowValidationIssues.length" class="validation-group">
+                <div class="issue-group-heading"><strong>流程问题</strong><span>{{ flowValidationIssues.length }} 项</span></div>
+                <div class="issue-list">
+                  <button v-for="issue in flowValidationIssues" :key="issue.code" :class="issue.severity" @click="focusValidationIssue(issue)">
+                    <b>{{ issue.severity === 'error' ? '错误' : '提醒' }}</b>
+                    <span><strong>{{ issue.title }}</strong><small>{{ issue.detail }}</small></span>
+                    <i>›</i>
+                  </button>
+                </div>
+              </section>
+              <section v-if="nodeValidationIssues.length" class="validation-group">
+                <div class="issue-group-heading"><strong>节点问题</strong><span>{{ nodeValidationIssues.length }} 项</span></div>
+                <div class="issue-list">
+                  <button v-for="issue in nodeValidationIssues" :key="issue.code" :class="issue.severity" @click="focusValidationIssue(issue)">
+                    <b>{{ issue.severity === 'error' ? '错误' : '提醒' }}</b>
+                    <span><strong>{{ issue.title }}</strong><small>{{ issue.detail }}</small></span>
+                    <i>›</i>
+                  </button>
+                </div>
+              </section>
             </div>
-            <el-result v-else icon="success" title="建模校验通过" sub-title="节点契约与执行拓扑均满足保存要求" />
+            <el-result v-else icon="success" title="建模校验通过" sub-title="节点配置和流程结构均符合要求" />
           </section>
         </div>
       </aside>
@@ -183,13 +198,13 @@ import WorkflowNodeInspector from './components/WorkflowNodeInspector.vue'
 import { invalidateFrontendContractMetadata, loadFrontendContractMetadata } from '../../../services/frontendContractMetadata.js'
 import { workflowApi } from '../../../services/workflowApi.js'
 import { adoptPreparedWorkflow, indexWorkflowIssues, toAuthoringPayload } from '../../../utils/workflowAuthoring.js'
-import { configureWorkflowNodeTemplates, createDeviceNode, createFunctionNode, createSubflowNode, removePort, validateNodeDefinition } from '../../../utils/workflowNodeDefinition.js'
-import { clearWorkflowCanvas, workflowLibraryGroups } from '../../../utils/workflowDesignerRules.js'
+import { configureWorkflowNodeTemplates, createDeviceNode, createFunctionNode, createSubflowNode, rehydrateWorkflowNodes, removePort, validateNodeDefinition } from '../../../utils/workflowNodeDefinition.js'
+import { canDragWorkflowResource, clearWorkflowCanvas, workflowLibraryGroups, workflowNodeConnectionIssues } from '../../../utils/workflowDesignerRules.js'
 
 type NodeDefinition = Record<string, any>
 type FlowNode = Record<string, any>
 type FlowEdge = Record<string, any>
-type ValidationIssue = { code:string, severity:'error'|'warning', title:string, detail:string, nodeName?:string, path?:string }
+type ValidationIssue = { code:string, severity:'error'|'warning', scope:'flow'|'node', title:string, detail:string, nodeName?:string, path?:string }
 
 const tab = ref('devices')
 const workflows = ref<any[]>([])
@@ -224,12 +239,14 @@ const palette = [
   { type:'BRANCH', label:'分支', glyph:'◇', description:'条件路由' },
   { type:'AGGREGATE', label:'汇聚', glyph:'◆', description:'合并路径' }
 ]
-const defaultEdgeOptions = { type:'smoothstep', style:{ stroke:'#6f8fb7', strokeWidth:2 } }
+const defaultEdgeOptions = { type:'smoothstep', pathOptions:{ offset:28, borderRadius:4 }, style:{ stroke:'#6f8fb7', strokeWidth:2 } }
 const canEdit = computed(() => contractReady.value && isEditing.value)
 
 const selectedNode = computed(() => nodeByName(selectedNodeName.value))
 const selectedDeviceModel = computed(() => selectedNode.value?.nodeType === 'DEV_NODE' ? modelById(selectedNode.value.deviceModelId) : null)
-const selectedNodeIssues = computed(() => selectedNode.value ? nodeIssues(selectedNode.value.name) : [])
+const selectedNodeIssues = computed(() => nodeValidationIssues.value
+  .filter(issue => issue.nodeName === selectedNode.value?.name)
+  .map(issue => ({ path:issue.path, title:stripNodeName(issue.title, issue.nodeName), message:issue.detail, nodeName:issue.nodeName })))
 const nodeConnections = computed(() => [
   ...form.interfaceConnections.filter((item:any) => item.connectionType === 'NODE_TO_NODE'),
   ...form.portConnections
@@ -249,7 +266,16 @@ const selectedEdgeEndpoint = computed(() => {
     targetHandle: editorHandleName(edge.targetHandle)
   }
 })
-const workflowValidationIssues = computed<ValidationIssue[]>(() => [...buildWorkflowValidationIssues(), ...serverValidationIssues()])
+const backendValidationIssues = computed<ValidationIssue[]>(() => serverValidationIssues())
+const nodeValidationIssues = computed<ValidationIssue[]>(() => [
+  ...buildNodeValidationIssues(),
+  ...backendValidationIssues.value.filter(issue => issue.scope === 'node'),
+])
+const flowValidationIssues = computed<ValidationIssue[]>(() => [
+  ...buildFlowValidationIssues(),
+  ...backendValidationIssues.value.filter(issue => issue.scope === 'flow'),
+])
+const workflowValidationIssues = computed<ValidationIssue[]>(() => [...flowValidationIssues.value, ...nodeValidationIssues.value])
 const validationSummary = computed(() => ({
   errors: workflowValidationIssues.value.filter(issue => issue.severity === 'error').length,
   warnings: workflowValidationIssues.value.filter(issue => issue.severity === 'warning').length
@@ -305,6 +331,7 @@ function newDraftKey() {
 function markDirty() {
   if (!canEdit.value) return
   dirty.value = true
+  workflowIssueIndex.value = indexWorkflowIssues()
 }
 
 function startEditing() { isEditing.value = true }
@@ -336,27 +363,33 @@ function nodeBusinessLabel(node:any) {
   return ({ START:'流程入口', END:'流程出口', BRANCH:'条件路由', AGGREGATE:'多路汇聚' } as Record<string,string>)[node.functionType] || '功能节点'
 }
 
-function buildWorkflowValidationIssues():ValidationIssue[] {
+function buildNodeValidationIssues():ValidationIssue[] {
   const issues:ValidationIssue[] = []
-  const push = (issue:ValidationIssue) => issues.push(issue)
-  if (!String(form.name || '').trim()) push({ code:'flow-name', severity:'error', title:'流程名称不能为空', detail:'配置用于任务创建和运维识别的流程名称。' })
-  if (!form.nodesDef.length) push({ code:'flow-empty', severity:'error', title:'流程没有任何节点', detail:'先创建开始节点与结束节点，再加入实际执行节点。' })
-
-  const starts = form.nodesDef.filter((node:any) => node.functionType === 'START')
-  const ends = form.nodesDef.filter((node:any) => node.functionType === 'END')
-  if (starts.length !== 1) push({ code:'start-count', severity:'error', title:'开始节点数量不正确', detail:`当前 ${starts.length} 个，流程需要且仅需要一个入口。`, nodeName:starts[0]?.name })
-  if (ends.length !== 1) push({ code:'end-count', severity:'error', title:'结束节点数量不正确', detail:`当前 ${ends.length} 个，流程需要且仅需要一个出口。`, nodeName:ends[0]?.name })
-
   form.nodesDef.forEach((node:any) => {
-    validateNodeDefinition(node, { deviceModel:modelById(node.deviceModelId) }).forEach((issue:any, index:number) => push({
+    const deviceModel = modelById(node.deviceModelId)
+    validateNodeDefinition(node, { deviceModel, deviceAttributes:deviceModel?.attributes || [] }).forEach((issue:any, index:number) => issues.push({
       code:`node-${node.name}-${issue.path || index}`,
       severity:'error',
-      title:`节点 ${node.name} 配置无效`,
+      scope:'node',
+      title:`${node.name}：${nodeIssueTitle(issue.path)}`,
       detail:issue.message,
       nodeName:node.name,
       path:issue.path
     }))
   })
+  return issues
+}
+
+function buildFlowValidationIssues():ValidationIssue[] {
+  const issues:ValidationIssue[] = []
+  const push = (issue:ValidationIssue) => issues.push(issue)
+  if (!String(form.name || '').trim()) push({ code:'flow-name', severity:'error', scope:'flow', title:'未填写流程名称', detail:'请填写用于任务创建和识别的流程名称。' })
+  if (!form.nodesDef.length) push({ code:'flow-empty', severity:'error', scope:'flow', title:'流程中没有节点', detail:'请先添加开始节点和结束节点。' })
+
+  const starts = form.nodesDef.filter((node:any) => node.functionType === 'START')
+  const ends = form.nodesDef.filter((node:any) => node.functionType === 'END')
+  if (starts.length !== 1) push({ code:'start-count', severity:'error', scope:'flow', title:starts.length ? '开始节点过多' : '缺少开始节点', detail:starts.length ? `当前有 ${starts.length} 个开始节点，请仅保留一个。` : '请添加一个开始节点。' })
+  if (ends.length !== 1) push({ code:'end-count', severity:'error', scope:'flow', title:ends.length ? '结束节点过多' : '缺少结束节点', detail:ends.length ? `当前有 ${ends.length} 个结束节点，请仅保留一个。` : '请添加一个结束节点。' })
 
   const nodeNames = new Set(form.nodesDef.map((node:any) => node.name))
   const outgoing = new Map<string,string[]>([...nodeNames].map(name => [name, []]))
@@ -365,44 +398,19 @@ function buildWorkflowValidationIssues():ValidationIssue[] {
     const source = connection.source?.nodeName
     const target = connection.target?.nodeName
     if (!nodeNames.has(source) || !nodeNames.has(target)) {
-      push({ code:`dangling-${index}`, severity:'error', title:'连接引用了不存在的节点', detail:`${source || '-'} → ${target || '-'}` })
+      push({ code:`dangling-${index}`, severity:'error', scope:'flow', title:'存在失效连接', detail:'请删除该连接，或重新连接有效节点。' })
       return
     }
     outgoing.get(source)?.push(target)
     incoming.get(target)?.push(source)
   })
 
-  form.nodesDef.forEach((node:any) => {
-    const inCount = incoming.get(node.name)?.length || 0
-    const outCount = outgoing.get(node.name)?.length || 0
-    if (node.functionType === 'START' && inCount) push({ code:`start-in-${node.name}`, severity:'error', title:'开始节点不能有上游节点', detail:'入口只能发起流程，不能被其他节点激活。', nodeName:node.name })
-    if (node.functionType !== 'START' && !inCount) push({ code:`missing-in-${node.name}`, severity:'error', title:`节点 ${node.name} 没有上游路径`, detail:'该节点在运行时不会被激活。', nodeName:node.name })
-    if (node.functionType === 'END' && outCount) push({ code:`end-out-${node.name}`, severity:'error', title:'结束节点不能有下游节点', detail:'出口表示流程已经结束，不能再激活其他节点。', nodeName:node.name })
-    if (node.functionType !== 'END' && !outCount) push({ code:`missing-out-${node.name}`, severity:'error', title:`节点 ${node.name} 没有下游路径`, detail:'执行到此处后无法抵达结束节点。', nodeName:node.name })
-    if (node.functionType === 'BRANCH') {
-      const branchOutputs = (node.interfaces || []).filter((item:any) => item.direction === 'OUT' && item.interfaceType === 'WORKFLOW')
-      const connectedOutputs = new Set(executionConnections.value.filter((item:any) => item.source?.nodeName === node.name).map((item:any) => item.source?.interfaceName))
-      if (branchOutputs.length) branchOutputs.filter((item:any) => !connectedOutputs.has(item.name)).forEach((item:any) => push({
-        code:`branch-output-${node.name}-${item.name}`,
-        severity:'error',
-        title:`分支 ${node.name} 的 ${item.name} 未连接`,
-        detail:'真假分支出口都必须连接一条可执行的下游路径。',
-        nodeName:node.name
-      }))
-      else if (outCount < 2) push({ code:`branch-routes-${node.name}`, severity:'error', title:`分支 ${node.name} 缺少路由`, detail:'条件分支至少需要两条下游执行路径。', nodeName:node.name })
-    }
-    if (node.functionType === 'BRANCH' && !String(node.expression || '').trim()) push({ code:`branch-expression-${node.name}`, severity:'error', title:`分支 ${node.name} 缺少表达式`, detail:'配置可在运行时求值的条件表达式。', nodeName:node.name, path:'expression' })
-    if (node.functionType === 'AGGREGATE' && inCount < 2) push({ code:`aggregate-inputs-${node.name}`, severity:'error', title:`汇聚 ${node.name} 上游不足`, detail:'汇聚节点至少等待两条上游路径。', nodeName:node.name })
-  })
-
-  if (starts.length === 1) {
-    const reachable = walkGraph(starts[0].name, outgoing)
-    form.nodesDef.filter((node:any) => !reachable.has(node.name)).forEach((node:any) => push({ code:`unreachable-${node.name}`, severity:'error', title:`节点 ${node.name} 无法从开始节点到达`, detail:'连接入口到该节点，或删除孤立节点。', nodeName:node.name }))
-  }
-  if (ends.length === 1) {
-    const reachesEnd = walkGraph(ends[0].name, incoming)
-    form.nodesDef.filter((node:any) => !reachesEnd.has(node.name)).forEach((node:any) => push({ code:`no-end-${node.name}`, severity:'error', title:`节点 ${node.name} 无法抵达结束节点`, detail:'补齐后续执行路径，避免任务永久停留。', nodeName:node.name }))
-  }
+  workflowNodeConnectionIssues(form.nodesDef, executionConnections.value).forEach((issue:any) => push({
+    ...issue,
+    severity:'error',
+    scope:'flow',
+    title:`${issue.nodeName}：${issue.title}`,
+  }))
 
   const indegree = new Map<string,number>([...nodeNames].map(name => [name, incoming.get(name)?.length || 0]))
   const queue = [...nodeNames].filter(name => indegree.get(name) === 0)
@@ -412,21 +420,23 @@ function buildWorkflowValidationIssues():ValidationIssue[] {
     visited++
     ;(outgoing.get(name) || []).forEach(target => { const next = (indegree.get(target) || 0) - 1; indegree.set(target, next); if (next === 0) queue.push(target) })
   }
-  if (form.nodesDef.length && visited !== form.nodesDef.length) push({ code:'graph-cycle', severity:'error', title:'执行路径存在环路', detail:'当前运行模型不支持循环执行，请移除回边。' })
-  if (!deviceNodeCount.value && form.nodesDef.length) push({ code:'no-device-node', severity:'warning', title:'流程中没有设备执行节点', detail:'若该流程仅用于控制或调用子流程可忽略此提醒。' })
+  if (form.nodesDef.length && visited !== form.nodesDef.length) push({ code:'graph-cycle', severity:'error', scope:'flow', title:'执行路径存在循环', detail:'请删除形成循环的执行连接。' })
+  if (!deviceNodeCount.value && form.nodesDef.length) push({ code:'no-device-node', severity:'warning', scope:'flow', title:'流程中没有设备节点', detail:'如果该流程只负责控制或调用子流程，可以忽略此提醒。' })
   return issues
 }
 
-function walkGraph(start:string, graph:Map<string,string[]>) {
-  const visited = new Set<string>()
-  const queue = [start]
-  while (queue.length) {
-    const name = queue.shift() as string
-    if (visited.has(name)) continue
-    visited.add(name)
-    ;(graph.get(name) || []).forEach(next => { if (!visited.has(next)) queue.push(next) })
-  }
-  return visited
+function nodeIssueTitle(path = '') {
+  if (path === 'expression') return '计算表达式'
+  if (path.startsWith('internalVariables')) return '变量空间'
+  if (path.startsWith('ports')) return '数据端口'
+  if (path.startsWith('interfaces') || path.startsWith('actions')) return '控制接口'
+  if (path.startsWith('lifecycle')) return '生命周期'
+  if (path.startsWith('capability')) return '业务配置'
+  return '节点配置'
+}
+
+function stripNodeName(title = '', nodeName = '') {
+  return nodeName && title.startsWith(`${nodeName}：`) ? title.slice(nodeName.length + 1) : title
 }
 
 function runValidation() {
@@ -436,8 +446,9 @@ function runValidation() {
 }
 
 function focusValidationIssue(issue:ValidationIssue) {
-  if (issue.nodeName && nodeByName(issue.nodeName)) openNodeDrawer(issue.nodeName)
+  if (issue.scope === 'node' && issue.nodeName && nodeByName(issue.nodeName)) openNodeDrawer(issue.nodeName)
   else if (issue.code === 'flow-name') ElMessage.info('请在右侧“流程基本配置”中填写流程名称')
+  else ElMessage.info(issue.detail)
 }
 
 function closeElementDrawer() {
@@ -478,7 +489,7 @@ function rebuildCanvas(layout = readLayout()) {
 }
 
 function reset(value:any, layout = readLayout()) {
-  Object.assign(form, empty(), value, { nodesDef:value.nodesDef || [], interfaceConnections:value.interfaceConnections || [], portConnections:value.portConnections || [] })
+  Object.assign(form, empty(), value, { nodesDef:rehydrateWorkflowNodes(value.nodesDef || []), interfaceConnections:value.interfaceConnections || [], portConnections:value.portConnections || [] })
   closeElementDrawer()
   clearElementSelection()
   openedWorkflowId.value = value.id || null
@@ -545,6 +556,7 @@ function createResourceNode(data:any):NodeDefinition | null {
 
 function drag(event:DragEvent, data:any) {
   if (!canEdit.value) return event.preventDefault()
+  if (data.kind === 'workflow' && !canDragWorkflowResource(data.workflow, form.id, canEdit.value)) return event.preventDefault()
   if (data.kind === 'model') {
     event.preventDefault()
     return
@@ -573,6 +585,9 @@ function drop(event:DragEvent) {
 
 function addResource(data:any, position = suggestedPosition()) {
   if (!canEdit.value) return
+  if (data.kind === 'workflow' && !canDragWorkflowResource(data.workflow, form.id, canEdit.value)) {
+    return ElMessage.warning('当前流程不能引用自身')
+  }
   if (data.kind === 'model') {
     return ElMessage.warning('设备模型不能直接作为节点放至画布，请展开并拖拽具体的“设备实例”')
   }
@@ -792,42 +807,35 @@ function nodeByName(nodeName:string) {
 }
 
 function nodeIssues(nodeName:string) {
-  const node = nodeByName(nodeName)
-  if (!node) return []
-  const contractIssues = validateNodeDefinition(node, { deviceModel:modelById(node.deviceModelId) }).map((issue:any) => ({ ...issue, nodeName:node.name }))
-  const serverIssues = issuesForNode(node.name).map((issue:any) => ({
-    path: issue.path || issue.elementId || 'configuration',
-    message: [issue.message, issue.suggestion].filter(Boolean).join('。'),
-    nodeName: node.name,
-  }))
-  const businessIssues = workflowValidationIssues.value
-    .filter(issue => issue.nodeName === nodeName && !issue.code.startsWith('node-'))
-    .map(issue => ({ path:issue.path || 'topology', message:issue.detail, nodeName }))
-  return [...contractIssues, ...serverIssues, ...businessIssues]
+  return nodeValidationIssues.value
+    .filter(issue => issue.nodeName === nodeName)
+    .map(issue => ({ path:issue.path, title:stripNodeName(issue.title, issue.nodeName), message:issue.detail, nodeName }))
 }
 
 function serverValidationIssues():ValidationIssue[] {
   return workflowIssueIndex.value.all.map((issue:any, index:number) => ({
     code: `server-${issue.code || index}-${issue.path || issue.elementId || 'workflow'}`,
     severity: issue.blocking ? 'error' : 'warning',
-    title: issue.code || '服务端校验提示',
+    scope: nodeNameForIssue(issue) ? 'node' : 'flow',
+    title: serverIssueTitle(issue),
     detail: [issue.message, issue.suggestion].filter(Boolean).join('。'),
     nodeName: nodeNameForIssue(issue),
     path: issue.path,
   }))
 }
 
+function serverIssueTitle(issue:any) {
+  const nodeName = nodeNameForIssue(issue)
+  if (nodeName) return `${nodeName}：${nodeIssueTitle(issue.path || '')}`
+  if (issue.stage === 'CANONICALIZATION') return '模型定义已自动修正'
+  if (issue.stage === 'COMPILATION') return '流程定义无法执行'
+  return issue.blocking ? '流程检查未通过' : '流程检查提醒'
+}
+
 function nodeNameForIssue(issue:any) {
   if (issue.elementType === 'NODE' && nodeByName(issue.elementId)) return issue.elementId
   const match = String(issue.path || '').match(/^nodes\[(\d+)]/)
   return match ? form.nodesDef[Number(match[1])]?.name : undefined
-}
-
-function issuesForNode(nodeName:string) {
-  const nodeIndex = form.nodesDef.findIndex((node:any) => node.name === nodeName)
-  return workflowIssueIndex.value.all.filter((issue:any) =>
-    (issue.elementType === 'NODE' && issue.elementId === nodeName) ||
-    String(issue.path || '').startsWith(`nodes[${nodeIndex}]`))
 }
 
 function setWorkflowIssues(issues:any[] = []) {
@@ -1035,4 +1043,5 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
 .designer-grid{grid-template-columns:218px minmax(430px,1fr) 304px;background:#fff}.resource-panel{border-right-color:#e5e5e5}.inspector-panel{border-left:0;background:#fff}.panel-titlebar{height:45px;padding:0 12px;border-bottom-color:#e5e5e5;background:#fff}.panel-titlebar strong{color:#262626;font-size:13px;font-weight:500}.panel-titlebar span,.panel-titlebar small{color:#8c8c8c;font-size:10px}.resource-titlebar{border-right:0}.resource-tabs :deep(.el-tabs__nav-wrap){padding:0 8px;border-bottom-color:#e5e5e5;background:#fafafa}.resource-tabs :deep(.el-tabs__item){height:36px;color:#595959;font-size:12px}.resource-tabs :deep(.el-tabs__item.is-active){color:#1677ff;font-weight:500}.resource-tabs :deep(.el-tabs__active-bar){height:2px;background:#1677ff}.resource-search{padding:8px 10px;border-bottom-color:#f0f0f0}.resource-tabs :deep(.el-tree-node__content){position:relative;height:36px;padding-right:8px;transition:background-color .15s ease}.resource-tabs :deep(.el-tree-node__content:hover){background:#e6f4ff}.resource-tabs :deep(.el-tree-node.is-current>.el-tree-node__content){background:#e6f4ff;color:#1677ff}.resource-tabs :deep(.el-tree-node.is-current>.el-tree-node__content:before){content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:#1677ff}.tab-scroll-body{padding:0}.flow-item{height:42px;padding:0 10px;border-bottom-color:#f0f0f0;transition:background-color .15s ease}.flow-item:hover,.flow-item.is-active-flow{border-color:#f0f0f0;background:#e6f4ff}.flow-icon{border:1px solid #bae0ff;background:#e6f4ff;color:#1677ff}.canvas-panel{border-right-color:#e5e5e5}.canvas-commandbar{position:static;z-index:10;height:45px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 10px;border-bottom:1px solid #e5e5e5;background:#fff;box-shadow:none}.flow-title-row>strong{color:#262626;font-weight:500}.status-chip,.meta-chip,.dirty-mark,.stats-chip,.error-badge{border-radius:2px}.island-right{gap:0}.island-right :deep(.el-button){height:28px;margin-left:-1px;border-radius:0;transition:border-color .15s ease,color .15s ease,background-color .15s ease}.island-right :deep(.el-button:first-child){margin-left:0}.island-right :deep(.btn-aliyun-cta){margin-left:8px;border-radius:2px;background:#1677ff}.flow-stage{background:#f7f8fa}.canvas-floating-controls{top:10px;right:10px;border-color:#d9d9d9;border-radius:2px;box-shadow:0 2px 8px rgba(0,0,0,.08)}.workflow-flow :deep(.vue-flow__edge-path){stroke:#7b96b8;stroke-width:1.8;transition:stroke .15s ease,stroke-width .15s ease}.workflow-flow :deep(.data-edge .vue-flow__edge-path){stroke:#722ed1;stroke-dasharray:7 5}.workflow-flow :deep(.vue-flow__edge.selected .vue-flow__edge-path){stroke:#1677ff;stroke-width:2.4}.workflow-flow :deep(.vue-flow__controls){border-color:#d9d9d9;border-radius:2px;box-shadow:0 2px 8px rgba(0,0,0,.08)}.canvas-statusbar{height:28px;border-top-color:#e5e5e5;background:#fff;color:#8c8c8c}.legend-line{border-top-color:#7b96b8}.legend-line.data{border-top-color:#722ed1}.inspector-titlebar{height:45px}.section-heading{height:36px;padding:0 12px;border-color:#e5e5e5;background:#fafafa}.section-heading strong{color:#262626;font-size:11px;font-weight:500}.dense-form{padding:12px 12px 2px;border-bottom-color:#e5e5e5}.overview-metrics{border-bottom-color:#e5e5e5}.overview-metrics>div{border-right-color:#f0f0f0}.overview-metrics strong{color:#262626;font-size:16px;font-weight:500}.overview-metrics span{color:#8c8c8c;font-size:10px}.issue-list button{border-bottom-color:#f0f0f0;transition:background-color .15s ease}.issue-list button:hover{background:#fafafa}
 .resource-function-section{border-bottom:1px solid #e5e5e5;background:#fff}.resource-group-heading{height:30px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:#fafafa;color:#595959}.resource-group-heading strong{font-size:11px;font-weight:500}.resource-group-heading span{color:#8c8c8c;font-size:9px}.resource-function-list{display:grid;grid-template-columns:1fr 1fr}.resource-function-item{height:48px;display:grid;grid-template-columns:24px minmax(0,1fr);align-items:center;gap:7px;padding:5px 9px;border:0;border-right:1px solid #f0f0f0;border-bottom:1px solid #f0f0f0;background:#fff;color:#262626;text-align:left;cursor:grab;transition:background-color .15s ease,color .15s ease}.resource-function-item:nth-child(even){border-right:0}.resource-function-item:nth-last-child(-n+2){border-bottom:0}.resource-function-item:hover{background:#e6f4ff;color:#1677ff}.resource-function-item:disabled{cursor:not-allowed;opacity:.5}.resource-function-item>span:last-child{display:grid;min-width:0}.resource-function-item strong,.resource-function-item small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.resource-function-item strong{font-size:11px;font-weight:500}.resource-function-item small{color:#8c8c8c;font-size:9px}.function-mark{width:22px;height:22px;display:grid;place-items:center;border:1px solid #bae0ff;border-radius:2px;background:#e6f4ff;color:#1677ff;font-size:9px}.function-mark.start{border-color:#b7eb8f;background:#f6ffed;color:#389e0d}.function-mark.end{border-color:#d9d9d9;background:#fafafa;color:#595959}.function-mark.branch{border-color:#ffe58f;background:#fffbe6;color:#d48806}.function-mark.aggregate{border-color:#d3adf7;background:#f9f0ff;color:#722ed1}
 .tree-resource-icon{flex:none;color:#8c8c8c;font-size:14px}.tree-item.model .tree-resource-icon,.workflow-tree-item .tree-resource-icon{color:#1677ff}.workflow-tree-item{width:100%;display:flex;align-items:center;gap:7px;min-width:0}.workflow-tree-item.is-active-flow{color:#1677ff}.workflow-tree-item .node-title{flex:1}.canvas-floating-controls{top:10px;left:10px;right:auto;border-radius:2px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.validation-groups{display:grid}.validation-group{display:grid}.issue-group-heading{height:30px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-bottom:1px solid #e5e5e5;background:#fff}.issue-group-heading strong{color:#595959;font-size:10px;font-weight:500}.issue-group-heading span{color:#8c8c8c;font-size:9px}
 </style>

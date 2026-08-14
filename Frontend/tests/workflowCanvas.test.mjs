@@ -96,6 +96,7 @@ test('接口边为蓝灰色实线且保留具体接口Handle', () => {
   assert.equal(edges[0].sourceHandle, 'interface:high')
   assert.equal(edges[0].style.stroke, '#7b96b8')
   assert.equal(edges[0].style.strokeDasharray, undefined)
+  assert.deepEqual(edges[0].pathOptions, { offset: 28, borderRadius: 4 })
 })
 
 test('端口边为紫色虚线', () => {
@@ -108,6 +109,7 @@ test('端口边为紫色虚线', () => {
   assert.equal(edges[0].targetHandle, 'port:targetIn')
   assert.equal(edges[0].style.stroke, '#7c4dce')
   assert.equal(edges[0].style.strokeDasharray, '7 5')
+  assert.deepEqual(edges[0].pathOptions, { offset: 28, borderRadius: 4 })
 })
 
 test('状态控制接口与数据端口使用独立的Handle命名空间', () => {

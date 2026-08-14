@@ -183,7 +183,7 @@
               },
               "allowedSignals": {
                 "type": "array",
-                "description": "允许通过此接口的信号列表，STATE类型OUT接口信号须符合协议规范.json中WorkflowControlSignal定义；WORKFLOW类型接口信号须符合协议规范.json中WorkflowNodeSignal定义",
+                "description": "允许通过此接口的信号列表；WORKFLOW类型接口信号须符合协议规范.json中WorkflowNodeSignal定义，DEV_NODE的STATE类型OUT接口须符合WorkflowControlSignal，STATE类型IN接口仅接收CMD_STATE",
                 "items": { "type": "string" }
               },
               "bindingTriggers": {
@@ -191,20 +191,49 @@
                 "description": "绑定到此接口的触发器列表，各触发器独立求值，互不干扰",
                 "items": {
                   "type": "object",
-                  "description": "触发器实时监测condition，为真时执行actionName引用的节点动作",
+                  "description": "引擎轮询评估condition；条件整体首次由false变为true时执行内联action",
                   "properties": {
                     "condition": {
                       "type": "object",
-                      "description": "结构化条件谓词（object，operator，threshold）",
-                      "properties": {
-                        "object": { "type": "string", "description": "被观测目标的标识名，内部变量名/生命周期状态名/接口信号名" },
-                        "operator": { "$ref": "系统执行规范.json#/definitions/ConstraintOperator" },
-                        "threshold": {
-                          "type": [ "number", "string", "boolean", "array" ],
-                          "description": "比较阈值，类型须与object所指变量的dataType兼容"
+                      "description": "触发条件；可使用单个判断条件，也可使用AND组合条件",
+                      "oneOf": [
+                        {
+                          "type": "object",
+                          "description": "单个判断条件",
+                          "properties": {
+                            "object": { "type": "string", "description": "被观测目标的标识名，包括节点内部变量名、nodeLifecycleState、IN接口的signalName或系统预置触发器使用的payload.stateName" },
+                            "operator": { "$ref": "系统执行规范.json#/definitions/ConstraintOperator" },
+                            "threshold": {
+                              "type": [ "number", "string", "boolean", "array" ],
+                              "description": "比较阈值，类型须与object对应的数据类型兼容" }
+                            },
+                            "required": [ "object", "operator", "threshold" ]
+                          },
+                          {
+                            "type": "object",
+                            "description": "AND组合条件；所有conditions同时满足时，整个condition结果为true",
+                            "properties": {
+                            "logic": { "type": "string", "const": "AND", "description": "条件组合方式，当前只支持AND" },
+                            "conditions": {
+                              "type": "array",
+                              "description": "参与AND判断的条件列表，所有条件基于本轮同一份节点快照求值",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "object": { "type": "string", "description": "被观测目标的标识名，包括节点内部变量名、nodeLifecycleState、IN接口的signalName或系统预置触发器使用的payload.stateName" },
+                                  "operator": { "$ref": "系统执行规范.json#/definitions/ConstraintOperator" },
+                                  "threshold": {
+                                    "type": [ "number", "string", "boolean", "array" ],
+                                    "description": "比较阈值，类型须与object对应的数据类型兼容"
+                                  }
+                                },
+                                "required": [ "object", "operator", "threshold" ]
+                              }
+                            }
+                          },
+                          "required": [ "logic", "conditions" ]
                         }
-                      },
-                      "required": [ "object", "operator", "threshold" ]
+                      ]
                     },
                     "action": {
                       "description": "触发器内联动作对象，格式遵循WorkflowNodeAction；其actionName必须包含在所属节点actions[]中，由后端编译阶段校验",
@@ -242,7 +271,7 @@
         "actions": {
           "type": "array",
           "uniqueItems": true,
-          "description": "当前节点允许使用的动作名集合；接口触发器内联动作的actionName必须包含在该集合中",
+          "description": "工作流节点固定可用动作名集合，由系统自动维护为UPDATE与EMIT；接口触发器内联动作的actionName必须包含在该集合中",
           "items": { "$ref": "#/definitions/WorkflowNodeAction/properties/actionName" }
         }
       },

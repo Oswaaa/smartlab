@@ -1,5 +1,8 @@
+import { validateWorkflowExpression } from './workflowDesignerRules.js'
+
 let configuredTemplates
 const requiredTemplateKeys = ['START', 'END', 'BRANCH', 'AGGREGATE', 'DEV_NODE', 'SUBFLOW_NODE']
+const workflowActionCapabilities = ['UPDATE', 'EMIT']
 
 export function configureWorkflowNodeTemplates(templates) {
   const missingKeys = requiredTemplateKeys.filter(key => !templates?.[key] || typeof templates[key] !== 'object')
@@ -43,7 +46,7 @@ export function orderedControlInterfaces(node) {
 }
 
 export function customTriggerActionNames(node) {
-  return [...new Set((node?.actions ?? []).filter(action => action === 'UPDATE' || action === 'EMIT'))]
+  return [...workflowActionCapabilities]
 }
 
 export function rehydrateWorkflowNodes(nodes = []) {
@@ -92,9 +95,7 @@ function restoreMatchedItems(actualItems = [], expectedItems = [], identity) {
 
 function triggerBusinessIdentity(trigger) {
   return JSON.stringify([
-    trigger?.condition?.object,
-    trigger?.condition?.operator,
-    trigger?.condition?.threshold,
+    canonicalJson(trigger?.condition),
     canonicalJson(trigger?.action),
   ])
 }
@@ -108,16 +109,11 @@ function canonicalJson(value) {
 export function normalizeWorkflowNodeDefinition(node = {}) {
   const restored = structuredClone(node)
   const legacyActions = new Map()
-  const actionNames = []
   for (const action of restored.actions ?? []) {
-    if (typeof action === 'string') {
-      if (action === 'UPDATE' || action === 'EMIT') actionNames.push(action)
-      continue
-    }
+    if (typeof action === 'string') continue
     if (!action || typeof action !== 'object') continue
     const canonical = canonicalAction(action)
     if (action.actionName) legacyActions.set(action.actionName, canonical)
-    if (canonical.actionName === 'UPDATE' || canonical.actionName === 'EMIT') actionNames.push(canonical.actionName)
   }
   for (const item of restored.interfaces ?? []) {
     item.bindingTriggers = (item.bindingTriggers ?? []).map(trigger => {
@@ -133,8 +129,36 @@ export function normalizeWorkflowNodeDefinition(node = {}) {
       return normalized
     })
   }
-  restored.actions = [...new Set(actionNames)]
+  restored.actions = [...workflowActionCapabilities]
   return restored
+}
+
+export function workflowUpdateVariableDataType(node, targetName) {
+  return (node?.internalVariables ?? []).find(variable => variable.name === targetName)?.dataType ?? null
+}
+
+export function emptyWorkflowUpdateValue(dataType) {
+  if (dataType === 'BOOLEAN') return false
+  if (dataType === 'STRING') return ''
+  return null
+}
+
+export function workflowTriggerConditions(condition) {
+  if (condition?.logic === 'AND' && Array.isArray(condition.conditions)) return condition.conditions
+  return condition && typeof condition === 'object' ? [condition] : []
+}
+
+export function addWorkflowTriggerCondition(condition, predicate) {
+  const conditions = workflowTriggerConditions(condition).map(item => structuredClone(item))
+  conditions.push(structuredClone(predicate))
+  return { logic: 'AND', conditions }
+}
+
+export function removeWorkflowTriggerCondition(condition, index) {
+  const conditions = workflowTriggerConditions(condition).map(item => structuredClone(item))
+  if (conditions.length <= 1) throw new Error('触发器至少保留一个条件')
+  conditions.splice(index, 1)
+  return conditions.length === 1 ? conditions[0] : { logic: 'AND', conditions }
 }
 
 function canonicalAction(source = {}) {
@@ -248,13 +272,6 @@ export function removePort(node, portName, portConnections) {
   }
 }
 
-export function removeAction(node, actionName) {
-  const used = (node.interfaces ?? []).some(item => (item.bindingTriggers ?? [])
-    .some(trigger => trigger.action?.actionName === actionName))
-  if (used) throw new Error(`动作能力${actionName}仍被触发器引用`)
-  return { ...node, actions: (node.actions ?? []).filter(item => item !== actionName) }
-}
-
 export function removeInterface(node, interfaceName, interfaceConnections) {
   const target = (node.interfaces ?? []).find(item => item.name === interfaceName)
   if (isSystemItem(target)) throw new Error(`系统接口${interfaceName}不可删除`)
@@ -272,12 +289,16 @@ export function validateNodeDefinition(node, context = {}) {
   uniqueErrors(errors, node.ports, 'name', 'ports')
   uniqueErrors(errors, node.interfaces, 'name', 'interfaces')
   uniqueActionErrors(errors, node.actions)
-  validateVariables(node, errors)
+  validateVariables(node, errors, context.deviceAttributes || [])
   validatePorts(node, errors)
   validateActions(node, errors)
   validateTriggers(node, errors)
   validateControlContractOwnership(node, errors)
   if (node.nodeType === 'DEV_NODE') validateDeviceConfiguration(node, context.deviceModel, errors)
+  if (node.nodeType === 'FUNC_NODE' && ['BRANCH', 'AGGREGATE'].includes(node.functionType) && String(node.expression || '').trim()) {
+    const expressionErrors = validateWorkflowExpression(node.expression, node.internalVariables || [], { assignment: true, temporal: true })
+    expressionErrors.forEach(message => errors.push({ path: 'expression', message }))
+  }
   return errors
 }
 
@@ -305,10 +326,19 @@ function uniqueErrors(errors, items = [], field, path) {
   })
 }
 
-function validateVariables(node, errors) {
-  const allowed = new Set(['INTEGER', 'DOUBLE', 'BOOLEAN', 'STRING', 'JSON'])
+function validateVariables(node, errors, deviceAttributes = []) {
+  const allowed = new Set(['INTEGER', 'DOUBLE', 'BOOLEAN', 'STRING'])
+  const attributes = new Map(deviceAttributes.map(item => [item.attributeName, item]))
   ;(node.internalVariables ?? []).forEach((variable, index) => {
     if (!allowed.has(variable.dataType)) errors.push({ path: `internalVariables[${index}].dataType`, message: '变量类型无效' })
+    if (variable.attributesMapping) {
+      const attribute = attributes.get(variable.attributesMapping)
+      if (!attribute) {
+        errors.push({ path: `internalVariables[${index}].attributesMapping`, message: `设备属性${variable.attributesMapping}不存在` })
+      } else if (attribute.dataType && attribute.dataType !== variable.dataType) {
+        errors.push({ path: `internalVariables[${index}].dataType`, message: `变量类型与设备属性${variable.attributesMapping}不一致` })
+      }
+    }
   })
 }
 
@@ -325,12 +355,13 @@ function validateTriggers(node, errors) {
 }
 
 function validateInlineTriggers(node, errors) {
-  const actionNames = new Set(node.actions ?? [])
+  const actionNames = new Set(workflowActionCapabilities)
   const interfaces = new Map((node.interfaces ?? []).map(item => [item.name, item]))
   const variables = new Map((node.internalVariables ?? []).map(item => [item.name, item]))
   const lifecycleStates = new Set(node.lifecycle?.states ?? [])
   ;(node.interfaces ?? []).forEach((item, interfaceIndex) => (item.bindingTriggers ?? []).forEach((trigger, triggerIndex) => {
     const path = `interfaces[${interfaceIndex}].bindingTriggers[${triggerIndex}]`
+    validateTriggerCondition(trigger.condition, `${path}.condition`, errors)
     const action = trigger.action
     const actionName = action?.actionName
     const payload = action?.payload
@@ -345,6 +376,24 @@ function validateInlineTriggers(node, errors) {
     if (actionName === 'EMIT') validateEmitPayload(path, payload, interfaces, item, errors)
     if (actionName === 'UPDATE') validateUpdatePayload(path, payload, variables, lifecycleStates, errors)
   }))
+}
+
+function validateTriggerCondition(condition, path, errors) {
+  const grouped = condition?.logic !== undefined || condition?.conditions !== undefined
+  if (!grouped) return
+  if (condition?.logic !== 'AND') {
+    errors.push({ path: `${path}.logic`, message: '条件组合当前只支持AND' })
+    return
+  }
+  if (!Array.isArray(condition.conditions) || condition.conditions.length < 2) {
+    errors.push({ path: `${path}.conditions`, message: 'AND条件组至少需要两个条件' })
+    return
+  }
+  condition.conditions.forEach((predicate, index) => {
+    if (predicate?.logic !== undefined || predicate?.conditions !== undefined) {
+      errors.push({ path: `${path}.conditions[${index}]`, message: '条件组不允许嵌套' })
+    }
+  })
 }
 
 function validateEmitPayload(path, payload, interfaces, hostInterface, errors) {

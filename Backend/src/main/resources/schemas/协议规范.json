@@ -156,7 +156,7 @@
     },
     "OperationStatePayload": {
       "type": "object",
-      "description": "OP_STATE的payload格式，用于工作流引擎和约束引擎映射设备业务功能状态；每次广播携带指定区域当前完整的活动状态数组快照",
+      "description": "OP_STATE的payload格式，用于约束引擎映射设备业务功能状态；每次广播携带指定区域当前完整的活动状态数组快照，工作流节点目前不消费该信号",
       "properties": {
         "deviceModelId": { "type": "integer", "description": "设备模型ID" },
         "deviceInstanceId": { "type": "integer", "description": "设备实例ID" },

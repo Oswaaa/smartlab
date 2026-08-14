@@ -39,6 +39,7 @@ public class UpdateWorkflowActionExecutor implements WorkflowActionExecutor {
         }
         JsonNode declaration = declaredVariable(context.node().getInVariables(), variableName);
         if (declaration == null) throw new IllegalArgumentException("UPDATE动作引用的内部变量不存在: " + variableName);
+        value = normalizeValue(declaration.path("dataType").asText(""), value);
         requireCompatibleType(variableName, declaration.path("dataType").asText(""), value);
         ObjectNode update = JsonNodeSupport.objectNode();
         valueResolver.write(update, variableName, value);
@@ -51,6 +52,17 @@ public class UpdateWorkflowActionExecutor implements WorkflowActionExecutor {
             if (variableName.equals(definition.path("name").asText())) return definition;
         }
         return null;
+    }
+
+    private JsonNode normalizeValue(String dataType, JsonNode value) {
+        if (!"INTEGER".equals(dataType) || value == null || !value.isNumber() || value.isIntegralNumber()) {
+            return value;
+        }
+        try {
+            return JsonNodeSupport.toNode(value.decimalValue().longValueExact());
+        } catch (ArithmeticException ignored) {
+            return value;
+        }
     }
 
     private void requireCompatibleType(String variableName, String dataType, JsonNode value) {

@@ -135,6 +135,7 @@
             "properties": {
               "name": { "type": "string", "description": "变量标识名，在同一节点内唯一；可作为trigger.condition.object的引用目标" },
               "dataType": { "$ref": "协议规范.json#/definitions/DataType" },
+              "initialValue": { "description": "内部变量初始值（可选）；类型须与dataType一致，创建TASK_STEP时写入变量空间，任务变量中已有同名值时不覆盖" },
               "attributesMapping": { "type": "string", "description": "映射的设备属性名（可选）；填写后运行时自动从设备属性同步值仅对DEV_NODE的变量有意义，关联DeviceModel的属性定义" }
             },
             "required": [ "name", "dataType" ]

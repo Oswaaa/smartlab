@@ -52,6 +52,29 @@ class WorkflowRuntimeServiceTest {
     }
 
     @Test
+    void createStepInitializesDeclaredInternalVariableDefaultsWithoutOverwritingTaskValues() {
+        TaskStepMapper steps = mock(TaskStepMapper.class);
+        WorkflowRuntimeService runtime = runtime(steps, mock(FlowNodeMapper.class));
+        Task task = new Task();
+        task.setId(5L);
+        task.setTaskVariables(JsonNodeSupport.objectNode().put("preset", 7));
+        FlowNode node = node(lifecycle("PENDING", "RUNNING", "RUNNING", "SUCCEEDED"));
+        node.setInterfaces(interfaces());
+        node.setInVariables(JsonNodeSupport.arrayNode()
+                .add(JsonNodeSupport.objectNode().put("name", "aggregateCount")
+                        .put("dataType", "INTEGER").put("initialValue", 0))
+                .add(JsonNodeSupport.objectNode().put("name", "preset")
+                        .put("dataType", "INTEGER").put("initialValue", 1)));
+        when(steps.selectOne(any())).thenReturn(null);
+
+        TaskStep created = runtime.createStep(task, node, null, 0, null);
+
+        assertTrue(created.getVariableSpace().has("aggregateCount"));
+        assertEquals(0, created.getVariableSpace().path("aggregateCount").asInt());
+        assertEquals(7, created.getVariableSpace().path("preset").asInt());
+    }
+
+    @Test
     void pollsActiveAndUnobservedTerminalStepsOnly() {
         TaskStepMapper steps = mock(TaskStepMapper.class);
         WorkflowRuntimeService runtime = runtime(steps, mock(FlowNodeMapper.class));

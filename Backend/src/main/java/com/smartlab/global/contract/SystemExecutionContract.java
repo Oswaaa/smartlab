@@ -25,7 +25,8 @@ public final class SystemExecutionContract {
                 new NodeInterfaceDefinition(allNodes, "Interface_workflow_in", "IN", InterfaceType.WORKFLOW, names(WorkflowNodeSignal.values())),
                 new NodeInterfaceDefinition(allNodes, "Interface_workflow_out", "OUT", InterfaceType.WORKFLOW, names(WorkflowNodeSignal.values())),
                 new NodeInterfaceDefinition(List.of(WorkflowNodeType.DEV_NODE.name()), "Interface_state_out", "OUT", InterfaceType.STATE, names(WorkflowControlSignal.values())),
-                new NodeInterfaceDefinition(List.of(WorkflowNodeType.DEV_NODE.name()), "Interface_state_in", "IN", InterfaceType.STATE, names(StatusSignal.values())));
+                new NodeInterfaceDefinition(List.of(WorkflowNodeType.DEV_NODE.name()), "Interface_state_in", "IN", InterfaceType.STATE,
+                        List.of(StatusSignal.CMD_STATE.name())));
     }
 
     public static List<String> commandStateNames() {

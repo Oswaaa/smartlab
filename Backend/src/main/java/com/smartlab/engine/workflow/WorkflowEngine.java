@@ -26,7 +26,6 @@ import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -181,8 +180,6 @@ public class WorkflowEngine {
             int depth = step.getStepDepth() == null ? 0 : step.getStepDepth();
             startFlow(task, node.getSubFlowModelId(), step.getId(), depth + 1);
         }
-        if ("AGGREGATE".equals(functionType(node)) && !aggregateReady(task, step, node))
-            return;
         ObjectNode frozenSnapshot = actionVariables(task, step, null, node);
         evaluateNodeTriggers(task, step, node, frozenSnapshot);
     }
@@ -200,6 +197,9 @@ public class WorkflowEngine {
         if (parentNode == null || !"SUBFLOW_NODE".equals(parentNode.getNodeType())) {
             throw new IllegalStateException("子流程END的父步骤不是SUBFLOW_NODE");
         }
+        if (TERMINAL_NODE_STATES.contains(parent.getNodeStatus())) {
+            return;
+        }
         ArrayNode input = WorkflowInterfaceSnapshots.withSignal(
                 parent.getInterfaceInSnapshot(), parentNode.getInterfaces(), "IN",
                 "Interface_workflow_in", WorkflowNodeSignal.SUBFLOW_COMPLETED.name(), null);
@@ -209,7 +209,9 @@ public class WorkflowEngine {
     private void evaluateNodeTriggers(Task task, TaskStep step, FlowNode node, ObjectNode frozenSnapshot) {
         ObjectNode triggerStates = triggerStates(step);
         List<JsonNode> orderedInterfaces = new java.util.ArrayList<>();
-        for (String direction : List.of("OUT", "IN")) {
+        List<String> directions = TERMINAL_NODE_STATES.contains(step.getNodeStatus())
+                ? List.of("OUT") : List.of("OUT", "IN");
+        for (String direction : directions) {
             for (JsonNode item : iterable(node.getInterfaces())) {
                 if (direction.equals(item.path("direction").asText())) orderedInterfaces.add(item);
             }
@@ -395,12 +397,29 @@ public class WorkflowEngine {
 
     private WorkflowActionResult executeAction(Task task, TaskStep step, FlowNode node, ObjectNode variables,
             WorkflowActionDefinition action) {
+        ObjectNode currentVariables = latestActionVariables(step, variables);
         WorkflowActionResult result = actionRegistry.required(action.actionName()).execute(
-                action, new WorkflowActionContext(task, step, node, variables, Instant.now(), executionOperations));
+                action, new WorkflowActionContext(task, step, node, currentVariables, Instant.now(), executionOperations));
         if (!result.variableUpdates().isEmpty()) {
             runtime.mergeVariableSpace(step, result.variableUpdates());
         }
         return result;
+    }
+
+    private ObjectNode latestActionVariables(TaskStep step, ObjectNode frozenVariables) {
+        ObjectNode current = frozenVariables.deepCopy();
+        JsonNode latest = step.getVariableSpace();
+        if (latest == null || !latest.isObject()) return current;
+        latest.fields().forEachRemaining(entry -> {
+            if (!"_triggerStates".equals(entry.getKey())
+                    && !"nodeLifecycleState".equals(entry.getKey())
+                    && !"inputInterfaceName".equals(entry.getKey())
+                    && !"signalName".equals(entry.getKey())
+                    && !"payload".equals(entry.getKey())) {
+                current.set(entry.getKey(), entry.getValue().deepCopy());
+            }
+        });
+        return current;
     }
 
     private void mergeObject(ObjectNode target, JsonNode updates) {
@@ -423,6 +442,7 @@ public class WorkflowEngine {
             if (!allows(targetInterface, signalName)) continue;
             TaskStep targetStep = runtime.createStep(task, target, completed.getParentStepId(),
                     completed.getStepDepth(), null);
+            if (TERMINAL_NODE_STATES.contains(targetStep.getNodeStatus())) continue;
             JsonNode sourceSlot = WorkflowInterfaceSnapshots.find(
                     completed.getInterfaceOutSnapshot(), sourceInterface);
             JsonNode payload = sourceSlot.path("payload");
@@ -616,25 +636,6 @@ public class WorkflowEngine {
         if (selected == null || selected.isBlank())
             throw new IllegalArgumentException("DEV_NODE缺少STATE输入接口: " + node.getNodeIdRef());
         return selected;
-    }
-
-    private boolean aggregateReady(Task task, TaskStep aggregateStep, FlowNode node) {
-        var compiled = workflowService.compileDefinition(node.getFlowModelId());
-        Set<Long> predecessors = new HashSet<>();
-        compiled.incoming(node.getNodeIdRef()).forEach(connection -> predecessors.add(connection.sourceNodeIdRef()));
-        List<TaskStep> contextSteps = runtime.steps(task.getId()).stream()
-                .filter(item -> java.util.Objects.equals(item.getParentStepId(), aggregateStep.getParentStepId()))
-                .filter(item -> java.util.Objects.equals(item.getStepDepth(), aggregateStep.getStepDepth()))
-                .toList();
-        if (predecessors.isEmpty())
-            return false;
-        for (Long predecessor : predecessors) {
-            List<TaskStep> activated = contextSteps.stream().filter(item -> predecessor.equals(item.getNodeIdRef()))
-                    .toList();
-            if (activated.isEmpty() || activated.stream().anyMatch(item -> !"SUCCEEDED".equals(item.getNodeStatus())))
-                return false;
-        }
-        return true;
     }
 
     private JsonNode interfaceByName(FlowNode node, String name) {

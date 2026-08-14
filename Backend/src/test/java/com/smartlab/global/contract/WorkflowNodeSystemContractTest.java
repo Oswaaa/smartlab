@@ -75,19 +75,29 @@ class WorkflowNodeSystemContractTest {
     }
 
     @Test
-    void aggregateTemplateReceivesAndEmitsActive() {
+    void aggregateTemplateCountsEachInputAndLeavesCompletionRuleToTheUser() {
         JsonNode template = WorkflowNodeSystemContract.template("FUNC_NODE", "AGGREGATE");
         JsonNode input = interfaceByName(template, "Interface_workflow_in");
         JsonNode output = interfaceByName(template, "Interface_workflow_out");
         assertEquals(List.of("Interface_workflow_in", "Interface_workflow_out"), names(template.path("interfaces")));
+        JsonNode aggregateCount = findBy(template.path("internalVariables"), "name", "aggregateCount");
+        assertEquals("INTEGER", aggregateCount.path("dataType").asText());
+        assertEquals(0, aggregateCount.path("initialValue").asInt());
+        assertEquals("aggregate.count", aggregateCount.path("_systemKey").asText());
         assertEquals(List.of("ACTIVE"), textValues(input.path("allowedSignals")));
         assertEquals("ACTIVE", input.path("bindingTriggers").get(0).path("condition").path("threshold").asText());
-        assertEquals(List.of("RUNNING"), inputTriggerTargets(template));
+        assertEquals("aggregateCount", input.path("bindingTriggers").get(0)
+                .path("action").path("payload").path("targetName").asText());
+        assertEquals("aggregateCount + 1", input.path("bindingTriggers").get(0)
+                .path("action").path("payload").path("valueExpression").asText());
+        assertEquals("AND", input.path("bindingTriggers").get(1).path("condition").path("logic").asText());
+        assertEquals(List.of("aggregateCount", "nodeLifecycleState"), input.path("bindingTriggers").get(1)
+                .path("condition").path("conditions").findValuesAsText("object"));
+        assertEquals(List.of("aggregateCount", "RUNNING"), inputTriggerTargets(template));
         assertEquals(List.of("ACTIVE"), textValues(output.path("allowedSignals")));
-        assertEquals("ACTIVE", firstAction(template, "Interface_workflow_out", "EMIT")
-                .path("payload").path("signalName").asText());
-        assertEquals("aggregate.activate", input.path("bindingTriggers").get(0).path("_systemKey").asText());
-        assertEquals("aggregate.emitActive", output.path("bindingTriggers").get(0).path("_systemKey").asText());
+        assertTrue(output.path("bindingTriggers").isEmpty());
+        assertEquals("aggregate.countInput", input.path("bindingTriggers").get(0).path("_systemKey").asText());
+        assertEquals("aggregate.activate", input.path("bindingTriggers").get(1).path("_systemKey").asText());
     }
 
     @Test

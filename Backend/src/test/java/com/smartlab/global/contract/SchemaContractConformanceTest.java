@@ -130,11 +130,11 @@ class SchemaContractConformanceTest {
         assertEquals(name, actual.path("name").asText(), name + ".name");
         assertEquals(direction, actual.path("direction").asText(), name + ".direction");
         assertEquals(interfaceType.name(), actual.path("interfaceType").asText(), name + ".interfaceType");
-        if ("Interface_adapter_in".equals(name)) {
+        if (actual.has("allowedSignals")) {
             assertTrue(actual.has("allowedSignals"), name + ".allowedSignals must exist");
             assertTrue(actual.path("allowedSignals").isArray(), name + ".allowedSignals must be an array");
             assertTrue(!actual.has("allowedSignalsRef"), name + ".allowedSignalsRef must not exist");
-            assertEquals(List.of(), textValues(actual.path("allowedSignals")), name + ".allowedSignals");
+            assertEquals(allowedSignals, textValues(actual.path("allowedSignals")), name + ".allowedSignals");
         } else {
             assertTrue(actual.has("allowedSignalsRef"), name + ".allowedSignalsRef must exist");
             assertTrue(actual.path("allowedSignalsRef").isTextual(), name + ".allowedSignalsRef must be text");

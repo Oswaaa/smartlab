@@ -77,6 +77,7 @@ public class WorkflowDefinitionCompiler {
         validateInterfaceConnections(request.getInterfaceConnections(), refsByName, indexesByName, nodes, outgoing, incoming);
         validatePortConnections(request.getPortConnections(), indexesByName);
         validateTopology(nodes, outgoing, incoming, startRef, endRef);
+        validateAggregateThresholds(nodes, incoming);
         validateAcyclic(nodes.keySet(), outgoing);
         return new CompiledWorkflow(Map.copyOf(nodes), immutable(outgoing), immutable(incoming), Map.copyOf(refsByName), startRef, endRef);
     }
@@ -131,7 +132,12 @@ public class WorkflowDefinitionCompiler {
         int position = 0;
         for (JsonNode variable : variablesNode) {
             String dataTypePath = nodePath(name, "internalVariables[" + position + "].dataType");
-            requireDataType(requiredText(variable, "dataType", dataTypePath + ": 不能为空"), dataTypePath);
+            String dataType = requiredText(variable, "dataType", dataTypePath + ": 不能为空");
+            requireDataType(dataType, dataTypePath);
+            if (variable.has("initialValue") && !matchesDataType(variable.path("initialValue"), dataType)) {
+                throw nodeError(name, "internalVariables[" + position + "].initialValue",
+                        "initialValue与数据类型不一致: " + dataType);
+            }
             if (variable.has("attributesMapping") && !variable.path("attributesMapping").isTextual()) {
                 throw nodeError(name, "internalVariables[" + position + "].attributesMapping", "必须是字符串");
             }
@@ -202,6 +208,35 @@ public class WorkflowDefinitionCompiler {
         expected = canonicalizer.canonicalizeTemplate(expected);
         validateSystemInterfaces(index, node.path("interfaces"), expected.path("interfaces"));
         validateSystemActions(index, node.path("actions"), expected.path("actions"));
+        if (WorkflowNodeFunctionType.AGGREGATE.name().equals(functionType)) {
+            validateAggregateInputCounters(index, node.path("interfaces"));
+        }
+    }
+
+    private void validateAggregateInputCounters(NodeIndex index, JsonNode interfaces) {
+        for (JsonNode interfaceNode : iterable(interfaces)) {
+            if (!"IN".equals(interfaceNode.path("direction").asText())
+                    || !"WORKFLOW".equals(interfaceNode.path("interfaceType").asText())) continue;
+            boolean hasCounter = false;
+            for (JsonNode trigger : iterable(interfaceNode.path("bindingTriggers"))) {
+                JsonNode condition = trigger.path("condition");
+                JsonNode payload = trigger.path("action").path("payload");
+                if ("signalName".equals(condition.path("object").asText())
+                        && "=".equals(condition.path("operator").asText())
+                        && "ACTIVE".equals(condition.path("threshold").asText())
+                        && "UPDATE".equals(trigger.path("action").path("actionName").asText())
+                        && "INTERNAL_VARIABLE".equals(payload.path("updateType").asText())
+                        && "aggregateCount".equals(payload.path("targetName").asText())
+                        && "aggregateCount+1".equals(payload.path("valueExpression").asText().replaceAll("\\s+", ""))) {
+                    hasCounter = true;
+                    break;
+                }
+            }
+            if (!hasCounter) {
+                throw nodeError(index.nodeName(), "interfaces." + interfaceNode.path("name").asText()
+                        + ".bindingTriggers", "聚合输入接口必须包含计数触发器");
+            }
+        }
     }
     private void validateActions(NodeIndex index, JsonNode node, String path) {
         // action-name membership is validated while indexing; payloads live on triggers.
@@ -383,6 +418,7 @@ public class WorkflowDefinitionCompiler {
         if (connections == null || !connections.isArray()) throw new IllegalArgumentException("interfaceConnections必须是数组");
         Map<String, Long> nodeToDevice = new HashMap<>();
         Map<String, Long> deviceToNode = new HashMap<>();
+        Set<String> connectedWorkflowInputs = new HashSet<>();
         int position = 0;
         for (JsonNode connection : connections) {
             String path = "interfaceConnections[" + position + "]";
@@ -394,6 +430,12 @@ public class WorkflowDefinitionCompiler {
                 NodeIndex targetNode = referencedNode(target, indexes, path + ".target");
                 JsonNode sourceInterface = referencedInterface(source, sourceNode, "OUT", "WORKFLOW", path + ".source");
                 JsonNode targetInterface = referencedInterface(target, targetNode, "IN", "WORKFLOW", path + ".target");
+                String targetKey = targetNode.nodeName() + "\u0000" + targetInterface.path("name").asText();
+                if (!connectedWorkflowInputs.add(targetKey)) {
+                    throw new IllegalArgumentException(path
+                            + ": 每个WORKFLOW IN接口最多连接一个上游接口: "
+                            + targetNode.nodeName() + "." + targetInterface.path("name").asText());
+                }
                 long sourceRef = refs.get(sourceNode.nodeName());
                 long targetRef = refs.get(targetNode.nodeName());
                 Connection item = new Connection(sourceRef, sourceInterface.path("name").asText(), targetRef, targetInterface.path("name").asText());
@@ -458,8 +500,43 @@ public class WorkflowDefinitionCompiler {
             if (ref == endRef && !outgoing.get(ref).isEmpty()) throw nodeError(name, "interfaceConnections", "END节点不能有NODE_TO_NODE输出");
             if (ref != startRef && incoming.get(ref).isEmpty()) throw nodeError(name, "interfaceConnections", "非START节点必须有NODE_TO_NODE输入");
             if (ref != endRef && outgoing.get(ref).isEmpty()) throw nodeError(name, "interfaceConnections", "非END节点必须有NODE_TO_NODE输出");
-            if (WorkflowNodeFunctionType.AGGREGATE.name().equals(function) && incoming.get(ref).size() < 2) throw nodeError(name, "interfaceConnections", "AGGREGATE节点至少需要两个输入");
         }
+    }
+
+    private void validateAggregateThresholds(Map<Long, JsonNode> nodes,
+                                             Map<Long, List<Connection>> incoming) {
+        for (Map.Entry<Long, JsonNode> entry : nodes.entrySet()) {
+            JsonNode node = entry.getValue();
+            if (!WorkflowNodeFunctionType.AGGREGATE.name().equals(node.path("functionType").asText())) continue;
+            int availableInputs = incoming.getOrDefault(entry.getKey(), List.of()).size();
+            for (JsonNode interfaceNode : iterable(node.path("interfaces"))) {
+                if (!"OUT".equals(interfaceNode.path("direction").asText())
+                        || !"WORKFLOW".equals(interfaceNode.path("interfaceType").asText())) continue;
+                for (JsonNode trigger : iterable(interfaceNode.path("bindingTriggers"))) {
+                    for (JsonNode predicate : triggerPredicates(trigger.path("condition"))) {
+                        if (!"aggregateCount".equals(predicate.path("object").asText())
+                                || !predicate.path("threshold").isIntegralNumber()) continue;
+                        long threshold = predicate.path("threshold").asLong();
+                        String operator = predicate.path("operator").asText();
+                        long required = switch (operator) {
+                            case ">" -> threshold + 1;
+                            case ">=", "=", "==" -> threshold;
+                            default -> -1;
+                        };
+                        if (required > availableInputs) {
+                            throw nodeError(node.path("name").asText(),
+                                    "interfaces." + interfaceNode.path("name").asText() + ".bindingTriggers",
+                                    "聚合阈值" + required + "超过有效输入接口数量" + availableInputs);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private List<JsonNode> triggerPredicates(JsonNode condition) {
+        if (condition.path("conditions").isArray()) return nodeList(condition.path("conditions"));
+        return condition.isObject() ? List.of(condition) : List.of();
     }
 
     private long unique(long current, long next, String label) {

@@ -24,18 +24,39 @@ const aggregateTemplate = {
     _system: true,
     _systemKey: 'aggregate.lifecycle',
   },
+  internalVariables: [{
+    name: 'aggregateCount',
+    dataType: 'INTEGER',
+    initialValue: 0,
+    _system: true,
+    _systemKey: 'aggregate.count',
+  }],
   interfaces: [
     {
       name: 'Interface_workflow_in',
       direction: 'IN',
       interfaceType: 'WORKFLOW',
       allowedSignals: ['ACTIVE'],
-      bindingTriggers: [{
-        condition: { object: 'signalName', operator: '=', threshold: 'ACTIVE' },
-        action: { actionName: 'UPDATE', payload: { updateType: 'NODE_LIFECYCLE', targetName: 'RUNNING' } },
-        _system: true,
-        _systemKey: 'aggregate.activeTrigger',
-      }],
+      bindingTriggers: [
+        {
+          condition: { object: 'signalName', operator: '=', threshold: 'ACTIVE' },
+          action: { actionName: 'UPDATE', payload: { updateType: 'INTERNAL_VARIABLE', targetName: 'aggregateCount', valueExpression: 'aggregateCount + 1' } },
+          _system: true,
+          _systemKey: 'aggregate.countInput',
+        },
+        {
+          condition: {
+            logic: 'AND',
+            conditions: [
+              { object: 'aggregateCount', operator: '>', threshold: 0 },
+              { object: 'nodeLifecycleState', operator: '=', threshold: 'PENDING' },
+            ],
+          },
+          action: { actionName: 'UPDATE', payload: { updateType: 'NODE_LIFECYCLE', targetName: 'RUNNING' } },
+          _system: true,
+          _systemKey: 'aggregate.activate',
+        },
+      ],
       _system: true,
       _systemKey: 'aggregate.workflowIn',
     },
@@ -44,12 +65,7 @@ const aggregateTemplate = {
       direction: 'OUT',
       interfaceType: 'WORKFLOW',
       allowedSignals: ['ACTIVE'],
-      bindingTriggers: [{
-        condition: { object: 'nodeLifecycleState', operator: '=', threshold: 'RUNNING' },
-        action: { actionName: 'EMIT', payload: { targetInterfaceName: 'Interface_workflow_out', signalName: 'ACTIVE' } },
-        _system: true,
-        _systemKey: 'aggregate.emitActive',
-      }],
+      bindingTriggers: [],
       _system: true,
       _systemKey: 'aggregate.workflowOut',
     },
@@ -88,12 +104,13 @@ test('markerless workflow round trip restores system markers and preserves custo
   assert.equal(restored.lifecycle._systemKey, 'aggregate.lifecycle')
   assert.equal(restored.lifecycle.transitions[0]._systemKey, 'aggregate.lifecycle.pending.running')
   assert.equal(restored.interfaces[0]._systemKey, 'aggregate.workflowIn')
-  assert.equal(restored.interfaces[0].bindingTriggers[0]._systemKey, 'aggregate.activeTrigger')
-  assert.equal(restored.interfaces[1].bindingTriggers[0]._systemKey, 'aggregate.emitActive')
+  assert.equal(restored.internalVariables[0]._systemKey, 'aggregate.count')
+  assert.equal(restored.interfaces[0].bindingTriggers[0]._systemKey, 'aggregate.countInput')
+  assert.equal(restored.interfaces[0].bindingTriggers[1]._systemKey, 'aggregate.activate')
   assert.deepEqual(restored.internalVariables, node.internalVariables)
   assert.deepEqual(restored.ports, node.ports)
   assert.deepEqual(restored.actions, ['UPDATE', 'EMIT'])
-  assert.deepEqual(restored.interfaces[1].bindingTriggers[1], node.interfaces[1].bindingTriggers[1])
+  assert.deepEqual(restored.interfaces[1].bindingTriggers[0], node.interfaces[1].bindingTriggers[0])
   assert.deepEqual(validateNodeDefinition(restored), [])
 })
 
@@ -108,7 +125,7 @@ test('inline triggers support UPDATE constants and EMIT on output interfaces', (
   })
   assert.deepEqual(validateNodeDefinition(node), [])
 
-  node.interfaces[1].bindingTriggers[1].action.payload.valueExpression = 'counter + 1'
+  node.interfaces[1].bindingTriggers[0].action.payload.valueExpression = 'counter + 1'
   assert.ok(validateNodeDefinition(node).some(error => error.path.endsWith('.action.payload')))
 })
 

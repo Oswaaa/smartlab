@@ -37,6 +37,12 @@ export function canEditControlItem(node, item) {
   return canCustomizeControlInterfaces(node) && !isSystemItem(item)
 }
 
+export function canEditControlTriggers(node, item) {
+  if (!canCustomizeControlInterfaces(node) || !item) return false
+  if (!isSystemItem(item)) return true
+  return node?.functionType === 'AGGREGATE' && item.direction === 'OUT' && item.interfaceType === 'WORKFLOW'
+}
+
 export function orderedControlInterfaces(node) {
   const interfaces = node?.interfaces ?? []
   return [
@@ -63,6 +69,7 @@ export function rehydrateWorkflowNode(node) {
     expected.lifecycle?.transitions,
     item => `${item?.fromStateName ?? ''}->${item?.toStateName ?? ''}`,
   )
+  restoreMatchedItems(restored.internalVariables, expected.internalVariables, item => item?.name)
   restoreMatchedItems(restored.interfaces, expected.interfaces, item => item?.name)
   for (const expectedInterface of expected.interfaces ?? []) {
     const actualInterface = (restored.interfaces ?? [])
@@ -72,6 +79,16 @@ export function rehydrateWorkflowNode(node) {
       expectedInterface?.bindingTriggers,
       triggerBusinessIdentity,
     )
+  }
+  if (restored.nodeType === 'FUNC_NODE' && restored.functionType === 'AGGREGATE') {
+    for (const item of restored.interfaces ?? []) {
+      if (item.direction !== 'IN' || item.interfaceType !== 'WORKFLOW') continue
+      for (const trigger of item.bindingTriggers ?? []) {
+        if (!isAggregateCounterTrigger(trigger)) continue
+        trigger._system = true
+        trigger._systemKey ||= `aggregate.countInput.${item.name}`
+      }
+    }
   }
   return restored
 }
@@ -148,16 +165,30 @@ export function workflowTriggerConditions(condition) {
   return condition && typeof condition === 'object' ? [condition] : []
 }
 
+function cloneWorkflowData(value) {
+  if (Array.isArray(value)) return value.map(cloneWorkflowData)
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(Object.entries(value)
+    .map(([key, item]) => [key, cloneWorkflowData(item)]))
+}
+
 export function addWorkflowTriggerCondition(condition, predicate) {
-  const conditions = workflowTriggerConditions(condition).map(item => structuredClone(item))
-  conditions.push(structuredClone(predicate))
+  const conditions = workflowTriggerConditions(condition).map(cloneWorkflowData)
+  conditions.push(cloneWorkflowData(predicate))
   return { logic: 'AND', conditions }
 }
 
 export function removeWorkflowTriggerCondition(condition, index) {
-  const conditions = workflowTriggerConditions(condition).map(item => structuredClone(item))
+  const conditions = workflowTriggerConditions(condition).map(cloneWorkflowData)
   if (conditions.length <= 1) throw new Error('触发器至少保留一个条件')
   conditions.splice(index, 1)
+  return conditions.length === 1 ? conditions[0] : { logic: 'AND', conditions }
+}
+
+export function replaceWorkflowTriggerCondition(condition, index, predicate) {
+  const conditions = workflowTriggerConditions(condition).map(cloneWorkflowData)
+  if (index < 0 || index >= conditions.length) throw new Error('触发器条件不存在')
+  conditions[index] = cloneWorkflowData(predicate)
   return conditions.length === 1 ? conditions[0] : { logic: 'AND', conditions }
 }
 
@@ -246,6 +277,94 @@ export function createSubflowNode(workflow, name) {
   }
 }
 
+export function createWorkflowInterfaceDefinition(node, direction, name) {
+  if (!['IN', 'OUT'].includes(direction)) throw new Error('接口方向只允许IN或OUT')
+  const bindingTriggers = node?.nodeType === 'FUNC_NODE' && node?.functionType === 'AGGREGATE' && direction === 'IN'
+    ? [aggregateCounterTrigger(name)]
+    : []
+  return {
+    name,
+    direction,
+    interfaceType: 'WORKFLOW',
+    allowedSignals: ['ACTIVE'],
+    bindingTriggers,
+  }
+}
+
+export function defaultWorkflowInterfaceDirection(node) {
+  if (node?.nodeType !== 'FUNC_NODE') return 'OUT'
+  return ['END', 'AGGREGATE'].includes(node.functionType) ? 'IN' : 'OUT'
+}
+
+function aggregateCounterTrigger(interfaceName) {
+  return {
+    condition: { object: 'signalName', operator: '=', threshold: 'ACTIVE' },
+    action: {
+      actionName: 'UPDATE',
+      payload: {
+        updateType: 'INTERNAL_VARIABLE',
+        targetName: 'aggregateCount',
+        valueExpression: 'aggregateCount + 1',
+      },
+    },
+    _system: true,
+    _systemKey: `aggregate.countInput.${interfaceName}`,
+  }
+}
+
+function isAggregateCounterTrigger(trigger) {
+  const payload = trigger?.action?.payload
+  return trigger?.condition?.object === 'signalName' && trigger?.condition?.operator === '=' &&
+    trigger?.condition?.threshold === 'ACTIVE' && trigger?.action?.actionName === 'UPDATE' &&
+    payload?.updateType === 'INTERNAL_VARIABLE' && payload?.targetName === 'aggregateCount' &&
+    String(payload?.valueExpression || '').replace(/\s+/g, '') === 'aggregateCount+1'
+}
+
+export function changeWorkflowInterfaceDirection(node, interfaceName, direction, interfaceConnections = []) {
+  if (!['IN', 'OUT'].includes(direction)) throw new Error('接口方向只允许IN或OUT')
+  const target = (node?.interfaces ?? []).find(item => item.name === interfaceName)
+  if (!target) throw new Error(`接口${interfaceName}不存在`)
+  if (isSystemItem(target)) throw new Error(`系统接口${interfaceName}不可修改方向`)
+  if (target.direction === direction) {
+    return {
+      node,
+      interfaceConnections,
+      removedConnectionCount: 0,
+      removedTriggerCount: 0,
+    }
+  }
+
+  const connections = interfaceConnections ?? []
+  const nextConnections = connections.filter(connection =>
+    !(connection.source?.nodeName === node.name && connection.source?.interfaceName === interfaceName) &&
+    !(connection.target?.nodeName === node.name && connection.target?.interfaceName === interfaceName))
+  const currentTriggers = target.bindingTriggers ?? []
+  const removedTriggerCount = direction === 'IN'
+    ? currentTriggers.filter(trigger => trigger?.action?.actionName === 'EMIT').length
+    : currentTriggers.filter(isAggregateCounterTrigger).length
+  let nextTriggers = direction === 'IN'
+    ? currentTriggers.filter(trigger => trigger?.action?.actionName !== 'EMIT')
+    : currentTriggers.filter(trigger => !isAggregateCounterTrigger(trigger))
+
+  if (direction === 'IN' && node?.nodeType === 'FUNC_NODE' && node?.functionType === 'AGGREGATE') {
+    nextTriggers = [
+      aggregateCounterTrigger(interfaceName),
+      ...nextTriggers.filter(trigger => !isAggregateCounterTrigger(trigger)),
+    ]
+  }
+
+  const nextInterface = { ...target, direction, bindingTriggers: nextTriggers }
+  return {
+    node: {
+      ...node,
+      interfaces: (node.interfaces ?? []).map(item => item.name === interfaceName ? nextInterface : item),
+    },
+    interfaceConnections: nextConnections,
+    removedConnectionCount: connections.length - nextConnections.length,
+    removedTriggerCount,
+  }
+}
+
 export function replaceCapability(node, capability, previousCapability) {
   const nextTypes = Object.fromEntries((capability.parameters ?? []).map(parameter => [parameter.name, parameter.dataType]))
   return {
@@ -294,6 +413,7 @@ export function validateNodeDefinition(node, context = {}) {
   validateActions(node, errors)
   validateTriggers(node, errors)
   validateControlContractOwnership(node, errors)
+  validateAggregateInputs(node, errors)
   if (node.nodeType === 'DEV_NODE') validateDeviceConfiguration(node, context.deviceModel, errors)
   if (node.nodeType === 'FUNC_NODE' && ['BRANCH', 'AGGREGATE'].includes(node.functionType) && String(node.expression || '').trim()) {
     const expressionErrors = validateWorkflowExpression(node.expression, node.internalVariables || [], { assignment: true, temporal: true })
@@ -331,6 +451,9 @@ function validateVariables(node, errors, deviceAttributes = []) {
   const attributes = new Map(deviceAttributes.map(item => [item.attributeName, item]))
   ;(node.internalVariables ?? []).forEach((variable, index) => {
     if (!allowed.has(variable.dataType)) errors.push({ path: `internalVariables[${index}].dataType`, message: '变量类型无效' })
+    if (Object.hasOwn(variable, 'initialValue') && !matchesInternalValue(variable.initialValue, variable.dataType)) {
+      errors.push({ path: `internalVariables[${index}].initialValue`, message: '变量初始值与数据类型不一致' })
+    }
     if (variable.attributesMapping) {
       const attribute = attributes.get(variable.attributesMapping)
       if (!attribute) {
@@ -338,6 +461,19 @@ function validateVariables(node, errors, deviceAttributes = []) {
       } else if (attribute.dataType && attribute.dataType !== variable.dataType) {
         errors.push({ path: `internalVariables[${index}].dataType`, message: `变量类型与设备属性${variable.attributesMapping}不一致` })
       }
+    }
+  })
+}
+
+function validateAggregateInputs(node, errors) {
+  if (node?.nodeType !== 'FUNC_NODE' || node?.functionType !== 'AGGREGATE') return
+  ;(node.interfaces ?? []).forEach((item, index) => {
+    if (item.direction !== 'IN' || item.interfaceType !== 'WORKFLOW') return
+    if (!(item.bindingTriggers ?? []).some(isAggregateCounterTrigger)) {
+      errors.push({
+        path: `interfaces[${index}].bindingTriggers`,
+        message: '聚合输入接口必须包含计数触发器',
+      })
     }
   })
 }

@@ -8,6 +8,130 @@ export function layoutKey(workflowId, draftKey = 'draft') {
   return `${LAYOUT_PREFIX}${workflowId ?? draftKey}`
 }
 
+export function workflowCanvasNodeSize(node = {}) {
+  const workflowInterfaces = (node.interfaces || []).filter(item => item.interfaceType === 'WORKFLOW')
+  const maxSideCount = Math.max(
+    workflowInterfaces.filter(item => item.direction === 'IN').length,
+    workflowInterfaces.filter(item => item.direction === 'OUT').length,
+  )
+  const maxPortCount = Math.max(
+    (node.ports || []).filter(item => item.direction === 'IN').length,
+    (node.ports || []).filter(item => item.direction === 'OUT').length,
+  )
+  return {
+    width: Math.max(220, 80 + maxPortCount * 40),
+    height: Math.max(92, 48 + maxSideCount * 24),
+  }
+}
+
+export function workflowInterfaceTooltip(interfaceDefinition = {}) {
+  const direction = interfaceDefinition.direction === 'OUT' ? '控制输出' : '控制输入'
+  return `${direction} · ${interfaceDefinition.name || '未命名接口'}`
+}
+
+export function workflowPortTooltip(port = {}, node = {}) {
+  const direction = port.direction === 'OUT' ? '数据输出' : '数据输入'
+  const variable = (node.internalVariables || []).find(item => item.name === port.internalVariableName)
+  return [direction, port.name || '未命名端口', variable?.dataType].filter(Boolean).join(' · ')
+}
+
+export function buildWorkflowAutoLayout(nodes = [], interfaceConnections = [], portConnections = []) {
+  const validNodes = nodes.filter(node => node?.name)
+  const nodesByName = new Map(validNodes.map(node => [node.name, node]))
+  const originalOrder = new Map(validNodes.map((node, index) => [node.name, index]))
+  const outgoing = new Map(validNodes.map(node => [node.name, new Set()]))
+  const incoming = new Map(validNodes.map(node => [node.name, new Set()]))
+  const edgeKeys = new Set()
+
+  const addEdge = connection => {
+    const source = connection?.source?.nodeName
+    const target = connection?.target?.nodeName
+    if (!nodesByName.has(source) || !nodesByName.has(target) || source === target) return
+    const key = `${source}\u0000${target}`
+    if (edgeKeys.has(key)) return
+    edgeKeys.add(key)
+    outgoing.get(source).add(target)
+    incoming.get(target).add(source)
+  }
+  interfaceConnections.filter(connection => connection?.connectionType === 'NODE_TO_NODE').forEach(addEdge)
+  portConnections.forEach(addEdge)
+
+  const indegree = new Map(validNodes.map(node => [node.name, incoming.get(node.name).size]))
+  const levels = new Map(validNodes.map(node => [node.name, 0]))
+  const queue = validNodes.filter(node => indegree.get(node.name) === 0).map(node => node.name)
+  const processed = new Set()
+
+  while (queue.length) {
+    queue.sort((left, right) => originalOrder.get(left) - originalOrder.get(right))
+    const current = queue.shift()
+    if (processed.has(current)) continue
+    processed.add(current)
+    for (const target of outgoing.get(current)) {
+      levels.set(target, Math.max(levels.get(target), levels.get(current) + 1))
+      indegree.set(target, indegree.get(target) - 1)
+      if (indegree.get(target) === 0) queue.push(target)
+    }
+  }
+
+  let fallbackLevel = Math.max(0, ...processed.size ? [...processed].map(name => levels.get(name)) : [0]) + 1
+  for (const node of validNodes) {
+    if (processed.has(node.name)) continue
+    levels.set(node.name, fallbackLevel)
+    fallbackLevel += 1
+  }
+
+  const layerMap = new Map()
+  for (const node of validNodes) {
+    const level = levels.get(node.name)
+    if (!layerMap.has(level)) layerMap.set(level, [])
+    layerMap.get(level).push(node)
+  }
+  const orderedLevels = [...layerMap.keys()].sort((left, right) => left - right)
+  const orderInLayer = new Map()
+  for (const level of orderedLevels) {
+    const layer = layerMap.get(level)
+    layer.sort((left, right) => {
+      const leftParents = [...incoming.get(left.name)].filter(name => levels.get(name) < level)
+      const rightParents = [...incoming.get(right.name)].filter(name => levels.get(name) < level)
+      const leftCenter = leftParents.length
+        ? leftParents.reduce((sum, name) => sum + (orderInLayer.get(name) ?? originalOrder.get(name)), 0) / leftParents.length
+        : originalOrder.get(left.name)
+      const rightCenter = rightParents.length
+        ? rightParents.reduce((sum, name) => sum + (orderInLayer.get(name) ?? originalOrder.get(name)), 0) / rightParents.length
+        : originalOrder.get(right.name)
+      return leftCenter - rightCenter || originalOrder.get(left.name) - originalOrder.get(right.name)
+    })
+    layer.forEach((node, index) => orderInLayer.set(node.name, index))
+  }
+
+  const sizes = new Map(validNodes.map(node => [node.name, workflowCanvasNodeSize(node)]))
+  const layerWidths = new Map(orderedLevels.map(level => [
+    level,
+    Math.max(...layerMap.get(level).map(node => sizes.get(node.name).width)),
+  ]))
+  const layerHeights = new Map(orderedLevels.map(level => {
+    const layer = layerMap.get(level)
+    return [level, layer.reduce((sum, node) => sum + sizes.get(node.name).height, 0) + Math.max(0, layer.length - 1) * 72]
+  }))
+  const maxLayerHeight = Math.max(0, ...layerHeights.values())
+  const xByLevel = new Map()
+  let x = 80
+  for (const level of orderedLevels) {
+    xByLevel.set(level, x)
+    x += layerWidths.get(level) + 150
+  }
+
+  const layout = {}
+  for (const level of orderedLevels) {
+    let y = 80 + (maxLayerHeight - layerHeights.get(level)) / 2
+    for (const node of layerMap.get(level)) {
+      layout[node.name] = { x: Math.round(xByLevel.get(level)), y: Math.round(y) }
+      y += sizes.get(node.name).height + 72
+    }
+  }
+  return layout
+}
+
 export function buildFlowNodes(nodes = [], layout = {}) {
   return nodes.map((node, index) => {
     const column = index % 4
@@ -59,10 +183,10 @@ export function buildFlowEdges(interfaceConnections = [], portConnections = []) 
       sourceHandle: interfaceHandleId(connection.source.interfaceName),
       targetHandle: interfaceHandleId(connection.target.interfaceName),
       type: 'smoothstep',
-      pathOptions: { offset: 28, borderRadius: 4 },
+      pathOptions: { offset: 24, borderRadius: 8 },
       class: 'execution-edge',
       data: { connectionKind: 'INTERFACE' },
-      style: { stroke: '#7b96b8' }
+      style: { stroke: '#7890ad', strokeWidth: 1.6 }
     }))
   const portEdges = portConnections.map((connection, index) => ({
     id: edgeId('port', connection.source, connection.target, index),
@@ -71,10 +195,10 @@ export function buildFlowEdges(interfaceConnections = [], portConnections = []) 
     sourceHandle: portHandleId(connection.source.portName),
     targetHandle: portHandleId(connection.target.portName),
     type: 'smoothstep',
-    pathOptions: { offset: 28, borderRadius: 4 },
+    pathOptions: { offset: 24, borderRadius: 8 },
     class: 'data-edge',
     data: { connectionKind: 'PORT' },
-    style: { stroke: '#7c4dce', strokeDasharray: '7 5' }
+    style: { stroke: '#7569bd', strokeWidth: 1.6, strokeDasharray: '6 5' }
   }))
   return [...interfaceEdges, ...portEdges]
 }
@@ -122,6 +246,11 @@ export function createNodeConnection({
     connection.target?.interfaceName === targetInterface.name
   )
   if (duplicate) throw new Error('连接已存在')
+  if (connections.some(connection =>
+    connection.connectionType === 'NODE_TO_NODE' &&
+    connection.target?.nodeName === targetNodeName &&
+    connection.target?.interfaceName === targetInterface.name
+  )) throw new Error('该输入接口已连接上游，请使用其他输入接口')
 
   return {
     connectionType: 'NODE_TO_NODE',
@@ -170,6 +299,11 @@ function createInterfaceConnection(args, sourceName, targetName) {
     target: { nodeName: args.targetNodeName, interfaceName: targetName }
   }
   if ((args.interfaceConnections || []).some(connection => sameConnection(connection, value, 'interfaceName'))) throw new Error('连接已存在')
+  if ((args.interfaceConnections || []).some(connection =>
+    connection.connectionType === 'NODE_TO_NODE' &&
+    connection.target?.nodeName === args.targetNodeName &&
+    connection.target?.interfaceName === targetName
+  )) throw new Error('该输入接口已连接上游，请使用其他输入接口')
   return { collection: 'interfaceConnections', value }
 }
 

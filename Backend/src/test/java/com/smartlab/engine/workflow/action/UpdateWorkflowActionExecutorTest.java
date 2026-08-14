@@ -53,6 +53,18 @@ class UpdateWorkflowActionExecutorTest {
     }
 
     @Test
+    void normalizesExactArithmeticResultForIntegerVariable() {
+        ObjectNode variables = JsonNodeSupport.objectNode().put("count", 0);
+
+        WorkflowActionResult result = executor.execute(
+                action("count", "count + 1"),
+                context(variables, variable("count", "INTEGER")));
+
+        assertThat(result.variableUpdates().path("count").isIntegralNumber()).isTrue();
+        assertThat(result.variableUpdates().path("count").asInt()).isEqualTo(1);
+    }
+
+    @Test
     void requestsNodeLifecycleTransitionWithoutWritingVariableSpace() {
         List<String> requestedStates = new ArrayList<>();
         WorkflowExecutionOperations operations = (WorkflowExecutionOperations) Proxy.newProxyInstance(

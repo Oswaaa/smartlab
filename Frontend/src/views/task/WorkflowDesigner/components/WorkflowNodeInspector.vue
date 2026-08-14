@@ -90,7 +90,7 @@ const guidanceMap:Record<string,Item> = {
   START:{ title:'流程唯一入口', runtime:'任务启动后首先激活 START，再沿执行流激活下游节点。', detail:'START 只能有下游连接，不能有上游连接。' },
   END:{ title:'流程唯一出口', runtime:'根流程到达 END 后任务完成；子流程到达 END 后返回父流程。', detail:'END 只能有上游连接，不能有下游连接。' },
   BRANCH:{ title:'条件路由', runtime:'节点激活后，可先计算派生变量，再由各接口触发器独立判断是否激活下游。', detail:'按业务需要配置输出接口和触发条件。' },
-  AGGREGATE:{ title:'多路汇聚', runtime:'等待全部上游路径完成后，仅激活一次下游节点。', detail:'至少需要两条上游执行路径。' }
+  AGGREGATE:{ title:'多路汇聚', runtime:'每个独立输入首次到达时累计一次，由输出触发器决定达到多少路后继续。', detail:'为每条上游路径使用独立输入接口，并配置可达到的聚合阈值。' }
 }
 const guidanceKey = computed(() => props.node?.nodeType === 'FUNC_NODE' ? props.node?.functionType : props.node?.nodeType)
 const nodeGuidance = computed(() => guidanceMap[guidanceKey.value || ''] || { title:'节点配置', runtime:'按节点契约执行。', detail:'配置节点业务参数。' })

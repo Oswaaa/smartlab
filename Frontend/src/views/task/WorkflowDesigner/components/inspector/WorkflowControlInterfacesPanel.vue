@@ -22,16 +22,16 @@
 
       <div v-if="selectedInterface" class="interface-detail">
         <div class="detail-heading">
-          <div><strong>{{ selectedInterface.name }}</strong><span>{{ selectedEditable ? '用户自定义接口' : '系统默认接口，只读' }}</span></div>
+          <div><strong>{{ selectedInterface.name }}</strong><span>{{ selectedEditable ? '用户自定义接口' : selectedTriggerEditable ? '系统接口，可配置业务触发器' : '系统默认接口，只读' }}</span></div>
           <el-button v-if="selectedEditable" class="btn-aliyun-danger-link" link @click="deleteSelectedInterface">删除接口</el-button>
         </div>
         <div class="interface-fields">
           <label><span>接口名称</span><el-input :model-value="selectedInterface.name" :disabled="!selectedEditable" @update:model-value="updateInterfaceField('name', $event)" /></label>
-          <label><span>方向</span><el-select :model-value="selectedInterface.direction" :disabled="!selectedEditable" @update:model-value="updateInterfaceField('direction', $event)"><el-option label="OUT" value="OUT" /><el-option label="IN" value="IN" /></el-select></label>
+          <label><span>方向</span><el-select :model-value="selectedInterface.direction" :disabled="!selectedEditable" @update:model-value="changeInterfaceDirection"><el-option label="OUT" value="OUT" /><el-option label="IN" value="IN" /></el-select></label>
           <label><span>接口类型</span><el-select :model-value="selectedInterface.interfaceType" :disabled="!selectedEditable" @update:model-value="updateInterfaceField('interfaceType', $event)"><el-option label="WORKFLOW" value="WORKFLOW" /><el-option label="STATE" value="STATE" /></el-select></label>
           <label class="signals"><span>允许信号</span><el-select :model-value="selectedInterface.allowedSignals || []" multiple collapse-tags :max-collapse-tags="3" :disabled="!selectedEditable || !signalCandidates.length" placeholder="选择允许信号" @update:model-value="updateAllowedSignals"><el-option v-for="signal in signalCandidates" :key="signal" :label="signal" :value="signal" /></el-select></label>
         </div>
-        <WorkflowTriggerEditor :node="node" :interface-item="selectedInterface" :editable="selectedEditable" @update:interface="replaceSelectedInterface" />
+        <WorkflowTriggerEditor :node="node" :interface-item="selectedInterface" :editable="selectedTriggerEditable" @update:interface="replaceSelectedInterface" />
       </div>
     </div>
     <WorkflowConfigurationEmpty v-else title="尚未配置控制接口" description="控制接口承载节点信号，并在条件满足时执行绑定动作。" :action-label="canAddInterface ? '新增接口' : ''" @action="addInterface" />
@@ -40,12 +40,17 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { ElMessageBox } from 'element-plus'
 import WorkflowTriggerEditor from './WorkflowTriggerEditor.vue'
 import WorkflowConfigurationEmpty from './WorkflowConfigurationEmpty.vue'
 import { protocolSignalCandidates } from '../../../../../utils/workflowDesignerRules.js'
 import {
   canCustomizeControlInterfaces,
   canEditControlItem,
+  canEditControlTriggers,
+  changeWorkflowInterfaceDirection,
+  createWorkflowInterfaceDefinition,
+  defaultWorkflowInterfaceDirection,
   isSystemItem,
   orderedControlInterfaces,
   removeInterface,
@@ -61,6 +66,7 @@ const actions = computed<string[]>(() => customTriggerActionNames(props.node))
 const canAddInterface = computed(() => !props.readonly && canCustomizeControlInterfaces(props.node))
 const selectedInterface = computed(() => interfaces.value.find(item => identity(item) === selectedIdentity.value) || interfaces.value[0] || null)
 const selectedEditable = computed(() => !props.readonly && canEditControlItem(props.node, selectedInterface.value))
+const selectedTriggerEditable = computed(() => !props.readonly && canEditControlTriggers(props.node, selectedInterface.value))
 const signalCandidates = computed(() => selectedInterface.value ? protocolSignalCandidates(props.protocolMetadata, selectedInterface.value, isSystemItem(selectedInterface.value)) : [])
 
 watch(interfaces, current => {
@@ -71,21 +77,53 @@ function identity(item: Item) { return item?._systemKey || item?.name || '' }
 function actionLabel(name: string) { return name }
 function directionLabel(direction: string) { return direction }
 function publish(next: Item) { emit('update:node', next) }
-function uniqueName() { let index = 1; while ((props.node.interfaces || []).some((item: Item) => item.name === `interface${index}`)) index += 1; return `interface${index}` }
+function uniqueName(direction: string) {
+  const prefix = direction === 'IN' ? 'Interface_workflow_in_' : 'Interface_workflow_out_'
+  let index = 2
+  while ((props.node.interfaces || []).some((item: Item) => item.name === `${prefix}${index}`)) index += 1
+  return `${prefix}${index}`
+}
 function addInterface() {
   if (!canAddInterface.value) return
-  const name = uniqueName()
-  publish({ ...props.node, actions: customTriggerActionNames(props.node), interfaces: [...(props.node.interfaces || []), { name, direction: 'OUT', interfaceType: 'WORKFLOW', allowedSignals: ['ACTIVE'], bindingTriggers: [] }] })
+  const direction = defaultWorkflowInterfaceDirection(props.node)
+  const name = uniqueName(direction)
+  const definition = createWorkflowInterfaceDefinition(props.node, direction, name)
+  publish({ ...props.node, actions: customTriggerActionNames(props.node), interfaces: [...(props.node.interfaces || []), definition] })
   selectedIdentity.value = name
 }
 function replaceSelectedInterface(nextInterface: Item) {
   const current = selectedInterface.value
-  if (!current || !selectedEditable.value) return
+  if (!current || !selectedTriggerEditable.value) return
   const currentIdentity = identity(current)
   publish({ ...props.node, interfaces: (props.node.interfaces || []).map((item: Item) => identity(item) === currentIdentity ? nextInterface : item) })
   selectedIdentity.value = identity(nextInterface)
 }
-function updateInterfaceField(field: string, value: unknown) { if (selectedInterface.value) replaceSelectedInterface({ ...selectedInterface.value, [field]: value }) }
+function updateInterfaceField(field: string, value: unknown) {
+  if (selectedInterface.value && selectedEditable.value) replaceSelectedInterface({ ...selectedInterface.value, [field]: value })
+}
+async function changeInterfaceDirection(direction: string) {
+  const current = selectedInterface.value
+  if (!current || !selectedEditable.value || current.direction === direction) return
+  const result = changeWorkflowInterfaceDirection(props.node, current.name, direction, props.interfaceConnections)
+  const cleanup = [
+    result.removedConnectionCount ? `${result.removedConnectionCount} 条已有连线` : '',
+    result.removedTriggerCount ? `${result.removedTriggerCount} 个不兼容触发器` : '',
+  ].filter(Boolean).join('、')
+  if (cleanup) {
+    try {
+      await ElMessageBox.confirm(
+        `切换为 ${direction} 将自动删除${cleanup}，是否继续？`,
+        '确认切换接口方向',
+        { type: 'warning', confirmButtonText: '确认切换', cancelButtonText: '取消' },
+      )
+    } catch {
+      return
+    }
+  }
+  publish(result.node)
+  emit('update:interfaceConnections', result.interfaceConnections)
+  selectedIdentity.value = current.name
+}
 function updateAllowedSignals(value: string[]) { updateInterfaceField('allowedSignals', value) }
 function deleteSelectedInterface() {
   if (!selectedInterface.value || !selectedEditable.value) return

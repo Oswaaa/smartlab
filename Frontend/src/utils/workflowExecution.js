@@ -81,15 +81,29 @@ export function buildRuntimeGraph(workflow, steps) {
       children: step ? (treeById.get(step.id)?.children || []) : [],
     }
   })
+  const runtimeNodeByName = new Map(nodes.map(node => [node.name, node]))
 
-  const interfaceEdges = (workflow?.interfaceConnections ?? []).map((connection, index) => ({
-    id: `interface-${index}`,
-    kind: 'INTERFACE',
-    source: connection?.source?.nodeName,
-    target: connection?.target?.nodeName,
-    sourceName: connection?.source?.interfaceName,
-    targetName: connection?.target?.interfaceName,
-  })).filter(edge => edge.source && edge.target)
+  const interfaceEdges = (workflow?.interfaceConnections ?? []).map((connection, index) => {
+    const sourceName = connection?.source?.interfaceName
+    const targetName = connection?.target?.interfaceName
+    const targetNode = runtimeNodeByName.get(connection?.target?.nodeName)
+    const targetSnapshot = Array.isArray(targetNode?.step?.interfaceInSnapshot)
+      ? targetNode.step.interfaceInSnapshot
+      : []
+    const accepted = targetSnapshot.find(item => item?.interfaceName === targetName)
+    return {
+      id: `interface-${index}`,
+      kind: 'INTERFACE',
+      source: connection?.source?.nodeName,
+      target: connection?.target?.nodeName,
+      sourceName,
+      targetName,
+      sourceHandle: `interface:${sourceName}`,
+      targetHandle: `interface:${targetName}`,
+      used: typeof accepted?.signalName === 'string' && accepted.signalName.length > 0,
+      targetStatus: targetNode?.status ?? 'WAITING',
+    }
+  }).filter(edge => edge.source && edge.target)
   const portEdges = (workflow?.portConnections ?? []).map((connection, index) => ({
     id: `port-${index}`,
     kind: 'PORT',
@@ -97,6 +111,9 @@ export function buildRuntimeGraph(workflow, steps) {
     target: connection?.target?.nodeName,
     sourceName: connection?.source?.portName,
     targetName: connection?.target?.portName,
+    sourceHandle: `port:${connection?.source?.portName}`,
+    targetHandle: `port:${connection?.target?.portName}`,
+    used: false,
   })).filter(edge => edge.source && edge.target)
   return { nodes, edges: [...interfaceEdges, ...portEdges] }
 }

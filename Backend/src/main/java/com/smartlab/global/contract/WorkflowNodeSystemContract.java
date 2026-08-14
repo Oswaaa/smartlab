@@ -89,13 +89,20 @@ public final class WorkflowNodeSystemContract {
 
     private static ObjectNode aggregateTemplate() {
         ObjectNode template = baseTemplate();
-        template.withArray("interfaces").add(workflowInterface("aggregate.workflowIn", "Interface_workflow_in", "IN",
-                activationTriggers("aggregate")));
-        ArrayNode outputTriggers = JsonNodeSupport.arrayNode();
-        outputTriggers.add(trigger("aggregate.emitActive", "nodeLifecycleState", "=", "RUNNING",
-                emitAction("Interface_workflow_out", WorkflowNodeSignal.ACTIVE.name())));
+        template.withArray("internalVariables").add(system("aggregate.count", JsonNodeSupport.objectNode()
+                .put("name", "aggregateCount")
+                .put("dataType", "INTEGER")
+                .put("initialValue", 0)));
+        ArrayNode inputTriggers = JsonNodeSupport.arrayNode();
+        inputTriggers.add(trigger("aggregate.countInput", "signalName", "=", WorkflowNodeSignal.ACTIVE.name(),
+                updateInternalVariableAction("aggregateCount", "aggregateCount + 1")));
+        inputTriggers.add(andTrigger("aggregate.activate", updateLifecycleAction("RUNNING"),
+                predicate("aggregateCount", ">", 0),
+                predicate("nodeLifecycleState", "=", "PENDING")));
         template.withArray("interfaces").add(workflowInterface(
-                "aggregate.workflowOut", "Interface_workflow_out", "OUT", outputTriggers));
+                "aggregate.workflowIn", "Interface_workflow_in", "IN", inputTriggers));
+        template.withArray("interfaces").add(workflowInterface(
+                "aggregate.workflowOut", "Interface_workflow_out", "OUT", JsonNodeSupport.arrayNode()));
         addActions(template, WorkflowNodeActionType.UPDATE, WorkflowNodeActionType.EMIT);
         return template;
     }
@@ -149,6 +156,7 @@ public final class WorkflowNodeSystemContract {
     private static ObjectNode baseTemplate() {
         ObjectNode template = JsonNodeSupport.objectNode();
         template.set("lifecycle", lifecycle());
+        template.putArray("internalVariables");
         template.putArray("interfaces");
         template.putArray("actions");
         return template;
@@ -230,6 +238,9 @@ public final class WorkflowNodeSystemContract {
         condition.put("object", object);
         condition.put("operator", operator);
         if (threshold instanceof Boolean value) condition.put("threshold", value);
+        else if (threshold instanceof Integer value) condition.put("threshold", value);
+        else if (threshold instanceof Long value) condition.put("threshold", value);
+        else if (threshold instanceof Double value) condition.put("threshold", value);
         else condition.put("threshold", String.valueOf(threshold));
         return condition;
     }
@@ -249,6 +260,16 @@ public final class WorkflowNodeSystemContract {
         definition.putObject("payload")
                 .put("updateType", "NODE_LIFECYCLE")
                 .put("targetName", targetState);
+        return definition;
+    }
+
+    private static ObjectNode updateInternalVariableAction(String targetName, String valueExpression) {
+        ObjectNode definition = JsonNodeSupport.objectNode();
+        definition.put("actionName", WorkflowNodeActionType.UPDATE.name());
+        definition.putObject("payload")
+                .put("updateType", "INTERNAL_VARIABLE")
+                .put("targetName", targetName)
+                .put("valueExpression", valueExpression);
         return definition;
     }
 

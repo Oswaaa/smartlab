@@ -4,16 +4,21 @@ import {
   addWorkflowTriggerCondition,
   canCustomizeControlInterfaces,
   canEditControlItem,
+  canEditControlTriggers,
   configureWorkflowNodeTemplates,
+  changeWorkflowInterfaceDirection,
   createDeviceNode,
   createFunctionNode,
+  createWorkflowInterfaceDefinition,
   createSubflowNode,
   customTriggerActionNames,
+  defaultWorkflowInterfaceDirection,
   emptyWorkflowUpdateValue,
   normalizeTypedValue,
   normalizeWorkflowNodeDefinition,
   orderedControlInterfaces,
   removeWorkflowTriggerCondition,
+  replaceWorkflowTriggerCondition,
   removeInterface,
   removePort,
   removeVariable,
@@ -69,13 +74,21 @@ const workflowTemplateFixture = {
   },
   AGGREGATE: {
     lifecycle: lifecycle('aggregate'),
+    internalVariables: [{ name: 'aggregateCount', dataType: 'INTEGER', initialValue: 0, _system: true, _systemKey: 'aggregate.count' }],
     interfaces: [
       iface('aggregate.in', 'Interface_workflow_in', 'IN', 'WORKFLOW', ['ACTIVE'], [
-        trigger('aggregate.activate', 'signalName', 'ACTIVE', action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'RUNNING' })),
+        trigger('aggregate.countInput', 'signalName', 'ACTIVE', action('UPDATE', { updateType: 'INTERNAL_VARIABLE', targetName: 'aggregateCount', valueExpression: 'aggregateCount + 1' })),
+        {
+          condition: { logic: 'AND', conditions: [
+            { object: 'aggregateCount', operator: '>', threshold: 0 },
+            { object: 'nodeLifecycleState', operator: '=', threshold: 'PENDING' },
+          ] },
+          action: action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'RUNNING' }),
+          _system: true,
+          _systemKey: 'aggregate.activate',
+        },
       ]),
-      iface('aggregate.out', 'Interface_workflow_out', 'OUT', 'WORKFLOW', ['ACTIVE'], [
-        trigger('aggregate.emit', 'nodeLifecycleState', 'RUNNING', action('EMIT', { targetInterfaceName: 'Interface_workflow_out', signalName: 'ACTIVE' })),
-      ]),
+      iface('aggregate.out', 'Interface_workflow_out', 'OUT', 'WORKFLOW', ['ACTIVE'], []),
     ],
     actions: ['UPDATE', 'EMIT'],
   },
@@ -129,6 +142,91 @@ test('only function nodes customize user control interfaces', () => {
   assert.equal(canCustomizeControlInterfaces({ nodeType: 'SUBFLOW_NODE' }), false)
   assert.equal(canEditControlItem({ nodeType: 'FUNC_NODE' }, custom), true)
   assert.equal(canEditControlItem({ nodeType: 'FUNC_NODE' }, system), false)
+})
+
+test('聚合节点保留只读计数能力并允许配置系统输出接口的触发器', () => {
+  const node = createFunctionNode('AGGREGATE', 'aggregate')
+  assert.deepEqual(node.internalVariables.map(item => [item.name, item.dataType, item.initialValue]), [
+    ['aggregateCount', 'INTEGER', 0],
+  ])
+  assert.equal(canEditControlTriggers(node, node.interfaces[0]), false)
+  assert.equal(canEditControlTriggers(node, node.interfaces[1]), true)
+  assert.deepEqual(node.interfaces[1].bindingTriggers, [])
+})
+
+test('聚合节点新增输入接口时自动附带只读计数触发器', () => {
+  const node = createFunctionNode('AGGREGATE', 'aggregate')
+  const input = createWorkflowInterfaceDefinition(node, 'IN', 'aggregate_in_2')
+  assert.equal(input.direction, 'IN')
+  assert.equal(input.interfaceType, 'WORKFLOW')
+  assert.deepEqual(input.allowedSignals, ['ACTIVE'])
+  assert.equal(input.bindingTriggers[0]._system, true)
+  assert.equal(input.bindingTriggers[0].action.payload.targetName, 'aggregateCount')
+  assert.equal(input.bindingTriggers[0].action.payload.valueExpression, 'aggregateCount + 1')
+  node.interfaces.push(input)
+  assert.deepEqual(validateNodeDefinition(node), [])
+  input.bindingTriggers = []
+  assert.ok(validateNodeDefinition(node).some(error => /聚合输入接口必须包含计数触发器/.test(error.message)))
+})
+
+test('新增接口方向按功能节点职责给出默认值', () => {
+  assert.equal(defaultWorkflowInterfaceDirection(createFunctionNode('START', 'start')), 'OUT')
+  assert.equal(defaultWorkflowInterfaceDirection(createFunctionNode('END', 'end')), 'IN')
+  assert.equal(defaultWorkflowInterfaceDirection(createFunctionNode('BRANCH', 'branch')), 'OUT')
+  assert.equal(defaultWorkflowInterfaceDirection(createFunctionNode('AGGREGATE', 'aggregate')), 'IN')
+})
+
+test('聚合自定义接口切换为IN时清理连线和EMIT并补齐唯一计数触发器', () => {
+  const node = createFunctionNode('AGGREGATE', 'aggregate')
+  node.interfaces.push({
+    name: 'aggregate_custom',
+    direction: 'OUT',
+    interfaceType: 'WORKFLOW',
+    allowedSignals: ['ACTIVE'],
+    bindingTriggers: [
+      { condition: { object: 'nodeLifecycleState', operator: '=', threshold: 'RUNNING' }, action: action('EMIT', { targetInterfaceName: 'aggregate_custom', signalName: 'ACTIVE' }) },
+      { condition: { object: 'aggregateCount', operator: '>', threshold: 1 }, action: action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'SUCCEEDED' }) },
+    ],
+  })
+  const result = changeWorkflowInterfaceDirection(node, 'aggregate_custom', 'IN', [
+    { source: { nodeName: 'aggregate', interfaceName: 'aggregate_custom' }, target: { nodeName: 'end', interfaceName: 'workflow_in' } },
+    { source: { nodeName: 'other', interfaceName: 'workflow_out' }, target: { nodeName: 'end', interfaceName: 'workflow_in' } },
+  ])
+
+  const changed = result.node.interfaces.find(item => item.name === 'aggregate_custom')
+  assert.equal(changed.direction, 'IN')
+  assert.equal(result.removedConnectionCount, 1)
+  assert.equal(result.interfaceConnections.length, 1)
+  assert.equal(result.removedTriggerCount, 1)
+  assert.equal(changed.bindingTriggers.filter(item => item._systemKey === 'aggregate.countInput.aggregate_custom').length, 1)
+  assert.equal(changed.bindingTriggers.some(item => item._systemKey === 'aggregate.activate'), false)
+  assert.equal(changed.bindingTriggers.some(item => item.action.actionName === 'EMIT'), false)
+  assert.equal(changed.bindingTriggers.some(item => item.action.payload.targetName === 'SUCCEEDED'), true)
+})
+
+test('聚合自定义接口切换为OUT时移除计数触发器并保留其他UPDATE', () => {
+  const node = createFunctionNode('AGGREGATE', 'aggregate')
+  const input = createWorkflowInterfaceDefinition(node, 'IN', 'aggregate_custom')
+  input.bindingTriggers.push({
+    condition: { object: 'aggregateCount', operator: '>', threshold: 1 },
+    action: action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'SUCCEEDED' }),
+  })
+  node.interfaces.push(input)
+
+  const result = changeWorkflowInterfaceDirection(node, 'aggregate_custom', 'OUT', [])
+  const changed = result.node.interfaces.find(item => item.name === 'aggregate_custom')
+  assert.equal(changed.direction, 'OUT')
+  assert.equal(result.removedTriggerCount, 1)
+  assert.equal(changed.bindingTriggers.some(item => item.action.payload.targetName === 'aggregateCount'), false)
+  assert.equal(changed.bindingTriggers.some(item => item.action.payload.targetName === 'SUCCEEDED'), true)
+})
+
+test('系统接口不允许切换方向', () => {
+  const node = createFunctionNode('AGGREGATE', 'aggregate')
+  assert.throws(
+    () => changeWorkflowInterfaceDirection(node, 'Interface_workflow_in', 'OUT', []),
+    /系统接口Interface_workflow_in不可修改方向/,
+  )
 })
 
 test('control interfaces preserve declaration order inside OUT then IN groups', () => {
@@ -205,6 +303,44 @@ test('trigger conditions expand to one-level AND and collapse back to a single p
   assert.throws(() => removeWorkflowTriggerCondition(lifecycle, 0), /至少保留一个条件/)
 })
 
+test('trigger condition helpers accept reactive proxy data from the node inspector', () => {
+  const lifecycle = new Proxy({ object: 'nodeLifecycleState', operator: '=', threshold: 'RUNNING' }, {})
+  const signal = new Proxy({ object: 'signalName', operator: '=', threshold: 'ACTIVE' }, {})
+
+  const grouped = addWorkflowTriggerCondition(lifecycle, signal)
+
+  assert.deepEqual(grouped, {
+    logic: 'AND',
+    conditions: [
+      { object: 'nodeLifecycleState', operator: '=', threshold: 'RUNNING' },
+      { object: 'signalName', operator: '=', threshold: 'ACTIVE' },
+    ],
+  })
+  assert.deepEqual(removeWorkflowTriggerCondition(new Proxy(grouped, {}), 1), {
+    object: 'nodeLifecycleState', operator: '=', threshold: 'RUNNING',
+  })
+})
+
+test('replacing a trigger condition returns plain data when the current group is reactive', () => {
+  const grouped = new Proxy({
+    logic: 'AND',
+    conditions: [
+      new Proxy({ object: 'nodeLifecycleState', operator: '=', threshold: 'RUNNING' }, {}),
+      new Proxy({ object: 'signalName', operator: '=', threshold: 'ACTIVE' }, {}),
+    ],
+  }, {})
+
+  assert.deepEqual(replaceWorkflowTriggerCondition(grouped, 1, {
+    object: 'signalName', operator: '=', threshold: 'SUBFLOW_COMPLETED',
+  }), {
+    logic: 'AND',
+    conditions: [
+      { object: 'nodeLifecycleState', operator: '=', threshold: 'RUNNING' },
+      { object: 'signalName', operator: '=', threshold: 'SUBFLOW_COMPLETED' },
+    ],
+  })
+})
+
 test('trigger validation accepts AND and rejects OR or nested groups', () => {
   const node = createFunctionNode('AGGREGATE', 'aggregate')
   const trigger = {
@@ -248,7 +384,7 @@ test('constant and expression UPDATE are both valid but mutually exclusive', () 
   node.interfaces[1].bindingTriggers.push({ condition: { object: 'temperature', operator: '>', threshold: 100 }, action: action('UPDATE', { updateType: 'INTERNAL_VARIABLE', targetName: 'temperature', value: 200 }) })
   node.interfaces[1].bindingTriggers.push({ condition: { object: 'temperature', operator: '<', threshold: 0 }, action: action('UPDATE', { updateType: 'INTERNAL_VARIABLE', targetName: 'temperature', valueExpression: 'temperature / 100' }) })
   assert.deepEqual(validateNodeDefinition(node), [])
-  node.interfaces[1].bindingTriggers[2].action.payload.value = 1
+  node.interfaces[1].bindingTriggers.at(-1).action.payload.value = 1
   assert.ok(validateNodeDefinition(node).some(error => error.path.endsWith('.action.payload')))
 })
 
@@ -265,7 +401,7 @@ test('device attribute mapping reports variable and attribute type mismatches', 
   node.internalVariables.push({ name: 'temperature', dataType: 'STRING', attributesMapping: 'temperature' })
   const errors = validateNodeDefinition(node, { deviceAttributes: [{ attributeName: 'temperature', dataType: 'DOUBLE' }] })
   assert.ok(errors.some(error => /不一致/.test(error.message)))
-  node.internalVariables[0].dataType = 'DOUBLE'
+  node.internalVariables.find(item => item.name === 'temperature').dataType = 'DOUBLE'
   assert.deepEqual(validateNodeDefinition(node, { deviceAttributes: [{ attributeName: 'temperature', dataType: 'DOUBLE' }] }), [])
 })
 

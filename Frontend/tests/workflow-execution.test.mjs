@@ -62,6 +62,36 @@ test('runtime graph matches numeric and string node references consistently', ()
   assert.equal(graph.nodes[0].stepId, 2)
 })
 
+test('runtime graph marks only connections whose target interface accepted a signal', () => {
+  const graph = buildRuntimeGraph({
+    nodesDef: [
+      { name: 'source', interfaces: [{ name: 'out', direction: 'OUT', interfaceType: 'WORKFLOW' }] },
+      { name: 'aggregate', interfaces: [
+        { name: 'in_1', direction: 'IN', interfaceType: 'WORKFLOW' },
+        { name: 'in_2', direction: 'IN', interfaceType: 'WORKFLOW' },
+      ] },
+    ],
+    interfaceConnections: [
+      { source: { nodeName: 'source', interfaceName: 'out' }, target: { nodeName: 'aggregate', interfaceName: 'in_1' } },
+      { source: { nodeName: 'source', interfaceName: 'out' }, target: { nodeName: 'aggregate', interfaceName: 'in_2' } },
+    ],
+  }, [{
+    id: 4,
+    nodeName: 'aggregate',
+    nodeStatus: 'RUNNING',
+    interfaceInSnapshot: [
+      { interfaceName: 'in_1', signalName: 'ACTIVE' },
+      { interfaceName: 'in_2', signalName: null },
+    ],
+  }])
+
+  assert.equal(graph.edges[0].used, true)
+  assert.equal(graph.edges[0].targetStatus, 'RUNNING')
+  assert.equal(graph.edges[0].sourceHandle, 'interface:out')
+  assert.equal(graph.edges[0].targetHandle, 'interface:in_1')
+  assert.equal(graph.edges[1].used, false)
+})
+
 test('business events exclude engine polling and scheduler diagnostics', () => {
   const events = businessExecutionEvents([
     { id: 1, sourceType: 'TASK', logInfo: '节点开始执行: 4' },

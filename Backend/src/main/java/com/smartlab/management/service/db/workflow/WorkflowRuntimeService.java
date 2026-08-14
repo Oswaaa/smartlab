@@ -92,7 +92,17 @@ public class WorkflowRuntimeService {
         }
         step.setInterfaceInSnapshot(inputSnapshot);
         step.setInterfaceOutSnapshot(WorkflowInterfaceSnapshots.initialize(node.getInterfaces(), "OUT"));
-        step.setVariableSpace(task.getTaskVariables() == null ? JsonNodeSupport.objectNode() : task.getTaskVariables().deepCopy());
+        ObjectNode variableSpace = task.getTaskVariables() != null && task.getTaskVariables().isObject()
+                ? (ObjectNode) task.getTaskVariables().deepCopy() : JsonNodeSupport.objectNode();
+        if (node.getInVariables() != null && node.getInVariables().isArray()) {
+            for (JsonNode declaration : node.getInVariables()) {
+                String name = declaration.path("name").asText("").trim();
+                if (!name.isBlank() && declaration.has("initialValue") && !variableSpace.has(name)) {
+                    variableSpace.set(name, declaration.get("initialValue").deepCopy());
+                }
+            }
+        }
+        step.setVariableSpace(variableSpace);
         stepMapper.insert(step);
         logService.append("TASK", task.getId(), step.getId(), null, "INFO", "节点已触发: " + node.getNodeIdRef());
         publishNode(step);

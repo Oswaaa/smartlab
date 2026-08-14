@@ -50,6 +50,7 @@ public class WorkflowDefinitionCanonicalizer {
         ObjectNode canonicalLifecycle = template.path("lifecycle").deepCopy();
         canonicalLifecycle.put("_systemKey", lifecycleSystemKey(nodeType, functionType));
         node.set("lifecycle", canonicalLifecycle);
+        mergeVariables(node, template.path("internalVariables"), path, issues);
         mergeInterfaces(node, template.path("interfaces"), path, issues);
         mergeActions(node, template.path("actions"), path, issues);
         normalizeActionModel(node);
@@ -131,6 +132,33 @@ public class WorkflowDefinitionCanonicalizer {
 
     private void copyField(JsonNode source, ObjectNode target, String field) {
         if (source.has(field)) target.set(field, source.path(field).deepCopy());
+    }
+
+    private void mergeVariables(ObjectNode node, JsonNode expectedItems, String path, List<WorkflowIssue> issues) {
+        List<JsonNode> source = items(node.path("internalVariables"));
+        Set<Integer> consumed = new HashSet<>();
+        ArrayNode result = JsonNodeSupport.arrayNode();
+        for (JsonNode expected : expectedItems) {
+            int sourceIndex = find(source, consumed, expected, "name");
+            JsonNode actual = sourceIndex < 0 ? null : source.get(sourceIndex);
+            if (sourceIndex >= 0) consumed.add(sourceIndex);
+            if (actual != null && claimsSystem(actual) && !sameBusiness(actual, expected)) {
+                modifiedSystem(issues, path + ".internalVariables." + expected.path("name").asText(),
+                        "internalVariable", expected.path("name").asText());
+            }
+            result.add(expected.deepCopy());
+        }
+        for (int index = 0; index < source.size(); index++) {
+            if (consumed.contains(index)) continue;
+            JsonNode item = source.get(index);
+            if (claimsSystem(item) || reservedName(item, expectedItems, "name")) {
+                reservedSystemName(issues, path + ".internalVariables[" + index + "]",
+                        "internalVariable", text(item, "name"));
+            } else {
+                result.add(item.deepCopy());
+            }
+        }
+        node.set("internalVariables", result);
     }
 
     private void mergeInterfaces(ObjectNode node, JsonNode expectedItems, String path, List<WorkflowIssue> issues) {

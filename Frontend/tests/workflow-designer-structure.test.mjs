@@ -66,20 +66,31 @@ describe('Task 6 — Designer Structure', () => {
     assert.match(source, /interface-handle/)
     assert.match(source, /port-handle/)
     assert.match(source, /interfaceType === 'WORKFLOW'/)
-    assert.match(source, /nodeDimensions/)
-    assert.match(source, /18 \+ index \* 18/)
-    assert.match(source, /24 \+ index \* 30/)
+    assert.match(source, /workflowCanvasNodeSize/)
+    assert.match(source, /sideHandleStyle\(index, controlInputs\.length\)/)
+    assert.match(source, /horizontalHandleStyle\(index, outputPorts\.length\)/)
   })
 
   test('canvas distinguishes compact nodes, workflow handles, data handles and edge types', () => {
     const canvasNodeSource = readSource('views/task/WorkflowDesigner/components/WorkflowCanvasNode.vue')
-    assert.match(canvasNodeSource, /width:178px/)
-    assert.match(canvasNodeSource, /border-radius:2px/)
+    assert.match(canvasNodeSource, /width:220px/)
+    assert.match(canvasNodeSource, /border-radius:6px/)
     assert.match(canvasNodeSource, /\.interface-handle[^}]*border-radius:50%/)
-    assert.match(canvasNodeSource, /\.port-handle[^}]*border-radius:1px/)
-    assert.match(designerSource, /\.vue-flow__edge-path[^}]*#7b96b8/)
+    assert.match(canvasNodeSource, /\.port-handle[^}]*border-radius:2px/)
+    assert.match(designerSource, /\.vue-flow__edge-path[^}]*#7890ad/)
     assert.match(designerSource, /\.data-edge[^}]*stroke-dasharray/)
-    assert.match(designerSource, /pattern-color="#d9d9d9"[^>]*:gap="16"/)
+    assert.match(designerSource, /pattern-color="#e2e7ee"[^>]*:gap="20"/)
+  })
+
+  test('canvas node keeps connector text out of the node body and reveals details only on hover', () => {
+    const source = readSource('views/task/WorkflowDesigner/components/WorkflowCanvasNode.vue')
+    assert.match(source, /<el-tooltip/)
+    assert.match(source, /class="connector-hit-area/)
+    assert.match(source, /workflowInterfaceTooltip/)
+    assert.match(source, /workflowPortTooltip/)
+    assert.doesNotMatch(source, /handle-index|handle-popover|connectorShortLabel/)
+    assert.match(source, /capabilityDisplayName/)
+    assert.match(source, /parameterCount/)
   })
 
   test('node inspector uses the five confirmed business tabs', () => {
@@ -113,13 +124,29 @@ describe('Task 6 — Designer Structure', () => {
   })
 
   test('designer keeps resources in the sidebar and restores function nodes to the canvas toolbar', () => {
-    assert.match(designerSource, /grid-template-columns:218px minmax\(430px,1fr\) 304px/)
+    assert.match(designerSource, /grid-template-columns:240px minmax\(430px,1fr\) 304px/)
     assert.match(designerSource, /<strong>节点资源<\/strong>/)
     assert.match(designerSource, /<strong>流程属性<\/strong>/)
     assert.doesNotMatch(designerSource.split('<script setup')[0], /canvas-floating-island|CONFIGURATION|DEVICE CAPABILITY|PARAMETERS|EXPRESSION/)
     assert.doesNotMatch(designerSource.split('<script setup')[0], /class="resource-function-section"/)
     assert.match(designerSource.split('<script setup')[0], /class="canvas-floating-controls"/)
     assert.match(designerSource, /FolderOpened|Folder/)
+  })
+
+  test('resource sidebar uses compact model-tree rows without decorative badges or empty illustrations', () => {
+    assert.match(designerSource, /class="resource-tree-node/)
+    assert.match(designerSource, /class="resource-node-text"/)
+    assert.match(designerSource, /class="resource-node-meta"/)
+    assert.match(designerSource, /class="resource-tree-empty"/)
+    assert.match(designerSource, /\.resource-tabs :deep\(\.el-tree-node__content\)\{[^}]*height:34px/)
+    assert.match(designerSource, /box-shadow:inset 3px 0/)
+    assert.doesNotMatch(designerSource, /model-badge|instance-badge|<el-empty/)
+  })
+
+  test('auto layout uses graph connections, real node sizes and refreshes connector geometry', () => {
+    assert.match(designerSource, /buildWorkflowAutoLayout/)
+    assert.match(designerSource, /updateNodeInternals/)
+    assert.match(designerSource, /buildWorkflowAutoLayout\(form\.nodesDef, executionConnections\.value, form\.portConnections\)/)
   })
 
   test('node drawer uses a compact seamless console layout and top-level destructive action', () => {
@@ -251,6 +278,15 @@ describe('Task 6 — Designer Structure', () => {
     assert.match(controlInterfacesSource, /canEditControlItem/)
     assert.match(controlInterfacesSource, /新增接口/)
     assert.match(controlInterfacesSource, /系统默认/)
+  })
+
+  test('control interface direction changes use one contextual create action and confirmed cleanup', () => {
+    assert.doesNotMatch(controlInterfacesSource, /新增输入接口|新增输出接口/)
+    assert.match(controlInterfacesSource, /@click="addInterface"/)
+    assert.match(controlInterfacesSource, /defaultWorkflowInterfaceDirection/)
+    assert.match(controlInterfacesSource, /changeWorkflowInterfaceDirection/)
+    assert.match(controlInterfacesSource, /@update:model-value="changeInterfaceDirection"/)
+    assert.match(controlInterfacesSource, /ElMessageBox\.confirm/)
   })
 
   test('workflow library leaf items are draggable as subflows except for the current workflow', () => {

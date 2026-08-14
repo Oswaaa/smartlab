@@ -14,23 +14,22 @@
               <el-tree v-if="filteredDeviceTree.length" :data="filteredDeviceTree" node-key="key" default-expand-all :expand-on-click-node="false" class="resource-tree">
                 <template #default="{ data }">
                   <div
-                    class="tree-item"
+                    class="resource-tree-node"
                     :class="[data.kind, { draggable: data.kind==='instance' && canEdit }]"
                     :draggable="data.kind==='instance' && canEdit"
                     @dragstart="drag($event,data)"
                     @dblclick="data.kind==='instance' && addResource({kind:'instance',instance:data.instance,model:data.model})"
                     :title="data.kind==='instance' ? '按住拖拽至画布，或双击添加设备实例' : data.kind==='model' ? '设备模型' : '设备分类'"
                   >
-                    <span class="tree-label">
-                      <el-icon class="tree-resource-icon"><FolderOpened v-if="data.kind==='category'" /><Folder v-else-if="data.kind==='model'" /><Monitor v-else /></el-icon>
-                      <span class="node-title">{{ data.label }}</span>
-                      <span v-if="data.kind==='model'" class="model-badge">模型</span>
-                      <span v-else-if="data.kind==='instance'" class="instance-badge">实例</span>
+                    <el-icon class="tree-resource-icon"><FolderOpened v-if="data.kind==='category'" /><Document v-else-if="data.kind==='model'" /><Monitor v-else /></el-icon>
+                    <span class="resource-node-text">
+                      <span class="resource-node-label">{{ data.label }}</span>
+                      <small class="resource-node-meta">{{ resourceNodeMeta(data) }}</small>
                     </span>
                   </div>
                 </template>
               </el-tree>
-              <el-empty v-else description="没有匹配的设备模型" :image-size="48" />
+              <div v-else class="resource-tree-empty">没有匹配的设备资源</div>
             </div>
           </el-tab-pane>
 
@@ -41,14 +40,16 @@
             <div class="tab-scroll-body">
               <el-tree v-if="workflowTree.length" :data="workflowTree" node-key="key" default-expand-all :expand-on-click-node="false" class="resource-tree workflow-resource-tree">
                 <template #default="{ data }">
-                  <div class="tree-item workflow-tree-item" :class="[{ 'is-active-flow': data.workflow?.id === openedWorkflowId, draggable: data.workflow && canDragWorkflowResource(data.workflow, form.id, canEdit) }]" :draggable="data.workflow && canDragWorkflowResource(data.workflow, form.id, canEdit)" @dragstart.stop="drag($event,{ kind:'workflow', workflow:data.workflow })" @click="data.workflow && loadWorkflow(data.workflow.id)">
+                  <div class="resource-tree-node workflow-tree-item" :class="[{ 'is-active-flow': data.workflow?.id === openedWorkflowId, draggable: data.workflow && canDragWorkflowResource(data.workflow, form.id, canEdit) }]" :draggable="data.workflow && canDragWorkflowResource(data.workflow, form.id, canEdit)" @dragstart.stop="drag($event,{ kind:'workflow', workflow:data.workflow })" @click="data.workflow && loadWorkflow(data.workflow.id)">
                     <el-icon class="tree-resource-icon"><FolderOpened v-if="data.children" /><Document v-else /></el-icon>
-                    <span class="node-title">{{ data.label }}</span>
-                    <span v-if="data.workflow?.id === openedWorkflowId" class="opened-badge">当前</span>
+                    <span class="resource-node-text">
+                      <span class="resource-node-label">{{ data.label }}</span>
+                      <small class="resource-node-meta">{{ workflowNodeMeta(data) }}</small>
+                    </span>
                   </div>
                 </template>
               </el-tree>
-              <el-empty v-else description="没有可引用的流程" :image-size="48" />
+              <div v-else class="resource-tree-empty">没有可引用的流程</div>
             </div>
           </el-tab-pane>
         </el-tabs>
@@ -89,7 +90,7 @@
             <div class="control-btn-group"><button v-for="item in palette" :key="item.type" class="flow-control-tool" :disabled="!canEdit" :draggable="canEdit" @dragstart="drag($event,{kind:'function',type:item.type})" @click="addResource({kind:'function',type:item.type})"><span class="tool-icon" :class="item.type.toLowerCase()">{{ item.glyph }}</span><span class="tool-name">{{ item.label }}</span></button></div>
           </div>
           <VueFlow v-model:nodes="flowNodes" v-model:edges="flowEdges" class="workflow-flow" :nodes-draggable="canEdit" :nodes-connectable="canEdit" :min-zoom="0.35" :max-zoom="1.8" :default-edge-options="defaultEdgeOptions" :delete-key-code="null" :fit-view-on-init="true" @connect="connectNodes" @node-click="selectCanvasNode" @pane-click="clearSelection" @node-drag-stop="persistLayout" @edge-click="selectEdge" @edges-delete="removeDeletedEdges">
-            <Background pattern-color="#d9d9d9" :gap="16" :size="1" />
+            <Background pattern-color="#e2e7ee" :gap="20" :size="1" />
             <Controls position="bottom-left" :show-interactive="true" :show-zoom="true" :show-fit-view="true">
               <ControlButton title="DAG 自动布局" @click="autoLayout">
                 <el-icon class="auto-layout-icon"><Grid /></el-icon>
@@ -177,7 +178,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, Folder, FolderOpened, Grid, Monitor, Plus, Search } from '@element-plus/icons-vue'
+import { Document, FolderOpened, Grid, Monitor, Plus, Search } from '@element-plus/icons-vue'
 import { VueFlow, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls, ControlButton } from '@vue-flow/controls'
@@ -187,6 +188,7 @@ import '@vue-flow/controls/dist/style.css'
 import {
   buildFlowEdges,
   buildFlowNodes,
+  buildWorkflowAutoLayout,
   createCanvasConnection,
   layoutKey,
   removeCanvasEdge,
@@ -228,7 +230,7 @@ const flowEdges = ref<FlowEdge[]>([])
 const draftLayoutKey = ref(newDraftKey())
 let workflowListPromise: Promise<void> | null = null
 let contractInitializationPromise: Promise<void> | null = null
-const { screenToFlowCoordinate, fitView } = useVueFlow()
+const { screenToFlowCoordinate, fitView, updateNodeInternals } = useVueFlow()
 const workflowIssueIndex = ref(indexWorkflowIssues())
 
 const empty = () => ({ id:null as number | null, name:'', description:'', version:1, status:'DRAFT', nodesDef:[] as NodeDefinition[], interfaceConnections:[] as any[], portConnections:[] as any[] })
@@ -239,7 +241,7 @@ const palette = [
   { type:'BRANCH', label:'分支', glyph:'◇', description:'条件路由' },
   { type:'AGGREGATE', label:'汇聚', glyph:'◆', description:'合并路径' }
 ]
-const defaultEdgeOptions = { type:'smoothstep', pathOptions:{ offset:28, borderRadius:4 }, style:{ stroke:'#6f8fb7', strokeWidth:2 } }
+const defaultEdgeOptions = { type:'smoothstep', pathOptions:{ offset:24, borderRadius:8 }, style:{ stroke:'#7890ad', strokeWidth:1.6 } }
 const canEdit = computed(() => contractReady.value && isEditing.value)
 
 const selectedNode = computed(() => nodeByName(selectedNodeName.value))
@@ -323,6 +325,23 @@ const workflowTree = computed(() => workflowLibraryGroups(filteredWorkflows.valu
   label:group.label,
   children:group.children.map(item => ({ key:`workflow-${item.id}`, label:item.flowName, workflow:item })),
 })).filter(group => group.children.length))
+
+function resourceNodeMeta(data:any) {
+  if (data.kind === 'category') return `${countTreeLeaves(data)} 个设备实例`
+  if (data.kind === 'model') return `${(data.children || []).length} 个设备实例`
+  return '设备实例'
+}
+
+function workflowNodeMeta(data:any) {
+  if (data.children) return `${data.children.length} 个流程`
+  if (data.workflow?.id === openedWorkflowId.value) return '当前流程'
+  return data.workflow?.status === 'ACTIVE' ? '已启用' : '草稿'
+}
+
+function countTreeLeaves(data:any):number {
+  if (data.kind === 'instance') return 1
+  return (data.children || []).reduce((total:number, child:any) => total + countTreeLeaves(child), 0)
+}
 
 function newDraftKey() {
   return 'draft-'+Date.now()+'-'+Math.random().toString(36).slice(2, 8)
@@ -727,6 +746,8 @@ function replaceSelectedNode(node:NodeDefinition) {
     data: { ...item.data, nodeName:node.name, nodeType:node.nodeType, functionType:node.functionType, interfaces:node.interfaces || [], ports:node.ports || [] }
   } : item)
   syncEdges()
+  const canvasNode = flowNodes.value.find(item => item.data?.nodeName === node.name)
+  void nextTick(() => updateNodeInternals(canvasNode ? [canvasNode.id] : undefined))
 }
 
 function replacePortConnections(connections:any[]) {
@@ -789,9 +810,13 @@ async function removeSelectedNode() {
 
 function autoLayout() {
   if (!canEdit.value) return
-  flowNodes.value = buildFlowNodes(form.nodesDef)
+  const layout = buildWorkflowAutoLayout(form.nodesDef, executionConnections.value, form.portConnections)
+  flowNodes.value = buildFlowNodes(form.nodesDef, layout)
   persistLayout()
-  void nextTick(() => fitCanvas())
+  void nextTick(() => {
+    updateNodeInternals(flowNodes.value.map(node => node.id))
+    fitCanvas()
+  })
 }
 
 function fitCanvas() {
@@ -1008,8 +1033,6 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
 .function-list.vertical{display:flex;flex-direction:column;gap:8px}
 .function-list.vertical .function-item{height:52px;grid-template-columns:32px minmax(0,1fr) 20px;border:1px solid #e2e7ee;border-radius:4px;padding:6px 10px}
 .function-list.vertical .function-item:hover{border-color:#4096ff;background:#f0f7ff}
-.instance-badge{display:inline-block;padding:1px 5px;margin-left:4px;border:1px solid #bbf7d0;border-radius:2px;background:#f0fdf4;color:#16a34a;font-size:9px;font-weight:600;line-height:14px}
-.model-badge{display:inline-block;padding:1px 5px;margin-left:4px;border:1px solid #bfdbfe;border-radius:2px;background:#eff6ff;color:#2563eb;font-size:9px;font-weight:600;line-height:14px}
 .tree-item.category{font-weight:600;color:#334155;background:#f8fafc;padding:3px 6px;border-radius:3px}
 .tree-item.model{font-weight:600;color:#1e293b;padding:2px 4px}
 .tree-item.instance{background:#ffffff;border:1px solid #e2e8f0;border-radius:4px;padding:4px 8px;margin:2px 0}
@@ -1040,8 +1063,8 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
 .workflow-element-drawer-body{height:100%;overflow:hidden;box-sizing:border-box;background:#fff}.workflow-element-drawer-body>.edge-view{min-height:100%;overflow-y:auto}:global(.workflow-element-drawer){min-width:880px;max-width:1180px;box-shadow:-6px 0 20px rgba(0,0,0,.12);transition:transform .2s cubic-bezier(.23,1,.32,1)!important}:global(.workflow-element-drawer .el-drawer__body){min-height:0;padding:0;overflow:hidden;background:#fff}@media(max-width:900px){:global(.workflow-element-drawer){width:100vw!important;min-width:0;max-width:none}}
 
 /* 连续控制台视觉覆盖：资源、画布和流程属性通过分隔线形成一个完整工作台。 */
-.designer-grid{grid-template-columns:218px minmax(430px,1fr) 304px;background:#fff}.resource-panel{border-right-color:#e5e5e5}.inspector-panel{border-left:0;background:#fff}.panel-titlebar{height:45px;padding:0 12px;border-bottom-color:#e5e5e5;background:#fff}.panel-titlebar strong{color:#262626;font-size:13px;font-weight:500}.panel-titlebar span,.panel-titlebar small{color:#8c8c8c;font-size:10px}.resource-titlebar{border-right:0}.resource-tabs :deep(.el-tabs__nav-wrap){padding:0 8px;border-bottom-color:#e5e5e5;background:#fafafa}.resource-tabs :deep(.el-tabs__item){height:36px;color:#595959;font-size:12px}.resource-tabs :deep(.el-tabs__item.is-active){color:#1677ff;font-weight:500}.resource-tabs :deep(.el-tabs__active-bar){height:2px;background:#1677ff}.resource-search{padding:8px 10px;border-bottom-color:#f0f0f0}.resource-tabs :deep(.el-tree-node__content){position:relative;height:36px;padding-right:8px;transition:background-color .15s ease}.resource-tabs :deep(.el-tree-node__content:hover){background:#e6f4ff}.resource-tabs :deep(.el-tree-node.is-current>.el-tree-node__content){background:#e6f4ff;color:#1677ff}.resource-tabs :deep(.el-tree-node.is-current>.el-tree-node__content:before){content:'';position:absolute;left:0;top:0;bottom:0;width:3px;background:#1677ff}.tab-scroll-body{padding:0}.flow-item{height:42px;padding:0 10px;border-bottom-color:#f0f0f0;transition:background-color .15s ease}.flow-item:hover,.flow-item.is-active-flow{border-color:#f0f0f0;background:#e6f4ff}.flow-icon{border:1px solid #bae0ff;background:#e6f4ff;color:#1677ff}.canvas-panel{border-right-color:#e5e5e5}.canvas-commandbar{position:static;z-index:10;height:45px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 10px;border-bottom:1px solid #e5e5e5;background:#fff;box-shadow:none}.flow-title-row>strong{color:#262626;font-weight:500}.status-chip,.meta-chip,.dirty-mark,.stats-chip,.error-badge{border-radius:2px}.island-right{gap:0}.island-right :deep(.el-button){height:28px;margin-left:-1px;border-radius:0;transition:border-color .15s ease,color .15s ease,background-color .15s ease}.island-right :deep(.el-button:first-child){margin-left:0}.island-right :deep(.btn-aliyun-cta){margin-left:8px;border-radius:2px;background:#1677ff}.flow-stage{background:#f7f8fa}.canvas-floating-controls{top:10px;right:10px;border-color:#d9d9d9;border-radius:2px;box-shadow:0 2px 8px rgba(0,0,0,.08)}.workflow-flow :deep(.vue-flow__edge-path){stroke:#7b96b8;stroke-width:1.8;transition:stroke .15s ease,stroke-width .15s ease}.workflow-flow :deep(.data-edge .vue-flow__edge-path){stroke:#722ed1;stroke-dasharray:7 5}.workflow-flow :deep(.vue-flow__edge.selected .vue-flow__edge-path){stroke:#1677ff;stroke-width:2.4}.workflow-flow :deep(.vue-flow__controls){border-color:#d9d9d9;border-radius:2px;box-shadow:0 2px 8px rgba(0,0,0,.08)}.canvas-statusbar{height:28px;border-top-color:#e5e5e5;background:#fff;color:#8c8c8c}.legend-line{border-top-color:#7b96b8}.legend-line.data{border-top-color:#722ed1}.inspector-titlebar{height:45px}.section-heading{height:36px;padding:0 12px;border-color:#e5e5e5;background:#fafafa}.section-heading strong{color:#262626;font-size:11px;font-weight:500}.dense-form{padding:12px 12px 2px;border-bottom-color:#e5e5e5}.overview-metrics{border-bottom-color:#e5e5e5}.overview-metrics>div{border-right-color:#f0f0f0}.overview-metrics strong{color:#262626;font-size:16px;font-weight:500}.overview-metrics span{color:#8c8c8c;font-size:10px}.issue-list button{border-bottom-color:#f0f0f0;transition:background-color .15s ease}.issue-list button:hover{background:#fafafa}
+.designer-grid{grid-template-columns:240px minmax(430px,1fr) 304px;background:#fff}.resource-panel{border-right-color:#e5e5e5}.inspector-panel{border-left:0;background:#fff}.panel-titlebar{height:45px;padding:0 12px;border-bottom-color:#e5e5e5;background:#fff}.panel-titlebar strong{color:#262626;font-size:13px;font-weight:500}.panel-titlebar span,.panel-titlebar small{color:#8c8c8c;font-size:10px}.resource-titlebar{border-right:0}.resource-tabs :deep(.el-tabs__nav-wrap){padding:0 8px;border-bottom-color:#e5e5e5;background:#fafafa}.resource-tabs :deep(.el-tabs__item){height:36px;color:#595959;font-size:12px}.resource-tabs :deep(.el-tabs__item.is-active){color:#1677ff;font-weight:500}.resource-tabs :deep(.el-tabs__active-bar){height:2px;background:#1677ff}.resource-search{padding:8px 10px;border-bottom-color:#f0f0f0}.resource-tabs :deep(.el-tree-node__content){position:relative;height:34px;padding-right:6px;border-radius:4px;transition:background-color .15s ease}.resource-tabs :deep(.el-tree-node__content:hover){background:#f5f8fc}.resource-tabs :deep(.el-tree-node.is-current>.el-tree-node__content){background:#eaf3ff;color:#1677ff;box-shadow:inset 3px 0 #1677ff}.tab-scroll-body{padding:4px 6px}.flow-item{height:42px;padding:0 10px;border-bottom-color:#f0f0f0;transition:background-color .15s ease}.flow-item:hover,.flow-item.is-active-flow{border-color:#f0f0f0;background:#e6f4ff}.flow-icon{border:1px solid #bae0ff;background:#e6f4ff;color:#1677ff}.canvas-panel{border-right-color:#e5e5e5}.canvas-commandbar{position:static;z-index:10;height:45px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 10px;border-bottom:1px solid #e5e5e5;background:#fff;box-shadow:none}.flow-title-row>strong{color:#262626;font-weight:500}.status-chip,.meta-chip,.dirty-mark,.stats-chip,.error-badge{border-radius:2px}.island-right{gap:0}.island-right :deep(.el-button){height:28px;margin-left:-1px;border-radius:0;transition:border-color .15s ease,color .15s ease,background-color .15s ease}.island-right :deep(.el-button:first-child){margin-left:0}.island-right :deep(.btn-aliyun-cta){margin-left:8px;border-radius:2px;background:#1677ff}.flow-stage{background:#f8fafc}.canvas-floating-controls{top:10px;right:10px;border-color:#d9d9d9;border-radius:2px;box-shadow:0 2px 8px rgba(0,0,0,.08)}.workflow-flow :deep(.vue-flow__edge-path){stroke:#7890ad;stroke-width:1.6;transition:stroke .15s ease,stroke-width .15s ease}.workflow-flow :deep(.execution-edge:hover .vue-flow__edge-path){stroke:#477db5;stroke-width:2.2}.workflow-flow :deep(.data-edge .vue-flow__edge-path){stroke:#7569bd;stroke-dasharray:6 5}.workflow-flow :deep(.data-edge:hover .vue-flow__edge-path){stroke:#6254b2;stroke-width:2.2}.workflow-flow :deep(.vue-flow__edge.selected .vue-flow__edge-path){stroke:#1677ff;stroke-width:2.4}.workflow-flow :deep(.vue-flow__controls){border-color:#d9d9d9;border-radius:2px;box-shadow:0 2px 8px rgba(0,0,0,.08)}.canvas-statusbar{height:28px;border-top-color:#e5e5e5;background:#fff;color:#8c8c8c}.legend-line{border-top-color:#7890ad}.legend-line.data{border-top-color:#7569bd}.inspector-titlebar{height:45px}.section-heading{height:36px;padding:0 12px;border-color:#e5e5e5;background:#fafafa}.section-heading strong{color:#262626;font-size:11px;font-weight:500}.dense-form{padding:12px 12px 2px;border-bottom-color:#e5e5e5}.overview-metrics{border-bottom-color:#e5e5e5}.overview-metrics>div{border-right-color:#f0f0f0}.overview-metrics strong{color:#262626;font-size:16px;font-weight:500}.overview-metrics span{color:#8c8c8c;font-size:10px}.issue-list button{border-bottom-color:#f0f0f0;transition:background-color .15s ease}.issue-list button:hover{background:#fafafa}
 .resource-function-section{border-bottom:1px solid #e5e5e5;background:#fff}.resource-group-heading{height:30px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:#fafafa;color:#595959}.resource-group-heading strong{font-size:11px;font-weight:500}.resource-group-heading span{color:#8c8c8c;font-size:9px}.resource-function-list{display:grid;grid-template-columns:1fr 1fr}.resource-function-item{height:48px;display:grid;grid-template-columns:24px minmax(0,1fr);align-items:center;gap:7px;padding:5px 9px;border:0;border-right:1px solid #f0f0f0;border-bottom:1px solid #f0f0f0;background:#fff;color:#262626;text-align:left;cursor:grab;transition:background-color .15s ease,color .15s ease}.resource-function-item:nth-child(even){border-right:0}.resource-function-item:nth-last-child(-n+2){border-bottom:0}.resource-function-item:hover{background:#e6f4ff;color:#1677ff}.resource-function-item:disabled{cursor:not-allowed;opacity:.5}.resource-function-item>span:last-child{display:grid;min-width:0}.resource-function-item strong,.resource-function-item small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.resource-function-item strong{font-size:11px;font-weight:500}.resource-function-item small{color:#8c8c8c;font-size:9px}.function-mark{width:22px;height:22px;display:grid;place-items:center;border:1px solid #bae0ff;border-radius:2px;background:#e6f4ff;color:#1677ff;font-size:9px}.function-mark.start{border-color:#b7eb8f;background:#f6ffed;color:#389e0d}.function-mark.end{border-color:#d9d9d9;background:#fafafa;color:#595959}.function-mark.branch{border-color:#ffe58f;background:#fffbe6;color:#d48806}.function-mark.aggregate{border-color:#d3adf7;background:#f9f0ff;color:#722ed1}
-.tree-resource-icon{flex:none;color:#8c8c8c;font-size:14px}.tree-item.model .tree-resource-icon,.workflow-tree-item .tree-resource-icon{color:#1677ff}.workflow-tree-item{width:100%;display:flex;align-items:center;gap:7px;min-width:0}.workflow-tree-item.is-active-flow{color:#1677ff}.workflow-tree-item .node-title{flex:1}.canvas-floating-controls{top:10px;left:10px;right:auto;border-radius:2px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.08)}
+.resource-tree-node{width:100%;min-width:0;display:flex;align-items:center;gap:7px;padding-right:4px;box-sizing:border-box;color:#3d4a5d}.resource-tree-node.draggable{cursor:grab}.tree-resource-icon{flex:none;color:#7f8b9b;font-size:14px}.resource-tree-node.model .tree-resource-icon,.workflow-tree-item .tree-resource-icon{color:#4d7fac}.resource-tree-node.instance .tree-resource-icon{color:#6e8c7b}.resource-node-text{min-width:0;display:flex;flex:1;align-items:center;gap:6px}.resource-node-label{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}.resource-node-meta{flex:none;color:#9aa4b2;font-size:9px}.resource-tree-node.category .resource-node-label{font-weight:600}.resource-tree-node.model .resource-node-label{font-weight:500}.workflow-tree-item.is-active-flow{color:#1677ff;background:#eaf3ff;box-shadow:inset 3px 0 #1677ff}.workflow-tree-item.is-active-flow .resource-node-meta{color:#5c89bd}.resource-tree-empty{padding:28px 10px;color:#9aa4b2;text-align:center;font-size:11px}.canvas-floating-controls{top:10px;left:10px;right:auto;border-radius:2px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.08)}
 .validation-groups{display:grid}.validation-group{display:grid}.issue-group-heading{height:30px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-bottom:1px solid #e5e5e5;background:#fff}.issue-group-heading strong{color:#595959;font-size:10px;font-weight:500}.issue-group-heading span{color:#8c8c8c;font-size:9px}
 </style>

@@ -25,9 +25,12 @@ export function workflowNodeConnectionIssues(nodes = [], connections = []) {
   const outgoing = new Map([...nodeNames].map(name => [name, []]))
   const incoming = new Map([...nodeNames].map(name => [name, []]))
   const validConnections = connections.filter(connection => nodeNames.has(connection.source?.nodeName) && nodeNames.has(connection.target?.nodeName))
+  const targetInterfaceConnections = new Map()
   for (const connection of validConnections) {
     outgoing.get(connection.source.nodeName)?.push(connection.target.nodeName)
     incoming.get(connection.target.nodeName)?.push(connection.source.nodeName)
+    const key = `${connection.target.nodeName}\u0000${connection.target.interfaceName || ''}`
+    targetInterfaceConnections.set(key, (targetInterfaceConnections.get(key) || 0) + 1)
   }
 
   const issues = []
@@ -36,11 +39,25 @@ export function workflowNodeConnectionIssues(nodes = [], connections = []) {
     const inCount = incoming.get(node.name)?.length || 0
     const outCount = outgoing.get(node.name)?.length || 0
     if (node.functionType === 'START' && inCount) add(node, 'start-in', '开始节点存在上游连接', '请删除指向开始节点的连接。')
-    else if (node.functionType === 'AGGREGATE' && inCount < 2) add(node, 'aggregate-inputs', '汇聚入口不足', '请至少连接两个上游执行路径。')
     else if (node.functionType !== 'START' && !inCount) add(node, 'missing-in', '未连接上游节点', '请将前一个节点连接到此节点。')
 
     if (node.functionType === 'END' && outCount) add(node, 'end-out', '结束节点存在下游连接', '请删除结束节点之后的连接。')
     else if (node.functionType !== 'END' && !outCount) add(node, 'missing-out', '未连接下游节点', '请将此节点连接到后续节点。')
+
+    const duplicateInputs = [...targetInterfaceConnections.entries()]
+      .filter(([key, count]) => key.startsWith(`${node.name}\u0000`) && count > 1)
+    duplicateInputs.forEach(([key]) => add(node, `duplicate-input-${key.split('\u0000')[1]}`,
+      '输入接口重复连接', '每个输入接口只能连接一个上游接口，请新增独立输入接口。'))
+
+    if (node.functionType === 'AGGREGATE') {
+      const connectedInputs = new Set(validConnections
+        .filter(connection => connection.target?.nodeName === node.name)
+        .map(connection => connection.target?.interfaceName)
+        .filter(Boolean)).size
+      aggregateThresholds(node).filter(item => item.required > connectedInputs)
+        .forEach(item => add(node, `aggregate-threshold-${item.required}`,
+          '聚合阈值不可达', `当前只有 ${connectedInputs} 个有效输入接口，无法达到阈值 ${item.required}。`))
+    }
   }
 
   const starts = nodes.filter(node => node.functionType === 'START')
@@ -56,6 +73,25 @@ export function workflowNodeConnectionIssues(nodes = [], connections = []) {
       .forEach(node => add(node, 'no-end', '无法到达结束节点', '请检查后续执行路径是否与流程出口连通。'))
   }
   return issues
+}
+
+function aggregateThresholds(node) {
+  const result = []
+  for (const item of node.interfaces || []) {
+    if (item.direction !== 'OUT' || item.interfaceType !== 'WORKFLOW') continue
+    for (const trigger of item.bindingTriggers || []) {
+      const predicates = Array.isArray(trigger.condition?.conditions)
+        ? trigger.condition.conditions
+        : [trigger.condition]
+      for (const predicate of predicates) {
+        if (predicate?.object !== 'aggregateCount' || !Number.isInteger(predicate.threshold)) continue
+        const required = predicate.operator === '>' ? predicate.threshold + 1
+          : ['>=', '=', '=='].includes(predicate.operator) ? predicate.threshold : null
+        if (required !== null) result.push({ required })
+      }
+    }
+  }
+  return result
 }
 
 function walkWorkflowGraph(start, graph) {

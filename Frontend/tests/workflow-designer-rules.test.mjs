@@ -176,6 +176,46 @@ test('branch with a single connected output is a valid workflow topology', () =>
   assert.deepEqual(workflowNodeConnectionIssues(nodes, connections), [])
 })
 
+test('聚合节点由输出阈值决定N-of-M且每个输入接口只能连接一次', () => {
+  const aggregate = {
+    name: 'aggregate', functionType: 'AGGREGATE',
+    interfaces: [
+      { name: 'in_1', direction: 'IN', interfaceType: 'WORKFLOW' },
+      { name: 'in_2', direction: 'IN', interfaceType: 'WORKFLOW' },
+      {
+        name: 'out', direction: 'OUT', interfaceType: 'WORKFLOW', bindingTriggers: [{
+          condition: { logic: 'AND', conditions: [
+            { object: 'nodeLifecycleState', operator: '=', threshold: 'RUNNING' },
+            { object: 'aggregateCount', operator: '>=', threshold: 3 },
+          ] },
+          action: { actionName: 'EMIT', payload: { targetInterfaceName: 'out', signalName: 'ACTIVE' } },
+        }],
+      },
+    ],
+  }
+  const nodes = [
+    { name: 'start', functionType: 'START' },
+    { name: 'relay', nodeType: 'SUBFLOW_NODE' },
+    aggregate,
+    { name: 'end', functionType: 'END' },
+  ]
+  const connections = [
+    { source: { nodeName: 'start', interfaceName: 'out' }, target: { nodeName: 'aggregate', interfaceName: 'in_1' } },
+    { source: { nodeName: 'start', interfaceName: 'out' }, target: { nodeName: 'relay', interfaceName: 'in' } },
+    { source: { nodeName: 'relay', interfaceName: 'out' }, target: { nodeName: 'aggregate', interfaceName: 'in_2' } },
+    { source: { nodeName: 'aggregate', interfaceName: 'out' }, target: { nodeName: 'end', interfaceName: 'in' } },
+  ]
+
+  const thresholdIssues = workflowNodeConnectionIssues(nodes, connections)
+  assert.ok(thresholdIssues.some(issue => /聚合阈值不可达/.test(issue.title)))
+  aggregate.interfaces[2].bindingTriggers[0].condition.conditions[1].threshold = 2
+  assert.deepEqual(workflowNodeConnectionIssues(nodes, connections), [])
+
+  connections[2].target.interfaceName = 'in_1'
+  assert.ok(workflowNodeConnectionIssues(nodes, connections)
+    .some(issue => /输入接口重复连接/.test(issue.title)))
+})
+
 test('reachability issues appear only after a node already has the relevant connection', () => {
   const nodes = [
     { name: 'start', functionType: 'START', interfaces: [] },

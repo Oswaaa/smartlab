@@ -9,6 +9,8 @@ import com.smartlab.engine.workflow.action.WorkflowActionDefinition;
 import com.smartlab.engine.workflow.action.WorkflowActionExecutor;
 import com.smartlab.engine.workflow.action.WorkflowActionRegistry;
 import com.smartlab.engine.workflow.action.WorkflowActionResult;
+import com.smartlab.engine.workflow.action.UpdateWorkflowActionExecutor;
+import com.smartlab.engine.workflow.action.WorkflowValueResolver;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.workflow.WorkflowDetailResponse;
 import com.smartlab.management.entity.workflow.FlowNode;
@@ -105,6 +107,64 @@ class WorkflowEngineExecutionTest {
         assertThat(executionOrder).containsExactly("UPDATE", "EMIT");
         assertThat(step.getVariableSpace().path("_triggerStates")
                 .path(WorkflowTriggerState.TERMINAL_OBSERVED_KEY).asBoolean()).isTrue();
+    }
+
+    @Test
+    void consecutiveUpdatesUseLatestVariableSpaceWhileConditionsRemainFrozen() {
+        Task task = pollingTask();
+        TaskStep step = pollingStep("RUNNING");
+        step.setVariableSpace(JsonNodeSupport.objectNode().put("aggregateCount", 0));
+        ObjectNode firstInput = incrementTriggerInterface("aggregate-in-1");
+        ObjectNode secondInput = incrementTriggerInterface("aggregate-in-2");
+        FlowNode node = pollingNode(List.of(firstInput, secondInput));
+        node.setNodeType("FUNC_NODE");
+        node.setCapability(JsonNodeSupport.objectNode().put("functionType", "AGGREGATE"));
+        node.setInVariables(JsonNodeSupport.arrayNode()
+                .add(JsonNodeSupport.objectNode().put("name", "aggregateCount").put("dataType", "INTEGER")));
+        step.setInterfaceInSnapshot(JsonNodeSupport.arrayNode()
+                .add(JsonNodeSupport.objectNode().put("interfaceName", "aggregate-in-1").put("signalName", "ACTIVE"))
+                .add(JsonNodeSupport.objectNode().put("interfaceName", "aggregate-in-2").put("signalName", "ACTIVE")));
+        WorkflowActionRegistry latestValueRegistry = new WorkflowActionRegistry(List.of(
+                new UpdateWorkflowActionExecutor(new WorkflowValueResolver(new ConstraintExpressionEvaluator())),
+                executor("EMIT", WorkflowActionResult.continueExecution())));
+        WorkflowEngine latestValueEngine = new WorkflowEngine(runtime, workflows, flowNodes,
+                new WorkflowConditionEvaluator(), new ConstraintExpressionEvaluator(), latestValueRegistry,
+                operations);
+        stubPoll(task, step, node);
+        when(workflows.compileDefinition(node.getFlowModelId())).thenReturn(emptyCompiledWorkflow());
+        doAnswer(invocation -> {
+            ObjectNode merged = (ObjectNode) step.getVariableSpace().deepCopy();
+            merge(merged, invocation.getArgument(1));
+            step.setVariableSpace(merged);
+            return null;
+        }).when(runtime).mergeVariableSpace(eq(step), org.mockito.ArgumentMatchers.any());
+
+        latestValueEngine.processTask(task);
+
+        verify(runtime, never()).failStep(eq(step), org.mockito.ArgumentMatchers.anyString());
+        assertThat(step.getVariableSpace().path("aggregateCount").asInt()).isEqualTo(2);
+    }
+
+    @Test
+    void terminalPollEvaluatesOutputTriggersButNotInputTriggers() {
+        Task task = pollingTask();
+        TaskStep step = pollingStep("SUCCEEDED");
+        FlowNode node = pollingNode(List.of(
+                lifecycleTriggerInterface("workflow-out", "OUT", "SUCCEEDED", "EMIT"),
+                triggerInterface("workflow-in", "IN", "input-cleanup")));
+        node.setActions(JsonNodeSupport.arrayNode().add("UPDATE").add("EMIT"));
+        WorkflowActionRegistry terminalRegistry = new WorkflowActionRegistry(List.of(
+                executor("UPDATE", WorkflowActionResult.continueExecution()),
+                executor("EMIT", WorkflowActionResult.emitWorkflowSignal("workflow-out", "ACTIVE"))));
+        WorkflowEngine terminalEngine = new WorkflowEngine(runtime, workflows, flowNodes,
+                new WorkflowConditionEvaluator(), new ConstraintExpressionEvaluator(), terminalRegistry,
+                operations);
+        stubPoll(task, step, node);
+        when(workflows.compileDefinition(node.getFlowModelId())).thenReturn(emptyCompiledWorkflow());
+
+        terminalEngine.processTask(task);
+
+        assertThat(executionOrder).containsExactly("EMIT");
     }
 
     @Test
@@ -231,6 +291,44 @@ class WorkflowEngineExecutionTest {
                         "inputSignalName", "inputPayload", "sourceOutput");
         verify(runtime).updateOutputSnapshot(eq(sourceStep), org.mockito.ArgumentMatchers.any());
         verify(runtime).updateInputSnapshot(eq(targetStep), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
+    void workflowEmissionDoesNotWriteInputSnapshotOfTerminalTarget() {
+        Task task = pollingTask();
+        TaskStep sourceStep = pollingStep("RUNNING");
+        FlowNode sourceNode = pollingNode(List.of(
+                lifecycleTriggerInterface("Interface_workflow_out", "OUT", "RUNNING", "EMIT")));
+        sourceStep.setInterfaceOutSnapshot(WorkflowInterfaceSnapshots.initialize(sourceNode.getInterfaces(), "OUT"));
+        FlowNode targetNode = pollingNode(List.of(
+                signalTriggerInterface("Interface_workflow_in", "ACTIVE", "target")));
+        targetNode.setId(8L);
+        targetNode.setNodeIdRef(3L);
+        TaskStep targetStep = pollingStep("SUCCEEDED");
+        targetStep.setId(13L);
+        targetStep.setFlowNodeId(8L);
+        targetStep.setNodeIdRef(3L);
+        targetStep.setInterfaceInSnapshot(WorkflowInterfaceSnapshots.initialize(targetNode.getInterfaces(), "IN"));
+        WorkflowDefinitionCompiler.Connection connection = new WorkflowDefinitionCompiler.Connection(
+                2L, "Interface_workflow_out", 3L, "Interface_workflow_in");
+        WorkflowDefinitionCompiler.CompiledWorkflow compiled = new WorkflowDefinitionCompiler.CompiledWorkflow(
+                Map.of(), Map.of(2L, List.of(connection)), Map.of(3L, List.of(connection)),
+                Map.of("source", 2L, "target", 3L), 2L, 3L);
+        stubPoll(task, sourceStep, sourceNode);
+        when(workflows.compileDefinition(3L)).thenReturn(compiled);
+        when(workflows.nodes(3L)).thenReturn(List.of(sourceNode, targetNode));
+        when(runtime.createStep(eq(task), eq(targetNode), eq(null), eq(0),
+                org.mockito.ArgumentMatchers.any())).thenReturn(targetStep);
+        doAnswer(invocation -> {
+            sourceStep.setInterfaceOutSnapshot(invocation.getArgument(1));
+            return null;
+        }).when(runtime).updateOutputSnapshot(eq(sourceStep), org.mockito.ArgumentMatchers.any());
+
+        engine.processTask(task);
+
+        assertThat(WorkflowInterfaceSnapshots.find(targetStep.getInterfaceInSnapshot(), "Interface_workflow_in")
+                .path("signalName").isNull()).isTrue();
+        verify(runtime, never()).updateInputSnapshot(eq(targetStep), org.mockito.ArgumentMatchers.any());
     }
 
     @Test
@@ -393,6 +491,33 @@ class WorkflowEngineExecutionTest {
         assertThat(parent.getNodeStatus()).isEqualTo("RUNNING");
         verify(runtime, never()).completeTask(task);
         verify(operations, never()).transitionNodeLifecycle(eq(task), eq(parent), eq(parentNode), eq("SUCCEEDED"));
+    }
+
+    @Test
+    void nestedSuccessfulEndDoesNotNotifyTerminalParentInput() {
+        Task task = pollingTask();
+        TaskStep childEnd = pollingStep("SUCCEEDED");
+        childEnd.setId(31L);
+        childEnd.setParentStepId(20L);
+        childEnd.setStepDepth(1);
+        FlowNode endNode = functionNode("END", 4L, 2L);
+        childEnd.setFlowNodeId(endNode.getId());
+        TaskStep parent = pollingStep("TERMINATED");
+        parent.setId(20L);
+        parent.setFlowNodeId(70L);
+        FlowNode parentNode = pollingNode(List.of(subflowInputInterface()));
+        parentNode.setId(70L);
+        parentNode.setNodeType("SUBFLOW_NODE");
+        parent.setInterfaceInSnapshot(WorkflowInterfaceSnapshots.initialize(parentNode.getInterfaces(), "IN"));
+        stubPoll(task, childEnd, endNode);
+        when(runtime.step(parent.getId())).thenReturn(parent);
+        when(flowNodes.getById(parent.getFlowNodeId())).thenReturn(parentNode);
+
+        engine.processTask(task);
+
+        assertThat(WorkflowInterfaceSnapshots.find(parent.getInterfaceInSnapshot(), "Interface_workflow_in")
+                .path("signalName").isNull()).isTrue();
+        verify(runtime, never()).updateInputSnapshot(eq(parent), org.mockito.ArgumentMatchers.any());
     }
 
     private final WorkflowRuntimeService runtime = mock(WorkflowRuntimeService.class);
@@ -670,6 +795,21 @@ class WorkflowEngineExecutionTest {
         trigger.putObject("action").put("actionName", "UPDATE").putObject("payload")
                 .put("updateType", "INTERNAL_VARIABLE").put("targetName", "ready")
                 .put("value", true).put("trace", trace);
+        return item;
+    }
+
+    private ObjectNode incrementTriggerInterface(String name) {
+        ObjectNode item = JsonNodeSupport.objectNode();
+        item.put("name", name);
+        item.put("direction", "IN");
+        item.put("interfaceType", "WORKFLOW");
+        item.putArray("allowedSignals").add("ACTIVE");
+        ObjectNode trigger = item.putArray("bindingTriggers").addObject();
+        trigger.putObject("condition").put("object", "signalName")
+                .put("operator", "=").put("threshold", "ACTIVE");
+        trigger.putObject("action").put("actionName", "UPDATE").putObject("payload")
+                .put("updateType", "INTERNAL_VARIABLE").put("targetName", "aggregateCount")
+                .put("valueExpression", "aggregateCount + 1");
         return item;
     }
 

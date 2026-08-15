@@ -77,6 +77,7 @@
               <el-button :disabled="!form.name" class="btn-aliyun" @click="exportWorkflow">导出</el-button>
             </el-tooltip>
             <el-button v-if="form.id && !isEditing" class="btn-aliyun-cta" @click="startEditing">编辑</el-button>
+            <el-button v-if="form.id" class="btn-aliyun-danger-link" plain :loading="deleteLoading" :disabled="draftSaving || publishSaving" @click="deleteCurrentWorkflow">删除</el-button>
             <el-button v-if="canEdit" class="btn-aliyun" :disabled="!form.nodesDef.length" @click="clearCanvas">清空</el-button>
             <el-button class="btn-aliyun" @click="runValidation">校验</el-button>
             <el-button class="btn-aliyun" :loading="draftSaving" :disabled="!canEdit" @click="saveDraft">保存草稿</el-button>
@@ -215,6 +216,7 @@ const instances = ref<any[]>([])
 const categories = ref<any[]>([])
 const draftSaving = ref(false)
 const publishSaving = ref(false)
+const deleteLoading = ref(false)
 const resourceKeyword = ref('')
 const contractReady = ref(false)
 const contractError = ref('')
@@ -354,6 +356,41 @@ function markDirty() {
 }
 
 function startEditing() { isEditing.value = true }
+
+async function deleteCurrentWorkflow() {
+  const workflowId = Number(form.id)
+  if (!Number.isInteger(workflowId) || workflowId <= 0 || deleteLoading.value) return
+  const workflowName = form.name || `流程 ${workflowId}`
+  try {
+    await ElMessageBox.confirm(
+      `确认删除流程“${workflowName}”？删除流程后无法恢复。`,
+      '删除流程',
+      { type:'warning', confirmButtonText:'确认删除', cancelButtonText:'取消' },
+    )
+  } catch {
+    return
+  }
+
+  deleteLoading.value = true
+  try {
+    const response = await workflowApi.delete(workflowId)
+    if (!response.data?.success) throw Error(response.data?.message || '删除流程失败')
+    localStorage.removeItem(layoutKey(workflowId))
+    draftLayoutKey.value = newDraftKey()
+    reset(empty())
+    isEditing.value = true
+    ElMessage.success('流程已删除')
+    try {
+      await loadList()
+    } catch (refreshError:any) {
+      ElMessage.warning(refreshError.message || '流程已删除，但流程库刷新失败')
+    }
+  } catch (error:any) {
+    ElMessage.error(error.response?.data?.message || error.message || '删除流程失败')
+  } finally {
+    deleteLoading.value = false
+  }
+}
 
 async function clearCanvas() {
   if (!canEdit.value || !form.nodesDef.length) return

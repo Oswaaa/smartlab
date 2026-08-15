@@ -97,7 +97,7 @@
       </div>
     </el-card>
 
-    <TaskCreateDrawer ref="createFormRef" v-model="createDrawerVisible" :form="createForm" :workflows="executableProcessTemplates" :loading-workflows="loadingWorkflows" :routes="selectedDeviceRoutes" :groups="selectedWorkflowGroups" :errors="selectedWorkflowErrors" :instances="deviceInstances" :models="deviceModels" :has-device-nodes="Boolean(createForm.flowModelId && workflowHasDeviceNodes[String(createForm.flowModelId)])" :preflight-result="preflightResult" :preflighting="preflighting" :creating="creating" :constraint-reviews="taskConstraintReviews" @update:task-name="createForm.taskName = $event" @update:flow-model-id="handleTemplateChange" @update:resource-bindings="updateResourceBindings" @edit-constraint="openTaskConstraint" @remove-constraint="removeTaskConstraint" @preflight="runPreflight" @submit="submitCreateTask" />
+    <TaskCreateDrawer ref="createFormRef" v-model="createDrawerVisible" :form="createForm" :workflows="executableProcessTemplates" :loading-workflows="loadingWorkflows" :requirements="selectedWorkflowRequirements" :groups="selectedWorkflowGroups" :errors="selectedWorkflowErrors" :instances="deviceInstances" :models="deviceModels" :preflight-result="preflightResult" :preflighting="preflighting" :creating="creating" :constraint-reviews="taskConstraintReviews" @update:task-name="createForm.taskName = $event" @update:flow-model-id="handleTemplateChange" @update:resource-bindings="updateResourceBindings" @edit-constraint="openTaskConstraint" @remove-constraint="removeTaskConstraint" @preflight="runPreflight" @submit="submitCreateTask" />
 
     <el-dialog v-model="taskConstraintDialogVisible" :title="editingTaskConstraintIndex == null ? '添加任务级约束' : '编辑任务级约束'" width="1040px" append-to-body destroy-on-close @opened="loadTaskConstraintEditor">
       <ConstraintRuleEditor ref="taskConstraintEditorRef" :models="deviceModels" :instances="deviceInstances" :workflows="executableProcessTemplates" :tasks="[]" task-mode :task-resources="selectedTaskResources" :task-workflow-nodes="selectedWorkflowNodes" />
@@ -117,7 +117,12 @@ import TaskCreateDrawer from './components/TaskCreateDrawer.vue'
 import TaskExecutionDrawer from './components/TaskExecutionDrawer.vue'
 import TaskFilterBar from './components/TaskFilterBar.vue'
 import TaskSummaryStrip from './components/TaskSummaryStrip.vue'
-import { buildDeviceBindings, expandWorkflowDefinition } from '../../../utils/taskResourceBindings.js'
+import {
+  buildBindingWorkflowView,
+  buildDeviceBindings,
+  buildTaskCreatePayload,
+  expandWorkflowDefinition
+} from '../../../utils/taskResourceBindings.js'
 import { filterExecutableWorkflows, isExecutableWorkflow } from '../../../utils/workflowExecution.js'
 import { taskApi } from '../../../services/taskApi.js'
 import { workflowApi } from '../../../services/workflowApi.js'
@@ -210,10 +215,9 @@ const executableProcessTemplates = computed(() => filterExecutableWorkflows(proc
 
 // Drawer state
 const createDrawerVisible = ref(false)
-const workflowRequirements = ref<any[]>([])
+const workflowRequirementsByFlow = ref<Record<string, any[]>>({})
 const preflightResult = ref<any>(null)
 const preflighting = ref(false)
-const requirementsLoading = ref(false)
 const createFormRef = ref<any>()
 const createForm = ref({
   taskName: '',
@@ -225,23 +229,22 @@ const taskConstraintReviews = ref<Array<string | null>>([])
 const unresolvedTaskConstraintReviews = computed(() => taskConstraintReviews.value.some(Boolean))
 const creating = ref(false)
 const workflowDeviceRoutes = ref<Record<string, DeviceRoute[]>>({})
-const workflowHasDeviceNodes = ref<Record<string, boolean>>({})
-const workflowNodes = ref<Record<string, any[]>>({})
 const workflowGroups = ref<Record<string, any[]>>({})
+const workflowNodes = ref<Record<string, any[]>>({})
 const workflowErrors = ref<Record<string, string[]>>({})
 const workflowDefinitions = ref<Record<string, any>>({})
-const selectedDeviceRoutes = computed(() => createForm.value.flowModelId == null ? [] : workflowDeviceRoutes.value[String(createForm.value.flowModelId)] || [])
+const selectedWorkflowRequirements = computed(() => createForm.value.flowModelId == null ? [] : workflowRequirementsByFlow.value[String(createForm.value.flowModelId)] || [])
 const selectedWorkflowGroups = computed(() => createForm.value.flowModelId == null ? [] : workflowGroups.value[String(createForm.value.flowModelId)] || [])
 const selectedWorkflowErrors = computed(() => createForm.value.flowModelId == null ? [] : workflowErrors.value[String(createForm.value.flowModelId)] || [])
-const activeDeviceRoutes = computed(() => activeTask.value == null ? [] : (workflowDeviceRoutes.value[String(activeTask.value.flowModelId)] || []).map(route => {
-  const deviceInstanceId = activeTask.value?.resourceMap?.deviceBindings?.[route.bindingKey]?.deviceInstanceId
-  return { ...route, deviceInstanceId, instanceName: getInstanceName(deviceInstanceId), deviceModelName: getModelName(route.deviceModelId) }
+const activeDeviceRoutes = computed(() => activeTask.value == null ? [] : (workflowRequirementsByFlow.value[String(activeTask.value.flowModelId)] || []).map(requirement => {
+  const deviceInstanceId = activeTask.value?.resourceMap?.deviceBindings?.[requirement.slotId]?.deviceInstanceId
+  return { ...requirement, bindingKey: requirement.slotId, deviceInstanceId, instanceName: getInstanceName(deviceInstanceId), deviceModelName: getModelName(requirement.deviceModelId) }
 }))
 const activeWorkflowDefinition = computed(() => activeTask.value == null ? null : workflowDefinitions.value[String(activeTask.value.flowModelId)] || null)
 const selectedTaskResources = computed(() => {
   const seen = new Set()
-  return selectedDeviceRoutes.value
-    .map(route => ({...route, deviceInstanceId: createForm.value.resourceBindings[route.bindingKey], instanceName: getInstanceName(createForm.value.resourceBindings[route.bindingKey])}))
+  return selectedWorkflowRequirements.value
+    .map(requirement => ({...requirement, bindingKey: requirement.slotId, deviceInstanceId: createForm.value.resourceBindings[requirement.slotId], instanceName: getInstanceName(createForm.value.resourceBindings[requirement.slotId])}))
     .filter(item => {
       const id = item.deviceInstanceId
       if (!id || seen.has(id)) return false
@@ -257,31 +260,30 @@ const setTaskStatus = (status: string) => { taskStatusFilter.value = status; app
 const clearTaskFilters = () => { taskKeyword.value = ''; taskStatusFilter.value = ''; applyTaskFilters() }
 
 
-async function fetchWorkflowRequirements(flowModelId: number) {
-  try {
-    requirementsLoading.value = true
-    const response = await workflowApi.requirements(flowModelId)
-    if (response.data?.success) {
-      workflowRequirements.value = response.data.data?.bindings || []
-    } else {
-      workflowRequirements.value = []
-    }
-  } catch {
-    workflowRequirements.value = []
-  } finally {
-    requirementsLoading.value = false
-  }
-}
-
 async function runPreflight() {
   if (!createForm.value.flowModelId) return
   if (unresolvedTaskConstraintReviews.value) return ElMessage.warning('请先复核受设备绑定变更影响的任务约束')
+  const missingRequirements = selectedWorkflowRequirements.value.filter(requirement => !createForm.value.resourceBindings[requirement.slotId])
+  if (missingRequirements.length) {
+    preflightResult.value = {
+      ready: false,
+      message: `还有 ${missingRequirements.length} 个设备未绑定`,
+      issues: missingRequirements.map(requirement => ({
+        code: 'TASK_BINDING_MISSING',
+        elementId: requirement.slotId,
+        message: `${requirement.occurrencePath || requirement.nodeName}未绑定设备实例`,
+        suggestion: '请选择可用的设备实例',
+        blocking: true
+      }))
+    }
+    return
+  }
   preflighting.value = true
   try {
     const payload = {
       flowModelId: createForm.value.flowModelId,
       taskVariables: {},
-      deviceBindings: buildDeviceBindings(workflowRequirements.value, createForm.value.resourceBindings),
+      deviceBindings: buildDeviceBindings(selectedWorkflowRequirements.value, createForm.value.resourceBindings),
       taskConstraints: createForm.value.taskConstraints || []
     }
     const response = await taskApi.preflight(payload)
@@ -303,8 +305,7 @@ const handleTemplateChange = async (value: number | null) => {
   preflightResult.value = null
   if (value == null) return
   await loadWorkflowRoutes(value)
-  await fetchWorkflowRequirements(value)
-  for (const route of workflowDeviceRoutes.value[String(value)] || []) createForm.value.resourceBindings[route.bindingKey] = null
+  for (const requirement of workflowRequirementsByFlow.value[String(value)] || []) createForm.value.resourceBindings[requirement.slotId] = null
 }
 
 const updateResourceBindings = (next: Record<string, number | null>) => {
@@ -407,12 +408,17 @@ const workflowDetail = async (flowModelId: number) => {
 const loadWorkflowRoutes = async (flowModelId: number) => {
   const key = String(flowModelId)
   if (Object.prototype.hasOwnProperty.call(workflowDeviceRoutes.value,key)) return
-  const expanded = await expandWorkflowDefinition(flowModelId, workflowDetail)
+  const [expanded, requirementsResponse] = await Promise.all([
+    expandWorkflowDefinition(flowModelId, workflowDetail),
+    workflowApi.requirements(flowModelId)
+  ])
+  if (!requirementsResponse.data?.success) throw new Error(requirementsResponse.data?.message || '加载设备绑定要求失败')
+  const requirements = requirementsResponse.data.data?.bindings || []
+  workflowRequirementsByFlow.value[key] = requirements
+  workflowGroups.value[key] = expanded.groups
   workflowDeviceRoutes.value[key] = expanded.deviceRoutes
   workflowNodes.value[key] = expanded.workflowNodes
-  workflowGroups.value[key] = expanded.groups
-  workflowErrors.value[key] = expanded.errors
-  workflowHasDeviceNodes.value[key] = expanded.hasDeviceNodes
+  workflowErrors.value[key] = buildBindingWorkflowView(expanded, requirements).errors
 }
 const fetchTaskSummary = async (silent = false) => {
   try {
@@ -685,7 +691,7 @@ const openCreateDrawer = () => {
 const openTaskConstraint = (index?:number) => {
   if (!createForm.value.flowModelId) return ElMessage.warning('请先选择关联流程')
   if (selectedWorkflowErrors.value.length) return ElMessage.error('流程模型存在设备接口连接错误，不能配置任务约束')
-  if (selectedDeviceRoutes.value.some(route => !createForm.value.resourceBindings[route.bindingKey])) return ElMessage.warning('请先完成全部设备实例绑定')
+  if (selectedWorkflowRequirements.value.some(requirement => !createForm.value.resourceBindings[requirement.slotId])) return ElMessage.warning('请先完成全部设备实例绑定')
   editingTaskConstraintIndex.value = typeof index === 'number' ? index : null
   taskConstraintDialogVisible.value = true
 }
@@ -720,19 +726,11 @@ const submitCreateTask = async () => {
     const selectedWorkflow = processTemplates.value.find(item => item.id === Number(createForm.value.flowModelId))
     if (!isExecutableWorkflow(selectedWorkflow)) throw new Error('请选择已启用的工作流；草稿流程不能创建任务')
     if (selectedWorkflowErrors.value.length) throw new Error('流程模型存在设备接口连接错误，请先修复流程模型')
-    const deviceBindings: Record<string,{deviceModelId:number,deviceInstanceId:number}> = {}
-    for (const route of selectedDeviceRoutes.value) {
-      const instanceId = Number(createForm.value.resourceBindings[route.bindingKey])
-      if (!Number.isInteger(instanceId) || instanceId <= 0) throw new Error(`请为${route.flowName}/${route.nodeName}绑定设备实例`)
-      deviceBindings[route.bindingKey] = { deviceModelId: route.deviceModelId, deviceInstanceId: instanceId }
+    for (const requirement of selectedWorkflowRequirements.value) {
+      const instanceId = Number(createForm.value.resourceBindings[requirement.slotId])
+      if (!Number.isInteger(instanceId) || instanceId <= 0) throw new Error(`请为${requirement.occurrencePath || requirement.nodeName}绑定设备实例`)
     }
-    const payload = {
-      taskName: createForm.value.taskName,
-      flowModelId: createForm.value.flowModelId,
-      resourceMap: { formatVersion: 1, deviceBindings },
-      taskConstraints: createForm.value.taskConstraints,
-      taskVariables: {}
-    }
+    const payload = buildTaskCreatePayload(createForm.value, selectedWorkflowRequirements.value)
     const res = await axios.post('/api/task/save', payload)
     if (!res.data?.success) throw new Error(res.data?.message || '任务创建失败')
     ElMessage.success('任务创建成功')

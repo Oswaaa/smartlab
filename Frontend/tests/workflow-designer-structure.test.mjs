@@ -176,6 +176,15 @@ describe('Task 6 — Designer Structure', () => {
     assert.match(designerSource, /:readonly="!canEdit"/)
   })
 
+  test('persisted workflows expose a confirmed delete action and reset after deletion', () => {
+    assert.match(designerSource, /v-if="form\.id"[^>]*:loading="deleteLoading"[^>]*@click="deleteCurrentWorkflow"/)
+    assert.match(designerSource, /删除流程后无法恢复/)
+    assert.match(designerSource, /workflowApi\.delete\(workflowId\)/)
+    assert.match(designerSource, /localStorage\.removeItem\(layoutKey\(workflowId\)\)/)
+    assert.match(designerSource, /reset\(empty\(\)\)/)
+    assert.match(designerSource, /await loadList\(\)/)
+  })
+
   test('business capability parameters use the new console parameter workspace', () => {
     assert.match(businessSource, /class="capability-config-card"/)
     assert.match(businessSource, /class="capability-parameter-form"/)

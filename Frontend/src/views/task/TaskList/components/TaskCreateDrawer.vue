@@ -1,5 +1,5 @@
 <template>
-  <el-drawer :model-value="modelValue" title="新建任务" size="78%" class="model-drawer unified-workflow-drawer" destroy-on-close @update:model-value="emit('update:modelValue', $event)">
+  <el-drawer :model-value="modelValue" title="新建任务" size="88%" class="model-drawer unified-workflow-drawer" destroy-on-close @update:model-value="emit('update:modelValue', $event)">
     <div class="drawer-body unified-drawer-scroll">
       <el-form ref="formRef" :model="form" :rules="rules" label-position="top">
         <section class="drawer-section">
@@ -12,12 +12,10 @@
           </el-form-item>
         </section>
 
-        <section v-if="routes.length" class="drawer-section">
+        <section v-if="requirements.length || errors.length" class="drawer-section">
           <div class="section-title"><strong>设备实例绑定</strong><span>按流程中设备节点的出现路径绑定具体实例</span></div>
-          <el-alert type="info" :closable="false" title="同一设备实例可以被多个节点复用，执行时仍由设备状态机统一仲裁。" />
-          <TaskResourceBindingCanvas :groups="groups" :routes="routes" :errors="errors" :model-value="form.resourceBindings" :instances="instances" :models="models" @update:model-value="emit('update:resourceBindings', $event)" />
+          <TaskResourceBindingCanvas :requirements="requirements" :groups="groups" :errors="errors" :model-value="form.resourceBindings" :instances="instances" :models="models" @update:model-value="emit('update:resourceBindings', $event)" />
         </section>
-        <section v-else-if="form.flowModelId && hasDeviceNodes" class="drawer-section"><el-alert type="warning" :closable="false" title="该流程包含设备能力节点，但当前无法生成设备绑定路径，请先修复流程模型。" /></section>
 
         <section class="drawer-section"><TaskConstraintPanel :rules="form.taskConstraints || []" :reviews="constraintReviews" @edit="emit('edit-constraint', $event)" @remove="emit('remove-constraint', $event)" /></section>
         <section v-if="form.flowModelId" class="drawer-section">
@@ -26,12 +24,12 @@
         </section>
       </el-form>
     </div>
-    <template #footer><div class="drawer-footer"><el-button class="btn-aliyun" @click="emit('update:modelValue', false)">取消</el-button><el-button class="btn-aliyun" :loading="preflighting" @click="emit('preflight')">检查</el-button><el-button class="btn-aliyun-cta" :loading="creating" @click="emit('submit')">创建任务</el-button></div></template>
+    <template #footer><div class="drawer-footer"><span v-if="missingBindingCount" class="footer-hint">还有 {{ missingBindingCount }} 个设备未绑定</span><el-button class="btn-aliyun" @click="emit('update:modelValue', false)">取消</el-button><el-button class="btn-aliyun" :loading="preflighting" @click="emit('preflight')">检查</el-button><el-button class="btn-aliyun-cta" :loading="creating" :disabled="!canSubmit" @click="emit('submit')">创建任务</el-button></div></template>
   </el-drawer>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
 import TaskConstraintPanel from './TaskConstraintPanel.vue'
 import TaskPreflightPanel from './TaskPreflightPanel.vue'
@@ -43,26 +41,27 @@ const props = withDefaults(defineProps<{
   form: Item,
   workflows?: Item[],
   loadingWorkflows?: boolean,
-  routes?: Item[],
+  requirements?: Item[],
   groups?: Item[],
   errors?: string[],
   instances?: Item[],
   models?: Item[],
-  hasDeviceNodes?: boolean,
   preflightResult?: Item | null,
   preflighting?: boolean,
   creating?: boolean,
   constraintReviews?: Array<string | null>,
-}>(), { workflows:()=>[], routes:()=>[], groups:()=>[], errors:()=>[], instances:()=>[], models:()=>[], preflightResult:null, constraintReviews:()=>[] })
+}>(), { workflows:()=>[], requirements:()=>[], groups:()=>[], errors:()=>[], instances:()=>[], models:()=>[], preflightResult:null, constraintReviews:()=>[] })
 const emit = defineEmits<{
   'update:modelValue':[value:boolean], 'update:taskName':[value:string], 'update:flowModelId':[value:number|null],
   'update:resourceBindings':[value:Record<string,number|null>], 'edit-constraint':[index?:number], 'remove-constraint':[index:number], preflight:[], submit:[]
 }>()
 const formRef = ref<FormInstance>()
 const rules: FormRules = { taskName:[{ required:true, message:'请输入任务名称', trigger:'blur' }], flowModelId:[{ required:true, message:'请选择流程', trigger:'change' }] }
+const missingBindingCount = computed(() => props.requirements.filter(requirement => !props.form.resourceBindings?.[requirement.slotId]).length)
+const canSubmit = computed(() => Boolean(props.form.taskName?.trim() && props.form.flowModelId && !missingBindingCount.value && props.preflightResult?.ready))
 defineExpose({ validate: () => formRef.value?.validate(), clearValidate: () => formRef.value?.clearValidate() })
 </script>
 
 <style scoped>
-.drawer-body{min-height:0;padding:0 16px;box-sizing:border-box}.drawer-section{display:grid;gap:12px;padding:18px 4px;border-bottom:1px solid #edf0f3}.section-title{display:flex;align-items:baseline;gap:10px;border-left:4px solid #1677ff;padding-left:10px}.section-title strong{font-size:14px}.section-title span{color:#8490a0;font-size:10px}.drawer-section :deep(.el-select){width:100%}.drawer-footer{display:flex;justify-content:flex-end;gap:8px}
+.drawer-body{min-height:0;padding:0 16px;box-sizing:border-box}.drawer-section{display:grid;gap:12px;padding:18px 4px;border-bottom:1px solid #edf0f3}.section-title{display:flex;align-items:baseline;gap:10px;border-left:4px solid #1677ff;padding-left:10px}.section-title strong{font-size:14px}.section-title span{color:#8490a0;font-size:10px}.drawer-section :deep(.el-select){width:100%}.drawer-footer{display:flex;align-items:center;justify-content:flex-end;gap:8px}.footer-hint{margin-right:auto;color:#d97706;font-size:12px}
 </style>

@@ -1,114 +1,251 @@
 <template>
-  <div class="resource-binding-layout">
-    <section class="workflow-instance-canvas">
-      <header class="canvas-header">
-        <div><strong>流程实例化视图</strong><span>每个路径代表一次真实的节点出现位置</span></div>
-        <div class="canvas-summary"><el-tag type="success" effect="plain">已绑定{{ boundCount }}</el-tag><el-tag :type="unboundCount ? 'warning' : 'info'" effect="plain">待绑定{{ unboundCount }}</el-tag></div>
-      </header>
-      <el-alert v-if="effectiveErrors.length" type="error" :closable="false" title="流程模型的设备接口连接不完整"><template #default><div v-for="error in effectiveErrors" :key="error">{{ error }}</div></template></el-alert>
-      <div class="flow-groups">
-        <article v-for="group in effectiveGroups" :key="group.groupKey" class="flow-group" :style="{ marginLeft: Math.min(group.depth, 4) * 20 + 'px' }">
-          <header class="flow-group-header"><div><el-tag size="small" effect="plain">{{ group.depth ? '子流程' : '主流程' }}</el-tag><strong>{{ group.flowName }}</strong></div><code>{{ group.occurrencePath }}</code></header>
-          <div class="node-strip">
-            <template v-for="(node, index) in group.nodes" :key="node.occurrenceKey">
-              <button type="button" :class="['workflow-node', node.nodeType.toLowerCase(), { selected: selectedKey === node.bindingKey, bound: node.bindingKey && modelValue[node.bindingKey] }]" :disabled="node.nodeType !== 'DEV_NODE'" @click="selectNode(node)">
-                <span class="node-type">{{ nodeTypeLabel(node.nodeType) }}</span>
-                <strong>{{ node.name }}</strong>
-                <small v-if="node.nodeType === 'DEV_NODE'">{{ modelName(node.deviceModelId) }}</small>
-                <small v-else-if="node.nodeType === 'SUBFLOW_NODE'">展开到下方子流程</small>
-                <small v-else>{{ node.functionType || '流程逻辑' }}</small>
-                <em v-if="node.bindingKey">{{ modelValue[node.bindingKey] ? instanceName(modelValue[node.bindingKey]) : '点击绑定实例' }}</em>
-              </button>
-              <span v-if="index < group.nodes.length - 1" class="node-arrow">→</span>
-            </template>
-          </div>
-          <div v-if="group.connections.length" class="connection-list"><span v-for="connection in group.connections" :key="connection.sourceNodeName + '>' + connection.targetNodeName">{{ connection.sourceNodeName }}→{{ connection.targetNodeName }}</span></div>
-        </article>
+  <section class="resource-binding-panel">
+    <header class="binding-summary">
+      <div>
+        <strong>绑定进度</strong>
+        <span>在流程图中选择设备节点并绑定实际设备</span>
       </div>
-    </section>
+      <div class="summary-actions">
+        <div class="summary-counts">
+          <el-tag type="success" effect="plain">已绑定 {{ boundCount }}</el-tag>
+          <el-tag :type="unboundCount ? 'warning' : 'info'" effect="plain">待绑定 {{ unboundCount }}</el-tag>
+        </div>
+        <el-button v-if="unboundCount" class="btn-aliyun" size="small" @click="locateNextUnbound">定位待绑定节点</el-button>
+      </div>
+    </header>
 
-    <aside class="binding-panel">
-      <template v-if="selectedRoute">
-        <header><span>设备实例绑定</span><el-tag :type="modelValue[selectedRoute.bindingKey] ? 'success' : 'warning'">{{ modelValue[selectedRoute.bindingKey] ? '已绑定' : '待绑定' }}</el-tag></header>
-        <dl><dt>节点路径</dt><dd><code>{{ selectedRoute.bindingKey }}</code></dd><dt>设备模型</dt><dd>{{ modelName(selectedRoute.deviceModelId) }}</dd><dt>状态机接口</dt><dd>{{ selectedRoute.deviceInputInterfaceName }}<br>{{ selectedRoute.deviceOutputInterfaceName }}</dd></dl>
-        <el-select :model-value="modelValue[selectedRoute.bindingKey]" filterable clearable placeholder="选择可用设备实例" style="width:100%" @change="setBinding">
-          <el-option v-for="instance in instancesForRoute" :key="instance.id" :label="instance.instanceName || instance.deviceName || ('设备实例#' + instance.id)" :value="Number(instance.id)"><span>{{ instance.instanceName || instance.deviceName || ('设备实例#' + instance.id) }}</span><small class="instance-option">{{ instance.onlineStatus || '在线状态未知' }}</small></el-option>
-        </el-select>
-        <el-checkbox v-model="inheritRepeatedSubflows" class="inherit-checkbox">同一子流程再次出现时默认继承该绑定</el-checkbox>
-        <el-button class="btn-aliyun" native-type="button" style="width:100%" @click="applyToSameModel">应用到所有未绑定的同模型节点</el-button>
-        <p class="binding-help">子流程节点本身不绑定设备，系统展开其内部DEV_NODE。继承只用于预填，所有节点路径仍独立保存，用户可单独覆盖</p>
-      </template>
-      <el-empty v-else description="点击画布中的设备节点开始绑定" :image-size="72" />
-    </aside>
-  </div>
+    <el-alert v-if="view.errors.length" type="error" :closable="false" title="流程图与设备绑定要求不一致">
+      <template #default><div v-for="error in view.errors" :key="error">{{ error }}</div></template>
+    </el-alert>
+
+    <div class="binding-workspace">
+      <section class="graph-panel">
+        <nav class="flow-breadcrumb" aria-label="流程路径">
+          <button
+            v-for="(group, index) in groupTrail"
+            :key="group.groupKey"
+            type="button"
+            :class="{ current: index === groupTrail.length - 1 }"
+            @click="openGroup(group.groupKey)"
+          >{{ group.flowName }}</button>
+        </nav>
+
+        <div v-if="currentGroup" class="graph-stage">
+          <VueFlow
+            :key="currentGroup.groupKey"
+            :nodes="flowNodes"
+            :edges="flowEdges"
+            :nodes-draggable="false"
+            :nodes-connectable="false"
+            :elements-selectable="true"
+            fit-view-on-init
+            :min-zoom="0.45"
+            :max-zoom="1.35"
+            @node-click="handleNodeClick"
+          >
+            <Background pattern-color="#dfe5ec" :gap="18" />
+            <Controls :show-interactive="false" />
+            <template #node-binding="{ data }">
+              <TaskBindingWorkflowNode :data="data" />
+            </template>
+          </VueFlow>
+          <div class="graph-legend">
+            <span><i class="device"></i>设备节点可绑定</span>
+            <span><i class="subflow"></i>点击进入子流程</span>
+            <span><i class="logic"></i>功能节点仅展示</span>
+          </div>
+        </div>
+        <div v-else class="graph-empty">当前流程没有可显示的节点</div>
+      </section>
+
+      <aside class="binding-editor">
+        <template v-if="selectedRequirement">
+          <header class="editor-header">
+            <div><strong>{{ selectedRequirement.nodeName }}</strong><span>{{ selectedRequirement.occurrencePath }}</span></div>
+            <el-tag :type="modelValue[selectedRequirement.slotId] ? 'success' : 'warning'" effect="plain">
+              {{ modelValue[selectedRequirement.slotId] ? '已绑定' : '待绑定' }}
+            </el-tag>
+          </header>
+
+          <dl class="binding-details">
+            <div><dt>设备模型</dt><dd>{{ modelName(selectedRequirement.deviceModelId) }}</dd></div>
+            <div><dt>设备能力</dt><dd>{{ selectedRequirement.capabilityName || '未指定' }}</dd></div>
+          </dl>
+
+          <div class="instance-field">
+            <label>执行设备</label>
+            <el-select
+              :model-value="modelValue[selectedRequirement.slotId]"
+              filterable
+              clearable
+              placeholder="选择兼容的设备实例"
+              @change="setBinding"
+            >
+              <el-option
+                v-for="instance in selectedInstances"
+                :key="instance.id"
+                :label="instanceName(instance)"
+                :value="Number(instance.id)"
+              >
+                <span>{{ instanceName(instance) }}</span>
+                <small class="instance-status">{{ instanceStatusLabel(instance) }}</small>
+              </el-option>
+            </el-select>
+            <small v-if="!selectedInstances.length" class="field-warning">没有兼容且可用的设备实例</small>
+          </div>
+
+          <el-button
+            v-if="modelValue[selectedRequirement.slotId] && sameModelUnboundCount"
+            class="btn-aliyun"
+            plain
+            @click="applyToSameModel"
+          >应用到其他同模型节点</el-button>
+        </template>
+
+        <div v-else class="editor-empty">
+          <span>选择设备节点</span>
+          <p>点击流程图中的设备能力节点，在此选择实际执行设备。</p>
+        </div>
+      </aside>
+    </div>
+  </section>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { applyInheritedBinding } from '../../../../utils/taskResourceBindings.js'
+import { Background } from '@vue-flow/background'
+import { Controls } from '@vue-flow/controls'
+import { VueFlow } from '@vue-flow/core'
+import '@vue-flow/core/dist/style.css'
+import '@vue-flow/core/dist/theme-default.css'
+import '@vue-flow/controls/dist/style.css'
+import { buildBindingWorkflowView, compatibleInstances } from '../../../../utils/taskResourceBindings.js'
+import TaskBindingWorkflowNode from './TaskBindingWorkflowNode.vue'
 
-const props = defineProps<{
-  groups?: any[]
-  routes?: any[]
+type Item = Record<string, any>
+const props = withDefaults(defineProps<{
+  requirements?: Item[]
+  groups?: Item[]
   errors?: string[]
-  requirements?: any[]
   modelValue: Record<string, number | null>
-  instances: any[]
-  models: any[]
-}>()
-const emit = defineEmits<{ (event: 'update:modelValue', value: Record<string, number | null>): void }>()
-const effectiveRoutes = computed(() => {
-  if (props.requirements?.length) {
-    return props.requirements.map(req => ({
-      bindingKey: req.slotId,
-      deviceModelId: Number(req.deviceModelId),
-      nodeName: req.nodeName,
-      flowName: req.flowName,
-      depth: 0,
-      occurrencePath: req.occurrencePath || req.slotId,
-      inheritanceKey: String(req.flowModelId) + ':' + String(req.nodeIdRef),
-      deviceInputInterfaceName: '',
-      deviceOutputInterfaceName: '',
-      interfaceValid: true
-    }))
-  }
-  return props.routes || []
-})
-const effectiveErrors = computed(() => props.errors || [])
-const effectiveGroups = computed(() => props.groups || [])
-const selectedKey = ref('')
-const selectedRoute = computed(() => effectiveRoutes.value.find(route => route.bindingKey === selectedKey.value) || null)
-const inheritRepeatedSubflows = ref(true)
-const boundCount = computed(() => effectiveRoutes.value.filter(route => props.modelValue[route.bindingKey]).length)
-const unboundCount = computed(() => effectiveRoutes.value.length - boundCount.value)
-const instancesForRoute = computed(() => selectedRoute.value == null ? [] : props.instances.filter(instance => Number(instance.deviceModelId ?? instance.modelId) === Number(selectedRoute.value.deviceModelId) && (!instance.lifecycleStatus || instance.lifecycleStatus === 'IN_USE')))
+  instances?: Item[]
+  models?: Item[]
+}>(), { requirements: () => [], groups: () => [], errors: () => [], instances: () => [], models: () => [] })
 
-watch(() => effectiveRoutes.value, routes => {
-  if (!routes.some(route => route.bindingKey === selectedKey.value)) selectedKey.value = routes.find(route => !props.modelValue[route.bindingKey])?.bindingKey || routes[0]?.bindingKey || ''
+const emit = defineEmits<{ 'update:modelValue': [value: Record<string, number | null>] }>()
+const activeGroupKey = ref('root')
+const selectedSlotId = ref('')
+const view = computed(() => buildBindingWorkflowView({ groups: props.groups, errors: props.errors }, props.requirements))
+const groupsByKey = computed(() => new Map(view.value.groups.map(group => [group.groupKey, group])))
+const currentGroup = computed(() => groupsByKey.value.get(activeGroupKey.value) || view.value.groups[0] || null)
+const selectedRequirement = computed(() => props.requirements.find(requirement => String(requirement.slotId) === selectedSlotId.value) || null)
+const boundCount = computed(() => props.requirements.filter(requirement => props.modelValue[requirement.slotId]).length)
+const unboundCount = computed(() => props.requirements.length - boundCount.value)
+const selectedInstances = computed(() => selectedRequirement.value ? compatibleInstances(selectedRequirement.value, props.instances, props.models) : [])
+const sameModelUnboundCount = computed(() => selectedRequirement.value == null ? 0 : props.requirements.filter(requirement =>
+  Number(requirement.deviceModelId) === Number(selectedRequirement.value.deviceModelId) && !props.modelValue[requirement.slotId]
+).length)
+const groupTrail = computed(() => {
+  const trail: Item[] = []
+  let group = currentGroup.value
+  while (group) {
+    trail.unshift(group)
+    group = group.parentGroupKey ? groupsByKey.value.get(group.parentGroupKey) : null
+  }
+  return trail
+})
+const flowNodes = computed(() => (currentGroup.value?.nodes || []).map((node: Item, index: number) => ({
+  id: nodeId(currentGroup.value.groupKey, node.name),
+  type: 'binding',
+  position: node.position || { x: 70 + (index % 3) * 300, y: 70 + Math.floor(index / 3) * 150 },
+  draggable: false,
+  selectable: true,
+  data: {
+    ...node,
+    selected: node.slotId != null && String(node.slotId) === selectedSlotId.value,
+    bound: node.slotId != null && Boolean(props.modelValue[node.slotId]),
+    boundInstanceName: node.slotId == null ? '' : instanceNameById(props.modelValue[node.slotId])
+  }
+})))
+const flowEdges = computed(() => (currentGroup.value?.interfaceConnections || []).map((connection: Item, index: number) => ({
+  id: `binding-edge:${currentGroup.value.groupKey}:${index}`,
+  source: nodeId(currentGroup.value.groupKey, connection.source?.nodeName),
+  target: nodeId(currentGroup.value.groupKey, connection.target?.nodeName),
+  type: 'smoothstep',
+  pathOptions: { offset: 26, borderRadius: 6 },
+  style: { stroke: '#7890ad', strokeWidth: 1.8 }
+})))
+
+watch(() => props.groups, groups => {
+  if (!groups.some(group => group.groupKey === activeGroupKey.value)) activeGroupKey.value = groups[0]?.groupKey || 'root'
+  if (!props.requirements.some(requirement => String(requirement.slotId) === selectedSlotId.value)) selectedSlotId.value = ''
 }, { immediate: true, deep: true })
 
-function selectNode(node: any) { if (node.nodeType === 'DEV_NODE') selectedKey.value = node.bindingKey }
-function nodeTypeLabel(type: string) { return ({ DEV_NODE: '设备', SUBFLOW_NODE: '子流程', FUNC_NODE: '功能' } as Record<string, string>)[type] || type }
-function modelName(id: any) { return props.models.find(model => Number(model.id ?? model.modelId) === Number(id))?.modelName || `设备模型#${id}` }
-function instanceName(id: any) { const instance = props.instances.find(item => Number(item.id) === Number(id)); return instance?.instanceName || instance?.deviceName || `实例#${id}` }
-function setBinding(value: number | null) {
-  if (!selectedRoute.value) return
-  if (value == null) { emit('update:modelValue', { ...props.modelValue, [selectedRoute.value.bindingKey]: null }); return }
-  const next = inheritRepeatedSubflows.value && selectedRoute.value.depth > 0
-    ? applyInheritedBinding(effectiveRoutes.value, props.modelValue, selectedRoute.value, Number(value))
-    : { ...props.modelValue, [selectedRoute.value.bindingKey]: Number(value) }
-  emit('update:modelValue', next)
+function nodeId(groupKey: string, nodeName: string) {
+  return `task-binding:${encodeURIComponent(groupKey)}:${encodeURIComponent(nodeName || '')}`
 }
+
+function handleNodeClick({ node }: { node: Item }) {
+  const data = node.data || {}
+  if (data.nodeType === 'DEV_NODE' && data.slotId && !data.bindingInvalid) selectedSlotId.value = String(data.slotId)
+  if (data.nodeType === 'SUBFLOW_NODE') enterChildFlow(data)
+}
+
+function enterChildFlow(node: Item) {
+  if (!node.childGroupKey || !groupsByKey.value.has(node.childGroupKey)) return
+  activeGroupKey.value = node.childGroupKey
+  selectedSlotId.value = ''
+}
+
+function openGroup(groupKey: string) {
+  if (!groupsByKey.value.has(groupKey)) return
+  activeGroupKey.value = groupKey
+  selectedSlotId.value = ''
+}
+
+function locateNextUnbound() {
+  const requirement = props.requirements.find(item => !props.modelValue[item.slotId])
+  if (!requirement) return
+  const group = view.value.groups.find(item => item.nodes.some((node: Item) => String(node.slotId) === String(requirement.slotId)))
+  if (group) activeGroupKey.value = group.groupKey
+  selectedSlotId.value = String(requirement.slotId)
+}
+
+function modelName(id: unknown) {
+  return props.models.find(model => Number(model.id ?? model.modelId) === Number(id))?.modelName || `设备模型 #${id}`
+}
+
+function instanceName(instance: Item) {
+  return instance.instanceName || instance.deviceName || `设备实例 #${instance.id}`
+}
+
+function instanceNameById(id: unknown) {
+  const instance = props.instances.find(item => Number(item.id) === Number(id))
+  return instance ? instanceName(instance) : ''
+}
+
+function instanceStatusLabel(instance: Item) {
+  const status = String(instance.onlineStatus || instance.lifecycleStatus || '').toUpperCase()
+  return ({ ONLINE: '在线', OFFLINE: '离线', IN_USE: '可用', RETIRED: '已停用', BUSY: '忙碌' } as Record<string, string>)[status] || '状态未知'
+}
+
+function setBinding(value: number | null) {
+  if (!selectedRequirement.value) return
+  emit('update:modelValue', { ...props.modelValue, [selectedRequirement.value.slotId]: value == null ? null : Number(value) })
+}
+
 function applyToSameModel() {
-  if (!selectedRoute.value) return
-  const value = props.modelValue[selectedRoute.value.bindingKey]
-  if (!value) return
+  if (!selectedRequirement.value) return
+  const instanceId = props.modelValue[selectedRequirement.value.slotId]
+  if (!instanceId) return
   const next = { ...props.modelValue }
-  for (const route of effectiveRoutes.value) if (Number(route.deviceModelId) === Number(selectedRoute.value.deviceModelId) && !next[route.bindingKey]) next[route.bindingKey] = value
+  for (const requirement of props.requirements) {
+    if (Number(requirement.deviceModelId) === Number(selectedRequirement.value.deviceModelId) && !next[requirement.slotId]) next[requirement.slotId] = instanceId
+  }
   emit('update:modelValue', next)
 }
 </script>
 
 <style scoped>
-.resource-binding-layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:14px;min-height:420px}.workflow-instance-canvas,.binding-panel{border:1px solid #dfe4ea;border-radius:8px;background:#fff}.workflow-instance-canvas{min-width:0;background:#f7f9fc}.canvas-header{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid #dfe4ea;background:#fff}.canvas-header>div:first-child{display:grid;gap:3px}.canvas-header span{font-size:12px;color:#64748b}.canvas-summary{display:flex;gap:6px}.flow-groups{display:grid;gap:12px;padding:14px;overflow:auto;max-height:560px}.flow-group{border:1px solid #dfe4ea;border-radius:7px;background:#fff;box-shadow:0 1px 2px rgba(15,23,42,.04)}.flow-group-header{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:9px 12px;border-bottom:1px solid #edf0f4}.flow-group-header>div{display:flex;align-items:center;gap:8px}.flow-group-header code{font-size:11px;color:#64748b}.node-strip{display:flex;align-items:center;gap:8px;padding:14px;overflow-x:auto}.workflow-node{display:grid;gap:5px;min-width:150px;max-width:190px;padding:10px 12px;text-align:left;border:1px solid #cfd6df;border-radius:7px;background:#fff;color:#1f2937;cursor:pointer}.workflow-node:disabled{cursor:default;opacity:1}.workflow-node.dev_node:hover,.workflow-node.selected{border-color:#1677ff;box-shadow:0 0 0 2px rgba(22,119,255,.12)}.workflow-node.bound{border-left:4px solid #22a06b}.workflow-node.subflow_node{background:#f5f3ff;border-color:#d8b4fe}.workflow-node.func_node{background:#fffaf0;border-color:#f5d28b}.node-type{font-size:11px;color:#64748b}.workflow-node small{color:#64748b}.workflow-node em{font-size:11px;color:#1677ff;font-style:normal}.connection-list{display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 12px}.connection-list span{padding:3px 7px;border-radius:4px;background:#eef2f7;color:#5b6472;font-size:11px}.binding-panel{padding:16px;align-self:start;position:sticky;top:0}.binding-panel>header{display:flex;align-items:center;justify-content:space-between;font-weight:600}.binding-panel dl{display:grid;grid-template-columns:72px 1fr;gap:9px;margin:18px 0;font-size:12px}.binding-panel dt{color:#64748b}.binding-panel dd{margin:0;min-width:0;color:#1f2937}.binding-panel code{overflow-wrap:anywhere}.inherit-checkbox{margin:12px 0 8px}.binding-help{margin:12px 0 0;color:#64748b;font-size:11px;line-height:1.6}.instance-option{float:right;color:#8a93a6;margin-left:16px}@media(max-width:1000px){.resource-binding-layout{grid-template-columns:1fr}.binding-panel{position:static}}
+.resource-binding-panel{overflow:hidden;border:1px solid #dfe4ea;border-radius:6px;background:#fff}.binding-summary{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:58px;padding:10px 14px;border-bottom:1px solid #e5e9ef;background:#fafbfc;box-sizing:border-box}.binding-summary>div:first-child{display:grid;gap:3px}.binding-summary strong{color:#1f2329;font-size:13px}.binding-summary span{color:#7b8494;font-size:10px}.summary-actions,.summary-counts{display:flex;align-items:center;gap:7px}.resource-binding-panel>.el-alert{margin:12px;width:auto}.binding-workspace{display:grid;grid-template-columns:minmax(0,1fr) 286px;min-height:500px}.graph-panel{min-width:0;border-right:1px solid #e5e9ef;background:#f7f9fc}.flow-breadcrumb{height:42px;display:flex;align-items:center;gap:0;padding:0 12px;border-bottom:1px solid #e5e9ef;background:#fff}.flow-breadcrumb button{position:relative;padding:0 20px 0 6px;border:0;background:transparent;color:#687487;font-size:11px;cursor:pointer}.flow-breadcrumb button::after{content:'›';position:absolute;right:7px;color:#a0a8b4}.flow-breadcrumb button:last-child::after{display:none}.flow-breadcrumb button.current{color:#1f2937;font-weight:600;cursor:default}.graph-stage{position:relative;height:458px}.graph-stage :deep(.vue-flow){height:100%}.graph-stage :deep(.vue-flow__pane){cursor:default}.graph-stage :deep(.vue-flow__controls){border:1px solid #d8dee7;border-radius:4px;box-shadow:0 2px 7px rgba(31,45,61,.08)}.graph-stage :deep(.vue-flow__edge-path){stroke:#7890ad;stroke-width:1.8}.graph-stage :deep(.vue-flow__edge.selected .vue-flow__edge-path){stroke:#1677ff;stroke-width:2.2}.graph-legend{position:absolute;right:10px;bottom:10px;z-index:4;display:flex;align-items:center;gap:11px;padding:6px 8px;border:1px solid #dfe4ea;border-radius:4px;background:rgba(255,255,255,.94);color:#7c8796;font-size:9px}.graph-legend span{display:flex;align-items:center;gap:4px}.graph-legend i{width:7px;height:7px;border-radius:2px;background:#aeb7c4}.graph-legend i.device{background:#1677ff}.graph-legend i.subflow{background:#7053b3}.graph-empty{height:458px;display:grid;place-items:center;color:#8a94a3;font-size:11px}.binding-editor{padding:15px;background:#fff}.editor-header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding-bottom:13px;border-bottom:1px solid #edf0f3}.editor-header>div{display:grid;gap:4px;min-width:0}.editor-header strong{overflow:hidden;color:#1f2937;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.editor-header span{color:#8a94a3;font-size:9px;line-height:1.5}.binding-details{display:grid;margin:0;border-bottom:1px solid #edf0f3}.binding-details>div{display:grid;grid-template-columns:66px 1fr;gap:9px;padding:10px 0}.binding-details dt,.binding-details dd{margin:0;font-size:10px}.binding-details dt{color:#8a94a3}.binding-details dd{color:#354052}.instance-field{display:grid;gap:7px;padding:14px 0}.instance-field label{color:#4f5d70;font-size:10px;font-weight:600}.instance-field :deep(.el-select){width:100%}.instance-status{float:right;margin-left:16px;color:#8a94a3}.field-warning{color:#d97706;font-size:9px}.binding-editor>.el-button{width:100%;margin-top:4px}.editor-empty{height:100%;display:grid;align-content:center;justify-items:center;padding:24px;text-align:center;box-sizing:border-box}.editor-empty span{color:#4d596a;font-size:12px;font-weight:600}.editor-empty p{max-width:210px;margin:7px 0 0;color:#8a94a3;font-size:10px;line-height:1.6}@media(max-width:1050px){.binding-workspace{grid-template-columns:1fr}.graph-panel{border-right:0;border-bottom:1px solid #e5e9ef}.binding-editor{min-height:190px}.editor-empty{min-height:150px}}@media(max-width:760px){.binding-summary{align-items:flex-start;flex-direction:column}.summary-actions{width:100%;justify-content:space-between}.graph-stage,.graph-empty{height:390px}.graph-legend{display:none}}
 </style>

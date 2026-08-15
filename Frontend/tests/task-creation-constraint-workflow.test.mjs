@@ -15,6 +15,24 @@ test('task creation drawer keeps task constraints reachable in its own scroll ar
   assert.match(drawer, /<TaskConstraintPanel/)
 })
 
+test('task creation binds devices by clicking nodes in the workflow graph while keeping backend slot ids', () => {
+  const drawer = readSource('views/task/TaskList/components/TaskCreateDrawer.vue')
+  const bindingPanel = readSource('views/task/TaskList/components/TaskResourceBindingCanvas.vue')
+  const taskList = readSource('views/task/TaskList/TaskList.vue')
+
+  assert.match(drawer, /:requirements="requirements"/)
+  assert.match(drawer, /:groups="groups"/)
+  assert.match(drawer, /设备实例绑定/)
+  assert.match(bindingPanel, /<VueFlow/)
+  assert.match(bindingPanel, /TaskBindingWorkflowNode/)
+  assert.match(bindingPanel, /@node-click="handleNodeClick"/)
+  assert.match(bindingPanel, /进入子流程|enterChildFlow/)
+  assert.match(bindingPanel, /modelValue\[selectedRequirement\.slotId\]/)
+  assert.match(taskList, /:groups="selectedWorkflowGroups"/)
+  assert.match(taskList, /buildBindingWorkflowView\(expanded, requirements\)\.errors/)
+  assert.doesNotMatch(taskList, /bindRequirementsToExpandedWorkflow/)
+})
+
 test('changing device bindings preserves rules and marks only affected rules for review', () => {
   const taskList = readSource('views/task/TaskList/TaskList.vue')
   const panel = readSource('views/task/TaskList/components/TaskConstraintPanel.vue')

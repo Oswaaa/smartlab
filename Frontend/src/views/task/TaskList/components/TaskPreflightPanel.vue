@@ -18,7 +18,7 @@
             <component :is="check.passed ? 'CircleCheck' : 'CircleClose'" />
           </el-icon>
           <div>
-            <strong>{{ check.label || check.code }}</strong>
+            <strong>{{ check.label || check.message || '检查项' }}</strong>
             <span v-if="!check.passed">{{ check.detail || check.message }}</span>
           </div>
           <el-tag v-if="check.severity === 'ERROR'" size="small" type="danger">阻断</el-tag>
@@ -26,9 +26,9 @@
         </div>
       </div>
       <div v-if="result.issues?.length" class="preflight-issues">
-        <div v-for="issue in result.issues" :key="issue.code" class="preflight-issue-row">
+        <div v-for="(issue, index) in result.issues" :key="issue.elementId || issue.code || index" class="preflight-issue-row">
           <el-tag size="small" :type="issue.blocking ? 'danger' : 'warning'">{{ issue.blocking ? '阻断' : '提醒' }}</el-tag>
-          <div><strong>{{ issue.code }}</strong><span>{{ [issue.message, issue.suggestion].filter(Boolean).join('。') }}</span></div>
+          <div><strong>{{ presentPreflightIssue(issue).title }}</strong><span>{{ presentPreflightIssue(issue).detail }}</span></div>
         </div>
       </div>
     </template>
@@ -41,6 +41,7 @@
 
 <script setup lang="ts">
 import { CircleCheck, CircleClose, CircleCheckFilled, WarningFilled } from '@element-plus/icons-vue'
+import { presentPreflightIssue } from '../taskPreflightPresentation.js'
 
 type Item = Record<string, any>
 defineProps<{ result?: Item | null, loading?: boolean }>()

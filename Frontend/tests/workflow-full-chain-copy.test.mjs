@@ -57,7 +57,9 @@ describe('Task 9 — Full-Chain Copy Regression', () => {
     assert.match(drawer, /TaskResourceBindingCanvas/)
     assert.match(drawer, /TaskConstraintPanel/)
     assert.match(drawer, /发布启用|已发布|可执行流程/)
-    assert.match(bindingCanvas, /v-for="\(node, index\) in group\.nodes"/)
+    assert.match(bindingCanvas, /VueFlow/)
+    assert.match(bindingCanvas, /TaskBindingWorkflowNode/)
+    assert.match(bindingCanvas, /selectedRequirement\.slotId/)
   })
 
   test('execution drawer exposes the confirmed runtime views', () => {

@@ -2,13 +2,13 @@
   <aside class="device-model-tree">
     <header class="tree-header">
       <div class="tree-heading">
-        <strong>类别 / 模型</strong>
-        <span>{{ visibleModelCount }} 个模型</span>
+        <span class="tree-heading-title">类别 / 模型</span>
+        <span class="tree-heading-count">{{ visibleModelCount }} 个模型</span>
       </div>
-      <button v-if="!readonly" class="tree-toolbar-action" type="button" aria-label="新建根类别" @click="startCreateRoot">
+      <button v-if="!readonly" class="btn-aliyun-cta" type="button" aria-label="新建根类别" @click="startCreateRoot">
         <el-icon><FolderAdd /></el-icon><span>新增类别</span>
       </button>
-      <button v-else class="tree-toolbar-action" type="button" @click="emit('select-category', { categoryId: '' })">
+      <button v-else class="btn-aliyun" type="button" @click="emit('select-category', { categoryId: '' })">
         <el-icon><List /></el-icon><span>全部实例</span>
       </button>
     </header>
@@ -16,13 +16,13 @@
     <div class="tree-search-row">
       <el-input
         :model-value="keyword"
-        placeholder="搜索类别或模型"
+        placeholder="搜索类别或模型..."
         clearable
+        size="small"
         :prefix-icon="Search"
         @update:model-value="value => emit('update:keyword', value)"
       />
     </div>
-
 
     <el-scrollbar class="tree-body" v-loading="loading">
       <el-tree
@@ -35,13 +35,14 @@
         :current-node-key="currentNodeKey"
         :default-expanded-keys="rootExpandedKeys"
         highlight-current
+        :indent="14"
         class="category-model-tree"
         @node-click="handleNodeClick"
       >
         <template #default="{ node, data }">
           <form v-if="data.type === 'editor'" class="tree-inline-editor" @click.stop @submit.prevent="submitEditor">
             <span class="tree-expander-placeholder"></span>
-            <el-icon class="node-icon category-icon"><FolderAdd /></el-icon>
+            <el-icon class="t-icon category-icon"><FolderAdd /></el-icon>
             <el-input v-model="editor.categoryName" size="small" class="inline-editor-input" placeholder="类别名称" autofocus />
             <div class="inline-editor-actions">
               <button class="inline-editor-action confirm" type="submit" aria-label="保存"><el-icon><Check /></el-icon></button>
@@ -51,7 +52,7 @@
 
           <form v-else-if="isRenamingCategory(data)" class="tree-inline-editor" @click.stop @submit.prevent="submitEditor">
             <span class="tree-expander-placeholder"></span>
-            <el-icon class="node-icon category-icon"><Folder /></el-icon>
+            <el-icon class="t-icon category-icon"><Folder /></el-icon>
             <el-input v-model="editor.categoryName" size="small" class="inline-editor-input" placeholder="类别名称" autofocus />
             <div class="inline-editor-actions">
               <button class="inline-editor-action confirm" type="submit" aria-label="保存"><el-icon><Check /></el-icon></button>
@@ -59,35 +60,45 @@
             </div>
           </form>
 
-          <div v-else class="tree-node" :class="[data.type, { active: isNodeActive(data) }]">
-            <button
-              v-if="data.type === 'category' && hasVisibleChildren(data)"
-              class="tree-expander"
-              type="button"
-              :aria-label="node.expanded ? '收起' : '展开'"
-              @click.stop="toggleNode(node)"
-            >
-              <el-icon :class="{ expanded: node.expanded }"><CaretRight /></el-icon>
-            </button>
-            <span v-else class="tree-expander-placeholder"></span>
+          <div v-else class="t-row" :class="[data.type, { active: isNodeActive(data) }]">
+            <div class="t-row-left">
+              <button
+                v-if="data.type === 'category' && hasVisibleChildren(data)"
+                class="tree-expander"
+                type="button"
+                :aria-label="node.expanded ? '收起' : '展开'"
+                @click.stop="toggleNode(node)"
+              >
+                <el-icon :class="{ expanded: node.expanded }"><CaretRight /></el-icon>
+              </button>
+              <span v-else class="tree-expander-placeholder"></span>
 
-            <el-icon v-if="data.type === 'category'" class="node-icon category-icon">
-              <FolderOpened v-if="node.expanded && hasVisibleChildren(data)" />
-              <Folder v-else />
-            </el-icon>
-            <el-icon v-else class="node-icon model-icon"><Document /></el-icon>
+              <el-icon v-if="data.type === 'category'" class="t-icon category-icon">
+                <FolderOpened v-if="node.expanded && hasVisibleChildren(data)" />
+                <Folder v-else />
+              </el-icon>
+              <el-icon v-else class="t-icon model-icon"><Document /></el-icon>
 
-            <div class="node-text" :title="nodeTitle(data)">
-              <span class="node-label">{{ data.label }}</span>
-              <span v-if="data.type === 'category' && categoryMeta(data)" class="node-meta">{{ categoryMeta(data) }}</span>
-              <span v-else-if="data.type === 'model'" class="node-meta">{{ data.meta }}</span>
+              <span class="t-label" :title="nodeTitle(data)">{{ data.label }}</span>
             </div>
 
-            <div v-if="data.type === 'category' && !data.readonly && !readonly" class="node-actions" @click.stop>
-              <button class="node-action" type="button" aria-label="新增子类别" @click="startCreateChild(data)"><el-icon><FolderAdd /></el-icon></button>
-              <button v-if="data.canCreateModel && canCreateModel" class="node-action model-action" type="button" aria-label="新增模型" @click="emit('create-model', data)"><el-icon><DocumentAdd /></el-icon></button>
-              <button class="node-action" type="button" aria-label="重命名类别" @click="startRename(data)"><el-icon><EditPen /></el-icon></button>
-              <button class="node-action danger" type="button" :disabled="!data.canDelete" :aria-label="data.canDelete ? '删除类别' : '仅空叶子类别可删除'" @click="emit('delete-category', data)"><el-icon><Delete /></el-icon></button>
+            <div class="t-row-right">
+              <div v-if="data.type === 'category' && !data.readonly && !readonly" class="node-actions" @click.stop>
+                <el-tooltip content="新增子类别" placement="top">
+                  <button class="node-action" type="button" aria-label="新增子类别" @click.stop="startCreateChild(data)"><el-icon><FolderAdd /></el-icon></button>
+                </el-tooltip>
+                <el-tooltip v-if="data.canCreateModel && canCreateModel" content="为该类别新建模型" placement="top">
+                  <button class="node-action model-action" type="button" aria-label="为该类别新建模型" @click.stop="emit('create-model', data)"><el-icon><DocumentAdd /></el-icon></button>
+                </el-tooltip>
+                <el-tooltip :content="data.canRename ? '重命名类别' : '已有子类别或模型的分类禁止直接重命名'" placement="top">
+                  <button class="node-action" type="button" :disabled="!data.canRename" aria-label="重命名类别" @click.stop="startRename(data)"><el-icon><EditPen /></el-icon></button>
+                </el-tooltip>
+                <el-tooltip :content="data.canDelete ? '删除类别' : '仅无模型且无子类别的空分类可删除'" placement="top">
+                  <button class="node-action danger" type="button" :disabled="!data.canDelete" aria-label="删除类别" @click.stop="emit('delete-category', data)"><el-icon><Delete /></el-icon></button>
+                </el-tooltip>
+              </div>
+              <span v-if="data.type === 'category' && categoryMeta(data)" class="t-badge">{{ categoryMeta(data) }}</span>
+              <span v-else-if="data.type === 'model' && data.meta" class="t-badge">{{ data.meta }}</span>
             </div>
           </div>
         </template>
@@ -178,6 +189,7 @@ const treeData = computed(() => {
       totalModelCount: uncategorizedModels.length,
       hasCategoryChildren: false,
       canCreateModel: false,
+      canRename: false,
       canDelete: false,
       readonly: true,
       children: uncategorizedModels
@@ -188,10 +200,6 @@ const treeData = computed(() => {
 })
 
 const visibleModelCount = computed(() => countModels(treeData.value))
-const editorTitle = computed(() => {
-  if (editor.mode === 'rename') return '重命名类别'
-  return editor.parentLabel ? `新增到：${editor.parentLabel}` : '新增根类别'
-})
 
 watch([treeData, normalizedKeyword], syncExpandedNodes, { immediate: true })
 
@@ -235,6 +243,7 @@ function buildCategoryNode(category, forceInclude) {
     totalModelCount,
     hasCategoryChildren,
     canCreateModel: !hasCategoryChildren,
+    canRename: !hasCategoryChildren && directModels.length === 0,
     canDelete: !hasCategoryChildren && directModels.length === 0,
     children
   }
@@ -404,11 +413,15 @@ function asArray(value) {
 
 <style scoped>
 .device-model-tree {
+  width: 270px;
+  height: 100%;
   display: flex;
-  min-height: 0;
   flex-direction: column;
-  background: #f8fafc;
-  border-right: 1px solid #ccd6e3;
+  background: #ffffff;
+  border-right: 1px solid var(--sl-border-base);
+  box-sizing: border-box;
+  overflow: hidden;
+  flex-shrink: 0;
 }
 
 .tree-header {
@@ -416,516 +429,268 @@ function asArray(value) {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 10px 10px 8px;
-  background: #fff;
-  border-bottom: 1px solid #dfe6ef;
-}
-
-.tree-toolbar-action {
-  display: inline-flex;
-  height: 28px;
-  align-items: center;
-  gap: 4px;
-  padding: 0 8px;
-  border: 1px solid #d9d9d9;
-  border-radius: 4px;
+  padding: 8px 12px;
   background: #ffffff;
-  color: rgba(0, 0, 0, 0.88);
-  cursor: pointer;
-  font-size: 12px;
-  transition: all 0.15s ease;
-}
-
-.tree-toolbar-action:hover {
-  background: #ffffff;
-  border-color: #4096ff;
-  color: #1677ff;
+  border-bottom: 1px solid var(--sl-border-base);
+  flex-shrink: 0;
 }
 
 .tree-heading {
   display: flex;
-  min-width: 0;
   flex-direction: column;
+  gap: 1px;
+}
+.tree-heading-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sl-text-heading);
+}
+.tree-heading-count {
+  font-size: 11px;
+  color: var(--sl-text-secondary);
+}
+
+.tree-search-row {
+  padding: 6px 10px;
+  background: #ffffff;
+  border-bottom: 1px solid var(--sl-border-subtle);
+  flex-shrink: 0;
+}
+
+.tree-body {
+  flex: 1;
+  min-height: 0;
+  padding: 4px 6px;
+}
+
+.category-model-tree {
+  background: transparent;
+}
+
+:deep(.el-tree-node__content) {
+  height: 27px;
+  padding-left: 0 !important;
+  border-radius: 4px;
+}
+:deep(.el-tree-node__expand-icon) {
+  display: none;
+}
+
+/* 树状层级细虚线引导系统 */
+:deep(.el-tree-node__children) {
+  position: relative;
+  margin-left: 10px;
+  padding-left: 2px;
+  border-left: 1px dashed #e2e8f0;
+}
+
+.t-row {
+  width: 100%;
+  height: 27px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 4px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin: 0;
+  background: transparent;
+  transition: all 0.15s ease;
+  box-sizing: border-box;
+}
+.t-row:hover {
+  background: #f1f5f9;
+}
+
+.t-row-left {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.tree-expander {
+  display: inline-flex;
+  width: 16px;
+  height: 16px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 10px;
+  flex-shrink: 0;
+}
+.tree-expander .el-icon {
+  transition: transform 0.14s ease;
+}
+.tree-expander .el-icon.expanded {
+  transform: rotate(90deg);
+}
+.tree-expander-placeholder {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.t-icon {
+  font-size: 13.5px;
+  color: var(--sl-text-secondary);
+  flex-shrink: 0;
+}
+.category-icon { color: #64748b; }
+.model-icon { color: #2563eb; }
+
+.t-label {
+  font-size: 12.5px;
+  color: var(--sl-text-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.t-row.category .t-label {
+  font-weight: 600;
+  color: #1e293b;
+}
+.t-row.model .t-label {
+  font-weight: 500;
+  color: #334155;
+}
+
+.t-row-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.t-badge {
+  font-size: 10.5px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: #f1f5f9;
+  color: var(--sl-text-secondary);
+  font-family: var(--sl-font-mono);
+  font-weight: 400;
+}
+
+/* 激活高亮状态 (方案三：柔和微圆角浅蓝药丸高亮) */
+.t-row.active {
+  background: #eff6ff !important;
+  font-weight: 600;
+}
+.t-row.active .t-label {
+  color: #2563eb !important;
+}
+.t-row.active .t-icon {
+  color: #2563eb !important;
+}
+.t-row.active .t-badge {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.node-actions {
+  display: none;
+  align-items: center;
   gap: 2px;
 }
-
-.tree-heading strong {
-  color: #0f172a;
-  font-size: 15px;
-  line-height: 1.2;
-}
-
-.tree-heading span,
-.node-meta {
-  color: #64748b;
-  font-size: 12px;
-  line-height: 1.3;
-}
-
-.tree-search-row {
-  padding: 8px 10px;
-  background: #fff;
-  border-bottom: 1px solid #e5eaf1;
-}
-
-.tree-body {
-  flex: 1;
-  min-height: 0;
-  padding: 6px 0;
-}
-
-.category-model-tree {
-  --tree-row-height: 34px;
-  background: transparent;
-}
-
-.category-model-tree :deep(.el-tree-node__content) {
-  height: var(--tree-row-height);
-  min-height: var(--tree-row-height);
-  padding-right: 6px;
-  border-bottom: 1px solid #e5ebf3;
-  position: relative;
-}
-
-.category-model-tree :deep(.el-tree-node__content:has(.tree-inline-editor)) {
-  height: 40px;
-  min-height: 40px;
-}
-
-.category-model-tree :deep(.el-tree-node__expand-icon) {
-  display: none;
-}
-
-.category-model-tree :deep(.el-tree-node__content:hover) {
-  background: #eef6ff;
-}
-
-.category-model-tree :deep(.el-tree-node.is-current > .el-tree-node__content) {
-  background: #dbeafe;
-}
-
-.tree-node,
-.tree-inline-editor {
-  position: relative;
-  display: grid;
-  width: 100%;
-  min-width: 0;
-  grid-template-columns: 18px 22px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 5px;
-  color: #334155;
-}
-
-.tree-node.model.active {
-  color: #0f3f91;
-  font-weight: 700;
-}
-
-.tree-inline-editor {
-  padding-right: 2px;
-}
-
-.inline-editor-input :deep(.el-input__wrapper) {
-  min-height: 28px;
-  box-shadow: 0 0 0 1px #93c5fd inset;
-}
-
-.inline-editor-actions {
+.t-row:hover .node-actions {
   display: inline-flex;
-  align-items: center;
-  gap: 4px;
 }
 
-.inline-editor-action {
-  display: inline-flex;
-  width: 24px;
-  height: 24px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 1px solid #cbd5e1;
-  border-radius: 4px;
-  background: #fff;
-  color: #475569;
-  cursor: pointer;
-  font-size: 14px;
-}
-
-.inline-editor-action.confirm {
-  color: #047857;
-  border-color: #a7f3d0;
-}
-
-.inline-editor-action:hover {
-  background: #f8fafc;
-}
-
-
-.tree-expander {
-  display: inline-flex;
-  width: 18px;
-  height: 18px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #64748b;
-  cursor: pointer;
-}
-
-.tree-expander .el-icon {
-  transition: transform 0.14s ease;
-}
-
-.tree-expander .el-icon.expanded {
-  transform: rotate(90deg);
-}
-
-.tree-expander-placeholder {
-  width: 18px;
-  height: 18px;
-}
-
-.node-icon {
-  display: inline-flex;
-  width: 22px;
-  height: 22px;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-}
-
-.category-icon {
-  color: #64748b;
-}
-
-.model-icon {
-  color: #2563eb;
-}
-
-.node-text {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-}
-
-.node-label {
-  min-width: 0;
-  overflow: hidden;
-  color: inherit;
-  font-size: 13px;
-  font-weight: 650;
-  line-height: 1.3;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tree-node.model .node-label {
-  font-weight: 600;
-}
-
-.node-actions {
-  position: absolute;
-  top: 50%;
-  right: 0;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  padding-left: 18px;
-  background: linear-gradient(90deg, rgba(238, 246, 255, 0), #eef6ff 22px, #eef6ff 100%);
-  opacity: 0;
-  font-size: 13px;
-  text-align: center;
-  border: 1px dashed #cbd5e1;
-  background: #fff;
-}
-/* Resource-tree refinements */
-.tree-toolbar-action {
-  width: auto;
-  min-width: 88px;
-  gap: 6px;
-  padding: 0 10px;
-}
-
-.tree-heading span,
-.node-meta {
-  color: #64748b;
-  font-size: 12px;
-  line-height: 1.3;
-}
-
-.tree-search-row {
-  padding: 8px 10px;
-  background: #fff;
-  border-bottom: 1px solid #e5eaf1;
-}
-
-.tree-body {
-  flex: 1;
-  min-height: 0;
-  padding: 6px 0;
-}
-
-.category-model-tree {
-  --tree-row-height: 34px;
-  background: transparent;
-}
-
-.category-model-tree :deep(.el-tree-node__content) {
-  height: var(--tree-row-height);
-  min-height: var(--tree-row-height);
-  padding-right: 6px;
-  border-bottom: 1px solid #e5ebf3;
-  position: relative;
-}
-
-.category-model-tree :deep(.el-tree-node__content:has(.tree-inline-editor)) {
-  height: 40px;
-  min-height: 40px;
-}
-
-.category-model-tree :deep(.el-tree-node__expand-icon) {
-  display: none;
-}
-
-.category-model-tree :deep(.el-tree-node__content:hover) {
-  background: #eef6ff;
-}
-
-.category-model-tree :deep(.el-tree-node.is-current > .el-tree-node__content) {
-  background: #dbeafe;
-}
-
-.tree-node,
-.tree-inline-editor {
-  position: relative;
-  display: grid;
-  width: 100%;
-  min-width: 0;
-  grid-template-columns: 18px 22px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 5px;
-  color: #334155;
-}
-
-.tree-node.model.active {
-  color: #0f3f91;
-  font-weight: 700;
-}
-
-.tree-inline-editor {
-  padding-right: 2px;
-}
-
-.inline-editor-input :deep(.el-input__wrapper) {
-  min-height: 28px;
-  box-shadow: 0 0 0 1px #93c5fd inset;
-}
-
-.inline-editor-actions {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.inline-editor-action {
-  display: inline-flex;
-  width: 24px;
-  height: 24px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 1px solid #cbd5e1;
-  border-radius: 4px;
-  background: #fff;
-  color: #475569;
-  cursor: pointer;
-  font-size: 14px;
-}
-
-.inline-editor-action.confirm {
-  color: #047857;
-  border-color: #a7f3d0;
-}
-
-.inline-editor-action:hover {
-  background: #f8fafc;
-}
-
-
-.tree-expander {
-  display: inline-flex;
-  width: 18px;
-  height: 18px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #64748b;
-  cursor: pointer;
-}
-
-.tree-expander .el-icon {
-  transition: transform 0.14s ease;
-}
-
-.tree-expander .el-icon.expanded {
-  transform: rotate(90deg);
-}
-
-.tree-expander-placeholder {
-  width: 18px;
-  height: 18px;
-}
-
-.node-icon {
-  display: inline-flex;
-  width: 22px;
-  height: 22px;
-  align-items: center;
-  justify-content: center;
-  font-size: 16px;
-}
-
-.category-icon {
-  color: #64748b;
-}
-
-.model-icon {
-  color: #2563eb;
-}
-
-.node-text {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-}
-
-.node-label {
-  min-width: 0;
-  overflow: hidden;
-  color: inherit;
-  font-size: 13px;
-  font-weight: 650;
-  line-height: 1.3;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.tree-node.model .node-label {
-  font-weight: 600;
-}
-
-.node-actions {
-  position: absolute;
-  top: 50%;
-  right: 0;
-  z-index: 2;
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  padding-left: 18px;
-  background: linear-gradient(90deg, rgba(238, 246, 255, 0), #eef6ff 22px, #eef6ff 100%);
-  opacity: 0;
-  font-size: 13px;
-  text-align: center;
-  border: 1px dashed #cbd5e1;
-  background: #fff;
-}
-/* Resource-tree refinements */
-.tree-toolbar-action {
-  width: auto;
-  min-width: 88px;
-  gap: 6px;
-  padding: 0 10px;
-  font-size: 13px;
-  font-weight: 750;
-}
-.tree-toolbar-action span { line-height: 1; }
-.category-model-tree { --tree-row-height: 36px; }
-.tree-node {
-  grid-template-columns: 18px 22px minmax(0, 1fr) 96px;
-  gap: 5px;
-}
-.tree-node.model {
-  grid-template-columns: 18px 22px minmax(0, 1fr) 0;
-}
-.node-text { padding-right: 4px; }
-.node-actions {
-  position: static;
-  justify-self: end;
-  display: inline-flex;
-  width: 96px;
-  gap: 3px;
-  padding-left: 0;
-  background: transparent;
-  opacity: 0;
-  pointer-events: none;
-  transform: none;
-  visibility: hidden;
-}
-.tree-node:hover .node-actions,
-.category-model-tree :deep(.el-tree-node.is-current > .el-tree-node__content) .node-actions {
-  opacity: 1;
-  pointer-events: auto;
-  visibility: visible;
-}
-.category-model-tree :deep(.el-tree-node.is-current > .el-tree-node__content) .node-actions { background: transparent; }
 .node-action {
-  width: 22px;
-  height: 22px;
-  border-radius: 4px;
-  font-size: 13px;
-  border: 1px solid #d9d9d9;
-  background: #ffffff;
-  color: #595959;
+  width: 18px;
+  height: 18px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  border: 1px solid var(--sl-border-input);
+  background: #ffffff;
+  border-radius: 3px;
   cursor: pointer;
-  transition: all 0.15s ease;
+  color: var(--sl-text-secondary);
+  font-size: 11px;
+  transition: var(--sl-ease-smooth);
+  padding: 0;
 }
 .node-action:hover {
-  border-color: #1677ff;
-  color: #1677ff;
-  background: #ffffff;
+  border-color: var(--sl-primary);
+  color: var(--sl-primary);
+  background: #eff6ff;
 }
 .node-action.model-action {
-  color: #047857;
-  border-color: #a7f3d0;
-  background: #ffffff;
+  color: var(--sl-success);
 }
 .node-action.model-action:hover {
-  border-color: #059669;
-  color: #059669;
-  background: #ffffff;
-}
-.node-action.danger {
-  color: #ff4d4f;
-  border-color: #ffccc7;
-  background: #ffffff;
+  border-color: var(--sl-success);
+  color: var(--sl-success);
+  background: var(--sl-success-light);
 }
 .node-action.danger:hover {
-  border-color: #ff4d4f;
-  color: #ff4d4f;
-  background: #ffffff;
+  border-color: var(--sl-danger);
+  color: var(--sl-danger);
+  background: #fef2f2;
 }
-.node-label { font-size: 13px; }
-.node-meta { flex-shrink: 0; }
+.node-action:disabled,
+.node-action[disabled] {
+  opacity: 0.35 !important;
+  cursor: not-allowed !important;
+  pointer-events: none !important;
+  border-color: #e2e8f0 !important;
+  color: #94a3b8 !important;
+  background: transparent !important;
+  transform: none !important;
+  transition: none !important;
+  box-shadow: none !important;
+  animation: none !important;
+}
 
+/* 内联编辑器 */
+.tree-inline-editor {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 1px 4px;
+}
+.inline-editor-input {
+  flex: 1;
+}
+.inline-editor-actions {
+  display: inline-flex;
+  gap: 2px;
+}
+.inline-editor-action {
+  width: 20px;
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--sl-border-input);
+  background: #ffffff;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+}
+.inline-editor-action.confirm {
+  color: var(--sl-success);
+  border-color: var(--sl-success);
+}
+.inline-editor-action.confirm:hover {
+  background: var(--sl-success-light);
+}
 
-/* Unified asset navigator */
-.model-tree-panel { background: #fff; border-color: #e5e7eb; }
-.tree-header { padding: 8px 12px; border-color: #e5e7eb; }
-.category-model-tree :deep(.el-tree-node__content) { min-height: 34px; border-radius: 4px; }
-.category-model-tree :deep(.el-tree-node__content:hover) { background: #f7f8fa; }
-.category-model-tree :deep(.el-tree-node.is-current > .el-tree-node__content) { background: #eaf3ff; box-shadow: inset 3px 0 0 #1677ff; }
-.category-model-tree :deep(.el-tree-node.is-current > .el-tree-node__content)::before,
-.category-model-tree :deep(.el-tree-node.is-current > .el-tree-node__content)::after { display: none; }
-.tree-footer { border-color: #e5e7eb; background: #fafbfc; }
+.tree-empty {
+  padding: 24px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--sl-text-disabled);
+}
 </style>

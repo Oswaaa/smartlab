@@ -5,7 +5,7 @@
           <el-anchor class="detail-anchor-menu" @click="(e) => e.preventDefault()" container=".edit-scroll-content .el-scrollbar__wrap" :offset="20">
             <el-anchor-link href="#edit-basic" title="01 基础信息" />
             <el-anchor-link href="#edit-ability" title="02 属性功能" />
-            <el-anchor-link href="#edit-adapter" title="03 Adapter 契约" />
+            <el-anchor-link href="#edit-adapter" title="03 适配器契约" />
             <el-anchor-link href="#edit-mapping" title="04 映射关系" />
             <el-anchor-link href="#edit-state" title="05 状态机" />
             <el-anchor-link href="#edit-constraint" title="06 内置约束" />
@@ -14,576 +14,727 @@
             <el-anchor-link href="#edit-file" title="09 模型文件" />
           </el-anchor>
           <el-scrollbar class="edit-scroll-content">
-                    <div id="edit-basic" class="anchor-section industrial-section">
-            <h2 class="section-heading"><span class="section-index">01</span>基础信息</h2>
-            <section class="drawer-section">
-              <div class="section-title"><h3>基础信息</h3></div>
-              <el-form label-width="96px" size="small" class="basic-form">
-                <el-form-item label="模型名称" required>
-                  <el-input v-model="draft.basic.modelName" placeholder="例如：反应釜温控模块" maxlength="80" show-word-limit />
-                </el-form-item>
-                <el-form-item label="所属分类" prop="categoryValue">
-                  <el-tree-select
-                    v-model="draft.basic.categoryValue"
-                    :data="categoryTreeForSelect"
-                    node-key="id"
-                    check-strictly
-                    :render-after-expand="false"
-                    placeholder="选择分类"
-                    style="width: 100%"
-                  />
-                </el-form-item>
-              </el-form>
-            </section>
-          </div>
-
-                    <div id="edit-ability" class="anchor-section industrial-section">
-            <h2 class="section-heading"><span class="section-index">02</span>属性功能</h2>
-            <section class="drawer-section">
-              <div class="section-title">
-                <h3>设备属性</h3>
-                <el-button class="btn-aliyun-primary" size="small" :icon="Plus" @click="addAttribute">新增属性</el-button>
-              </div>
-              <div v-if="draft.attributes.length === 0" class="compact-empty block-empty">暂无设备属性，请点击右上角“新增属性”进行配置</div>
-              <el-table v-else :data="draft.attributes" border size="small">
-                <el-table-column label="属性名称" min-width="220">
-                  <template #default="{ row }"><el-input v-model="row.displayName" size="small" placeholder="例如：当前温度" /></template>
-                </el-table-column>
-                <el-table-column label="取值类型" width="130">
-                  <template #default="{ row }">
-                    <el-select v-model="row.valueKind" size="small">
-                      <el-option label="连续值" value="CONTINUOUS" />
-                      <el-option label="离散值" value="DISCRETE" />
-                    </el-select>
-                  </template>
-                </el-table-column>
-                <el-table-column label="数据类型" width="130">
-                  <template #default="{ row }"><data-type-select v-model="row.dataType" :options="attributeDataTypes" /></template>
-                </el-table-column>
-                <el-table-column label="单位" width="150">
-                  <template #default="{ row }"><el-input v-model="row.unit" size="small" placeholder="℃ / rpm / mL" /></template>
-                </el-table-column>
-                <el-table-column label="" width="54" fixed="right">
-                  <template #default="{ $index }"><el-button link class="btn-aliyun-danger-link" :icon="Delete" @click="removeAttribute($index)" /></template>
-                </el-table-column>
-              </el-table>
-            </section>
-
-            <section class="drawer-section">
-              <div class="section-title">
-                <h3>设备操作</h3>
-                <el-button class="btn-aliyun-primary" size="small" :icon="Plus" @click="addCapability">新增操作</el-button>
-              </div>
-              <div v-if="draft.capabilities.length > 0" class="editor-card-list capability-editor-list">
-                <article v-for="(capability, capIndex) in draft.capabilities" :key="capability._key" class="editor-card capability-editor-card">
-                  <div class="editor-card-head">
-                    <div class="editor-card-title capability-title-editor">
-                      <span class="item-index">{{ capIndex + 1 }}</span>
-                      <el-input v-model="capability.displayName" size="small" placeholder="操作名称，例如：加热" />
-                    </div>
-                    <el-button link class="btn-aliyun-danger-link" :icon="Delete" @click="removeCapability(capability)">删除</el-button>
-                  </div>
-                  <div class="capability-execution-config">
-                    <label class="capability-config-field">
-                      <span>操作类型</span>
-                      <el-switch v-model="capability.isAbort" size="small" active-text="终止能力" inactive-text="普通能力" @change="handleCapabilityAbortTypeChange(capability)" />
-                    </label>
-                    <label v-if="!capability.isAbort" class="capability-config-field capability-config-select">
-                      <span>终止能力</span>
-                      <el-select v-model="capability.abortCapabilityKey" size="small" clearable filterable placeholder="可选：选择终止操作" @change="handleAbortCapabilityChange(capability)">
-                        <el-option v-for="option in terminationCapabilityOptions(capability)" :key="option._key" :label="capabilityLabel(option)" :value="option._key" />
-                      </el-select>
-                    </label>
-                    <label v-else class="capability-config-field capability-config-select">
-                      <span>影响范围</span>
-                      <el-select v-model="capability.scopeCapabilityKeys" size="small" multiple filterable collapse-tags collapse-tags-tooltip placeholder="选择受影响的普通操作" @change="handleAbortScopeChange(capability)">
-                        <el-option v-for="option in normalCapabilityOptions(capability)" :key="option._key" :label="capabilityLabel(option)" :value="option._key" :disabled="isScopeReferenceLocked(capability, option._key)" />
-                      </el-select>
-                    </label>
-                  </div>
-                  <div class="nested-toolbar">
-                    <span>操作参数</span>
-                    <el-button size="small" class="btn-aliyun-primary" circle :icon="Plus" title="添加参数" @click="addCapabilityParameter(capability)" />
-                  </div>
-                  <el-table v-if="capability.parameters.length > 0" :data="capability.parameters" border size="small" class="nested-table">
-                    <el-table-column label="参数名称" min-width="220">
-                      <template #default="{ row }"><el-input v-model="row.displayName" size="small" placeholder="例如：目标温度" /></template>
-                    </el-table-column>
-                    <el-table-column label="数据类型" width="140">
-                      <template #default="{ row }"><data-type-select v-model="row.dataType" :options="attributeDataTypes" /></template>
-                    </el-table-column>
-                    <el-table-column label="" width="54" fixed="right">
-                      <template #default="{ $index }"><el-button link class="btn-aliyun-danger-link" :icon="Delete" @click="removeCapabilityParameter(capability, $index)" /></template>
-                    </el-table-column>
-                  </el-table>
-                  <div v-if="capability.parameters.length === 0" class="compact-empty inline-empty">暂无参数</div>
-                </article>
-              </div>
-              <div v-else class="compact-empty block-empty">暂无设备操作，请点击右上角“新增操作”进行配置</div>
-            </section>
-
-            <section class="drawer-section">
-              <div class="section-title">
-                <h3>端口配置</h3>
-                <el-button class="btn-aliyun-primary" size="small" :icon="Plus" @click="addPort">新增端口</el-button>
-              </div>
-              <div v-if="draft.ports.length === 0" class="compact-empty block-empty">暂无端口配置，请点击右上角“新增端口”进行配置</div>
-              <el-table v-else :data="draft.ports" border size="small">
-                <el-table-column label="端口名称" min-width="180">
-                  <template #default="{ row }"><el-input v-model="row.displayName" size="small" placeholder="例如：温度输出口" /></template>
-                </el-table-column>
-                <el-table-column label="方向" width="120">
-                  <template #default="{ row }">
-                    <el-select v-model="row.direction" size="small">
-                      <el-option label="输入" value="IN" />
-                      <el-option label="输出" value="OUT" />
-                    </el-select>
-                  </template>
-                </el-table-column>
-                <el-table-column label="绑定属性" min-width="200">
-                  <template #default="{ row }">
-                    <el-select v-model="row.bindingAttrKey" size="small" filterable clearable placeholder="选择绑定属性">
-                      <el-option v-for="attr in attributeOptions" :key="attr.key" :label="attr.label" :value="attr.key" />
-                    </el-select>
-                  </template>
-                </el-table-column>
-                <el-table-column label="" width="54" fixed="right">
-                  <template #default="{ $index }"><el-button link class="btn-aliyun-danger-link" :icon="Delete" @click="removeRow(draft.ports, $index)" /></template>
-                </el-table-column>
-              </el-table>
-            </section>
-          </div>
-
-                    <div id="edit-adapter" class="anchor-section industrial-section">
-            <h2 class="section-heading"><span class="section-index">03</span>Adapter 契约</h2>
-            <section class="drawer-section">
-              <div class="section-title"><div class="section-header-copy"><h3>契约来源</h3><p class="section-note">Adapter 定义由注册配置提供，不可在设备模型中修改；本页面仅选择契约并配置业务映射。</p></div><el-tag size="small" type="info" effect="plain">只读来源</el-tag></div>
-              <el-form label-width="90px" size="small">
-                <el-form-item label="协议类型">
-                  <el-text>{{ draft.adapterContract.config.protocol || '—' }}</el-text>
-                </el-form-item>
-                <el-form-item label="注册 Adapter">
-                  <div class="registered-adapter-picker" v-loading="registeredAdapterLoading">
-                    <el-select v-model="selectedRegisteredAdapterName" filterable clearable placeholder="选择已注册 Adapter" @change="handleRegisteredAdapterChange">
-                      <el-option
-                        v-for="adapter in registeredAdapters"
-                        :key="adapter.adapterName || adapter.id"
-                        :label="adapter.adapterName + (adapter.status ? ' · ' + adapter.status : '')"
-                        :value="adapter.adapterName"
-                      />
-                    </el-select>
-                    <el-select v-model="selectedRegisteredAdapterTemplate" filterable clearable placeholder="选择设备类别" :disabled="!registeredAdapterTemplateOptions.length">
-                      <el-option
-                        v-for="tpl in registeredAdapterTemplateOptions"
-                        :key="adapterCategoryKey(tpl)"
-                        :label="adapterCategoryLabel(tpl)"
-                        :value="adapterCategoryKey(tpl)"
-                      />
-                    </el-select>
-                    <el-button class="btn-aliyun-primary" :disabled="!selectedRegisteredAdapterName || !selectedRegisteredAdapterTemplate" @click="applyRegisteredAdapterContract">载入契约</el-button>
-                    <el-button class="btn-aliyun" :icon="Refresh" @click="fetchRegisteredAdapters">刷新</el-button>
-                  </div>
-                </el-form-item>
-              </el-form>
-            </section>
-
-                        <section class="drawer-section">
-              <div class="section-title">
-                <div>
-                  <h3>Adapter 命令</h3>
-                  <p class="section-note">来源于已注册 Adapter，仅展示系统可见参数；内部参数不会进入设备能力模型。</p>
+            <div id="edit-basic" class="anchor-section holistic-section-card">
+              <div class="section-card-head">
+                <div class="section-card-title">
+                  <span class="sec-idx-badge">01</span>
+                  <span class="sec-title-text">基础信息</span>
+                  <span class="sec-desc-text">定义设备模型的基本标识、显示名称与所属分类</span>
                 </div>
               </div>
-              <div v-if="draft.adapterContract.commands.length > 0" class="editor-card-list command-editor-list">
-                <article v-for="(command, commandIndex) in draft.adapterContract.commands" :key="command._key" class="editor-card command-editor-card">
-                  <div class="editor-card-head">
-                    <div class="editor-card-title">
-                      <span class="item-index">{{ commandIndex + 1 }}</span>
-                      <strong>{{ command.commandName }}</strong>
-                    </div>
-                    <el-text type="info">{{ command.description || '暂无说明' }}</el-text>
-                  </div>
-                  <el-table v-if="visibleCommandParameters(command).length > 0" :data="visibleCommandParameters(command)" border size="small" class="nested-table">
-                    <el-table-column prop="paramName" label="参数名" min-width="180" />
-                    <el-table-column prop="dataType" label="数据类型" width="140" />
-                    <el-table-column prop="description" label="说明" min-width="220">
-                      <template #default="{ row }">{{ row.description || '—' }}</template>
-                    </el-table-column>
-                  </el-table>
-                  <div v-else class="compact-empty inline-empty">该命令没有系统可见参数</div>
-                </article>
+              <div class="section-card-body padded">
+                <el-form label-width="96px" size="small" class="basic-form">
+                  <el-form-item label="模型名称" required>
+                    <el-input v-model="draft.basic.modelName" placeholder="例如：反应釜温控模块" maxlength="80" show-word-limit />
+                  </el-form-item>
+                  <el-form-item label="所属分类" prop="categoryValue">
+                    <el-tree-select
+                      v-model="draft.basic.categoryValue"
+                      :data="categoryTreeForSelect"
+                      node-key="id"
+                      check-strictly
+                      :render-after-expand="false"
+                      placeholder="选择分类"
+                      style="width: 100%"
+                    />
+                  </el-form-item>
+                </el-form>
               </div>
-              <div v-else class="compact-empty block-empty">当前 Adapter 类别未声明命令</div>
-            </section>
-
-            <section class="drawer-section">
-              <div class="section-title">
-                <div>
-                  <h3>Adapter 遥测属性</h3>
-                  <p class="section-note">属性定义由注册配置提供；模型仅配置业务属性映射。</p>
-                </div>
-              </div>
-              <div v-if="draft.adapterContract.telemetry.adapterAttributes.length === 0" class="compact-empty block-empty">当前 Adapter 类别未声明遥测属性</div>
-              <el-table v-else :data="draft.adapterContract.telemetry.adapterAttributes" border size="small">
-                <el-table-column prop="telemetryName" label="属性字段" min-width="180" />
-                <el-table-column prop="dataType" label="数据类型" width="140" />
-                <el-table-column prop="description" label="说明" min-width="220">
-                  <template #default="{ row }">{{ row.description || '—' }}</template>
-                </el-table-column>
-              </el-table>
-            </section>
-
-            <section class="drawer-section">
-              <div class="section-title">
-                <div>
-                  <h3>Adapter 事件</h3>
-                  <p class="section-note">命令事件用于执行生命周期，功能事件用于设备业务状态转移。</p>
-                </div>
-              </div>
-              <el-table :data="draft.adapterContract.events" border size="small">
-                <el-table-column label="事件域" width="120">
-                  <template #default="{ row }"><el-tag size="small" effect="plain" :type="row.eventType === 'CMD' ? 'primary' : 'success'">{{ row.eventType }}</el-tag></template>
-                </el-table-column>
-                <el-table-column prop="eventName" label="事件名" min-width="220" />
-                <el-table-column prop="description" label="说明" min-width="260">
-                  <template #default="{ row }">{{ row.description || '—' }}</template>
-                </el-table-column>
-              </el-table>
-              <div v-if="draft.adapterContract.events.length === 0" class="compact-empty block-empty">当前 Adapter 类别未声明事件</div>
-            </section>
             </div>
 
-          <div id="edit-mapping" class="anchor-section industrial-section">
-            <h2 class="section-heading"><span class="section-index">04</span>映射关系</h2>
-            <section class="drawer-section">
-              <div class="section-title">
-                <div class="section-header-copy">
-                  <h3>属性映射</h3>
-                  <p class="section-note">将模型业务属性与 Adapter 遥测字段逐一对应。</p>
+            <div id="edit-ability" class="anchor-section holistic-section-card">
+              <div class="section-card-head">
+                <div class="section-card-title">
+                  <span class="sec-idx-badge">02</span>
+                  <span class="sec-title-text">设备属性定义</span>
+                  <span class="sec-desc-text">定义设备对外暴露的遥测监测指标与状态参数</span>
                 </div>
-                <div class="section-actions"><el-button class="btn-aliyun-primary" size="small" :icon="Plus" @click="addAttributeMapping">新增映射</el-button></div>
+                <button class="btn-aliyun-cta" type="button" @click="addAttribute">
+                  <el-icon><Plus /></el-icon><span>新增属性</span>
+                </button>
               </div>
-              <div v-if="draft.adapterContract.telemetry.attributesMapping.length === 0" class="compact-empty block-empty">暂无属性映射，可使用上方按钮添加</div>
-              <el-table v-else :data="draft.adapterContract.telemetry.attributesMapping" border size="small" class="editor-table">
-                <el-table-column label="模型属性" min-width="220">
-                  <template #default="{ row }">
-                    <el-select v-model="row.modelAttributeKey" size="small" filterable placeholder="选择模型属性" @change="handleAttributeMappingModelChange(row)">
-                      <el-option v-for="attr in attributeOptions" :key="attr.key" :label="attr.label" :value="attr.key" :disabled="isAttributeOptionUsed(attr.key, row)" />
-                    </el-select>
-                  </template>
-                </el-table-column>
-                <el-table-column label="映射" width="72" align="center"><template #default>→</template></el-table-column>
-                <el-table-column label="Adapter 属性" min-width="220">
-                  <template #default="{ row }">
-                    <el-select v-model="row.adapterAttrName" size="small" filterable placeholder="选择 Adapter 属性" @change="handleAdapterAttributeMappingChange(row)">
-                      <el-option v-for="attr in adapterAttributeNameOptionsDetailed"  :key="attr.telemetryName" :label="attr.telemetryName + (isAttrDataTypeMatch(row.modelAttributeKey, attr.dataType) ? '' : '（类型不匹配）')" :value="attr.telemetryName" :disabled="isAdapterAttributeUsed(attr.telemetryName, row) || !isAttrDataTypeMatch(row.modelAttributeKey, attr.dataType)" />
-                    </el-select>
-                  </template>
-                </el-table-column>
-                <el-table-column label="操作" width="64" fixed="right" align="center">
-                  <template #default="{ $index }"><el-button link class="btn-aliyun-danger-link" :icon="Delete" title="删除映射" @click="removeRow(draft.adapterContract.telemetry.attributesMapping, $index)" /></template>
-                </el-table-column>
-              </el-table>
-            </section>
-
-            <section class="drawer-section">
-              <div class="section-title">
-                <div class="section-header-copy">
-                  <h3>操作映射</h3>
-                  <p class="section-note">将模型操作及其参数映射到 Adapter 命令的系统可见参数。</p>
-                </div>
-                <div class="section-actions"><el-button class="btn-aliyun-primary" size="small" :icon="Plus" @click="addFunctionMapping">新增映射</el-button></div>
-              </div>
-              <div v-if="draft.functionMappings.length === 0" class="compact-empty block-empty">暂无操作映射，可使用上方按钮添加</div>
-              <div v-else class="function-mapping-card-list">
-                <article v-for="(row, rowIndex) in draft.functionMappings" :key="row._key || rowIndex" class="function-mapping-editor-card">
-                  <div class="function-map-editor-head">
-                    <div class="function-map-selects">
-                      <label><span>模型操作</span><el-select v-model="row.capabilityKey" size="small" filterable placeholder="选择模型操作" @change="handleFunctionMappingCapabilityChange(row)"><el-option v-for="capability in capabilitySelectOptions" :key="capability.key" :label="capability.label" :value="capability.key" :disabled="isCapabilityMapped(capability.key, row)" /></el-select></label>
-                      <span class="mapping-direction">→</span>
-                      <label><span>Adapter 命令</span><el-select v-model="row.adapterCommandName" size="small" filterable clearable placeholder="选择 Adapter 命令" @change="handleFunctionMappingCommandChange(row)"><el-option v-for="cmd in commandNameOptions" :key="cmd" :label="cmd" :value="cmd" /></el-select></label>
-                    </div>
-                    <el-button link class="btn-aliyun-danger-link" :icon="Delete" @click="removeRow(draft.functionMappings, rowIndex)">删除</el-button>
+              <div class="section-card-body">
+                <div v-if="draft.attributes.length === 0" class="compact-empty block-empty">暂无设备属性，请点击右上角“新增属性”进行配置</div>
+                <div v-else class="grid-table-container">
+                  <div class="grid-table-header attr-grid-cols">
+                    <span class="grid-th">属性名称</span>
+                    <span class="grid-th">取值类型</span>
+                    <span class="grid-th">数据类型</span>
+                    <span class="grid-th">单位</span>
+                    <span class="grid-th col-center">操作</span>
                   </div>
-                  <div class="param-map-editor compact-param-editor">
-                    <div v-for="(mapping, index) in row.parameterMapping" :key="mapping._key || index" class="param-map-row" :class="{ invalid: isParameterMappingInvalid(row, mapping), fixed: mapping.isFixedValue }">
-                      <div class="param-map-field"><span class="param-map-label">功能参数</span><el-select v-model="mapping.capabilityParamKey" size="small" filterable placeholder="选择功能参数" @change="handleCapabilityParameterChange(row, mapping)"><el-option v-for="param in capabilityParameterOptionsDetailedByKey(row.capabilityKey)" :key="param._key" :label="(param.displayName || param.name) + ' · ' + param.dataType + (isParamDataTypeMatch(mapping.commandParamName, row.adapterCommandName, param.dataType) ? '' : '（类型不匹配）')" :value="param._key" :disabled="isCapabilityParamMapped(row, param._key, mapping) || !isParamDataTypeMatch(mapping.commandParamName, row.adapterCommandName, param.dataType)" /></el-select></div>
-                      <div class="param-map-field"><span class="param-map-label">Adapter 参数</span><el-select v-model="mapping.commandParamName" size="small" filterable placeholder="选择命令参数" @change="handleParameterCommandChange(row, mapping)"><el-option v-for="param in commandParameterOptionsDetailed(row.adapterCommandName)" :key="param.paramName" :label="param.paramName + ' · ' + param.dataType" :value="param.paramName" :disabled="isCommandParamMapped(row, param.paramName, mapping)" /></el-select></div>
-                      <div class="param-map-mode"><span class="param-map-label">取值方式</span><el-switch v-model="mapping.isFixedValue" size="small" active-text="固定" inactive-text="映射" @change="handleParameterFixedChange(mapping)" /></div>
-                      <div v-if="mapping.isFixedValue" class="param-map-field fixed-input-field"><span class="param-map-label">固定值</span><el-input v-model="mapping.fixedValue" size="small" :placeholder="fixedValuePlaceholder(row, mapping)" /></div>
-                      <el-button link class="btn-aliyun-danger-link param-delete-btn" :icon="Delete" @click="removeRow(row.parameterMapping, index)" />
-                      <span v-if="isParameterMappingInvalid(row, mapping)" class="map-warning">{{ parameterMappingWarning(row, mapping) }}</span>
+                  <div v-for="(row, $index) in draft.attributes" :key="row._key || $index" class="grid-table-row attr-grid-cols">
+                    <div class="grid-td"><el-input v-model="row.displayName" size="small" placeholder="例如：当前温度" /></div>
+                    <div class="grid-td">
+                      <el-select v-model="row.valueKind" size="small" style="width: 100%;">
+                        <el-option label="连续值" value="CONTINUOUS" />
+                        <el-option label="离散值" value="DISCRETE" />
+                      </el-select>
                     </div>
-                    <div class="param-map-toolbar"><span v-if="row.parameterMapping.length === 0" class="no-mapping-placeholder">未配置参数映射</span><span v-else></span><el-button size="small" class="btn-aliyun-primary add-mapping-btn" :icon="Plus" @click="addParameterMapping(row)">新增参数映射</el-button></div>
+                    <div class="grid-td"><data-type-select v-model="row.dataType" :options="attributeDataTypes" /></div>
+                    <div class="grid-td"><el-input v-model="row.unit" size="small" placeholder="℃ / rpm" /></div>
+                    <div class="grid-td col-center"><button class="btn-link danger" type="button" @click="removeAttribute($index)">删除</button></div>
                   </div>
-                </article>
-              </div>
-            </section>
-          </div>
-
-          <div id="edit-state" class="anchor-section industrial-section">
-            <h2 class="section-heading"><span class="section-index">05</span>状态机</h2>
-            <!-- 05 状态机 (上下布局：上为执行生命周期与规则表，下为功能状态分区) -->
-            <section class="drawer-section state-lifecycle-top-card">
-              <div class="section-title">
-                <div class="locked-heading">
-                  <el-icon><Lock /></el-icon>
-                  <h3>执行生命周期</h3>
-                  <el-tag size="small" effect="plain" type="info">系统内置规范</el-tag>
                 </div>
               </div>
-              <div class="lifecycle-flow-chain-bar">
-                <div class="chain-item"><span class="chain-label">初始状态</span><el-tag size="small" type="success" effect="light">IDLE</el-tag></div>
-                <div class="chain-sep">|</div>
-                <div class="chain-item"><span class="chain-label">主主推移链</span><div class="chain-pills"><el-tag size="small" effect="plain" type="info">IDLE</el-tag><el-icon><Right /></el-icon><el-tag size="small" effect="plain" type="primary">SENT</el-tag><el-icon><Right /></el-icon><el-tag size="small" effect="plain" type="primary">RUNNING</el-tag><el-icon><Right /></el-icon><el-tag size="small" effect="light" type="success">COMPLETED</el-tag></div></div>
-                <div class="chain-sep">|</div>
-                <div class="chain-item"><span class="chain-label">分支终态</span><div class="chain-pills"><el-tag size="small" effect="light" type="danger">FAILED</el-tag><span class="slash">/</span><el-tag size="small" effect="plain" type="warning">ABORTING</el-tag><el-icon><Right /></el-icon><el-tag size="small" effect="light" type="warning">ABORTED</el-tag></div></div>
-              </div>
-            </section>
+            </div>
 
-            <section class="drawer-section">
-              <div class="section-title">
-                <div class="section-header-copy">
-                  <h3>执行生命周期转移规则</h3>
-                  <p class="section-note">描述指令在设备上的全生命周期机制。包含系统内置的自动发信/中止下发规则，以及可绑定适配器的阶段推进事件。</p>
+            <div class="holistic-section-card">
+              <div class="section-card-head">
+                <div class="section-card-title">
+                  <span class="sec-idx-badge">02</span>
+                  <span class="sec-title-text">设备操作</span>
+                  <span class="sec-desc-text">设备支持的动作指令及终止能力配置</span>
+                </div>
+                <button class="btn-aliyun-cta" type="button" @click="addCapability">
+                  <el-icon><Plus /></el-icon><span>新增操作</span>
+                </button>
+              </div>
+              <div class="section-card-body padded">
+                <div v-if="draft.capabilities.length > 0" class="editor-card-list capability-editor-list">
+                  <article v-for="(capability, capIndex) in draft.capabilities" :key="capability._key" class="editor-card capability-editor-card">
+                    <div class="editor-card-head">
+                      <div class="editor-card-title capability-title-editor">
+                        <span class="item-index">{{ capIndex + 1 }}</span>
+                        <el-input v-model="capability.displayName" size="small" placeholder="操作名称，例如：加热" />
+                      </div>
+                      <button class="btn-link danger" type="button" @click="removeCapability(capability)">删除</button>
+                    </div>
+                    <div class="capability-execution-config">
+                      <label class="capability-config-field">
+                        <span>操作类型</span>
+                        <el-switch v-model="capability.isAbort" size="small" active-text="终止能力" inactive-text="普通操作" @change="handleCapabilityAbortTypeChange(capability)" />
+                      </label>
+                      <label v-if="!capability.isAbort" class="capability-config-field capability-config-select">
+                        <span>终止能力</span>
+                        <el-select v-model="capability.abortCapabilityKey" size="small" clearable filterable placeholder="可选：选择终止操作" @change="handleAbortCapabilityChange(capability)">
+                          <el-option v-for="option in terminationCapabilityOptions(capability)" :key="option._key" :label="capabilityLabel(option)" :value="option._key" />
+                        </el-select>
+                      </label>
+                      <label v-else class="capability-config-field capability-config-select">
+                        <span>影响范围</span>
+                        <el-select v-model="capability.scopeCapabilityKeys" size="small" multiple filterable placeholder="选择受影响的普通操作" @change="handleAbortScopeChange(capability)">
+                          <el-option v-for="option in normalCapabilityOptions(capability)" :key="option._key" :label="capabilityLabel(option)" :value="option._key" />
+                        </el-select>
+                      </label>
+                    </div>
+                    <div class="nested-toolbar">
+                      <span>操作参数</span>
+                      <button class="btn-aliyun" type="button" style="padding: 2px 8px; font-size: 11px;" @click="addCapabilityParameter(capability)">
+                        <el-icon><Plus /></el-icon><span>添加参数</span>
+                      </button>
+                    </div>
+                    <div v-if="capability.parameters.length > 0" class="grid-table-container nested-grid-table">
+                      <div class="grid-table-header cap-param-grid-cols">
+                        <span class="grid-th">参数名称</span>
+                        <span class="grid-th">数据类型</span>
+                        <span class="grid-th col-center">操作</span>
+                      </div>
+                      <div v-for="(row, $index) in capability.parameters" :key="$index" class="grid-table-row cap-param-grid-cols">
+                        <div class="grid-td"><el-input v-model="row.displayName" size="small" placeholder="例如：目标温度" /></div>
+                        <div class="grid-td"><data-type-select v-model="row.dataType" :options="attributeDataTypes" /></div>
+                        <div class="grid-td col-center"><button class="btn-link danger" type="button" @click="removeCapabilityParameter(capability, $index)">删除</button></div>
+                      </div>
+                    </div>
+                    <div v-if="capability.parameters.length === 0" class="compact-empty inline-empty">暂无参数</div>
+                  </article>
+                </div>
+                <div v-else class="compact-empty block-empty">暂无设备操作，请点击右上角“新增操作”进行配置</div>
+              </div>
+            </div>
+
+            <div class="holistic-section-card">
+              <div class="section-card-head">
+                <div class="section-card-title">
+                  <span class="sec-idx-badge">02</span>
+                  <span class="sec-title-text">端口配置</span>
+                  <span class="sec-desc-text">定义设备输入与输出物理或逻辑端口</span>
+                </div>
+                <button class="btn-aliyun-cta" type="button" @click="addPort">
+                  <el-icon><Plus /></el-icon><span>新增端口</span>
+                </button>
+              </div>
+              <div class="section-card-body">
+                <div v-if="draft.ports.length === 0" class="compact-empty block-empty">暂无端口配置，请点击右上角“新增端口”进行配置</div>
+                <div v-else class="grid-table-container">
+                  <div class="grid-table-header port-grid-cols">
+                    <span class="grid-th">端口名称</span>
+                    <span class="grid-th">方向</span>
+                    <span class="grid-th">绑定属性</span>
+                    <span class="grid-th col-center">操作</span>
+                  </div>
+                  <div v-for="(row, $index) in draft.ports" :key="$index" class="grid-table-row port-grid-cols">
+                    <div class="grid-td"><el-input v-model="row.displayName" size="small" placeholder="例如：温度输出口" /></div>
+                    <div class="grid-td">
+                      <el-select v-model="row.direction" size="small" style="width: 100%;">
+                        <el-option label="输入" value="IN" />
+                        <el-option label="输出" value="OUT" />
+                      </el-select>
+                    </div>
+                    <div class="grid-td">
+                      <el-select v-model="row.bindingAttrKey" size="small" filterable clearable placeholder="选择绑定属性" style="width: 100%;">
+                        <el-option v-for="attr in attributeOptions" :key="attr.key" :label="attr.label" :value="attr.key" />
+                      </el-select>
+                    </div>
+                    <div class="grid-td col-center"><button class="btn-link danger" type="button" @click="removeRow(draft.ports, $index)">删除</button></div>
+                  </div>
                 </div>
               </div>
-              <el-table :data="mergedLifecycleRules" border size="small" class="stacked-lifecycle-table" style="width: 100%;">
-                <el-table-column label="阶段流转规则" width="220" align="center">
-                  <template #default="{ row }">
-                    <div class="stacked-cell align-center">
-                      <div class="cell-line-upper">
-                        <span class="flow-label-sub">原状态:</span>
-                        <el-tag size="small" type="info" effect="plain" class="state-pill">{{ row.fromStateNames ? row.fromStateNames.join(' / ') : row.fromStateName }}</el-tag>
-                      </div>
-                      <div class="cell-line-lower">
-                        <span class="flow-label-sub">目标:</span>
-                        <el-tag size="small" :type="row.toStateName === 'COMPLETED' ? 'success' : row.toStateName === 'ABORTED' ? 'warning' : row.toStateName === 'FAILED' ? 'danger' : 'primary'" effect="light" class="state-pill">{{ row.toStateName || '保持原状态' }}</el-tag>
-                      </div>
-                    </div>
-                  </template>
-                </el-table-column>
+            </div>
 
-                <el-table-column label="说明" min-width="240">
-                  <template #default="{ row }">
-                    <div class="stacked-cell">
-                      <div class="cell-line-upper">
-                        <el-tag size="small" effect="light" type="info" class="status-badge" v-if="row.type === 'system'">系统固定规则</el-tag>
-                        <el-tag size="small" effect="light" :type="row.kind === 'FAILURE' ? 'danger' : row.kind === 'TERMINATION' ? 'warning' : 'primary'" class="status-badge" v-else>
-                          {{ row.kind === 'FAILURE' ? '失败分支规则' : row.kind === 'TERMINATION' ? '终止分支规则' : '正常推进阶段' }}
-                        </el-tag>
+            <!-- 03 适配器契约配置（命令清单、遥测属性、事件清单合并在同一卡片中） -->
+            <div id="edit-adapter" class="anchor-section holistic-section-card">
+              <div class="section-card-head">
+                <div class="section-card-title">
+                  <span class="sec-idx-badge">03</span>
+                  <span class="sec-title-text">适配器契约配置</span>
+                  <span class="sec-desc-text">选择契约驱动来源，包含命令清单、遥测属性与事件清单</span>
+                </div>
+                <el-tag size="small" type="info" effect="plain">驱动契约</el-tag>
+              </div>
+              <div class="section-card-body padded">
+                <!-- 1. 契约驱动来源 -->
+                <div class="contract-source-box">
+                  <el-form label-width="84px" size="small">
+                    <el-form-item label="协议类型">
+                      <el-text>{{ draft.adapterContract.config.protocol || '—' }}</el-text>
+                    </el-form-item>
+                    <el-form-item label="注册适配器">
+                      <div class="registered-adapter-picker" v-loading="registeredAdapterLoading">
+                        <el-select v-model="selectedRegisteredAdapterName" filterable clearable placeholder="选择已注册适配器" @change="handleRegisteredAdapterChange">
+                          <el-option
+                            v-for="adapter in registeredAdapters"
+                            :key="adapter.adapterName || adapter.id"
+                            :label="adapter.adapterName + (adapter.status ? ' · ' + adapter.status : '')"
+                            :value="adapter.adapterName"
+                          />
+                        </el-select>
+                        <el-select v-model="selectedRegisteredAdapterTemplate" filterable clearable placeholder="选择设备类别" :disabled="!registeredAdapterTemplateOptions.length">
+                          <el-option
+                            v-for="tpl in registeredAdapterTemplateOptions"
+                            :key="adapterCategoryKey(tpl)"
+                            :label="adapterCategoryLabel(tpl)"
+                            :value="adapterCategoryKey(tpl)"
+                          />
+                        </el-select>
+                        <button class="btn-aliyun-cta" type="button" :disabled="!selectedRegisteredAdapterName || !selectedRegisteredAdapterTemplate" @click="applyRegisteredAdapterContract">
+                          <span>载入契约</span>
+                        </button>
+                        <button class="btn-aliyun" type="button" @click="fetchRegisteredAdapters">
+                          <el-icon><Refresh /></el-icon><span>刷新</span>
+                        </button>
                       </div>
-                      <div class="cell-line-lower desc-text">{{ row.description }}</div>
-                    </div>
-                  </template>
-                </el-table-column>
+                    </el-form-item>
+                  </el-form>
+                </div>
 
-                <el-table-column label="触发条件与事件绑定" min-width="320">
-                  <template #default="{ row }">
-                    <div class="stacked-cell">
-                      <div v-if="row.type === 'system'" class="system-triggers-list">
-                        <div v-for="(trig, tIdx) in row.triggers" :key="tIdx" class="trigger-chip-item">
-                          <span class="trig-label">{{ trig.label }}:</span>
-                          <span class="locked-action-badge compact"><el-icon><Lock /></el-icon>{{ trig.interfaceName }}</span>
-                          <span class="signal-tag-bold"><el-icon><Discount /></el-icon>{{ trig.signalName }}</span>
+                <!-- 2. 适配器命令清单 -->
+                <div class="contract-sub-section">
+                  <div class="contract-sub-header">
+                    <span class="sub-header-title">适配器命令清单</span>
+                    <span class="sub-header-count">{{ draft.adapterContract.commands.length }} 项</span>
+                  </div>
+                  <div v-if="draft.adapterContract.commands.length > 0" class="editor-card-list command-editor-list">
+                    <article v-for="(command, commandIndex) in draft.adapterContract.commands" :key="command._key" class="editor-card command-editor-card">
+                      <div class="editor-card-head">
+                        <div class="editor-card-title">
+                          <span class="item-index">{{ commandIndex + 1 }}</span>
+                          <strong>{{ command.commandName }}</strong>
+                        </div>
+                        <el-text type="info">{{ command.description || '暂无说明' }}</el-text>
+                      </div>
+                      <div v-if="visibleCommandParameters(command).length > 0" class="grid-table-container nested-grid-table" style="margin-top: 6px;">
+                        <div class="grid-table-header cmd-param-grid-cols">
+                          <span class="grid-th">参数名</span>
+                          <span class="grid-th">数据类型</span>
+                          <span class="grid-th">说明</span>
+                        </div>
+                        <div v-for="(row, $index) in visibleCommandParameters(command)" :key="$index" class="grid-table-row cmd-param-grid-cols">
+                          <div class="grid-td font-mono-text">{{ row.paramName }}</div>
+                          <div class="grid-td">{{ row.dataType }}</div>
+                          <div class="grid-td desc-sub-text">{{ row.description || '—' }}</div>
                         </div>
                       </div>
-                      <div v-else class="adapter-trigger-binding">
-                        <div v-if="row.kind === 'TERMINATION'" class="termination-default-transition">
+                      <div v-else class="compact-empty inline-empty">该命令没有系统可见参数</div>
+                    </article>
+                  </div>
+                  <div v-else class="compact-empty block-empty">当前适配器类别未声明命令</div>
+                </div>
+
+                <!-- 3. 适配器遥测属性 -->
+                <div class="contract-sub-section">
+                  <div class="contract-sub-header">
+                    <span class="sub-header-title">适配器遥测属性</span>
+                    <span class="sub-header-count">{{ draft.adapterContract.telemetry.adapterAttributes.length }} 项</span>
+                  </div>
+                  <div v-if="draft.adapterContract.telemetry.adapterAttributes.length === 0" class="compact-empty block-empty">当前适配器类别未声明遥测属性</div>
+                  <div v-else class="grid-table-container">
+                    <div class="grid-table-header telemetry-grid-cols">
+                      <span class="grid-th">属性字段</span>
+                      <span class="grid-th">数据类型</span>
+                      <span class="grid-th">说明</span>
+                    </div>
+                    <div v-for="(row, $index) in draft.adapterContract.telemetry.adapterAttributes" :key="$index" class="grid-table-row telemetry-grid-cols">
+                      <div class="grid-td font-mono-text">{{ row.telemetryName }}</div>
+                      <div class="grid-td">{{ row.dataType }}</div>
+                      <div class="grid-td desc-sub-text">{{ row.description || '—' }}</div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- 4. 适配器事件清单 -->
+                <div class="contract-sub-section">
+                  <div class="contract-sub-header">
+                    <span class="sub-header-title">适配器事件清单</span>
+                    <span class="sub-header-count">{{ draft.adapterContract.events.length }} 项</span>
+                  </div>
+                  <div v-if="draft.adapterContract.events.length === 0" class="compact-empty block-empty">当前适配器类别未声明事件</div>
+                  <div v-else class="grid-table-container">
+                    <div class="grid-table-header event-grid-cols">
+                      <span class="grid-th">事件域</span>
+                      <span class="grid-th">事件名</span>
+                      <span class="grid-th">说明</span>
+                    </div>
+                    <div v-for="(row, $index) in draft.adapterContract.events" :key="$index" class="grid-table-row event-grid-cols">
+                      <div class="grid-td"><el-tag size="small" effect="plain" :type="row.eventType === 'CMD' ? 'primary' : 'success'">{{ row.eventType }}</el-tag></div>
+                      <div class="grid-td font-mono-text">{{ row.eventName }}</div>
+                      <div class="grid-td desc-sub-text">{{ row.description || '—' }}</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div id="edit-mapping" class="anchor-section holistic-section-card">
+              <div class="section-card-head">
+                <div class="section-card-title">
+                  <span class="sec-idx-badge">04</span>
+                  <span class="sec-title-text">属性映射</span>
+                  <span class="sec-desc-text">将模型业务属性与适配器遥测字段逐一对应</span>
+                </div>
+                <button class="btn-aliyun-cta" type="button" @click="addAttributeMapping">
+                  <el-icon><Plus /></el-icon><span>新增映射</span>
+                </button>
+              </div>
+              <div class="section-card-body">
+                <div v-if="draft.adapterContract.telemetry.attributesMapping.length === 0" class="compact-empty block-empty">暂无属性映射，可使用上方按钮添加</div>
+                <div v-else class="grid-table-container">
+                  <div class="grid-table-header attrmap-grid-cols">
+                    <span class="grid-th">模型属性</span>
+                    <span class="grid-th col-center"></span>
+                    <span class="grid-th">适配器属性</span>
+                    <span class="grid-th col-center">操作</span>
+                  </div>
+                  <div v-for="(row, $index) in draft.adapterContract.telemetry.attributesMapping" :key="$index" class="grid-table-row attrmap-grid-cols">
+                    <div class="grid-td">
+                      <el-select v-model="row.modelAttributeKey" size="small" filterable placeholder="选择模型属性" style="width: 100%;" @change="handleAttributeMappingModelChange(row)">
+                        <el-option v-for="attr in attributeOptions" :key="attr.key" :label="attr.label" :value="attr.key" :disabled="isAttributeOptionUsed(attr.key, row)" />
+                      </el-select>
+                    </div>
+                    <div class="grid-td col-center map-arrow">→</div>
+                    <div class="grid-td">
+                      <el-select v-model="row.adapterAttrName" size="small" filterable placeholder="选择适配器属性" style="width: 100%;" @change="handleAdapterAttributeMappingChange(row)">
+                        <el-option v-for="attr in adapterAttributeNameOptionsDetailed" :key="attr.telemetryName" :label="attr.telemetryName + (isAttrDataTypeMatch(row.modelAttributeKey, attr.dataType) ? '' : '（类型不匹配）')" :value="attr.telemetryName" :disabled="isAdapterAttributeUsed(attr.telemetryName, row) || !isAttrDataTypeMatch(row.modelAttributeKey, attr.dataType)" />
+                      </el-select>
+                    </div>
+                    <div class="grid-td col-center"><button class="btn-link danger" type="button" @click="removeRow(draft.adapterContract.telemetry.attributesMapping, $index)">删除</button></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="holistic-section-card">
+              <div class="section-card-head">
+                <div class="section-card-title">
+                  <span class="sec-idx-badge">04</span>
+                  <span class="sec-title-text">操作映射</span>
+                  <span class="sec-desc-text">将模型操作及其参数映射到适配器命令的系统可见参数</span>
+                </div>
+                <button class="btn-aliyun-cta" type="button" @click="addFunctionMapping">
+                  <el-icon><Plus /></el-icon><span>新增映射</span>
+                </button>
+              </div>
+              <div class="section-card-body padded">
+                <div v-if="draft.functionMappings.length === 0" class="compact-empty block-empty">暂无操作映射，可使用上方按钮添加</div>
+                <div v-else class="function-mapping-card-list">
+                  <article v-for="(row, rowIndex) in draft.functionMappings" :key="row._key || rowIndex" class="function-mapping-editor-card">
+                    <div class="function-map-editor-head">
+                      <div class="function-map-selects">
+                        <label><span>模型操作</span><el-select v-model="row.capabilityKey" size="small" filterable placeholder="选择模型操作" @change="handleFunctionMappingCapabilityChange(row)"><el-option v-for="capability in capabilitySelectOptions" :key="capability.key" :label="capability.label" :value="capability.key" :disabled="isCapabilityMapped(capability.key, row)" /></el-select></label>
+                        <span class="mapping-direction">→</span>
+                        <label><span>适配器命令</span><el-select v-model="row.adapterCommandName" size="small" filterable clearable placeholder="选择适配器命令" @change="handleFunctionMappingCommandChange(row)"><el-option v-for="cmd in commandNameOptions" :key="cmd" :label="cmd" :value="cmd" /></el-select></label>
+                      </div>
+                      <button class="btn-link danger" type="button" @click="removeRow(draft.functionMappings, rowIndex)">删除</button>
+                    </div>
+                    <div class="nested-toolbar">
+                      <span>参数映射关系</span>
+                      <button class="btn-aliyun" type="button" style="padding: 2px 8px; font-size: 11px;" @click="addParameterMapping(row)">
+                        <el-icon><Plus /></el-icon><span>新增参数映射</span>
+                      </button>
+                    </div>
+                    <div v-if="row.parameterMapping.length === 0" class="compact-empty block-empty">未配置参数映射，可使用上方按钮新增</div>
+                    <div v-else class="nested-param-table-card">
+                      <div class="nested-param-table-head">
+                        <span class="pm-col-cap">功能参数</span>
+                        <span class="pm-col-arr"></span>
+                        <span class="pm-col-cmd">适配器命令参数</span>
+                        <span class="pm-col-mode">取值模式</span>
+                        <span class="pm-col-act">操作</span>
+                      </div>
+                      <div v-for="(mapping, index) in row.parameterMapping" :key="mapping._key || index" class="nested-param-table-row" :class="{ invalid: isParameterMappingInvalid(row, mapping) }">
+                        <div class="pm-col-cap">
+                          <el-select v-model="mapping.capabilityParamKey" size="small" filterable placeholder="选择功能参数" style="width: 100%;" @change="handleCapabilityParameterChange(row, mapping)">
+                            <el-option v-for="param in capabilityParameterOptionsDetailedByKey(row.capabilityKey)" :key="param._key" :label="(param.displayName || param.name) + ' · ' + param.dataType + (isParamDataTypeMatch(mapping.commandParamName, row.adapterCommandName, param.dataType) ? '' : '（类型不匹配）')" :value="param._key" :disabled="isCapabilityParamMapped(row, param._key, mapping) || !isParamDataTypeMatch(mapping.commandParamName, row.adapterCommandName, param.dataType)" />
+                          </el-select>
+                        </div>
+                        <div class="pm-col-arr">→</div>
+                        <div class="pm-col-cmd">
+                          <el-select v-model="mapping.commandParamName" size="small" filterable placeholder="选择命令参数" style="width: 100%;" @change="handleParameterCommandChange(row, mapping)">
+                            <el-option v-for="param in commandParameterOptionsDetailed(row.adapterCommandName)" :key="param.paramName" :label="param.paramName + ' · ' + param.dataType" :value="param.paramName" :disabled="isCommandParamMapped(row, param.paramName, mapping)" />
+                          </el-select>
+                        </div>
+                        <div class="pm-col-mode">
+                          <div class="mode-control-wrap">
+                            <el-radio-group v-model="mapping.isFixedValue" size="small" class="mode-radio-group" @change="handleParameterFixedChange(mapping)">
+                              <el-radio-button :value="false">映射</el-radio-button>
+                              <el-radio-button :value="true">固定值</el-radio-button>
+                            </el-radio-group>
+                            <el-input v-if="mapping.isFixedValue" v-model="mapping.fixedValue" size="small" class="fixed-val-input" :placeholder="fixedValuePlaceholder(row, mapping)" />
+                          </div>
+                        </div>
+                        <div class="pm-col-act">
+                          <button class="btn-link danger" type="button" @click="removeRow(row.parameterMapping, index)">删除</button>
+                        </div>
+                        <div v-if="isParameterMappingInvalid(row, mapping)" class="row-warning-full">{{ parameterMappingWarning(row, mapping) }}</div>
+                      </div>
+                    </div>
+                  </article>
+                </div>
+              </div>
+            </div>
+
+            <div id="edit-state" class="anchor-section holistic-section-card">
+              <div class="section-card-head">
+                <div class="section-card-title">
+                  <span class="sec-idx-badge">05</span>
+                  <span class="sec-title-text">执行生命周期转移规则</span>
+                  <span class="sec-desc-text">指令生命周期主线与适配器事件绑定一体化网格</span>
+                </div>
+                <el-tag size="small" effect="plain" type="info">系统内置规范</el-tag>
+              </div>
+              <div class="section-card-body">
+                <div class="grid-table-container lifecycle-table-deep-border">
+                  <div class="grid-table-header lifecycle-grid-cols">
+                    <span class="grid-th">阶段流转</span>
+                    <span class="grid-th">规则属性与说明</span>
+                    <span class="grid-th">触发机制与事件绑定</span>
+                  </div>
+                  <div v-for="(row, $index) in mergedLifecycleRules" :key="$index" class="grid-table-row lifecycle-grid-cols" :class="{ 'system-row-bg': row.type === 'system' }">
+                    <div class="grid-td lifecycle-td">
+                      <div class="flow-pill-left">
+                        <el-tag size="small" type="info" effect="plain" class="flow-state-tag">{{ row.fromStateNames ? row.fromStateNames.join(' / ') : row.fromStateName }}</el-tag>
+                        <el-icon class="flow-arrow-icon"><Right /></el-icon>
+                        <el-tag size="small" :type="targetStateClass(row.toStateName)" effect="light" class="flow-state-tag">{{ row.toStateName || '保持原状态' }}</el-tag>
+                      </div>
+                    </div>
+                    <div class="grid-td lifecycle-td">
+                      <div class="rule-meta-wrap-left">
+                        <span class="system-rule-tag" v-if="row.type === 'system'">系统固定规则</span>
+                        <span class="user-rule-tag" :class="row.kind ? row.kind.toLowerCase() : ''" v-else>{{ ruleKindLabel(row.kind) }}</span>
+                        <div class="rule-desc-text-left">{{ row.description }}</div>
+                      </div>
+                    </div>
+                    <div class="grid-td lifecycle-td">
+                      <div v-if="row.type === 'system'" class="system-triggers-grid-2col">
+                        <div v-for="(trig, tIdx) in row.triggers" :key="tIdx" class="system-trigger-line-2col">
+                          <div class="trig-left-col">
+                            <span class="trig-label-tag">{{ trig.label }}:</span>
+                            <span class="locked-action-badge"><el-icon><Lock /></el-icon>{{ trig.interfaceName }}</span>
+                          </div>
+                          <div class="trig-right-col">
+                            <span class="signal-tag-bold"><el-icon><Discount /></el-icon>{{ trig.signalName }}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div v-else class="adapter-binding-wrap-left">
+                        <div v-if="row.kind === 'TERMINATION'" class="termination-default-note">
                           <el-tag size="small" type="warning" effect="light">终止成功默认转换</el-tag>
                           <span>终止能力完成后，系统自动将原指令转为 ABORTED</span>
                         </div>
-                        <div class="cell-line-upper">
-                          <span class="locked-action-badge compact"><el-icon><Lock /></el-icon>{{ adapterInterfaceName() }}</span>
-                          <span class="binding-tip-text">{{ row.triggerPolicy === 'REQUIRED' ? '（必须绑定Adapter命令事件）' : '（可选Adapter事件）' }}</span>
-                        </div>
-                        <div class="cell-line-lower">
-                          <div class="binding-select-wrapper">
-                            <el-select v-model="executionLifecycleBindings[row.key]" clearable filterable size="small" style="width: 100%;" :placeholder="row.triggerPolicy === 'REQUIRED' ? '请选择Adapter命令事件' : '可选：选择Adapter明确终止事件'">
+                        <div class="binding-interface-grid-2col">
+                          <div class="trig-left-col">
+                            <span class="trig-label-tag">{{ row.triggerPolicy === 'REQUIRED' ? '必选绑定' : '可选绑定' }}:</span>
+                            <span class="locked-action-badge"><el-icon><Lock /></el-icon>{{ adapterInterfaceName() }}</span>
+                          </div>
+                          <div class="trig-right-col">
+                            <el-select v-model="executionLifecycleBindings[row.key]" clearable filterable size="small" style="width: 100%;" :placeholder="row.triggerPolicy === 'REQUIRED' ? '请选择适配器命令事件' : '可选：选择适配器明确终止事件'">
                               <el-option v-for="eventName in adapterCmdEventOptions" :key="eventName" :label="eventName" :value="eventName" />
                             </el-select>
                           </div>
                         </div>
                       </div>
                     </div>
-                  </template>
-                </el-table-column>
-              </el-table>
-            </section>
-
-            <!-- 下方：功能状态 (OP State Regions 全宽独占) -->
-            <section class="drawer-section">
-              <div class="section-title">
-                <div class="section-header-copy">
-                  <h3>功能状态</h3>
-                  <p class="section-note">描述设备并行的业务维度（Regions），可自定义多个分区。</p>
-                </div>
-                <div class="section-actions"><el-button class="btn-aliyun-primary" size="small" :icon="Plus" @click="addOpStateRegion">新增分区</el-button></div>
-              </div>
-
-              <div v-for="(region, rIndex) in draft.opState.regions" :key="region._key || rIndex" class="region-block" style="border: 1px solid var(--el-border-color-light); border-radius: 4px; padding: 12px; margin-bottom: 12px;">
-                <div class="region-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-                  <div style="display: flex; gap: 8px;">
-                    <el-input v-model="region.regionName" size="small" placeholder="分区名称" style="width: 200px;" />
-                    <el-select v-model="region.regionType" size="small" style="width: 132px;" @change="handleRegionTypeChange(region)">
-                      <el-option label="功能区域" value="OPERATIONAL" />
-                      <el-option label="异常区域" value="EXCEPTION" />
-                    </el-select>
-                  </div>
-                  <el-button link class="btn-aliyun-danger-link" :icon="Delete" @click="removeOpStateRegion(rIndex)" />
-                </div>
-                <div v-if="region.regionType === 'OPERATIONAL'" class="state-summary-row">
-                  <span class="state-summary-label">初始状态</span>
-                  <div class="state-input-with-warning">
-                    <el-select v-model="region.initialStateName" filterable allow-create size="small" class="state-inline-select">
-                      <el-option v-for="name in getRegionStateOptions(region)" :key="name" :label="name" :value="name" />
-                    </el-select>
-                    <span class="warning-slot"><el-tooltip v-if="isRegionInitialStateInvalid(region)" content="该状态不存在" placement="top"><el-icon class="inline-warning-icon"><Warning /></el-icon></el-tooltip></span>
-                  </div>
-                </div>
-                <div v-else class="state-summary-row"><span class="state-summary-label">初始状态</span><span class="section-note">异常区域不设置初始状态</span></div>
-                <div class="state-summary-row align-top">
-                  <span class="state-summary-label">状态列表</span>
-                  <div class="state-token-list">
-                    <el-tag v-for="(state, $index) in region.states" :key="state._key || $index" size="small" closable @close="removeOpState(region, $index)" class="state-token filled closable-state-token">
-                      <span class="state-token-text">{{ state.stateName || '未命名' }}</span>
-                      <span class="state-token-warning-slot"><el-tooltip v-if="stateUsageWarning(state.stateName, region.regionName)" :content="stateUsageWarning(state.stateName, region.regionName)" placement="top"><el-icon class="state-warning-icon"><Warning /></el-icon></el-tooltip></span>
-                    </el-tag>
-                    <el-input v-if="opStateInputVisibleMap[region._key]" :ref="el => setOpStateInputRef(el, region._key)" v-model="opStateInputValueMap[region._key]" size="small" class="state-name-input" @keyup.enter="handleOpStateInputConfirm(region)" @blur="handleOpStateInputConfirm(region)" />
-                    <el-button v-else size="small" class="btn-aliyun compact-action-btn" @click="showOpStateInput(region)">新增状态</el-button>
                   </div>
                 </div>
               </div>
-            </section>
-
-            <section class="drawer-section">
-              <div class="section-title"><div class="section-header-copy"><h3>功能状态转移规则</h3><p class="section-note">只配置 Adapter 功能事件（OP）触发的业务状态变化；Exception 分区由内置约束自动驱动，不在此配置。</p></div><div class="section-actions"><el-button class="btn-aliyun-primary" size="small" :icon="Plus" :disabled="adapterOpEventOptions.length === 0 || functionalOpRegions.length === 0" @click="addStateTransition">新增规则</el-button></div></div>
-              <div v-if="stateMachineWarningMessages.length" class="state-warning-panel"><div v-for="message in stateMachineWarningMessages" :key="message" class="state-warning-item"><el-icon class="inline-warning-icon"><Warning /></el-icon><span>{{ message }}</span></div></div>
-              <div v-if="operationTransitionRows.length === 0" class="compact-empty block-empty">暂无功能状态转移规则，可使用上方按钮添加</div>
-              <el-table v-else :data="operationTransitionRows" border size="small" class="transition-table editor-table operation-transition-table">
-                <el-table-column label="说明" min-width="120"><template #default="{ row }"><div class="field-with-warning"><span class="warning-slot"><el-tooltip v-if="transitionWarning(row)" :content="transitionWarning(row)" placement="top"><el-icon class="inline-warning-icon"><Warning /></el-icon></el-tooltip></span><el-input v-model="row.description" size="small" placeholder="可选" /></div></template></el-table-column>
-                <el-table-column label="所属分区" min-width="120"><template #default="{ row }"><el-select v-model="row.regionName" size="small"><el-option v-for="region in functionalOpRegions" :key="region._key" :label="region.regionName" :value="region.regionName" /></el-select></template></el-table-column>
-                <el-table-column label="状态流转" min-width="300"><template #default="{ row }"><div class="transition-state-pair"><state-select v-model="row.fromStateName" :options="getRegionStateOptionsByName(row.regionName)" /><el-icon><Right /></el-icon><state-select v-model="row.toStateName" :options="getRegionStateOptionsByName(row.regionName)" /></div></template></el-table-column>
-                <el-table-column label="触发条件" min-width="240"><template #default="{ row }"><div class="transition-trigger-editor"><span class="locked-action"><el-icon><Lock /></el-icon>{{ adapterInterfaceName() }}</span><state-select v-model="row.trigger.signalName" :options="adapterOpEventOptions" /></div></template></el-table-column>
-                <el-table-column label="转移动作" min-width="280"><template #default="{ row }"><div class="transition-action-list"><div v-for="(act, aIdx) in row.actions" :key="aIdx" class="transition-action-row"><span class="action-editor-label">发送</span><el-select v-model="act.payload.signalName" size="small" placeholder="选择信号"><el-option v-for="sig in getSignalsForInterface(act.payload.interfaceName)" :key="sig" :label="sig" :value="sig" /></el-select><el-button link class="btn-aliyun-danger-link" :icon="Close" title="移除动作" @click="row.actions.splice(aIdx, 1)" /></div><el-button size="small" class="btn-aliyun compact-action-btn" :icon="Plus" @click="ensureTransitionAction(row)">添加动作</el-button></div></template></el-table-column>
-                <el-table-column label="操作" width="64" fixed="right" align="center"><template #default="{ row }"><el-button link class="btn-aliyun-danger-link" :icon="Delete" title="删除规则" @click="removeObjectRow(draft.stateTransitions, row)" /></template></el-table-column>
-              </el-table>
-            </section>
-
-
-          </div>
-
-          <div id="edit-constraint" class="anchor-section industrial-section">
-            <h2 class="section-heading"><span class="section-index">06</span>内置约束</h2>
-            <section class="drawer-section">
-              <div class="section-title">
-                <div class="section-header-copy">
-                  <h3>内置约束</h3>
-                  <p class="section-note">设备自动监测的参数限制。配置此处的违规状态会被引擎识别为异常状态跳转规则并内部闭环触发，无需在功能状态转移中重复配置。</p>
-                </div>
-                <div class="section-actions">
-                  <el-button class="btn-aliyun-primary" size="small" :icon="Plus" @click="addIntrinsicConstraint">新增约束</el-button>
-                </div>
-              </div>
-              <div v-if="draft.intrinsicConstraints.length === 0" class="compact-empty block-empty">暂无内置约束，可使用上方按钮添加</div>
-              <el-table v-else :data="draft.intrinsicConstraints" border size="small" class="editor-table constraint-table">
-                <el-table-column label="约束属性" min-width="170">
-                  <template #default="{ row }">
-                    <el-select v-model="row.objectAttributeKey" size="small" filterable>
-                      <el-option v-for="attr in attributeOptions" :key="attr.key" :label="attr.label" :value="attr.key" />
-                    </el-select>
-                  </template>
-                </el-table-column>
-                <el-table-column label="比较符" width="100" align="center">
-                  <template #default="{ row }"><el-select v-model="row.operator" size="small"><el-option v-for="operator in operators" :key="operator" :label="operator" :value="operator" /></el-select></template>
-                </el-table-column>
-                <el-table-column label="阈值" width="120" align="center">
-                  <template #default="{ row }"><el-input v-model="row.boundaryValue" size="small" /></template>
-                </el-table-column>
-                <el-table-column label="违规状态" min-width="160" align="center">
-                  <template #default="{ row }"><state-select v-model="row.violationStateName" :options="exceptionOpStateNameOptions" /></template>
-                </el-table-column>
-                <el-table-column label="操作" width="64" fixed="right" align="center">
-                  <template #default="{ $index }"><el-button link class="btn-aliyun-danger-link" :icon="Delete" @click="removeRow(draft.intrinsicConstraints, $index)" /></template>
-                </el-table-column>
-              </el-table>
-            </section>
-          </div>
-
-          <div id="edit-bom" class="anchor-section industrial-section">
-            <h2 class="section-heading"><span class="section-index">07</span>组件结构清单</h2>
-            <section class="drawer-section">
-              <div class="section-title">
-                <h3>BOM 清单</h3>
-                <el-button class="btn-aliyun-primary" size="small" :icon="Plus" @click="addBomComponent">新增组件</el-button>
-              </div>
-              <div v-if="draft.componentsBom.length === 0" class="compact-empty block-empty">暂无组件，可使用上方按钮添加</div>
-              <el-table v-else :data="draft.componentsBom" border size="small" class="editor-table bom-table">
-                <el-table-column label="组件名称" min-width="160">
-                  <template #default="{ row }"><el-input v-model="row.slotName" size="small" placeholder="例如：搅拌电机" /></template>
-                </el-table-column>
-                <el-table-column label="设备类别" min-width="180">
-                  <template #default="{ row }">
-                    <el-tree-select
-                      v-model="row.categoryId"
-                      :data="categoryTreeForSelect"
-                      node-key="id"
-                      check-strictly
-                      :render-after-expand="false"
-                      size="small"
-                      placeholder="选择类别"
-                      style="width: 100%"
-                    />
-                  </template>
-                </el-table-column>
-                <el-table-column label="数量" width="120">
-                  <template #default="{ row }"><el-input-number v-model="row.quantity" size="small" :min="1" style="width: 100%" /></template>
-                </el-table-column>
-                <el-table-column label="说明" min-width="200">
-                  <template #default="{ row }"><el-input v-model="row.description" size="small" placeholder="说明" /></template>
-                </el-table-column>
-                <el-table-column label="" width="54" fixed="right">
-                  <template #default="{ $index }"><el-button link class="btn-aliyun-danger-link" :icon="Delete" @click="removeRow(draft.componentsBom, $index)" /></template>
-                </el-table-column>
-              </el-table>
-            </section>
-          </div>
-
-                    <div id="edit-template" class="anchor-section industrial-section">
-            <h2 class="section-heading"><span class="section-index">08</span>默认数据模板</h2>
-            <section class="drawer-section">
-              <div class="section-title">
-                <h3>默认数据模板字段</h3>
-              </div>
-              <div v-if="draft.attributes.length === 0" class="compact-empty block-empty">请先添加设备属性</div>
-              <el-checkbox-group v-else v-model="draft.defaultDataTemplateAttrs">
-                <el-checkbox v-for="attr in draft.attributes" :key="attr._key" :label="attr._key" :value="attr._key" class="template-attr-option">
-                  <span class="template-attr-name">{{ attr.displayName || attr.name || '未命名属性' }}</span>
-                  <span class="template-attr-meta">{{ attr.dataType || '-' }}<template v-if="attr.unit"> · {{ attr.unit }}</template></span>
-                </el-checkbox>
-              </el-checkbox-group>
-              <div style="margin-top: 10px; font-size: 12px; color: #909399;">
-                选中的属性将作为该设备模型的默认数据表字段。在创建设备实例时，系统将自动创建对应的数据表。
-              </div>
-            </section>
-          </div>
-
-                    <div id="edit-file" class="anchor-section industrial-section">
-            <h2 class="section-heading"><span class="section-index">09</span>模型文件</h2>
-            <div style="margin-bottom: 12px; display: flex; justify-content: flex-end;">
-              <el-button class="btn-aliyun-primary" size="small" :loading="generatingPreview" @click="generatePreview">生成 / 刷新预览</el-button>
             </div>
-            <section class="model-json-grid">
-              <div class="json-panel">
-                <div class="section-title"><h3>保存后的设备能力模型</h3></div>
-                <pre>{{ formatJson(draftCapabilityModelJson) }}</pre>
+
+            <div class="holistic-section-card">
+              <div class="section-card-head">
+                <div class="section-card-title">
+                  <span class="sec-idx-badge">05</span>
+                  <span class="sec-title-text">功能状态分区</span>
+                  <span class="sec-desc-text">描述设备并行的业务维度，支持自定义多状态分区</span>
+                </div>
+                <button class="btn-aliyun-cta" type="button" @click="addOpStateRegion">
+                  <el-icon><Plus /></el-icon><span>新增分区</span>
+                </button>
               </div>
-              <div class="json-panel">
-                <div class="section-title"><h3>保存后的状态机模型</h3></div>
-                <pre>{{ formatJson(draftStateMachineModelJson) }}</pre>
+              <div class="section-card-body padded">
+                <div v-for="(region, rIndex) in draft.opState.regions" :key="region._key || rIndex" class="region-block">
+                  <div class="region-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                      <el-input v-model="region.regionName" size="small" placeholder="分区名称" style="width: 180px;" />
+                      <el-tag size="small" :type="region.regionType === 'EXCEPTION' ? 'danger' : 'primary'" effect="plain">
+                        {{ region.regionType === 'EXCEPTION' ? '异常区域' : '功能区域' }}
+                      </el-tag>
+                    </div>
+                    <button class="btn-link danger" type="button" @click="removeOpStateRegion(rIndex)">删除分区</button>
+                  </div>
+                  <div v-if="region.regionType === 'OPERATIONAL'" class="state-summary-row">
+                    <span class="state-summary-label">初始状态</span>
+                    <div class="state-input-with-warning">
+                      <el-select v-model="region.initialStateName" filterable allow-create size="small" class="state-inline-select">
+                        <el-option v-for="name in getRegionStateOptions(region)" :key="name" :label="name" :value="name" />
+                      </el-select>
+                      <span class="warning-slot"><el-tooltip v-if="isRegionInitialStateInvalid(region)" content="该状态不存在" placement="top"><el-icon class="inline-warning-icon"><Warning /></el-icon></el-tooltip></span>
+                    </div>
+                  </div>
+                  <div v-else class="state-summary-row"><span class="state-summary-label">初始状态</span><span class="section-note">异常区域不设置初始状态</span></div>
+                  <div class="state-summary-row align-top">
+                    <span class="state-summary-label">状态列表</span>
+                    <div class="state-token-list">
+                      <el-tag v-for="(state, $index) in region.states" :key="state._key || $index" size="small" closable @close="removeOpState(region, $index)" class="state-token filled closable-state-token">
+                        <span class="state-token-text">{{ state.stateName || '未命名' }}</span>
+                        <span class="state-token-warning-slot"><el-tooltip v-if="stateUsageWarning(state.stateName, region.regionName)" :content="stateUsageWarning(state.stateName, region.regionName)" placement="top"><el-icon class="state-warning-icon"><Warning /></el-icon></el-tooltip></span>
+                      </el-tag>
+                      <el-input v-if="opStateInputVisibleMap[region._key]" :ref="el => setOpStateInputRef(el, region._key)" v-model="opStateInputValueMap[region._key]" size="small" class="state-name-input" @keyup.enter="handleOpStateInputConfirm(region)" @blur="handleOpStateInputConfirm(region)" />
+                      <button v-else class="btn-aliyun" type="button" style="padding: 2px 8px; font-size: 11px;" @click="showOpStateInput(region)">
+                        <el-icon><Plus /></el-icon><span>新增状态</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
-            </section>
-          </div>
+            </div>
+
+            <div class="holistic-section-card">
+              <div class="section-card-head">
+                <div class="section-card-title">
+                  <span class="sec-idx-badge">05</span>
+                  <span class="sec-title-text">功能状态转移规则</span>
+                  <span class="sec-desc-text">配置适配器功能事件触发的业务状态转移，每条规则采用紧凑双行卡片排布</span>
+                </div>
+                <button class="btn-aliyun-cta" type="button" @click="addStateTransition">
+                  <el-icon><Plus /></el-icon><span>新增规则</span>
+                </button>
+              </div>
+              <div class="section-card-body padded">
+                <div v-if="stateMachineWarningMessages.length" class="state-warning-panel" style="margin-bottom: 12px;"><div v-for="message in stateMachineWarningMessages" :key="message" class="state-warning-item"><el-icon class="inline-warning-icon"><Warning /></el-icon><span>{{ message }}</span></div></div>
+                <div v-if="operationTransitionRows.length === 0" class="compact-empty block-empty">暂无功能状态转移规则，可使用上方按钮添加</div>
+                <div v-else class="trans-rule-card-list">
+                  <div v-for="(row, $index) in operationTransitionRows" :key="row._key || $index" class="trans-rule-item-card">
+                    <!-- 第一行：序号、说明、所属分区、状态流转、删除 -->
+                    <div class="trans-card-row-top">
+                      <div class="trans-field-cell desc-cell">
+                        <span class="field-mini-label">#{{ $index + 1 }} 规则说明</span>
+                        <div class="field-with-warning">
+                          <span class="warning-slot"><el-tooltip v-if="transitionWarning(row)" :content="transitionWarning(row)" placement="top"><el-icon class="inline-warning-icon"><Warning /></el-icon></el-tooltip></span>
+                          <el-input v-model="row.description" size="small" placeholder="规则说明，例如：启动完成进入运行态" />
+                        </div>
+                      </div>
+
+                      <div class="trans-field-cell region-cell">
+                        <span class="field-mini-label">所属分区</span>
+                        <el-select v-model="row.regionName" size="small" style="width: 130px;">
+                          <el-option v-for="region in functionalOpRegions" :key="region._key" :label="region.regionName" :value="region.regionName" />
+                        </el-select>
+                      </div>
+
+                      <div class="trans-field-cell flow-cell">
+                        <span class="field-mini-label">状态流转</span>
+                        <div class="transition-state-pair">
+                          <state-select v-model="row.fromStateName" :options="getRegionStateOptionsByName(row.regionName)" placeholder="原状态" />
+                          <el-icon class="flow-arrow-icon"><Right /></el-icon>
+                          <state-select v-model="row.toStateName" :options="getRegionStateOptionsByName(row.regionName)" placeholder="目标状态" />
+                        </div>
+                      </div>
+
+                      <button class="btn-link danger trans-del-btn" type="button" @click="removeObjectRow(draft.stateTransitions, row)">
+                        <el-icon><Delete /></el-icon><span>删除</span>
+                      </button>
+                    </div>
+
+                    <!-- 第二行：触发条件、转移动作（动作水平横向展开，添加动作在最右边） -->
+                    <div class="trans-card-row-bottom">
+                      <div class="trans-field-cell trigger-cell">
+                        <span class="field-mini-label">触发条件</span>
+                        <div class="transition-trigger-editor">
+                          <span class="adapter-iface-tag">{{ adapterInterfaceName() || '适配器事件' }}</span>
+                          <state-select v-model="row.trigger.signalName" :options="adapterOpEventOptions" placeholder="选择或输入触发事件" />
+                        </div>
+                      </div>
+
+                      <div class="trans-field-cell action-cell">
+                        <span class="field-mini-label">转移动作</span>
+                        <div class="transition-action-horizontal-list">
+                          <div v-for="(act, aIdx) in row.actions" :key="aIdx" class="transition-action-chip">
+                            <span class="action-editor-label">发送</span>
+                            <el-select v-model="act.payload.signalName" size="small" filterable clearable allow-create placeholder="选择/输入信号" style="width: 140px;">
+                              <el-option v-for="sig in getAvailableActionSignals(act.payload?.interfaceName)" :key="sig" :label="sig" :value="sig" />
+                            </el-select>
+                            <button class="btn-chip-del" type="button" @click="row.actions.splice(aIdx, 1)">✕</button>
+                          </div>
+                          <button class="btn-aliyun btn-add-action-inline" type="button" @click="ensureTransitionAction(row)">
+                            <el-icon><Plus /></el-icon><span>添加动作</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div id="edit-constraint" class="anchor-section holistic-section-card">
+              <div class="section-card-head">
+                <div class="section-card-title">
+                  <span class="sec-idx-badge">06</span>
+                  <span class="sec-title-text">内置约束条件</span>
+                  <span class="sec-desc-text">设备自动监测的参数限制与异常闭环触发</span>
+                </div>
+                <button class="btn-aliyun-cta" type="button" @click="addIntrinsicConstraint">
+                  <el-icon><Plus /></el-icon><span>新增约束</span>
+                </button>
+              </div>
+              <div class="section-card-body">
+                <div v-if="draft.intrinsicConstraints.length === 0" class="compact-empty block-empty">暂无内置约束，可使用上方按钮添加</div>
+                <div v-else class="grid-table-container">
+                  <div class="grid-table-header constraint-grid-cols">
+                    <span class="grid-th">约束属性</span>
+                    <span class="grid-th">比较符</span>
+                    <span class="grid-th">阈值</span>
+                    <span class="grid-th">违规状态</span>
+                    <span class="grid-th col-center">操作</span>
+                  </div>
+                  <div v-for="(row, $index) in draft.intrinsicConstraints" :key="$index" class="grid-table-row constraint-grid-cols">
+                    <div class="grid-td">
+                      <el-select v-model="row.objectAttributeKey" size="small" filterable style="width: 100%;">
+                        <el-option v-for="attr in attributeOptions" :key="attr.key" :label="attr.label" :value="attr.key" />
+                      </el-select>
+                    </div>
+                    <div class="grid-td">
+                      <el-select v-model="row.operator" size="small" style="width: 100%;">
+                        <el-option v-for="operator in operators" :key="operator" :label="operator" :value="operator" />
+                      </el-select>
+                    </div>
+                    <div class="grid-td"><el-input v-model="row.boundaryValue" size="small" placeholder="数值" /></div>
+                    <div class="grid-td"><state-select v-model="row.violationStateName" :options="exceptionOpStateNameOptions" /></div>
+                    <div class="grid-td col-center"><button class="btn-link danger" type="button" @click="removeRow(draft.intrinsicConstraints, $index)">删除</button></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div id="edit-bom" class="anchor-section holistic-section-card">
+              <div class="section-card-head">
+                <div class="section-card-title">
+                  <span class="sec-idx-badge">07</span>
+                  <span class="sec-title-text">组件结构清单</span>
+                  <span class="sec-desc-text">声明设备下挂的子组件、电机或传感器槽位</span>
+                </div>
+                <button class="btn-aliyun-cta" type="button" @click="addBomComponent">
+                  <el-icon><Plus /></el-icon><span>新增组件</span>
+                </button>
+              </div>
+              <div class="section-card-body">
+                <div v-if="draft.componentsBom.length === 0" class="compact-empty block-empty">暂无组件，可使用上方按钮添加</div>
+                <div v-else class="grid-table-container">
+                  <div class="grid-table-header bom-grid-cols">
+                    <span class="grid-th">组件名称</span>
+                    <span class="grid-th">设备类别</span>
+                    <span class="grid-th">数量</span>
+                    <span class="grid-th">说明</span>
+                    <span class="grid-th col-center">操作</span>
+                  </div>
+                  <div v-for="(row, $index) in draft.componentsBom" :key="$index" class="grid-table-row bom-grid-cols">
+                    <div class="grid-td"><el-input v-model="row.slotName" size="small" placeholder="例如：搅拌电机" /></div>
+                    <div class="grid-td">
+                      <el-tree-select
+                        v-model="row.categoryId"
+                        :data="categoryTreeForSelect"
+                        node-key="id"
+                        check-strictly
+                        :render-after-expand="false"
+                        size="small"
+                        placeholder="选择类别"
+                        style="width: 100%"
+                      />
+                    </div>
+                    <div class="grid-td"><el-input-number v-model="row.quantity" size="small" :min="1" :controls="false" placeholder="数量" style="width: 100%" /></div>
+                    <div class="grid-td"><el-input v-model="row.description" size="small" placeholder="说明" /></div>
+                    <div class="grid-td col-center"><button class="btn-link danger" type="button" @click="removeRow(draft.componentsBom, $index)">删除</button></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div id="edit-template" class="anchor-section holistic-section-card">
+              <div class="section-card-head">
+                <div class="section-card-title">
+                  <span class="sec-idx-badge">08</span>
+                  <span class="sec-title-text">默认数据模板字段</span>
+                  <span class="sec-desc-text">创建设备实例时将自动创建对应的数据表字段</span>
+                </div>
+              </div>
+              <div class="section-card-body padded">
+                <div v-if="draft.attributes.length === 0" class="compact-empty block-empty">请先添加设备属性</div>
+                <el-checkbox-group v-else v-model="draft.defaultDataTemplateAttrs">
+                  <el-checkbox v-for="attr in draft.attributes" :key="attr._key" :label="attr._key" :value="attr._key" class="template-attr-option">
+                    <span class="template-attr-name">{{ attr.displayName || attr.name || '未命名属性' }}</span>
+                    <span class="template-attr-meta">{{ attr.dataType || '-' }}<template v-if="attr.unit"> · {{ attr.unit }}</template></span>
+                  </el-checkbox>
+                </el-checkbox-group>
+                <div style="margin-top: 8px; font-size: 12px; color: var(--sl-text-secondary);">
+                  选中的属性将作为该设备模型的默认数据表字段。在创建设备实例时，系统将自动创建对应的数据表。
+                </div>
+              </div>
+            </div>
+
+            <div id="edit-file" class="anchor-section holistic-section-card">
+              <div class="section-card-head">
+                <div class="section-card-title">
+                  <span class="sec-idx-badge">09</span>
+                  <span class="sec-title-text">模型文件预览</span>
+                  <span class="sec-desc-text">预览并核对生成的设备能力模型与状态机 JSON</span>
+                </div>
+                <button class="btn-aliyun-cta" type="button" :disabled="generatingPreview" @click="generatePreview">
+                  <el-icon><Refresh /></el-icon><span>{{ generatingPreview ? '生成中...' : '生成 / 刷新预览' }}</span>
+                </button>
+              </div>
+              <div class="section-card-body padded">
+                <section class="model-json-grid">
+                  <div class="json-panel">
+                    <div class="section-title"><h3>保存后的设备能力模型</h3></div>
+                    <pre>{{ formatJson(draftCapabilityModelJson) }}</pre>
+                  </div>
+                  <div class="json-panel">
+                    <div class="section-title"><h3>保存后的状态机模型</h3></div>
+                    <pre>{{ formatJson(draftStateMachineModelJson) }}</pre>
+                  </div>
+                </section>
+              </div>
+            </div>
 
           </el-scrollbar>
         </div>
@@ -591,8 +742,11 @@
 
       <template #footer>
         <div class="drawer-footer">
-          <el-button class="btn-aliyun" @click="drawerVisible = false">取消</el-button>
-          <el-button class="btn-aliyun-cta" :loading="saving" @click="saveDraft">保存模型</el-button>
+          <button class="btn-aliyun" type="button" @click="drawerVisible = false">取消</button>
+          <button class="btn-primary-blue" type="button" :disabled="saving" @click="saveDraft">
+            <span v-if="saving">保存中...</span>
+            <span v-else>保存模型</span>
+          </button>
         </div>
       </template>
     </el-drawer>
@@ -977,6 +1131,19 @@ function transitionWarning(row) {
   return ''
 }
 
+function targetStateClass(toStateName) {
+  if (toStateName === 'COMPLETED') return 'success'
+  if (toStateName === 'ABORTED') return 'warning'
+  if (toStateName === 'FAILED') return 'danger'
+  return 'primary'
+}
+
+function ruleKindLabel(kind) {
+  if (kind === 'FAILURE') return '失败分支规则'
+  if (kind === 'TERMINATION') return '终止分支规则'
+  return '正常推进阶段'
+}
+
 const stateMachineWarningMessages = computed(() => {
   const messages = []
   if (operationTransitionRows.value.length > 0 || (draft.opState.regions || []).some(region => region.regionType === 'EXCEPTION')) {
@@ -1036,7 +1203,7 @@ async function saveDraft() {
   const abortWithoutScope = asArray(draft.capabilities)
     .find(capability => capability.isAbort === true && !normalizeScopeKeys(capability.scopeCapabilityKeys).length)
   if (abortWithoutScope) {
-    ElMessage.error(`终止能力“${capabilityLabel(abortWithoutScope)}”至少需要选择一个受影响的普通能力`)
+    ElMessage.error(`终止能力“${capabilityLabel(abortWithoutScope)}”至少需要选择一个受影响的普通操作`)
     return
   }
   saving.value = true
@@ -1331,7 +1498,7 @@ function terminationCapabilityOptions(capability) {
 }
 
 function normalCapabilityOptions(capability) {
-  return draft.capabilities.filter(item => item._key !== capability._key && item.isAbort !== true)
+  return draft.capabilities.filter(item => item._key !== capability._key && item.isAbort !== true && (!item.abortCapabilityKey || item.abortCapabilityKey === capability._key))
 }
 
 function normalizeScopeKeys(keys) {
@@ -1339,6 +1506,7 @@ function normalizeScopeKeys(keys) {
 }
 
 function syncCapabilityReferenceNames(capability) {
+  if (!capability) return
   if (capability.isAbort === true) {
     capability.abortCapabilityKey = ''
     capability.abortCapabilityName = null
@@ -1374,28 +1542,34 @@ function handleCapabilityAbortTypeChange(capability) {
 }
 
 function handleAbortCapabilityChange(capability) {
+  const targetAbortKey = capability.abortCapabilityKey
   draft.capabilities.forEach(item => {
     if (item.isAbort === true) {
-      item.scopeCapabilityKeys = asArray(item.scopeCapabilityKeys).filter(key => key !== capability._key)
+      const keys = new Set(asArray(item.scopeCapabilityKeys))
+      if (item._key === targetAbortKey) {
+        keys.add(capability._key)
+      } else {
+        keys.delete(capability._key)
+      }
+      item.scopeCapabilityKeys = normalizeScopeKeys([...keys])
       syncCapabilityReferenceNames(item)
     }
   })
-  const target = draft.capabilities.find(item => item._key === capability.abortCapabilityKey && item.isAbort === true)
-  if (target) {
-    target.scopeCapabilityKeys = normalizeScopeKeys([...asArray(target.scopeCapabilityKeys), capability._key])
-    syncCapabilityReferenceNames(target)
-  }
   syncCapabilityReferenceNames(capability)
-}
-
-function isScopeReferenceLocked(terminationCapability, capabilityKey) {
-  return draft.capabilities.some(item => item.isAbort !== true && item.abortCapabilityKey === terminationCapability._key && item._key === capabilityKey)
 }
 
 function handleAbortScopeChange(capability) {
   capability.scopeCapabilityKeys = normalizeScopeKeys(capability.scopeCapabilityKeys)
-  draft.capabilities.filter(item => item.isAbort !== true && item.abortCapabilityKey === capability._key).forEach(item => {
-    if (!capability.scopeCapabilityKeys.includes(item._key)) capability.scopeCapabilityKeys.push(item._key)
+  const selectedScopeKeys = new Set(capability.scopeCapabilityKeys)
+  draft.capabilities.forEach(item => {
+    if (item.isAbort !== true) {
+      if (selectedScopeKeys.has(item._key)) {
+        item.abortCapabilityKey = capability._key
+      } else if (item.abortCapabilityKey === capability._key) {
+        item.abortCapabilityKey = ''
+      }
+      syncCapabilityReferenceNames(item)
+    }
   })
   syncCapabilityReferenceNames(capability)
 }
@@ -1686,7 +1860,23 @@ function removeOpState(region, index) {
 function removeObjectRow(rows, row) { const index = rows.indexOf(row); if (index >= 0) rows.splice(index, 1) }
 
 function addStateTransition() {
+  if (!draft.adapterContract?.config?.adapterName && asArray(draft.adapterContract?.events).length === 0) {
+    ElMessage.warning('请先载入适配器契约配置')
+    return
+  }
+  if (functionalOpRegions.value.length === 0) {
+    if (!draft.opState.regions) draft.opState.regions = []
+    draft.opState.regions.push({
+      _key: makeUiKey('region'),
+      regionName: 'Main',
+      regionType: 'OPERATIONAL',
+      initialStateName: '',
+      states: []
+    })
+    ElMessage.info('已自动初始化默认功能状态分区 Main')
+  }
   const firstRegion = functionalOpRegions.value[0]?.regionName || 'Main'
+  const defaultSignal = adapterOpEventOptions.value[0] || ''
   draft.stateTransitions.push({
     _key: makeUiKey('transition'),
     stateSpace: 'OP',
@@ -1694,14 +1884,31 @@ function addStateTransition() {
     description: '',
     fromStateName: '',
     toStateName: '',
-    trigger: { interfaceName: adapterInterfaceName(), signalName: adapterOpEventOptions.value[0] || '' },
+    trigger: { interfaceName: adapterInterfaceName(), signalName: defaultSignal },
     actions: []
   })
 }
 
+function getAvailableActionSignals(interfaceName) {
+  const list = getSignalsForInterface(interfaceName)
+  if (Array.isArray(list) && list.length > 0) return list
+  return adapterOutSignals.length > 0 ? adapterOutSignals : ['CMD_START', 'CMD_ABORT', 'OP_STATE']
+}
+
 function ensureTransitionAction(row) {
-  if (!row.actions) row.actions = []
-  row.actions.push(adapterOutAction(''))
+  if (!Array.isArray(row.actions)) {
+    row.actions = []
+  }
+  const iface = 'Interface_adapter_out'
+  const signals = getAvailableActionSignals(iface)
+  const defaultSig = signals[0] || 'CMD_START'
+  row.actions.push({
+    actionName: 'SEND',
+    payload: {
+      interfaceName: iface,
+      signalName: defaultSig
+    }
+  })
 }
 
 function parsedAdapterConfig(adapter) {
@@ -1832,148 +2039,817 @@ function summaryText(model) {
 .drawer-tabs { height: 100%; }
 .drawer-tabs :deep(.el-tabs__content) { height: 100%; overflow: auto; padding: 0 4px 18px 18px; }
 .drawer-tabs :deep(.el-tabs__header) { width: 116px; }
-.basic-form, .mapping-form { max-width: 760px; }
+.basic-form, .mapping-form { max-width: 100%; }
 .basic-form :deep(.el-select), .mapping-form :deep(.el-select) { width: 100%; }
 .config-import { margin-bottom: 8px; }
-.registered-adapter-picker { width: 100%; display: grid; grid-template-columns: minmax(180px, 1.1fr) minmax(180px, 1fr) auto auto; gap: 8px; align-items: center; }
+.registered-adapter-picker { width: 100%; display: grid; grid-template-columns: minmax(160px, 1.1fr) minmax(160px, 1fr) auto auto; gap: 8px; align-items: center; }
 .registered-adapter-picker :deep(.el-select) { width: 100%; }
-.param-map-editor { display: flex; flex-direction: column; gap: 8px; }
+
+/* ── 操作映射卡片与嵌套子表 ── */
 .function-mapping-card-list { display: grid; gap: 10px; }
-.function-mapping-editor-card { border: 1px solid #dbe4ef; border-left: 3px solid #2563eb; border-radius: 6px; background: #fff; padding: 10px; }
-.function-map-editor-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
-.function-map-selects { flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(180px, 1fr) 28px minmax(180px, 1fr); align-items: end; gap: 8px; }
-.function-map-selects label { min-width: 0; display: grid; gap: 4px; }
-.function-map-selects label > span { color: #64748b; font-size: 12px; font-weight: 700; }
-.mapping-direction { align-self: center; color: #64748b; text-align: center; font-weight: 700; }
-.compact-param-editor { margin-top: 10px; }
-.param-map-row { display: grid; grid-template-columns: minmax(160px, 1fr) minmax(160px, 1fr) 104px 28px; align-items: end; gap: 8px; padding: 8px; border: 1px solid transparent; border-radius: 6px; background: #f8fafc; }
-.param-map-row.fixed { grid-template-columns: minmax(150px, 1fr) minmax(150px, 1fr) 104px minmax(150px, 1fr) 28px; }
-.param-map-row.invalid { border-color: #f4b4b4; background: #fff7f7; }
-.param-map-field, .param-map-mode { min-width: 0; display: grid; gap: 4px; }
-.param-map-label { color: #64748b; font-size: 11px; font-weight: 700; line-height: 1.2; }
-.fixed-input-field .el-input { width: 100%; }
-.param-delete-btn { align-self: center; }
-.map-warning { grid-column: 1 / -1; color: #c2410c; font-size: 12px; line-height: 1.4; }
+.function-mapping-editor-card { border: 1px solid var(--sl-border-base); border-left: 3px solid var(--sl-primary); border-radius: var(--sl-radius-sm); background: #ffffff; padding: 10px; }
+.function-map-editor-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.function-map-selects { flex: 1; min-width: 0; display: grid; grid-template-columns: minmax(150px, 1fr) 24px minmax(150px, 1fr); align-items: center; gap: 8px; }
+.function-map-selects label { min-width: 0; display: flex; align-items: center; gap: 6px; }
+.function-map-selects label > span { color: var(--sl-text-secondary); font-size: 12px; font-weight: 600; white-space: nowrap; flex-shrink: 0; }
+.mapping-direction { align-self: center; color: var(--sl-text-secondary); text-align: center; font-weight: 700; }
+
+.nested-param-table-card {
+  margin-top: 6px;
+  border: 1px solid var(--sl-border-base);
+  border-radius: 4px;
+  background: #ffffff;
+  overflow: hidden;
+}
+.nested-param-table-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: #f8fafc;
+  border-bottom: 1px solid var(--sl-border-base);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--sl-text-secondary);
+}
+.nested-param-table-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid #f1f5f9;
+  background: #ffffff;
+  flex-wrap: wrap;
+}
+.nested-param-empty-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: #ffffff;
+}
+.nested-param-table-row:last-of-type {
+  border-bottom: none;
+}
+.nested-param-table-row.invalid {
+  background: #fff7f7;
+  border-color: #fecaca;
+}
+.pm-col-cap {
+  flex: 1.2;
+  min-width: 130px;
+}
+.pm-col-arr {
+  width: 16px;
+  flex-shrink: 0;
+  text-align: center;
+  color: var(--sl-text-secondary);
+  font-weight: 700;
+}
+.pm-col-cmd {
+  flex: 1.2;
+  min-width: 130px;
+}
+.pm-col-mode {
+  flex: 1.6;
+  min-width: 170px;
+}
+.mode-control-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+.mode-radio-group {
+  flex-shrink: 0;
+}
+.mode-radio-group :deep(.el-radio-button__inner) {
+  padding: 4px 8px !important;
+  font-size: 11px !important;
+}
+.fixed-val-input {
+  flex: 1;
+  min-width: 80px;
+}
+.pm-col-act {
+  width: 45px;
+  flex-shrink: 0;
+  text-align: center;
+}
+.row-warning-full {
+  width: 100%;
+  margin-top: 4px;
+  color: #dc2626;
+  font-size: 11.5px;
+}
+.param-map-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 10px;
+  background: #fafbfc;
+  border-top: 1px solid #f1f5f9;
+}
+.no-mapping-placeholder {
+  font-size: 12px;
+  color: var(--sl-text-secondary);
+  font-style: italic;
+}
+
 .locked-heading { display: flex; align-items: center; gap: 8px; min-width: 0; }
 .locked-heading h3 { margin: 0; }
-.locked-section { background: #ffffff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px; }
-.state-group-title { margin: 24px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--el-border-color-lighter); color: var(--el-text-color-primary); font-size: 16px; font-weight: 600; }
+.locked-section { background: #ffffff; border: 1px solid var(--sl-border-base); border-radius: var(--sl-radius-sm); padding: 10px; }
+.state-group-title { margin: 20px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--sl-border-base); color: var(--sl-text-heading); font-size: 15px; font-weight: 600; }
 .state-group-title.first { margin-top: 0; }
-.state-card-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 10px; }
-.state-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px; }
-.state-summary-row { display: grid; grid-template-columns: 72px minmax(0, 1fr); align-items: center; gap: 10px; min-height: 32px; margin-top: 8px; }
+.state-card-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 8px; }
+.state-card { background: #ffffff; border: 1px solid var(--sl-border-base); border-radius: var(--sl-radius-sm); padding: 10px; }
+.region-block { border: 1px solid var(--sl-border-base); border-radius: var(--sl-radius-sm); padding: 10px 12px; margin-bottom: 10px; background: #ffffff; }
+.state-summary-row { display: grid; grid-template-columns: 64px minmax(0, 1fr); align-items: center; gap: 8px; min-height: 28px; margin-top: 6px; }
 .state-summary-row.align-top { align-items: flex-start; }
-.state-summary-label { color: #64748b; font-size: 12px; line-height: 24px; }
-.state-token-list { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; }
+.state-summary-label { color: var(--sl-text-secondary); font-size: 12px; font-weight: 500; }
+.state-token-list { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; align-items: center; }
 .state-token { border: 0; }
-.state-token.filled { background: #dcfce7; color: #166534; }
+.state-token.filled { background: #ecfdf5; color: #047857; }
 .closable-state-token :deep(.el-tag__content) { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
-.state-token-text { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.state-token-text { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 11.5px; }
 .state-token-warning-slot, .warning-slot { width: 16px; min-width: 16px; display: inline-flex; align-items: center; justify-content: center; }
-.state-warning-icon, .inline-warning-icon { color: #dc2626; font-size: 14px; line-height: 1; }
-.state-input-with-warning, .field-with-warning { display: grid; grid-template-columns: 16px minmax(0, 1fr); align-items: center; gap: 6px; width: 100%; }
+.state-warning-icon, .inline-warning-icon { color: #dc2626; font-size: 13px; line-height: 1; }
+.state-input-with-warning, .field-with-warning { display: grid; grid-template-columns: 16px minmax(0, 1fr); align-items: center; gap: 4px; width: 100%; }
 .state-input-with-warning { grid-template-columns: minmax(0, 1fr) 16px; }
-.state-warning-panel { margin: 0 0 10px; padding: 8px 10px; border: 1px solid #fecaca; border-radius: 6px; background: #fff7f7; display: flex; flex-direction: column; gap: 4px; }
-.state-warning-item { display: flex; align-items: center; gap: 6px; color: #991b1b; font-size: 12px; line-height: 1.4; }
+.state-warning-panel { margin: 0 0 8px; padding: 6px 8px; border: 1px solid #fecaca; border-radius: 4px; background: #fff7f7; display: flex; flex-direction: column; gap: 4px; }
+.state-warning-item { display: flex; align-items: center; gap: 6px; color: #991b1b; font-size: 11.5px; line-height: 1.4; }
 .state-inline-select { width: 100%; }
-.compact-state-table { margin-top: 10px; background: #fff; }
+.compact-state-table { margin-top: 8px; background: #ffffff; }
 .compact-transition-table { width: 100%; }
-.compact-transition-table :deep(.el-table__cell) { padding: 6px 8px; }
-.transition-action-cell { display: grid; grid-template-columns: minmax(0, 1fr) 28px; gap: 6px; align-items: start; }
-.transition-action-list { display: flex; flex-direction: column; gap: 6px; min-width: 0; align-items: flex-start; }
-.transition-action-row { display: grid; grid-template-columns: 34px minmax(120px, 1fr) 26px; align-items: center; gap: 6px; width: 100%; }
-.action-editor-label { color: #64748b; font-size: 12px; }
-.compact-action-btn { padding: 4px 8px; }
-.serious-actions-container { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
-.serious-action-wrapper { display: inline-flex; align-items: center; }
-.serious-action-tag { font-weight: 500; color: #334155; background-color: #ffffff; border-color: #cbd5e1; }
-.serious-action-editor { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
-.template-attr-option { margin-right: 14px; margin-bottom: 8px; padding: 7px 10px; border: 1px solid #dbe4ef; border-radius: 6px; background: #f8fafc; }
-.template-attr-name { font-weight: 600; color: #0f172a; }
-.template-attr-meta { margin-left: 8px; color: #64748b; font-size: 12px; }
-.nested-toolbar { justify-content: space-between; margin: 10px 0 8px; color: var(--color-text-sub); font-size: 12px; font-weight: 600; }
-.nested-table { background: #fff; }
-.block-empty { margin-top: 4px; }
-.drawer-section { margin-top: 12px; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px 16px; background: #ffffff; box-shadow: 0 1px 3px 0 rgba(15, 23, 42, 0.03); transition: all 0.2s ease-in-out; }
-.drawer-section:hover { box-shadow: 0 4px 6px -1px rgba(15, 23, 42, 0.06), 0 2px 4px -2px rgba(15, 23, 42, 0.04); }
-.drawer-footer { justify-content: flex-end; display: flex; align-items: center; gap: 8px; }
-.model-edit-workbench { display: flex; min-height: 0; overflow: hidden; height: calc(100vh - 120px); }
-.edit-scroll-content { flex: 1; min-width: 0; }
-.edit-scroll-content :deep(.el-scrollbar__view) { padding: 14px 18px 28px; }
-.capability-editor-card, .capability-editor-list, .capability-title-editor { border-left: 3px solid #3b82f6; }
-.capability-execution-config { display: flex; flex-wrap: wrap; gap: 10px 16px; margin: 10px 0; padding: 9px 10px; border: 1px solid #dbe4ef; border-radius: 5px; background: #f8fafc; }
-.capability-config-field { display: flex; align-items: center; gap: 8px; min-width: 200px; color: #475569; font-size: 12px; font-weight: 700; }
-.capability-config-field > span { flex: 0 0 auto; }
-.capability-config-select { flex: 1 1 320px; }
-.capability-config-select :deep(.el-select) { flex: 1; min-width: 0; }
-.command-editor-card, .command-editor-list { border-left: 3px solid #10b981; }
-.locked-table :deep(.el-table__body-wrapper) { background: #ffffff; }
-.locked-action { max-width: 100%; color: #475569; font-size: 12px; line-height: 1.45; display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; white-space: normal; }
-
-/* ── 锚点布局与导航样式 ── */
-.detail-anchor-layout { min-height: 0; background: #fff; border-top: 1px solid #e5e7eb; }
-.detail-anchor-menu {
-  width: 172px;
-  flex-shrink: 0;
-  padding: 12px 8px;
-  background: #f8fafc;
-  border-right: 1px solid #e2e8f0 !important;
+.compact-transition-table :deep(.el-table__cell) { padding: 5px 6px; }
+.transition-action-cell { display: grid; grid-template-columns: minmax(0, 1fr) 26px; gap: 4px; align-items: start; }
+.transition-action-list { display: flex; flex-direction: column; gap: 4px; min-width: 0; align-items: flex-start; }
+.transition-action-row { display: grid; grid-template-columns: 28px minmax(100px, 1fr) 20px; align-items: center; gap: 4px; width: 100%; }
+.action-editor-label { color: var(--sl-text-secondary); font-size: 11.5px; }
+.compact-action-btn { padding: 3px 6px; font-size: 11px; }
+.template-attr-option { margin-right: 12px; margin-bottom: 6px; padding: 6px 10px; border: 1px solid var(--sl-border-base); border-radius: 4px; background: #f8fafc; }
+.template-attr-name { font-weight: 600; color: var(--sl-text-heading); font-size: 12px; }
+.template-attr-meta { margin-left: 6px; color: var(--sl-text-secondary); font-size: 11px; }
+.nested-toolbar { display: flex; align-items: center; justify-content: space-between; margin: 8px 0 6px; color: var(--sl-text-secondary); font-size: 12px; font-weight: 600; }
+.nested-table-card { margin-top: 4px; }
+.btn-link {
+  white-space: nowrap !important;
+  word-break: keep-all !important;
+  display: inline-block;
 }
-.detail-anchor-menu :deep(.el-anchor__link) {
-  margin-bottom: 4px;
-  padding: 8px 12px;
-  border-radius: 6px;
+
+/* ── 一体化数据网格卡片容器规范 (Unified Grid Table/Card Container) ── */
+.grid-table-container {
+  border: 1px solid var(--sl-border-base);
+  border-radius: var(--sl-radius-sm);
+  background: #ffffff;
+  overflow: hidden;
+  width: 100%;
+}
+.nested-grid-table {
+  border-color: #e2e8f0;
+}
+.grid-table-header {
+  background: #f8fafc;
+  border-bottom: 1px solid var(--sl-border-base);
+  padding: 7px 10px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--sl-text-secondary);
+  line-height: 1.4;
+}
+.grid-table-header .grid-th {
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.grid-table-header .grid-th.col-center {
+  text-align: center;
+}
+.grid-table-row {
+  padding: 6px 10px;
+  border-bottom: 1px solid #f1f5f9;
+  background: #ffffff;
+  transition: background-color 0.15s ease;
+  min-height: 40px;
+}
+.grid-table-row:last-of-type {
+  border-bottom: none;
+}
+.grid-table-row:hover {
+  background-color: #f8fafc;
+}
+.grid-table-row.system-row-bg {
+  background-color: #fafbfc;
+}
+.grid-table-row.system-row-bg:hover {
+  background-color: #f1f5f9;
+}
+.grid-td {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+.grid-td.col-center {
+  justify-content: center;
+  text-align: center;
+}
+.grid-td.lifecycle-td {
+  align-items: flex-start;
+  padding: 2px 0;
+}
+.grid-td :deep(.el-input__wrapper),
+.grid-td :deep(.el-select__wrapper),
+.grid-td :deep(.el-tree-select .el-select__wrapper) {
+  box-shadow: 0 0 0 1px #dbe4ef inset !important;
+  border-radius: 4px;
+  background-color: #ffffff;
+  padding: 1px 7px !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  line-height: 28px !important;
+  width: 100% !important;
+}
+.grid-td :deep(.el-input__wrapper:hover),
+.grid-td :deep(.el-select__wrapper:hover) {
+  box-shadow: 0 0 0 1px #94a3b8 inset !important;
+}
+.grid-td :deep(.el-input__wrapper.is-focus),
+.grid-td :deep(.el-select__wrapper.is-focused) {
+  box-shadow: 0 0 0 1.5px var(--sl-primary) inset !important;
+}
+.font-mono-text {
+  font-family: var(--sl-font-mono);
+  font-size: 12px;
+  color: var(--sl-text-heading);
+  font-weight: 500;
+}
+.desc-sub-text {
+  font-size: 12px;
+  color: var(--sl-text-secondary);
+}
+.map-arrow {
+  color: var(--sl-text-secondary);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+/* ── 各模块专用网格列定义 (精确比例且表头与数据行绝对同步) ── */
+.attr-grid-cols {
+  display: grid;
+  grid-template-columns: minmax(130px, 1.4fr) minmax(100px, 1fr) minmax(110px, 1.1fr) minmax(80px, 0.8fr) 50px;
+  gap: 8px;
+  align-items: center;
+}
+.cap-param-grid-cols {
+  display: grid;
+  grid-template-columns: minmax(130px, 1.4fr) minmax(120px, 1.1fr) 50px;
+  gap: 8px;
+  align-items: center;
+}
+.port-grid-cols {
+  display: grid;
+  grid-template-columns: minmax(130px, 1.4fr) minmax(90px, 0.9fr) minmax(140px, 1.4fr) 50px;
+  gap: 8px;
+  align-items: center;
+}
+.cmd-param-grid-cols {
+  display: grid;
+  grid-template-columns: minmax(130px, 1.2fr) minmax(100px, 1fr) minmax(150px, 1.8fr);
+  gap: 8px;
+  align-items: center;
+}
+.telemetry-grid-cols {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.4fr) minmax(110px, 1fr) minmax(160px, 1.8fr);
+  gap: 8px;
+  align-items: center;
+}
+.event-grid-cols {
+  display: grid;
+  grid-template-columns: 80px minmax(150px, 1.4fr) minmax(160px, 1.8fr);
+  gap: 8px;
+  align-items: center;
+}
+.attrmap-grid-cols {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.4fr) 24px minmax(140px, 1.4fr) 50px;
+  gap: 8px;
+  align-items: center;
+}
+.op-trans-grid-cols {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) minmax(90px, 0.9fr) minmax(160px, 1.4fr) minmax(130px, 1.2fr) minmax(160px, 1.5fr) 50px;
+  gap: 8px;
+  align-items: center;
+}
+.constraint-grid-cols {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) minmax(100px, 1fr) minmax(100px, 1fr) minmax(100px, 1fr) 50px;
+  gap: 8px;
+  align-items: center;
+}
+.bom-grid-cols {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.4fr) minmax(150px, 1.4fr) 110px minmax(130px, 1.8fr) 50px;
+  gap: 8px;
+  align-items: center;
+}
+
+/* ── 执行生命周期专属排版 (左对齐、清晰药丸流与触发器) ── */
+.lifecycle-grid-cols {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.1fr) minmax(180px, 1.2fr) minmax(280px, 2fr);
+  gap: 12px;
+  align-items: flex-start;
+}
+.flow-pill-left {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.flow-state-tag {
+  font-weight: 600;
+  font-size: 11.5px;
+}
+.flow-arrow-icon {
+  color: var(--sl-text-secondary);
+  font-size: 12px;
+}
+.rule-meta-wrap-left {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.system-rule-tag {
+  display: inline-block;
+  padding: 2px 6px;
+  background: #f1f5f9;
   color: #475569;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.user-rule-tag {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  background: #eff6ff;
+  color: #1d4ed8;
+}
+.user-rule-tag.failure {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+.user-rule-tag.termination {
+  background: #fffbeb;
+  color: #b45309;
+}
+.rule-desc-text-left {
+  font-size: 11.5px;
+  color: var(--sl-text-body);
+  line-height: 1.4;
+}
+.system-triggers-grid-2col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+.system-trigger-line-2col {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+.binding-interface-grid-2col {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+}
+.trig-left-col {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.trig-right-col {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+.trig-label-tag {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  white-space: nowrap;
+  flex-shrink: 0;
+  min-width: 54px;
+}
+.lifecycle-table-deep-border {
+  border: 1.5px solid #94a3b8 !important;
+  border-radius: 4px;
+}
+.lifecycle-table-deep-border .grid-table-header {
+  background: #f1f5f9;
+  border-bottom: 1.5px solid #94a3b8 !important;
+}
+.lifecycle-table-deep-border .grid-table-row {
+  border-bottom: 1px solid #cbd5e1 !important;
+}
+.lifecycle-table-deep-border .grid-table-row:last-child {
+  border-bottom: none !important;
+}
+
+.trig-label-left {
+  color: var(--sl-text-secondary);
+  font-size: 11px;
+  min-width: 60px;
+  flex-shrink: 0;
+}
+.locked-action-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-size: 11px;
+  color: #334155;
+  white-space: nowrap;
+}
+.signal-tag-bold {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  background: #f0fdf4;
+  border: 1px solid #86efac;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #15803d;
+  white-space: nowrap;
+}
+.adapter-binding-wrap-left {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+}
+.termination-default-note {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: #b45309;
+  background: #fffbeb;
+  padding: 4px 8px;
+  border-radius: 4px;
+  margin-bottom: 2px;
+  width: 100%;
+}
+.binding-req-tip {
+  font-size: 11px;
+  color: var(--sl-text-secondary);
+  font-style: italic;
+}
+.transition-state-pair {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+}
+.transition-trigger-editor {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+.adapter-iface-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  background: #f8fafc;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  font-size: 11px;
+  color: var(--sl-text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── 影响范围标签输入器 ── */
+.capability-scope-editor-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: 1 1 100%;
+}
+.field-label-text {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--sl-text-body);
+}
+.scope-tags-container {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+}
+.scope-tags-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.scope-input-inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 360px;
+}
+
+/* ── 适配器契约 3合1 子区域 ── */
+.contract-source-box {
+  background: #f8fafc;
+  border: 1px solid var(--sl-border-base);
+  border-radius: 4px;
+  padding: 8px 12px;
+  margin-bottom: 12px;
+}
+.contract-sub-section {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed var(--sl-border-base);
+}
+.contract-sub-section:first-of-type {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+.contract-sub-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.sub-header-title {
   font-size: 13px;
   font-weight: 600;
+  color: var(--sl-text-heading);
+}
+.sub-header-count {
+  font-size: 11px;
+  color: var(--sl-text-secondary);
+  font-family: var(--sl-font-mono);
+}
+
+/* ── 功能状态转移规则双行紧凑卡片排布 ── */
+.trans-rule-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.trans-rule-item-card {
+  border: 1px solid var(--sl-border-base);
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  transition: all 0.15s ease;
+}
+.trans-rule-item-card:hover {
+  border-color: #cbd5e1;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+}
+.trans-card-row-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+.trans-card-row-bottom {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding-top: 6px;
+  border-top: 1px dashed #f1f5f9;
+}
+.trans-field-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.trans-field-cell.desc-cell {
+  flex: 1;
+}
+.trans-field-cell.region-cell {
+  flex-shrink: 0;
+}
+.trans-field-cell.flow-cell {
+  flex: 1;
+  min-width: 240px;
+}
+.trans-field-cell.trigger-cell {
+  flex: 1;
+  max-width: 380px;
+}
+.trans-field-cell.action-cell {
+  flex: 2;
+}
+.field-mini-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sl-text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.trans-del-btn {
+  font-size: 12px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.transition-action-horizontal-list {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: 100%;
+}
+.transition-action-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  background: #f8fafc;
+  border: 1px solid var(--sl-border-base);
+  border-radius: 4px;
+}
+.action-editor-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sl-text-secondary);
+}
+.btn-chip-del {
+  border: none;
+  background: transparent;
+  color: #ef4444;
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 11px;
+  line-height: 1;
+}
+.btn-chip-del:hover {
+  color: #b91c1c;
+}
+.btn-add-action-inline {
+  padding: 2px 8px;
+  font-size: 11px;
+  flex-shrink: 0;
+  margin-left: 2px;
+}
+
+.block-empty { margin-top: 4px; }
+.drawer-section { margin-top: 8px; border: 1px solid var(--sl-border-base); border-radius: var(--sl-radius-sm); padding: 10px 12px; background: #ffffff; box-shadow: none; }
+.drawer-footer { justify-content: flex-end; display: flex; align-items: center; gap: 8px; }
+.model-edit-workbench { display: flex; min-height: 0; overflow: hidden; height: calc(100vh - 110px); }
+.edit-scroll-content { flex: 1; min-width: 0; }
+.edit-scroll-content :deep(.el-scrollbar__view) { padding: 12px 16px 24px; }
+.capability-editor-card, .capability-editor-list, .capability-title-editor { border-left: 3px solid var(--sl-primary); }
+.capability-execution-config { display: flex; flex-wrap: wrap; gap: 8px 12px; margin: 8px 0; padding: 6px 8px; border: 1px solid var(--sl-border-base); border-radius: 4px; background: #f8fafc; }
+.capability-config-field { display: flex; align-items: center; gap: 6px; min-width: 160px; color: var(--sl-text-body); font-size: 11.5px; font-weight: 600; }
+.capability-config-field > span { flex: 0 0 auto; }
+.capability-config-select { flex: 1 1 240px; }
+.capability-config-select :deep(.el-select) { flex: 1; min-width: 0; }
+.command-editor-card, .command-editor-list { border-left: 3px solid var(--sl-success); }
+.locked-table :deep(.el-table__body-wrapper) { background: #ffffff; }
+.locked-action { max-width: 100%; color: var(--sl-text-body); font-size: 11.5px; line-height: 1.4; display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; white-space: normal; }
+
+/* ── 方案一：一体化章节大卡片规范 (Holistic Section Card) ── */
+.holistic-section-card {
+  border: 1px solid var(--sl-border-base);
+  border-radius: var(--sl-radius-sm);
+  background: #ffffff;
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+.section-card-head {
+  background: #ffffff;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--sl-border-base);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.section-card-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sec-idx-badge {
+  display: inline-flex;
+  width: 22px;
+  height: 18px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--sl-primary-border);
+  border-radius: 3px;
+  background: var(--sl-primary-light);
+  color: var(--sl-primary);
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--sl-font-mono);
+}
+.sec-title-text {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--sl-text-heading);
+}
+.sec-desc-text {
+  font-size: 12px;
+  color: var(--sl-text-secondary);
+  margin-left: 4px;
+  font-weight: 400;
+}
+.section-card-body {
+  padding: 0;
+}
+.section-card-body.padded {
+  padding: 12px 14px;
+}
+
+/* ── 列表卡片与输入框对齐 ── */
+.table-card :deep(.el-input__wrapper),
+.table-card :deep(.el-select__wrapper) {
+  box-shadow: 0 0 0 1px #dbe4ef inset !important;
+  border-radius: 4px;
+  background-color: #ffffff;
+  padding: 1px 7px !important;
+  height: 28px !important;
+  min-height: 28px !important;
+  line-height: 28px !important;
+  transition: all 0.15s ease;
+}
+.table-card :deep(.el-input__wrapper:hover),
+.table-card :deep(.el-select__wrapper:hover) {
+  box-shadow: 0 0 0 1px #94a3b8 inset !important;
+}
+.table-card :deep(.el-input__wrapper.is-focus),
+.table-card :deep(.el-select__wrapper.is-focused) {
+  box-shadow: 0 0 0 1.5px var(--sl-primary) inset !important;
+}
+.table-card :deep(.el-input__inner) {
+  font-size: 12px;
+  color: var(--sl-text-heading);
+}
+
+/* ── 锚点布局与导航样式 (Release 1.1 规范) ── */
+.detail-anchor-layout { min-height: 0; background: #ffffff; }
+.detail-anchor-menu {
+  width: 148px;
+  flex-shrink: 0;
+  padding: 8px 6px;
+  background: #ffffff;
+  border-right: 1px solid var(--sl-border-base) !important;
+}
+.detail-anchor-menu :deep(.el-anchor__link) {
+  margin-bottom: 2px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  color: var(--sl-text-body);
+  font-size: 12px;
+  font-weight: 500;
   transition: all 0.15s ease;
 }
 .detail-anchor-menu :deep(.el-anchor__link:hover) {
   background: #f1f5f9;
-  color: #0f172a;
+  color: var(--sl-text-heading);
 }
 .detail-anchor-menu :deep(.el-anchor__link.is-active) {
   background: #eff6ff;
-  color: #2563eb;
-  font-weight: 700;
+  color: var(--sl-primary);
+  font-weight: 600;
 }
 .anchor-section { scroll-margin-top: 8px; }
-.anchor-section.industrial-section {
-  margin-bottom: 16px;
-  padding-top: 4px;
-}
-.section-heading {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  margin: 0 0 10px !important;
-  padding: 0 0 8px;
-  border-bottom: 2px solid #f1f5f9;
-  color: #0f172a;
-  font-size: 16px;
-  font-weight: 800;
-}
-.section-index {
-  display: inline-flex;
-  width: 32px;
-  height: 24px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid #bfdbfe;
-  border-radius: 6px;
-  background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
-  color: #1d4ed8;
-  font-size: 12px;
-  font-weight: 800;
-  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.1);
-}
-.section-title { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; min-height: 28px; }
-.section-title h3 { margin: 0; font-size: 15px; line-height: 1.35; letter-spacing: 0; }
-.section-header-copy { min-width: 0; flex: 1; }
-.section-actions { flex: 0 0 auto; display: flex; align-items: center; gap: 8px; margin-left: auto; }
 .editor-table { width: 100%; }
-.editor-table :deep(.el-table__cell) { padding: 7px 8px; vertical-align: middle; }
-.editor-table :deep(.cell) { line-height: 1.45; }
+.editor-table :deep(.el-table__cell) { padding: 5px 6px; vertical-align: middle; }
+.editor-table :deep(.cell) { line-height: 1.4; }
 .editor-table :deep(.el-select), .editor-table :deep(.el-input) { width: 100%; }
 .operation-transition-table :deep(.el-table__body td) { vertical-align: top; }
 .state-name-input { width: 132px; }
@@ -2023,30 +2899,27 @@ function summaryText(model) {
 .section-note { margin: 3px 0 0; color: #64748b; font-size: 12px; line-height: 1.4; }
 /* ── 上下对齐 (Stacked Table Cells) 专属样式 ── */
 .stacked-lifecycle-table {
-  margin-top: 12px;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid #e2e8f0;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.02);
+  border: none !important;
+  box-shadow: none !important;
 }
 
 .stacked-lifecycle-table :deep(.el-table__header th) {
-  background: #f8fafc;
-  color: #475569;
-  font-weight: 700;
-  font-size: 12px;
-  padding: 10px 12px;
-  border-bottom: 1px solid #e2e8f0;
+  background: #f8fafc !important;
+  color: var(--sl-text-secondary);
+  font-weight: 600;
+  font-size: 11.5px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--sl-border-base);
 }
 
 .stacked-lifecycle-table :deep(.el-table__row td) {
-  padding: 10px 12px;
-  border-bottom: 1px solid #f1f5f9;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--sl-border-base);
   vertical-align: top;
 }
 
 .stacked-lifecycle-table :deep(.el-table__row:hover td) {
-  background-color: #f8fafc !important;
+  background-color: #f1f5f9 !important;
 }
 
 .stacked-cell {

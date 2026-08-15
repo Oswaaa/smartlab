@@ -1,9 +1,9 @@
 <template>
   <div class="device-model-page">
-    <section class="content-shell">
+    <div class="model-workbench-canvas">
       <DeviceModelTree
         v-model:keyword="keyword"
-        class="model-list-panel"
+        class="model-tree-pane"
         :categories="categories"
         :models="models"
         :selected-model-id="selectedModelId"
@@ -18,53 +18,110 @@
         @create-model="openCreateDrawerWithCategory"
       />
 
-      <main class="detail-panel">
-        <div class="global-top-bar">
-          <span class="global-toolbar-title">设备模型管理</span>
-          <div class="global-toolbar-actions">
-            <el-button class="btn-aliyun" :icon="Refresh" @click="loadData">刷新</el-button>
-            <el-button v-if="canCreateModel" class="btn-aliyun-cta" :icon="Plus" @click="openCreateDrawer">新建设备模型</el-button>
-          </div>
+      <main class="model-main-canvas">
+        <DeviceCategoryDetail
+          v-if="selectedCategory"
+          :category="selectedCategory"
+          :categoryPathLabel="selectedCategoryPathLabel"
+          :categoryChildren="selectedCategoryChildren"
+          :categoryModels="selectedCategoryModels"
+          :categoryInstances="selectedCategoryInstances"
+          :categoryBomUsages="selectedCategoryBomUsages"
+          :categoryComponentSlots="selectedCategoryComponentSlots"
+          :categoryDataAssets="selectedCategoryDataAssets"
+          :canCreateModel="canCreateModel"
+          :selectedCategoryCanCreateModel="selectedCategoryCanCreateModel"
+          :categories="categories"
+          :models="models"
+          :categoryChildrenByParent="categoryChildrenByParent"
+          @select-category="selectCategoryById"
+          @select-model="selectModel"
+          @create-model-in-category="openCreateDrawerWithCategory"
+        />
+
+        <DeviceModelDetail
+          v-else-if="selectedModel"
+          :model="selectedModel"
+          :modelBundle="selectedModelBundle"
+          :defaultTemplateAttributes="defaultTemplateAttributes"
+          :categories="categories"
+          :canEditModel="canEditModel"
+          :canDeleteModel="canDeleteModel"
+          :hasInstances="selectedModelHasInstances"
+          @edit="openEditDrawer"
+          @delete="deleteModel"
+          @download="downloadModelBundle"
+        />
+
+        <div v-else class="model-empty-canvas">
+          <el-empty description="请选择左侧设备分类或模型进行查看与配置" :image-size="120" />
         </div>
-        <DeviceCategoryDetail v-if="selectedCategory" :category="selectedCategory" :categoryPathLabel="selectedCategoryPathLabel" :categoryChildren="selectedCategoryChildren" :categoryModels="selectedCategoryModels" :categoryInstances="selectedCategoryInstances" :categoryBomUsages="selectedCategoryBomUsages" :categoryComponentSlots="selectedCategoryComponentSlots" :categoryDataAssets="selectedCategoryDataAssets" :canCreateModel="canCreateModel" :selectedCategoryCanCreateModel="selectedCategoryCanCreateModel" :categories="categories" :models="models" :categoryChildrenByParent="categoryChildrenByParent" @select-category="selectCategoryById" @select-model="selectModel" @create-model-in-category="openCreateDrawerWithCategory" />
-
-        <DeviceModelDetail v-else-if="selectedModel" :model="selectedModel" :modelBundle="selectedModelBundle" :defaultTemplateAttributes="defaultTemplateAttributes" :categories="categories" :canEditModel="canEditModel" :canDeleteModel="canDeleteModel" :hasInstances="selectedModelHasInstances" @edit="openEditDrawer" @delete="deleteModel" @download="downloadModelBundle" />
-
-        <el-empty v-else description="请选择或新建设备模型" :image-size="120" />
       </main>
-    </section>
+    </div>
 
     <DeviceModelEditorDrawer ref="editorDrawerRef" :categories="categories" :models="models" @saved="handleModelSaved" />
-    <el-dialog v-model="migrationDialogVisible" title="类别结构变更向导" width="800px" :close-on-click-modal="false" destroy-on-close>
-      <el-alert title="类别下已有设备模型" type="warning" show-icon :closable="false" style="margin-bottom: 20px;">
-        【{{ migrationState.parentCategory?.label }}】当前是叶子节点并挂载了设备模型。添加子类别后，它将变为中间节点。请在下方为其创建新子类别，并将现有模型分配到新类别下。
-      </el-alert>
-      <div style="display: flex; gap: 24px;">
-        <div style="flex: 1; min-width: 0;">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
-            <h4 style="margin: 0;">1. 创建新子类别</h4>
-            <el-button link class="btn-aliyun-link" :icon="Plus" @click="migrationState.newCategories.push({ name: '' })">添加</el-button>
+    <el-dialog v-model="migrationDialogVisible" title="类别结构变更向导" width="760px" :close-on-click-modal="false" destroy-on-close class="unified-dialog migration-wizard-dialog">
+      <div class="wizard-notice-banner">
+        <el-icon class="banner-icon"><WarningFilled /></el-icon>
+        <div class="banner-text">
+          <strong>类别下已有设备模型</strong>
+          <span>【{{ migrationState.parentCategory?.label }}】当前已挂载设备模型。添加子类别后将变为中间节点，请创建新子类别并将现有模型迁移至目标子类别。</span>
+        </div>
+      </div>
+
+      <div class="wizard-columns-layout">
+        <!-- 步骤1: 创建新子类别 -->
+        <div class="wizard-step-column">
+          <div class="step-column-head">
+            <div class="step-title-wrap">
+              <span class="step-badge">1</span>
+              <span class="step-title">创建新子类别</span>
+            </div>
+            <button class="btn-aliyun" type="button" style="padding: 2px 8px; font-size: 11.5px;" @click="migrationState.newCategories.push({ name: '' })">
+              <el-icon><Plus /></el-icon> 添加子类
+            </button>
           </div>
-          <div v-for="(item, index) in migrationState.newCategories" :key="index" style="display: flex; gap: 8px; margin-bottom: 12px;">
-            <el-input v-model="item.name" placeholder="请输入子类别名称" />
-            <el-button link class="btn-aliyun-danger-link" :icon="Delete" @click="migrationState.newCategories.splice(index, 1)" :disabled="migrationState.newCategories.length <= 1" />
+          <div class="step-card-body">
+            <div v-for="(item, index) in migrationState.newCategories" :key="index" class="wizard-category-row">
+              <span class="cat-idx">#{{ index + 1 }}</span>
+              <el-input v-model="item.name" size="small" placeholder="输入新子类别名称..." clearable />
+              <button class="btn-link danger" type="button" :disabled="migrationState.newCategories.length <= 1" @click="migrationState.newCategories.splice(index, 1)">
+                <el-icon><Delete /></el-icon>
+              </button>
+            </div>
           </div>
         </div>
-        <div style="flex: 1; min-width: 0; border-left: 1px solid var(--el-border-color-light); padding-left: 24px;">
-          <h4 style="margin: 0 0 12px 0;">2. 现有模型分配</h4>
-          <div v-for="assignment in migrationState.modelAssignments" :key="assignment.modelId" style="margin-bottom: 16px;">
-            <div style="font-size: 13px; color: var(--el-text-color-regular); margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" :title="assignment.modelName">
-              <el-icon style="vertical-align: middle; margin-right: 4px;"><Cpu /></el-icon>{{ assignment.modelName }}
+
+        <!-- 步骤2: 现有模型分配 -->
+        <div class="wizard-step-column">
+          <div class="step-column-head">
+            <div class="step-title-wrap">
+              <span class="step-badge">2</span>
+              <span class="step-title">现有模型目标分配</span>
             </div>
-            <el-select v-model="assignment.targetCategoryIndex" style="width: 100%;" placeholder="选择目标子类别">
-              <el-option v-for="(cat, cIndex) in migrationState.newCategories" :key="cIndex" :label="cat.name || `[未命名类别 ${cIndex + 1}]`" :value="cIndex" />
-            </el-select>
+            <span class="step-count">{{ migrationState.modelAssignments.length }} 个模型</span>
+          </div>
+          <div class="step-card-body">
+            <div v-for="assignment in migrationState.modelAssignments" :key="assignment.modelId" class="wizard-assignment-row">
+              <div class="assignment-model-info" :title="assignment.modelName">
+                <el-icon class="model-doc-icon"><Document /></el-icon>
+                <span class="model-name-text">{{ assignment.modelName }}</span>
+              </div>
+              <el-select v-model="assignment.targetCategoryIndex" size="small" style="width: 100%;" placeholder="选择目标子类别">
+                <el-option v-for="(cat, cIndex) in migrationState.newCategories" :key="cIndex" :label="cat.name || '[未命名类别]'" :value="cIndex" />
+              </el-select>
+            </div>
           </div>
         </div>
       </div>
+
       <template #footer>
-        <el-button class="btn-aliyun" @click="migrationDialogVisible = false" :disabled="migrationSubmitting">取消</el-button>
-        <el-button class="btn-aliyun-cta" @click="confirmMigration" :loading="migrationSubmitting">确认迁移</el-button>
+        <div class="wizard-footer-actions">
+          <button class="btn-aliyun" type="button" :disabled="migrationSubmitting" @click="migrationDialogVisible = false">取消</button>
+          <button class="btn-aliyun-cta" type="button" style="margin-left: 8px;" :disabled="migrationSubmitting" :loading="migrationSubmitting" @click="confirmMigration">
+            <el-icon><Check /></el-icon> 确认迁移并保存
+          </button>
+        </div>
       </template>
     </el-dialog>
   </div>
@@ -73,7 +130,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch, nextTick } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Cpu, Delete, Plus, Refresh } from '@element-plus/icons-vue'
+import { Document, Delete, Plus, Refresh, WarningFilled, Check } from '@element-plus/icons-vue'
 import { useAuthStore } from '../../stores/authStore'
 import DeviceModelDetail from './components/deviceModel/DeviceModelDetail.vue'
 import DeviceCategoryDetail from './components/deviceModel/DeviceCategoryDetail.vue'
@@ -936,75 +993,200 @@ onMounted(loadData)
 
 
 
-/* Unified device model console */
-.device-model-page { background: #f5f7fa; }
-.content-shell { height: 100%; }
-.global-top-bar { min-height: 64px; padding: 10px 20px !important; }
-.detail-head { padding: 12px 16px; }
-.info-section, .summary-card, .editor-card, .locked-section, .state-card, .boxed-section { border-radius: 6px; box-shadow: none; }
-.section-heading { border-left-width: 3px; font-size: 14px; }
-.category-detail-scroll { background: #f5f7fa; }
-
-/* Alibaba Cloud White Background Button Standard */
-.btn-aliyun {
-  background: #ffffff !important;
-  border: 1px solid #d9d9d9 !important;
-  color: rgba(0, 0, 0, 0.88) !important;
-  font-weight: 400 !important;
-  transition: all 0.15s ease;
-}
-.btn-aliyun:hover:not(:disabled):not(.is-disabled) {
-  background: #ffffff !important;
-  border-color: #4096ff !important;
-  color: #1677ff !important;
+/* Unified Device Model Console (Release 1.1 规范) */
+.device-model-page {
+  height: calc(100vh - 50px);
+  padding: 10px 14px 14px;
+  background-color: var(--sl-bg-page);
+  box-sizing: border-box;
+  overflow: hidden;
+  display: flex;
 }
 
-.btn-aliyun-cta {
-  background: #ffffff !important;
-  border: 1px solid #1677ff !important;
-  color: #1677ff !important;
-  font-weight: 500 !important;
-  transition: all 0.15s ease;
-}
-.btn-aliyun-cta:hover:not(:disabled):not(.is-disabled) {
-  background: #1677ff !important;
-  border-color: #1677ff !important;
-  color: #ffffff !important;
+.model-workbench-canvas {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 270px minmax(0, 1fr);
+  background: #ffffff;
+  border: 1px solid var(--sl-border-base);
+  border-radius: var(--sl-radius-lg);
+  box-shadow: var(--sl-shadow-container);
+  overflow: hidden;
+  min-height: 0;
 }
 
+.model-tree-pane {
+  border-right: 1px solid var(--sl-border-base);
+}
+
+.model-main-canvas {
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+  height: 100%;
+}
+
+.model-empty-canvas {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 类别结构变更向导对话框 (Release 1.1 规范) */
+.migration-wizard-dialog :deep(.el-dialog__body) {
+  padding: 16px 20px 20px;
+}
+
+.wizard-notice-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  background: #fffbeb;
+  border: 1px solid #fef3c7;
+  border-radius: 6px;
+  padding: 10px 14px;
+  margin-bottom: 16px;
+}
+.banner-icon {
+  color: #d97706;
+  font-size: 16px;
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+.banner-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: #92400e;
+  line-height: 1.45;
+}
+.banner-text strong {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #b45309;
+}
+
+.wizard-columns-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.wizard-step-column {
+  border: 1px solid var(--sl-border-base);
+  border-radius: 6px;
+  background: #ffffff;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.step-column-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-bottom: 1px solid var(--sl-border-base);
+}
+
+.step-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.step-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  background: var(--sl-primary);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 600;
+  border-radius: 50%;
+}
+.step-title {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--sl-text-heading);
+}
+.step-count {
+  font-size: 11px;
+  color: var(--sl-text-secondary);
+}
+
+.step-card-body {
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.wizard-category-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.cat-idx {
+  font-size: 11px;
+  color: var(--sl-text-secondary);
+  font-family: var(--sl-font-mono);
+  min-width: 20px;
+}
+
+.wizard-assignment-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  background: #f8fafc;
+  border: 1px solid var(--sl-border-base);
+  border-radius: 4px;
+}
+.assignment-model-info {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--sl-text-heading);
+}
+.model-doc-icon {
+  color: var(--sl-primary);
+  font-size: 13px;
+}
+.model-name-text {
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.wizard-footer-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* 全局禁用按钮动画消除规范 */
+button:disabled,
 .btn-aliyun:disabled,
-.btn-aliyun.is-disabled,
 .btn-aliyun-cta:disabled,
-.btn-aliyun-cta.is-disabled {
-  background: #f5f5f5 !important;
-  border-color: #d9d9d9 !important;
-  color: rgba(0, 0, 0, 0.25) !important;
+.btn-link:disabled {
   cursor: not-allowed !important;
-}
-
-.btn-aliyun-link {
-  background: transparent !important;
-  border: none !important;
-  color: #1677ff !important;
-  padding: 0 4px !important;
-  font-weight: 400 !important;
-}
-.btn-aliyun-link:hover {
-  color: #4096ff !important;
-  text-decoration: underline !important;
-  background: transparent !important;
-}
-
-.btn-aliyun-danger-link {
-  background: transparent !important;
-  border: none !important;
-  color: #ff4d4f !important;
-  padding: 0 4px !important;
-  font-weight: 400 !important;
-}
-.btn-aliyun-danger-link:hover {
-  color: #ff7875 !important;
-  text-decoration: underline !important;
-  background: transparent !important;
+  opacity: 0.38 !important;
+  pointer-events: none !important;
+  transform: none !important;
+  transition: none !important;
+  box-shadow: none !important;
+  animation: none !important;
 }
 </style>

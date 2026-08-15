@@ -249,28 +249,74 @@
 
 ---
 
-### 6. 弹窗与抽屉标准（Dialog & Drawer - 固定视口与独立滚动）
+### 6. 一体化章节大卡片规范（Holistic Section Card - 复杂表单抽屉标准）
 
-* **最大高度**：弹窗外层 `top: 5vh; max-height: 90vh;`，严格防范随页面滚轮位移；
-* **操作常驻**：标题栏（Header）与底部按钮栏（Footer）始终常驻锁定；
-* **表单内容区**：设置 `overflow-y: auto; max-height: calc(90vh - 128px)`，搭配 6px 细滚动条。
+针对设备模型、复杂工作流等重型多步骤表单，采用**一体化章节大卡片**与**左侧锚点导航（148px）**结合：
+
+* **卡片框体（`.holistic-section-card`）**：
+  * 外层 `border: 1px solid var(--sl-border-base); border-radius: var(--sl-radius-sm); margin-bottom: 14px; background: #ffffff;`
+* **卡片头部（`.section-card-head`）**：
+  * 左侧：数字徽章（`.sec-idx-badge`，如 `01`、`02`） + 章节主标题（`13.5px / 700`） + 浅灰辅助说明（`12px / 400`）；
+  * 右侧：新增 CTA 按钮（`.btn-aliyun-cta`）；
+* **嵌套表格/输入框对齐标准**：
+  * 卡片内输入框、下拉框高度严格统一为 `28px`（`padding: 1px 7px`）；
+  * 内联表格表头采用 `#f8fafc` 浅底色 + `1px solid var(--sl-border-base)`，消除悬空与重叠。
+
+---
+
+### 7. 状态转移规则双行紧凑卡片排布规范（2-Row State Transition Rule Card）
+
+针对含有多下拉项（原状态/目标状态/触发事件/动作流）的复杂状态机规则，采用**双行紧凑数据卡片（`.trans-rule-item-card`）**：
+
+* **第一行（`.trans-card-row-top`）**：
+  * `#序号 规则说明`（自适应填满） + `所属分区`（130px 紧凑下拉） + `状态流转`（`[原状态] → [目标状态]` 药丸下拉组） + `删除` 按钮；
+* **第二行（`.trans-card-row-bottom`）**：
+  * 顶部带有 `1px dashed #f1f5f9` 细分割线；
+  * `触发条件`（适配器接口徽标 + 事件下拉） + `转移动作`（横向发送动作徽章流）；
+  * **动作追加右置跟随**：`+ 添加动作` 按钮直接内联排列在动作标签流最右侧，新增动作后按钮自然平移跟随。
+
+---
+
+### 8. 执行生命周期双子列栅格对齐规范（Dual-Subcolumn Lifecycle Alignment）
+
+* **双子列固定栅格**（`grid-template-columns: 240px 1fr; gap: 12px;`）：
+  * **左子列（固定 240px）**：统一放置「规则说明标签 / 必选或可选标签」+「接口名称徽标」；
+  * **右子列（自适应 1fr）**：统一放置「触发信号徽标」或「适配器事件绑定下拉框」；
+  * **工业级高对比边界**：应用 `.lifecycle-table-deep-border`，采用 `#94a3b8` 边框与 `#cbd5e1` 行分割线，边界清晰分明。
+
+---
+
+### 9. 嵌套子表与空状态零空隙规范（Nested Toolbar & Seamless Empty Row）
+
+* **嵌套头部工具条（`.nested-toolbar`）**：
+  * 标题在左（`11.5px / 600`），`[+ 新增参数映射]` 等次要按钮在右；
+* **空状态行**：
+  * 无数据时展示 `.compact-empty.block-empty` 或单行无缝提示，严禁出现由于底部重复工具条产生的双重边框或多余白条间隙。
+
+---
+
+### 10. 类别结构变更向导弹窗规范（Migration Wizard Dual-Column Modal）
+
+* **双列卡片对比布局（`.wizard-columns-layout`）**：
+  * 步骤一（左列）：`新子类别定义`（输入框列表 + `#1` 序号胶囊 + 添加按钮）；
+  * 步骤二（右列）：`现有模型目标分配`（模型名称徽标 + 纯净目标子类下拉框，去除冗余序号前缀）；
+* **顶部警示横幅**：采用浅黄底色（`#fffbeb`）+ 金色边框（`#fde68a`）明确操作影响范围。
 
 ---
 
 ## 六、全系统后续优化改造清单（Next Implementation Steps）
 
-以本规范为绝对准绳，按顺序对剩余业务模块推进重构：
+以本规范（Release 1.2）为绝对准绳，按顺序对剩余业务模块推进重构：
 
-1. **约束管理中心 (`ConstraintManagement.vue` / `ConstraintRuleEditor.vue`)**：
+1. **设备管理后续模块 (`DeviceInstanceManagement.vue` / `AdapterManagement.vue`)**：
+   * 设备实例列表与适配器驱动管理统一采用微边距 `.table-card`；
+   * 详情与编辑抽屉复用一体化章节大卡片规范与四级按钮标准；
+2. **约束管理中心 (`ConstraintManagement.vue` / `ConstraintRuleEditor.vue`)**：
    * 采用一体化无界画卷与指标横幅（35px 锁死）；
    * 告警规则审计表格统一采用 `.table-card` 封装与自适应滚动；
-   * 规则编辑器弹窗/抽屉严格落地 90vh 锁屏。
-2. **设备管理模块 (`DeviceModelManagement.vue` / `DeviceInstanceManagement.vue` / `AdapterManagement.vue`)**：
-   * 左侧设备分类树对齐方案三极简无界规范（0 边距、虚线引导、语义化图标）；
-   * 设备实例列表与组件列表统一采用微边距 `.table-card`；
-   * 资产生命周期状态严格使用“使用中 (在役)”/“已注销 (退役)”。
+   * 约束规则编辑器抽屉严格对齐四列等宽均分与 90vh 锁屏规范；
 3. **工作流与任务设计 (`TaskList.vue` / `WorkflowDesigner.vue`)**：
    * 任务看板与设计画布落地 100% 视口无界锁屏；
-   * 工具栏严格执行“1 个实体蓝按钮 + N 个白底灰边工具按钮”标准。
+   * 工具栏严格执行“1 个实体蓝按钮 + N 个白底灰边工具按钮”标准；
 4. **用户与权限中心 (`UserManagement.vue`)**：
    * 用户表格与角色权限抽屉统一对齐新四级按钮体系与 6px 细滚动条。

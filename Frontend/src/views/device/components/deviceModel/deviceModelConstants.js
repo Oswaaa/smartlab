@@ -46,7 +46,8 @@ export function applyProtocolMetadata(metadata = {}) {
 
   replaceArray(attributeDataTypes, deviceCapability.dataTypes?.filter(type => type !== 'JSON'))
   replaceArray(adapterDataTypes, deviceCapability.dataTypes)
-  replaceArray(operators, constraint.operators)
+  const validOperators = (constraint.operators || ['>', '<', '>=', '<=', '=', '!=']).filter(op => op !== 'BETWEEN' && op !== 'IN')
+  replaceArray(operators, validOperators)
   replaceArray(communicationProtocols, protocol.communicationProtocols)
   replaceArray(adapterRegisterFormats, protocol.adapterRegisterFormats)
   replaceArray(stateActionNames, stateMachine.actionTypes)

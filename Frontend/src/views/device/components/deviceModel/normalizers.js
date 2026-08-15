@@ -441,8 +441,8 @@ export function materializeCapabilities(rows, functionMappings = []) {
         .filter(key => capabilityByKey.get(key)?.isAbort !== true)
         .map(key => lookupName(capabilityNameByKey, key))
         .filter(Boolean)
-      const fallbackScopeNames = asArray(item.scope).map(stringValue).filter(Boolean)
-      capability.scope = [...new Set(scopeNames.length ? scopeNames : fallbackScopeNames)]
+      const directScopeNames = asArray(item.scope).map(stringValue).filter(Boolean)
+      capability.scope = [...new Set([...scopeNames, ...directScopeNames])]
     }
     return capability
   })

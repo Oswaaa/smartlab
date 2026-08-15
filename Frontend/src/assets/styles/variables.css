@@ -1,0 +1,72 @@
+/* ==============================================================================
+ * SmartLab 2.0 — Design Tokens (全局视觉变量规范)
+ * ============================================================================== */
+
+:root {
+  /* ==================== 1. 色彩体系 (Colors) ==================== */
+  /* 品牌核心主色 (深空石墨 + 实体活力钴蓝) */
+  --sl-primary: #2563eb;
+  --sl-primary-hover: #1d4ed8;
+  --sl-primary-active: #1e40af;
+  --sl-primary-light: #eff6ff;
+  --sl-primary-border: #bfdbfe;
+
+  /* 状态语义色 */
+  --sl-success: #16a34a;
+  --sl-success-light: #f0fdf4;
+  --sl-success-border: #bbf7d0;
+
+  --sl-danger: #dc2626;
+  --sl-danger-light: #fef2f2;
+  --sl-danger-border: #fecaca;
+
+  --sl-warning: #d97706;
+  --sl-warning-light: #fffbeb;
+  --sl-warning-border: #fde68a;
+
+  --sl-info: #0284c7;
+  --sl-info-light: #f0f9ff;
+  --sl-info-border: #bae6fd;
+
+  /* 文本灰阶 (Slate 现代冷灰体系) */
+  --sl-text-heading: #0f172a;    /* 大标题 / 强调文字 (碳黑) */
+  --sl-text-body: #334155;       /* 正文 / 表格 / 字段内容 */
+  --sl-text-secondary: #64748b;  /* 次要说明 / 表头 / 次级信息 */
+  --sl-text-disabled: #94a3b8;   /* 禁用 / 占位提示 */
+
+  /* 表面与背景 */
+  --sl-bg-page: #f8fafc;         /* 系统页面底层灰 */
+  --sl-bg-surface: #ffffff;      /* 一体化工作台纯白表面 */
+  --sl-bg-hover: #f1f5f9;        /* 列表/表格悬浮高亮底色 */
+  --sl-bg-active: #eff6ff;       /* 选中项浅蓝底色 */
+
+  /* 边框体系 (超微细线) */
+  --sl-border-base: #e2e8f0;     /* 核心分区线 (1px) */
+  --sl-border-input: #cbd5e1;    /* 输入框 / 普通按钮边框 */
+  --sl-border-subtle: #f1f5f9;   /* 极浅表格内部分割线 */
+
+  /* ==================== 2. 圆角体系 (Radius) ==================== */
+  --sl-radius-sm: 6px;           /* 按钮、输入框、下拉框、Tag 徽章 */
+  --sl-radius-md: 8px;           /* 弹窗小区块、提示框、内联容器 */
+  --sl-radius-lg: 10px;          /* 页面全局外层工作台大容器 */
+
+  /* ==================== 3. 间距体系 (8pt Grid 阶梯) ==================== */
+  --sl-space-1: 4px;
+  --sl-space-2: 8px;
+  --sl-space-3: 12px;
+  --sl-space-4: 16px;
+  --sl-space-5: 20px;
+  --sl-space-6: 24px;
+  --sl-space-8: 32px;
+  --sl-space-10: 40px;
+
+  /* ==================== 4. 字体与排版 (Typography) ==================== */
+  --sl-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --sl-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+  /* ==================== 5. 动效与投影 (Transitions & Shadows) ==================== */
+  --sl-ease-smooth: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+  --sl-shadow-sm: 0 1px 2px 0 rgba(15, 23, 42, 0.04);
+  --sl-shadow-container: 0 1px 3px 0 rgba(15, 23, 42, 0.04), 0 1px 2px -1px rgba(15, 23, 42, 0.03);
+  --sl-shadow-dialog: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}

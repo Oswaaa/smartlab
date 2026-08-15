@@ -1,0 +1,49 @@
+/* ==============================================================================
+ * SmartLab 2.0 — Master Style Entry (全局样式总入口)
+ * ============================================================================== */
+
+@import './variables.css';
+@import './base.css';
+@import './buttons.css';
+@import './layout.css';
+@import './element-plus.css';
+
+/* ==================== 兼容性别名 (Legacy Aliases for smooth migration) ==================== */
+:root {
+  --bg-primary: var(--sl-bg-page);
+  --bg-secondary: var(--sl-bg-surface);
+  --panel-bg: var(--sl-bg-surface);
+  --panel-border: var(--sl-border-base);
+  --color-primary: var(--sl-primary);
+  --color-text-main: var(--sl-text-heading);
+  --color-text-sub: var(--sl-text-body);
+  --color-text-muted: var(--sl-text-secondary);
+}
+
+.ind-card,
+.glass-card {
+  background: var(--sl-bg-surface);
+  border: 1px solid var(--sl-border-base);
+  border-radius: var(--sl-radius-md);
+  box-shadow: var(--sl-shadow-sm);
+  transition: var(--sl-ease-smooth);
+}
+.ind-card:hover,
+.glass-card:hover {
+  box-shadow: var(--sl-shadow-container);
+  border-color: #cbd5e1;
+}
+
+.glow-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: var(--sl-radius-sm);
+  font-size: 11.5px;
+  font-weight: 500;
+}
+.glow-badge.primary { background: var(--sl-primary-light); color: var(--sl-primary); border: 1px solid var(--sl-primary-border); }
+.glow-badge.success { background: var(--sl-success-light); color: var(--sl-success); border: 1px solid var(--sl-success-border); }
+.glow-badge.warning { background: var(--sl-warning-light); color: var(--sl-warning); border: 1px solid var(--sl-warning-border); }
+.glow-badge.danger  { background: var(--sl-danger-light);  color: var(--sl-danger);  border: 1px solid var(--sl-danger-border); }

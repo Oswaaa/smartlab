@@ -2,8 +2,9 @@
 import { createApp } from 'vue'
 // 从Pinia状态管理库中导入创建Pinia实例的方法
 import { createPinia } from 'pinia'
-// 导入全局样式（让整个应用都能用上这些样式）
-import './style.css'
+// 导入全局设计系统样式（Design Tokens 与组件样式）
+import './assets/styles/index.css'
+
 // 导入根组件App（整个应用的“总容器”）
 import App from './App.vue'
 // 导入路由模块（实现多页面会用到）

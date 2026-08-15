@@ -1,0 +1,180 @@
+/* ==============================================================================
+ * SmartLab 2.0 — Element Plus Overrides (设计规范统一深度定制)
+ * ============================================================================== */
+
+/* 1. Element Plus 按钮微调 */
+.el-button {
+  border-radius: var(--sl-radius-sm) !important;
+  font-weight: 500 !important;
+  transition: var(--sl-ease-smooth) !important;
+}
+.el-button--primary {
+  background-color: var(--sl-primary) !important;
+  border-color: var(--sl-primary) !important;
+}
+.el-button--primary:hover {
+  background-color: var(--sl-primary-hover) !important;
+  border-color: var(--sl-primary-hover) !important;
+}
+
+/* 2. 表单输入与选择器 (Inputs & Selects) */
+.el-input__wrapper,
+.el-select__wrapper {
+  border-radius: var(--sl-radius-sm) !important;
+  box-shadow: 0 0 0 1px var(--sl-border-input) inset !important;
+  transition: var(--sl-ease-smooth) !important;
+}
+.el-input__wrapper:hover,
+.el-select__wrapper:hover {
+  box-shadow: 0 0 0 1px var(--sl-primary) inset !important;
+}
+.el-input__wrapper.is-focus,
+.el-select__wrapper.is-focused {
+  box-shadow: 0 0 0 1px var(--sl-primary) inset, 0 0 0 2px var(--sl-primary-light) !important;
+}
+
+/* 3. 弹窗深度优化 (Dialog - 90vh 锁屏与独立内部滚动) */
+.el-dialog {
+  border-radius: var(--sl-radius-md) !important;
+  overflow: hidden !important;
+  box-shadow: var(--sl-shadow-dialog) !important;
+}
+.el-dialog__header {
+  padding: 14px 20px !important;
+  margin-right: 0 !important;
+  border-bottom: 1px solid var(--sl-border-base) !important;
+  background: #ffffff !important;
+}
+.el-dialog__title {
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  color: var(--sl-text-heading) !important;
+}
+.el-dialog__body {
+  padding: 16px 20px !important;
+  color: var(--sl-text-body) !important;
+}
+.el-dialog__footer {
+  padding: 12px 20px !important;
+  border-top: 1px solid var(--sl-border-base) !important;
+  background: #ffffff !important;
+}
+
+/* 4. 抽屉深度优化 (Drawer - 固定头部与脚部) */
+.el-drawer__header {
+  padding: 14px 20px !important;
+  margin-bottom: 0 !important;
+  border-bottom: 1px solid var(--sl-border-base) !important;
+  color: var(--sl-text-heading) !important;
+  font-weight: 600 !important;
+}
+.el-drawer__body {
+  padding: 0 !important;
+  overflow-y: auto !important;
+}
+.el-drawer__footer {
+  padding: 12px 20px !important;
+  border-top: 1px solid var(--sl-border-base) !important;
+}
+
+/* 5. 选项卡 (Tabs - 现代平直下划线) */
+.el-tabs__nav-wrap::after {
+  height: 1px !important;
+  background-color: var(--sl-border-base) !important;
+}
+.el-tabs__item {
+  font-size: 13.5px !important;
+  color: var(--sl-text-secondary) !important;
+  font-weight: 500 !important;
+  transition: var(--sl-ease-smooth) !important;
+}
+.el-tabs__item.is-active {
+  color: var(--sl-primary) !important;
+  font-weight: 600 !important;
+}
+.el-tabs__active-bar {
+  background-color: var(--sl-primary) !important;
+  height: 2px !important;
+}
+
+/* 6. 表格深度定制 (Table) */
+.el-table {
+  --el-table-header-bg-color: #ffffff !important;
+  --el-table-border-color: var(--sl-border-subtle) !important;
+  --el-table-header-text-color: var(--sl-text-secondary) !important;
+  --el-table-text-color: var(--sl-text-body) !important;
+  font-size: 13px !important;
+}
+.el-table th.el-table__cell {
+  font-weight: 600 !important;
+  border-bottom: 1px solid var(--sl-border-base) !important;
+}
+.el-table td.el-table__cell {
+  border-bottom: 1px solid var(--sl-border-subtle) !important;
+}
+.el-table--striped .el-table__body tr.el-table__row--striped td.el-table__cell {
+  background: #f8fafc !important;
+}
+
+/* 7. 水平导航菜单与下拉子菜单 (Menu & Sub-menu Popup) - 彻底修复白底白字 */
+.el-menu--popup {
+  background: #ffffff !important;
+  border: 1px solid var(--sl-border-base) !important;
+  border-radius: var(--sl-radius-sm) !important;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08) !important;
+  padding: 4px !important;
+  min-width: 150px !important;
+}
+
+.el-menu--popup .el-menu-item {
+  color: var(--sl-text-body) !important; /* 强制使用深色字 #334155 */
+  font-size: 13px !important;
+  height: 36px !important;
+  line-height: 36px !important;
+  padding: 0 14px !important;
+  border-radius: 4px !important;
+  margin-bottom: 2px !important;
+  border-bottom: none !important;
+  transition: var(--sl-ease-smooth) !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+.el-menu--popup .el-menu-item:hover,
+.el-menu--popup .el-menu-item.is-active {
+  background: var(--sl-bg-active) !important; /* 浅蓝底色 #eff6ff */
+  color: var(--sl-primary) !important;       /* 实体活力蓝 #2563eb */
+  font-weight: 500 !important;
+}
+
+.el-menu--popup .el-menu-item .el-icon {
+  color: var(--sl-text-secondary) !important;
+  font-size: 14px !important;
+  margin-right: 2px !important;
+}
+
+.el-menu--popup .el-menu-item:hover .el-icon,
+.el-menu--popup .el-menu-item.is-active .el-icon {
+  color: var(--sl-primary) !important;
+}
+
+/* 下拉菜单 (Dropdown Menu) */
+.el-dropdown-menu {
+  background: #ffffff !important;
+  border: 1px solid var(--sl-border-base) !important;
+  border-radius: var(--sl-radius-sm) !important;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08) !important;
+  padding: 4px !important;
+}
+.el-dropdown-menu__item {
+  font-size: 13px !important;
+  color: var(--sl-text-body) !important;
+  border-radius: 4px !important;
+  padding: 6px 14px !important;
+}
+.el-dropdown-menu__item:hover {
+  background: var(--sl-bg-active) !important;
+  color: var(--sl-primary) !important;
+}
+

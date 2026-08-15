@@ -3,8 +3,8 @@ import MainLayout from '../components/layouts/MainLayout.vue'
 import { useAuthStore } from '../stores/authStore'
 
 const routes = [
-  { path: '/login', name: 'Login', component: () => import('../views/auth/Login.vue'), meta: { requiresAuth: false } },
-  { path: '/register', name: 'Register', component: () => import('../views/auth/Register.vue'), meta: { requiresAuth: false } },
+  { path: '/login', name: 'Login', component: () => import('../views/user/auth/Login.vue'), meta: { requiresAuth: false } },
+  { path: '/register', name: 'Register', component: () => import('../views/user/auth/Register.vue'), meta: { requiresAuth: false } },
   {
     path: '/',
     name: 'MainLayout',
@@ -19,10 +19,11 @@ const routes = [
       { path: 'data-management', name: 'DataManagement', component: () => import('../views/data/DataManagement.vue'), meta: { title: '数据中心' } },
       { path: 'task-management', name: 'TaskManagement', component: () => import('../views/task/TaskList/TaskList.vue'), meta: { title: '任务列表' } },
       { path: 'task-designer', name: 'TaskDesigner', component: () => import('../views/task/WorkflowDesigner/WorkflowDesigner.vue'), meta: { title: '流程设计' } },
-      { path: 'constraint-management', name: 'ConstraintManagement', component: () => import('../views/security/SecurityCenter.vue'), meta: { title: '约束管理' } },
-      { path: 'user-management', name: 'UserManagement', component: () => import('../views/admin/UserManagement.vue'), meta: { title: '用户管理' } }
+      { path: 'constraint-management', name: 'ConstraintManagement', component: () => import('../views/constraint/ConstraintManagement.vue'), meta: { title: '约束管理' } },
+      { path: 'user-management', name: 'UserManagement', component: () => import('../views/user/admin/UserManagement.vue'), meta: { title: '用户管理' } }
     ]
   },
+
   { path: '/:pathMatch(.*)*', name: 'NotFound', redirect: '/home' }
 ]
 

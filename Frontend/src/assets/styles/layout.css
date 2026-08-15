@@ -1,0 +1,212 @@
+/* ==============================================================================
+ * SmartLab 2.0 — Layout Primitives (一体化无界工作台布局与公共结构)
+ * ============================================================================== */
+
+/* 1. 一体化无界工作台外框 (Workbench Canvas) */
+.workbench-canvas,
+.integrated-workbench {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 290px 1fr;
+  background: var(--sl-bg-surface);
+  border: 1px solid var(--sl-border-base);
+  border-radius: var(--sl-radius-lg);
+  overflow: hidden;
+  box-shadow: var(--sl-shadow-container);
+  min-height: 0;
+  height: 100%;
+}
+
+/* 2. 左侧资产树侧边栏 (Tree Sidebar Pane) */
+.tree-pane,
+.asset-sidebar {
+  background: #ffffff;
+  border-right: 1px solid var(--sl-border-base);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.tree-pane-header,
+.sidebar-header {
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--sl-border-base);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #ffffff;
+}
+.tree-pane-header strong,
+.sidebar-header strong {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--sl-text-heading);
+}
+
+.tree-search-bar,
+.sidebar-search {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--sl-border-subtle);
+}
+.tree-search-input,
+.sidebar-search-input {
+  width: 100%;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--sl-border-input);
+  border-radius: var(--sl-radius-sm);
+  font-size: 12.5px;
+  color: var(--sl-text-heading);
+  outline: none;
+  transition: var(--sl-ease-smooth);
+  background: #ffffff;
+}
+.tree-search-input:focus,
+.sidebar-search-input:focus {
+  border-color: var(--sl-primary);
+  box-shadow: 0 0 0 1px var(--sl-primary);
+}
+
+.tree-list-scroll {
+  flex: 1;
+  padding: 6px 8px;
+  overflow-y: auto;
+}
+
+/* 3. 右侧一体化无界画卷 (Seamless Main Canvas) */
+.main-canvas-pane,
+.canvas-pane {
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* 4. 顶部指标横幅 (Metric Ribbon) */
+.metric-ribbon {
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--sl-border-base);
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+  background: #ffffff;
+  flex-shrink: 0;
+}
+.m-cell,
+.metric-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.m-cell .label,
+.m-label {
+  font-size: 11.5px;
+  color: var(--sl-text-secondary);
+}
+.m-cell .val,
+.m-val {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--sl-text-heading);
+}
+.m-cell .val.highlight,
+.m-val.highlight {
+  font-size: 18px;
+  color: var(--sl-primary);
+  font-family: var(--sl-font-mono);
+}
+
+/* 5. 一体化区块级标题栏 (Section Toolbar) */
+.section-toolbar {
+  padding: 10px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #f8fafc;
+  border-bottom: 1px solid var(--sl-border-base);
+  flex-shrink: 0;
+}
+.section-title,
+.section-toolbar-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--sl-text-heading);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* 6. 全宽表格 (Unified Table) */
+.unified-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.unified-table th, 
+.unified-table td {
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--sl-border-subtle);
+  text-align: left;
+}
+.unified-table th {
+  background: #ffffff;
+  color: var(--sl-text-secondary);
+  font-weight: 600;
+  font-size: 12px;
+  border-bottom: 1px solid var(--sl-border-base);
+}
+.unified-table tbody tr {
+  transition: var(--sl-ease-smooth);
+}
+.unified-table tbody tr:hover {
+  background: var(--sl-bg-page);
+}
+
+/* 7. 状态胶囊徽标 (Status Dot Badges) */
+.status-dot-badge,
+.status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 7px;
+  border-radius: var(--sl-radius-sm);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1;
+}
+.status-dot-badge.normal,
+.status-dot-badge.success {
+  background: var(--sl-success-light);
+  color: var(--sl-success);
+  border: 1px solid var(--sl-success-border);
+}
+.status-dot-badge.violated,
+.status-dot-badge.danger,
+.status-dot-badge.error {
+  background: var(--sl-danger-light);
+  color: var(--sl-danger);
+  border: 1px solid var(--sl-danger-border);
+}
+.status-dot-badge.warning {
+  background: var(--sl-warning-light);
+  color: var(--sl-warning);
+  border: 1px solid var(--sl-warning-border);
+}
+.status-dot-badge.disabled,
+.status-dot-badge.info {
+  background: var(--sl-bg-hover);
+  color: var(--sl-text-secondary);
+  border: 1px solid var(--sl-border-base);
+}
+.status-dot-badge .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.status-dot-badge.normal .dot,
+.status-dot-badge.success .dot { background: var(--sl-success); }
+.status-dot-badge.violated .dot,
+.status-dot-badge.danger .dot,
+.status-dot-badge.error .dot { background: var(--sl-danger); }
+.status-dot-badge.warning .dot { background: var(--sl-warning); }
+.status-dot-badge.disabled .dot,
+.status-dot-badge.info .dot { background: var(--sl-text-secondary); }

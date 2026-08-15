@@ -1,0 +1,58 @@
+/* ==============================================================================
+ * SmartLab 2.0 — Base Reset & Typography (基础重置与全局字体规范)
+ * ============================================================================== */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  font-family: var(--sl-font-family);
+  background-color: var(--sl-bg-page);
+  color: var(--sl-text-body);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 统一精致细滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: var(--sl-bg-page);
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* 标题样式重置 */
+h1, h2, h3, h4, h5, h6 {
+  color: var(--sl-text-heading);
+  font-weight: 600;
+  margin: 0;
+}
+
+/* 等宽字体类 */
+.font-mono,
+.text-mono {
+  font-family: var(--sl-font-mono) !important;
+}
+
+/* 常用文本颜色类 */
+.text-heading { color: var(--sl-text-heading) !important; }
+.text-body { color: var(--sl-text-body) !important; }
+.text-secondary { color: var(--sl-text-secondary) !important; }
+.text-primary { color: var(--sl-primary) !important; }
+.text-success { color: var(--sl-success) !important; }
+.text-danger { color: var(--sl-danger) !important; }
+.text-warning { color: var(--sl-warning) !important; }

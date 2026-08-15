@@ -17,7 +17,8 @@
 <script setup>
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { useAuthStore } from '../../stores/authStore'
+import { useAuthStore } from '../../../stores/authStore'
+
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 

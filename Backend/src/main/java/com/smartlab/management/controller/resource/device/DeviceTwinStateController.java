@@ -1,11 +1,20 @@
 package com.smartlab.management.controller.resource.device;
 
+import com.smartlab.engine.observation.ObservableKey;
+import com.smartlab.engine.observation.ObservableSnapshotService;
+import com.smartlab.engine.observation.ObservationSample;
+import com.smartlab.global.contract.ObservableObjectType;
 import com.smartlab.management.dto.common.ApiResponse;
 import com.smartlab.management.entity.resource.device.DeviceTwinStates;
 import com.smartlab.management.service.db.resource.device.DeviceTwinStateService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/device/twin-state")
@@ -15,9 +24,47 @@ import java.util.List;
 public class DeviceTwinStateController {
 
     private final DeviceTwinStateService service;
+    private final ObservableSnapshotService snapshotService;
 
-    public DeviceTwinStateController(DeviceTwinStateService service) {
+    @Autowired
+    public DeviceTwinStateController(DeviceTwinStateService service,
+                                     @Autowired(required = false) ObservableSnapshotService snapshotService) {
         this.service = service;
+        this.snapshotService = snapshotService;
+    }
+
+    /**
+     * 读取指定设备实例与物理属性在内存时序缓冲区中的真实历史点序列（用于安全监控动态波形图）。
+     */
+    @GetMapping("/history")
+    public ApiResponse<List<Map<String, Object>>> getHistory(
+            @RequestParam Long instanceId,
+            @RequestParam String targetName,
+            @RequestParam(defaultValue = "60") int seconds) {
+        if (snapshotService == null) {
+            return ApiResponse.ok(List.of());
+        }
+        ObservableKey key = new ObservableKey(
+                ObservableObjectType.DEVICE_ATTRIBUTE,
+                instanceId,
+                null,
+                null,
+                null,
+                null,
+                targetName,
+                null
+        );
+        Instant since = Instant.now().minusSeconds(Math.max(1, Math.min(seconds, 1800)));
+        List<ObservationSample> samples = snapshotService.readHistory(key, since);
+        List<Map<String, Object>> result = new ArrayList<>();
+        for (ObservationSample sample : samples) {
+            Map<String, Object> item = new HashMap<>();
+            item.put("observedAt", sample.observedAt().toString());
+            item.put("value", sample.value());
+            item.put("revision", sample.revision());
+            result.add(item);
+        }
+        return ApiResponse.ok(result);
     }
 
 

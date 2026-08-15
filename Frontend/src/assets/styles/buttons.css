@@ -1,0 +1,137 @@
+/* ==============================================================================
+ * SmartLab 2.0 — Button System (四级标准按钮交互体系)
+ * ============================================================================== */
+
+/* 1. 实体蓝主按钮 (Primary Action) - 区块内唯一核心主行动点 */
+.btn-primary-blue,
+.btn-primary {
+  background: var(--sl-primary);
+  border: 1px solid var(--sl-primary);
+  color: #ffffff;
+  font-size: 12.5px;
+  font-weight: 500;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: var(--sl-radius-sm);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: var(--sl-ease-smooth);
+  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.2);
+  text-decoration: none;
+}
+.btn-primary-blue:hover,
+.btn-primary:hover {
+  background: var(--sl-primary-hover);
+  border-color: var(--sl-primary-hover);
+  transform: translateY(-1px);
+  box-shadow: 0 3px 6px rgba(37, 99, 235, 0.25);
+  color: #ffffff;
+}
+.btn-primary-blue:active,
+.btn-primary:active {
+  transform: translateY(0);
+  background: var(--sl-primary-active);
+}
+
+/* 2. 白底蓝边 CTA 引导按钮 (.btn-aliyun-cta) - 新增/建表引导 */
+.btn-aliyun-cta,
+.btn-cta {
+  background: #ffffff;
+  border: 1px solid var(--sl-primary);
+  color: var(--sl-primary);
+  font-size: 12px;
+  font-weight: 500;
+  height: 26px;
+  padding: 0 10px;
+  border-radius: var(--sl-radius-sm);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  transition: var(--sl-ease-smooth);
+  text-decoration: none;
+}
+.btn-aliyun-cta:hover,
+.btn-cta:hover {
+  background: var(--sl-primary);
+  color: #ffffff;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.2);
+}
+.btn-aliyun-cta:active,
+.btn-cta:active {
+  transform: translateY(0);
+}
+
+/* 3. 白底灰边次要工具按钮 (.btn-aliyun) - 刷新、时间切换、取消 */
+.btn-aliyun,
+.btn-secondary {
+  background: #ffffff;
+  border: 1px solid var(--sl-border-input);
+  color: var(--sl-text-heading);
+  font-size: 12.5px;
+  font-weight: 400;
+  height: 28px;
+  padding: 0 11px;
+  border-radius: var(--sl-radius-sm);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: var(--sl-ease-smooth);
+  text-decoration: none;
+}
+.btn-aliyun:hover,
+.btn-secondary:hover {
+  border-color: var(--sl-primary);
+  color: var(--sl-primary);
+  background: var(--sl-bg-page);
+  transform: translateY(-1px);
+}
+.btn-aliyun:active,
+.btn-secondary:active {
+  transform: translateY(0);
+}
+
+/* 4. 行内操作链接 (Link & Danger Link) - 表格操作列 */
+.btn-link,
+.btn-aliyun-link {
+  background: transparent;
+  border: none;
+  color: var(--sl-primary);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+  transition: var(--sl-ease-smooth);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.btn-link:hover,
+.btn-aliyun-link:hover {
+  text-decoration: underline;
+  color: var(--sl-primary-hover);
+}
+
+.btn-link.danger,
+.btn-aliyun-danger-link {
+  background: transparent;
+  border: none;
+  color: var(--sl-danger);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 0;
+  transition: var(--sl-ease-smooth);
+}
+.btn-link.danger:hover,
+.btn-aliyun-danger-link:hover {
+  text-decoration: underline;
+  color: #b91c1c;
+}

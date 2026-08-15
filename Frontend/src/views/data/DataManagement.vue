@@ -1,299 +1,577 @@
 <template>
-  <div class="data-workbench">
-    <aside class="asset-pane">
-      <div class="asset-header">
-        <div>
-          <strong>数据中心</strong>
-          <span>设备数据 / 模板库</span>
+  <div class="data-workbench-page">
+    <div class="workbench-canvas">
+      
+      <!-- 1. 左侧资产树侧边栏 (Tree Sidebar Pane - 设备类别/数据模板双分区，紧凑左对齐) -->
+      <aside class="tree-pane">
+        <div class="tree-header-bar">
+          <strong class="tree-header-title">数据中心资产树</strong>
+          <button class="btn-aliyun-cta" type="button" @click="openDatasetDrawer(null, null)">+ 建表</button>
         </div>
-      </div>
-      <div class="tree-search-row">
-        <el-input v-model="keyword" size="small" clearable :prefix-icon="Search" placeholder="搜索设备、模型、数据表" />
-      </div>
-      <div class="asset-tree" v-loading="loading">
-        <el-tree :data="filteredTree" node-key="key" default-expand-all :expand-on-click-node="false" @node-click="handleTreeClick">
-          <template #default="{ data }">
-            <div class="asset-node" :class="{ active: activeKey === data.key, dataset: data.type === 'dataset', template: data.type === 'template' }">
-              <span class="asset-node-main" :title="data.label">
-                <el-icon v-if="['root','category'].includes(data.type)" class="node-icon category-icon"><FolderOpened v-if="data.type === 'category'" /><Folder v-else /></el-icon>
-                <el-icon v-else-if="data.type === 'model'" class="node-icon model-icon"><Document /></el-icon>
-                <el-icon v-else-if="data.type === 'instance'" class="node-icon instance-icon"><Cpu /></el-icon>
-                <el-icon v-else-if="data.type === 'template'" class="node-icon template-icon"><Document /></el-icon>
-                <el-icon v-else class="node-icon dataset-icon"><Tickets /></el-icon>
-                <span class="node-label">{{ data.label }}</span>
-              </span>
-              <div class="asset-node-side">
-                <div class="node-actions" @click.stop>
-                  <el-tooltip v-if="data.type === 'model'" content="用该模型新建模板" placement="top">
-                    <button class="node-action model-action" type="button" aria-label="新建模板" @click.stop="openTemplateDrawerWithModel(data.data)">
-                      <el-icon><DocumentAdd /></el-icon>
-                    </button>
-                  </el-tooltip>
-                  <el-tooltip v-if="data.type === 'instance' && isUsableInstance(data.data)" content="为该设备建表" placement="top">
-                    <button class="node-action" type="button" aria-label="新建数据表" @click.stop="openDatasetDrawer(null, data.data)">
-                      <el-icon><Plus /></el-icon>
-                    </button>
-                  </el-tooltip>
-                  <el-tooltip v-if="data.type === 'template' && templateHasModel(data.data)" content="用此模板建表" placement="top">
-                    <button class="node-action" type="button" aria-label="用模板建表" @click.stop="openDatasetDrawer(data.data)">
-                      <el-icon><Plus /></el-icon>
-                    </button>
-                  </el-tooltip>
+
+        <div class="tree-search-bar">
+          <input
+            v-model="keyword"
+            class="tree-search-input"
+            placeholder="搜索类别、模型、设备或模板..."
+          />
+        </div>
+
+        <div class="tree-list-scroll" v-loading="loading">
+          <el-tree
+            :data="filteredTree"
+            node-key="key"
+            default-expand-all
+            :indent="16"
+            :expand-on-click-node="false"
+            @node-click="handleTreeClick"
+          >
+            <template #default="{ data }">
+              <div
+                class="t-row"
+                :class="[
+                  `node-type-${data.type}`,
+                  {
+                    active: activeKey === data.key,
+                    'group-header-row': data.type === 'group-header'
+                  }
+                ]"
+              >
+                <span class="t-row-left" :title="data.label">
+                  <!-- 1. 大标题：设备类别 / 数据模板 (无图标) -->
+                  <template v-if="data.type === 'group-header'">
+                    <span class="t-group-label">{{ data.label }}</span>
+                  </template>
+                  
+                  <!-- 2. 具体设备类别：文件夹图标 -->
+                  <el-icon v-else-if="data.type === 'category'" class="t-icon category-icon">
+                    <Folder />
+                  </el-icon>
+                  
+                  <!-- 3. 设备模型：文档图标 -->
+                  <el-icon v-else-if="data.type === 'model'" class="t-icon model-icon">
+                    <Document />
+                  </el-icon>
+                  
+                  <!-- 4. 设备实例：设备/芯片图标 -->
+                  <el-icon v-else-if="data.type === 'instance'" class="t-icon instance-icon">
+                    <Cpu />
+                  </el-icon>
+                  
+                  <!-- 5. 数据模板：文档图标 -->
+                  <el-icon v-else-if="data.type === 'template'" class="t-icon template-icon">
+                    <Document />
+                  </el-icon>
+                  
+                  <!-- 6. 数据表：数据表图标 -->
+                  <el-icon v-else class="t-icon dataset-icon">
+                    <Tickets />
+                  </el-icon>
+
+                  <span v-if="data.type !== 'group-header'" class="t-label">{{ data.label }}</span>
+                </span>
+
+                <div class="t-row-right">
+                  <div class="node-actions" @click.stop>
+                    <el-tooltip v-if="data.type === 'model'" content="为该模型新建模板" placement="top">
+                      <button class="node-action" type="button" aria-label="新建模板" @click.stop="openTemplateDrawerWithModel(data.data)">
+                        <el-icon><DocumentAdd /></el-icon>
+                      </button>
+                    </el-tooltip>
+                    <el-tooltip v-if="data.type === 'instance' && isUsableInstance(data.data)" content="为该设备建表" placement="top">
+                      <button class="node-action" type="button" aria-label="新建数据表" @click.stop="openDatasetDrawer(null, data.data)">
+                        <el-icon><Plus /></el-icon>
+                      </button>
+                    </el-tooltip>
+                    <el-tooltip v-if="data.type === 'template' && templateHasModel(data.data)" content="用此模板建表" placement="top">
+                      <button class="node-action" type="button" aria-label="用模板建表" @click.stop="openDatasetDrawer(data.data)">
+                        <el-icon><Plus /></el-icon>
+                      </button>
+                    </el-tooltip>
+                  </div>
+                  <span v-if="data.count != null" class="t-badge">{{ data.count }}</span>
                 </div>
-                <em v-if="data.count != null" class="count-tag">{{ data.count }}</em>
+              </div>
+            </template>
+          </el-tree>
+          <el-empty v-if="!filteredTree.length" description="暂无数据资产" />
+        </div>
+      </aside>
+
+      <!-- 2. 右侧一体化无界画卷 (Seamless Main Canvas - 锁屏高密度布局) -->
+      <section class="main-canvas-pane">
+        
+        <!-- 2.1 视角一：数据表详情视角 (Dataset View - 核心走势与宽幅卡片表格) -->
+        <template v-if="selectedDataset">
+          <div class="metric-ribbon">
+            <div class="m-cell">
+              <span class="m-label">设备模型</span>
+              <strong class="m-val">{{ modelName(selectedInstance?.deviceModelId) }}</strong>
+            </div>
+            <div class="m-cell">
+              <span class="m-label">绑定实例</span>
+              <strong class="m-val">{{ instanceName(selectedDataset.deviceInstanceId) }}</strong>
+            </div>
+            <div class="m-cell">
+              <span class="m-label">数据模板</span>
+              <strong class="m-val">{{ templateName(selectedDataset.dataTemplateId) }}</strong>
+            </div>
+            <div class="m-cell">
+              <span class="m-label">历史采样总量</span>
+              <strong class="m-val highlight">{{ recordPage.total }} 条</strong>
+            </div>
+          </div>
+
+          <div class="canvas-fixed-layout">
+            <!-- 1. 遥测走势图 (满幅填满固定区) -->
+            <div class="chart-panel-fixed">
+              <div class="section-toolbar">
+                <div class="section-title">
+                  <span>遥测趋势走势图</span>
+                  <span class="status-dot-badge normal" style="margin-left: 8px;">
+                    <span class="dot"></span> 实时采样 (1s)
+                  </span>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                  <button class="btn-aliyun" type="button" @click="loadRecords(false)">刷新采样</button>
+                  <button class="btn-primary-blue" type="button" @click="exportChartImage">导出图表图片</button>
+                </div>
+              </div>
+              <div class="chart-section">
+                <div ref="chartRef" class="chart-box"></div>
               </div>
             </div>
-          </template>
-        </el-tree>
-        <el-empty v-if="!filteredTree.length" description="暂无数据资产" />
-      </div>
-    </aside>
 
-    <section class="data-workspace">
-      <!-- 1. Dataset View -->
-      <template v-if="selectedDataset">
-        <div class="metric-ribbon">
-          <div class="metric-cell"><span class="label">设备模型</span><strong class="val">{{ modelName(selectedInstance?.deviceModelId) }}</strong></div>
-          <div class="metric-cell"><span class="label">绑定实例</span><strong class="val">{{ instanceName(selectedDataset.deviceInstanceId) }}</strong></div>
-          <div class="metric-cell"><span class="label">数据模板</span><strong class="val">{{ templateName(selectedDataset.dataTemplateId) }}</strong></div>
-          <div class="metric-cell"><span class="label">历史数据总量</span><strong class="val highlight">{{ recordPage.total }} 条</strong></div>
-        </div>
+            <!-- 2. 历史遥测采样明细 (微边距大卡片，仅在卡片内部平滑滚动) -->
+            <div class="table-panel-flex">
+              <div class="section-toolbar">
+                <div class="section-title">
+                  <span>历史遥测采样明细</span>
+                  <span class="count-pill">{{ recordPage.total }} 条记录</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <button class="btn-aliyun" type="button" @click="loadRecords()">刷新数据</button>
+                  <button class="btn-primary-blue" type="button" @click="exportDataset">导出 CSV</button>
+                  <el-popconfirm title="确认删除该数据表？物理表会同步删除" @confirm="deleteDataset(selectedDataset)">
+                    <template #reference>
+                      <button class="btn-link danger" type="button" style="margin-left: 6px;">删除数据表</button>
+                    </template>
+                  </el-popconfirm>
+                </div>
+              </div>
 
-        <main class="workspace-body">
-          <div class="chart-box-wrapper">
-            <div class="chart-header">
-              <strong>遥测趋势分析</strong>
-              <span class="chart-live-tag"><i class="live-dot"></i> 实时采样 (1s)</span>
-            </div>
-            <div ref="chartRef" class="chart-box"></div>
-          </div>
-          <div class="table-section">
-            <div class="table-header">
-              <div class="table-title"><strong>历史数据明细</strong><span class="count-pill">{{ recordPage.total }} 条记录</span></div>
-              <div class="table-actions">
-                <el-button size="small" class="btn-aliyun" @click="loadRecords()">刷新</el-button>
-                <el-button size="small" class="btn-aliyun" @click="exportDataset">导出 CSV</el-button>
-                <el-popconfirm title="确认删除该数据表？物理表会同步删除" @confirm="deleteDataset(selectedDataset)">
-                  <template #reference><el-button size="small" link class="btn-aliyun-danger-link">删除数据表</el-button></template>
-                </el-popconfirm>
+              <div class="table-scroll-container">
+                <div class="table-card">
+                  <el-table
+                    :data="records"
+                    border
+                    stripe
+                    size="small"
+                    v-loading="loadingRecords"
+                    height="100%"
+                    class="unified-table-el"
+                  >
+                    <el-table-column label="Adapter 采集时间" width="180">
+                      <template #default="{ row }">
+                        <span class="time-stamp">{{ formatTime(recordTime(row)) }}</span>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="系统入库时间" width="180">
+                      <template #default="{ row }">
+                        <span class="time-stamp">{{ formatTime(recordIngestTime(row)) }}</span>
+                      </template>
+                    </el-table-column>
+                    <el-table-column v-for="field in valueFields" :key="field.columnName" :label="fieldLabel(field)" min-width="150">
+                      <template #default="{ row }">
+                        <span class="field-val">{{ valueOf(row, field.columnName) }}</span>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </div>
+              </div>
+
+              <div class="pager-wrap">
+                <el-pagination
+                  background
+                  size="small"
+                  layout="total, sizes, prev, pager, next"
+                  :total="recordPage.total"
+                  :current-page="recordPage.pageNo"
+                  :page-size="recordPage.pageSize"
+                  :page-sizes="[50,100,200,500]"
+                  @current-change="page => { recordPage.pageNo = page; loadRecords() }"
+                  @size-change="size => { recordPage.pageNo = 1; recordPage.pageSize = size; loadRecords() }"
+                />
               </div>
             </div>
-            <el-table :data="records" border stripe size="small" v-loading="loadingRecords" class="record-table">
-              <el-table-column label="Adapter 采集时间" width="180"><template #default="{ row }">{{ formatTime(recordTime(row)) }}</template></el-table-column>
-              <el-table-column label="系统入库时间" width="180"><template #default="{ row }">{{ formatTime(recordIngestTime(row)) }}</template></el-table-column>
-              <el-table-column v-for="field in valueFields" :key="field.columnName" :label="fieldLabel(field)" min-width="150">
-                <template #default="{ row }">{{ valueOf(row, field.columnName) }}</template>
-              </el-table-column>
-            </el-table>
-            <el-pagination class="pager" background size="small" layout="total, sizes, prev, pager, next" :total="recordPage.total" :current-page="recordPage.pageNo" :page-size="recordPage.pageSize" :page-sizes="[50,100,200,500]" @current-change="page => { recordPage.pageNo = page; loadRecords() }" @size-change="size => { recordPage.pageNo = 1; recordPage.pageSize = size; loadRecords() }" />
           </div>
-        </main>
-      </template>
+        </template>
 
-      <!-- 2. Template View -->
-      <template v-else-if="selectedTemplate">
-        <div class="metric-ribbon">
-          <div class="metric-cell"><span class="label">模板名称</span><strong class="val">{{ selectedTemplate.templateName }}</strong></div>
-          <div class="metric-cell"><span class="label">来源模型</span><strong class="val">{{ modelName(selectedTemplate.deviceModelId) }}</strong></div>
-          <div class="metric-cell"><span class="label">模板类型</span><strong class="val">{{ selectedTemplate.isDefault ? '默认模板' : '自定义模板' }}</strong></div>
-          <div class="metric-cell"><span class="label">创建时间</span><strong class="val">{{ formatTime(selectedTemplate.createTime) }}</strong></div>
-        </div>
+        <!-- 2.2 视角二：数据模板详情视角 (Template View) -->
+        <template v-else-if="selectedTemplate">
+          <div class="metric-ribbon">
+            <div class="m-cell">
+              <span class="m-label">模板名称</span>
+              <strong class="m-val">{{ selectedTemplate.templateName }}</strong>
+            </div>
+            <div class="m-cell">
+              <span class="m-label">来源模型</span>
+              <strong class="m-val">{{ modelName(selectedTemplate.deviceModelId) }}</strong>
+            </div>
+            <div class="m-cell">
+              <span class="m-label">模板类型</span>
+              <strong class="m-val">{{ selectedTemplate.isDefault ? '默认模板' : '自定义模板' }}</strong>
+            </div>
+            <div class="m-cell">
+              <span class="m-label">创建时间</span>
+              <strong class="m-val time-stamp">{{ formatTime(selectedTemplate.createTime) }}</strong>
+            </div>
+          </div>
 
-        <main class="workspace-body">
-          <div class="table-section">
-            <div class="table-header">
-              <div class="table-title"><strong>模板字段定义</strong><span class="count-pill">{{ templateDetails.length }} 个字段</span></div>
-              <div class="table-actions">
-                <el-button v-if="templateHasModel(selectedTemplate)" size="small" class="btn-aliyun" @click="openDatasetDrawer(selectedTemplate)">+ 用此模板建表</el-button>
-                <el-popconfirm v-if="!selectedTemplate.isDefault" title="确认删除该模板？" @confirm="deleteTemplate(selectedTemplate)">
-                  <template #reference><el-button size="small" link class="btn-aliyun-danger-link">删除模板</el-button></template>
-                </el-popconfirm>
+          <div class="canvas-fixed-layout">
+            <div class="table-panel-flex">
+              <div class="section-toolbar">
+                <div class="section-title">
+                  <span>模板字段定义</span>
+                  <span class="count-pill">{{ templateDetails.length }} 个字段</span>
+                </div>
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <button v-if="templateHasModel(selectedTemplate)" class="btn-aliyun-cta" type="button" @click="openDatasetDrawer(selectedTemplate)">+ 用此模板建表</button>
+                  <el-popconfirm v-if="!selectedTemplate.isDefault" title="确认删除该模板？" @confirm="deleteTemplate(selectedTemplate)">
+                    <template #reference>
+                      <button class="btn-link danger" type="button" style="margin-left: 6px;">删除模板</button>
+                    </template>
+                  </el-popconfirm>
+                </div>
+              </div>
+              <div class="table-scroll-container">
+                <div class="table-card">
+                  <el-table :data="templateDetails" border stripe size="small" height="100%" class="unified-table-el">
+                    <el-table-column prop="columnName" label="模板字段" min-width="160" />
+                    <el-table-column prop="columnDesc" label="字段说明" min-width="160" />
+                    <el-table-column label="绑定属性" min-width="150">
+                      <template #default="{ row }">{{ bindingLabel(row) }}</template>
+                    </el-table-column>
+                    <el-table-column label="默认值" width="130">
+                      <template #default="{ row }"><span class="field-val">{{ row.defaultValue || '-' }}</span></template>
+                    </el-table-column>
+                    <el-table-column label="字段用途" width="120">
+                      <template #default="{ row }">
+                        <span class="status-dot-badge info">{{ isUnitField(row) ? '单位' : '采集值' }}</span>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </div>
               </div>
             </div>
-            <el-table :data="templateDetails" border stripe size="small" class="template-table">
-              <el-table-column prop="columnName" label="模板字段" min-width="160" />
-              <el-table-column prop="columnDesc" label="字段说明" min-width="160" />
-              <el-table-column label="绑定属性" min-width="150"><template #default="{ row }">{{ bindingLabel(row) }}</template></el-table-column>
-              <el-table-column label="默认值" width="130"><template #default="{ row }">{{ row.defaultValue || '-' }}</template></el-table-column>
-              <el-table-column label="字段用途" width="120"><template #default="{ row }">{{ isUnitField(row) ? '单位' : '采集值' }}</template></el-table-column>
-            </el-table>
           </div>
-        </main>
-      </template>
+        </template>
 
-      <!-- 3. Instance View -->
-      <template v-else-if="selectedInstance">
-        <div class="metric-ribbon">
-          <div class="metric-cell"><span class="label">设备实例</span><strong class="val">{{ selectedInstance.instanceName }}</strong></div>
-          <div class="metric-cell"><span class="label">所属模型</span><strong class="val">{{ modelName(selectedInstance.deviceModelId) }}</strong></div>
-          <div class="metric-cell"><span class="label">绑定 Adapter</span><strong class="val">{{ selectedInstance.boundAdapterName || '已配置' }}</strong></div>
-          <div class="metric-cell"><span class="label">设备状态</span><strong class="val active-status">{{ selectedInstance.lifecycleStatus || 'IN_USE 正常运行' }}</strong></div>
-        </div>
+        <!-- 2.3 视角三：设备实例视角 (Instance View) -->
+        <template v-else-if="selectedInstance">
+          <div class="metric-ribbon">
+            <div class="m-cell">
+              <span class="m-label">设备实例</span>
+              <strong class="m-val">{{ selectedInstance.instanceName }}</strong>
+            </div>
+            <div class="m-cell">
+              <span class="m-label">所属模型</span>
+              <strong class="m-val">{{ modelName(selectedInstance.deviceModelId) }}</strong>
+            </div>
+            <div class="m-cell">
+              <span class="m-label">绑定 Adapter</span>
+              <strong class="m-val">{{ selectedInstance.boundAdapterName || '已配置' }}</strong>
+            </div>
+            <div class="m-cell">
+              <span class="m-label">资产生命周期</span>
+              <strong class="m-val status-val" :class="instanceLifecycleClass(selectedInstance)">
+                <span class="dot"></span> {{ formatLifecycleStatus(selectedInstance.lifecycleStatus) }}
+              </strong>
+            </div>
+          </div>
 
-        <main class="workspace-body">
-          <div class="table-section">
-            <div class="table-header">
-              <div class="table-title"><strong>该设备已关联的数据表</strong><span class="count-pill">{{ instanceDatasets(selectedInstance).length }} 张表</span></div>
-              <div class="table-actions">
-                <el-button v-if="isUsableInstance(selectedInstance)" size="small" class="btn-aliyun" @click="openDatasetDrawer(null, selectedInstance)">+ 为该设备建表</el-button>
+          <div class="canvas-fixed-layout">
+            <div class="table-panel-flex">
+              <div class="section-toolbar">
+                <div class="section-title">
+                  <span>该设备已关联的数据表</span>
+                  <span class="count-pill">{{ instanceDatasets(selectedInstance).length }} 张表</span>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                  <button v-if="isUsableInstance(selectedInstance)" class="btn-aliyun-cta" type="button" @click="openDatasetDrawer(null, selectedInstance)">+ 为该设备建表</button>
+                </div>
+              </div>
+              <div class="table-scroll-container">
+                <div v-if="instanceDatasets(selectedInstance).length" class="table-card">
+                  <el-table :data="instanceDatasets(selectedInstance)" border stripe size="small" height="100%" class="unified-table-el">
+                    <el-table-column prop="dataTable" label="数据表名" min-width="180" />
+                    <el-table-column prop="dataDesc" label="数据表说明" min-width="200" />
+                    <el-table-column label="依赖模板" min-width="160">
+                      <template #default="{ row }">{{ templateName(row.dataTemplateId) }}</template>
+                    </el-table-column>
+                    <el-table-column label="操作" width="120">
+                      <template #default="{ row }">
+                        <button class="btn-link" type="button" @click="selectDataset(row)">查看详情</button>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </div>
+                <el-empty v-else description="该设备实例下暂无数据表">
+                  <button v-if="isUsableInstance(selectedInstance)" class="btn-aliyun-cta" type="button" @click="openDatasetDrawer(null, selectedInstance)">为该设备建表</button>
+                </el-empty>
               </div>
             </div>
-            <el-table v-if="instanceDatasets(selectedInstance).length" :data="instanceDatasets(selectedInstance)" border stripe size="small">
-              <el-table-column prop="dataTable" label="数据表名" min-width="180" />
-              <el-table-column prop="dataDesc" label="数据表说明" min-width="200" />
-              <el-table-column label="依赖模板" min-width="160"><template #default="{ row }">{{ templateName(row.dataTemplateId) }}</template></el-table-column>
-              <el-table-column label="操作" width="140">
-                <template #default="{ row }">
-                  <el-button size="small" link class="btn-aliyun-link" @click="selectDataset(row)">查看详情</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-            <el-empty v-else description="该设备实例下暂无数据表"><el-button v-if="isUsableInstance(selectedInstance)" class="btn-aliyun" @click="openDatasetDrawer(null, selectedInstance)">为该设备建表</el-button></el-empty>
           </div>
-        </main>
-      </template>
+        </template>
 
-      <!-- 4. Model View -->
-      <template v-else-if="selectedModel">
-        <div class="metric-ribbon">
-          <div class="metric-cell"><span class="label">设备模型</span><strong class="val">{{ selectedModel.modelName }}</strong></div>
-          <div class="metric-cell"><span class="label">物理分类</span><strong class="val">{{ categoryName(selectedModel.categoryId) }}</strong></div>
-          <div class="metric-cell"><span class="label">衍生实例数</span><strong class="val highlight">{{ modelInstances(selectedModel).length }} 个</strong></div>
-          <div class="metric-cell"><span class="label">关联模板数</span><strong class="val">{{ modelTemplates(selectedModel).length }} 个</strong></div>
-        </div>
-
-        <main class="workspace-body">
-          <!-- 核心列表 1: 设备实例列表 -->
-          <div class="table-section">
-            <div class="table-header">
-              <div class="table-title"><strong>该模型下的设备实例列表</strong><span class="count-pill">{{ modelInstances(selectedModel).length }} 个实例</span></div>
+        <!-- 2.4 视角四：设备模型视角 (Model View) -->
+        <template v-else-if="selectedModel">
+          <div class="metric-ribbon">
+            <div class="m-cell">
+              <span class="m-label">设备模型</span>
+              <strong class="m-val">{{ selectedModel.modelName }}</strong>
             </div>
-            <el-table v-if="modelInstances(selectedModel).length" :data="modelInstances(selectedModel)" border stripe size="small">
-              <el-table-column prop="instanceName" label="设备实例名称" min-width="180" />
-              <el-table-column label="绑定 Adapter" min-width="150"><template #default="{ row }">{{ row.boundAdapterName || '-' }}</template></el-table-column>
-              <el-table-column label="设备点位" min-width="140"><template #default="{ row }">{{ row.boundDevicePoint || '-' }}</template></el-table-column>
-              <el-table-column label="已建数据表" width="120"><template #default="{ row }">{{ instanceDatasets(row).length }} 张表</template></el-table-column>
-              <el-table-column label="操作" width="180">
-                <template #default="{ row }">
-                  <el-button size="small" link class="btn-aliyun-link" @click="selectInstance(row)">查看详情</el-button>
-                  <el-button v-if="isUsableInstance(row)" size="small" link class="btn-aliyun-link" @click="openDatasetDrawer(null, row)">建表</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-            <el-empty v-else description="该模型下暂无设备实例" />
+            <div class="m-cell">
+              <span class="m-label">物理分类</span>
+              <strong class="m-val">{{ categoryName(selectedModel.categoryId) }}</strong>
+            </div>
+            <div class="m-cell">
+              <span class="m-label">衍生实例数</span>
+              <strong class="m-val highlight">{{ modelInstances(selectedModel).length }} 个</strong>
+            </div>
+            <div class="m-cell">
+              <span class="m-label">关联模板数</span>
+              <strong class="m-val">{{ modelTemplates(selectedModel).length }} 个</strong>
+            </div>
           </div>
 
-          <!-- 核心列表 2: 数据模板列表 -->
-          <div class="table-section" style="margin-top: 12px; border-top: 1px solid #e2e8f0;">
-            <div class="table-header">
-              <div class="table-title"><strong>关联的数据模板</strong><span class="count-pill">{{ modelTemplates(selectedModel).length }} 个模板</span></div>
-              <div class="table-actions">
-                <el-button size="small" class="btn-aliyun" @click="openTemplateDrawerWithModel(selectedModel)">+ 为该模型新建模板</el-button>
+          <div class="canvas-fixed-layout">
+            <!-- 核心列表 1: 设备实例列表 -->
+            <div class="table-panel-flex" style="flex: 1.1;">
+              <div class="section-toolbar">
+                <div class="section-title">
+                  <span>该模型下的设备实例列表</span>
+                  <span class="count-pill">{{ modelInstances(selectedModel).length }} 个实例</span>
+                </div>
+              </div>
+              <div class="table-scroll-container">
+                <div v-if="modelInstances(selectedModel).length" class="table-card">
+                  <el-table :data="modelInstances(selectedModel)" border stripe size="small" height="100%" class="unified-table-el">
+                    <el-table-column prop="instanceName" label="设备实例名称" min-width="180" />
+                    <el-table-column label="绑定 Adapter" min-width="150">
+                      <template #default="{ row }">{{ row.boundAdapterName || '-' }}</template>
+                    </el-table-column>
+                    <el-table-column label="设备点位" min-width="140">
+                      <template #default="{ row }">{{ row.boundDevicePoint || '-' }}</template>
+                    </el-table-column>
+                    <el-table-column label="已建数据表" width="120">
+                      <template #default="{ row }"><span class="count-pill">{{ instanceDatasets(row).length }} 张表</span></template>
+                    </el-table-column>
+                    <el-table-column label="操作" width="160">
+                      <template #default="{ row }">
+                        <button class="btn-link" type="button" @click="selectInstance(row)">查看详情</button>
+                        <button v-if="isUsableInstance(row)" class="btn-link" type="button" style="margin-left: 10px;" @click="openDatasetDrawer(null, row)">建表</button>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </div>
+                <el-empty v-else description="该模型下暂无设备实例" />
               </div>
             </div>
-            <el-table v-if="modelTemplates(selectedModel).length" :data="modelTemplates(selectedModel)" border stripe size="small">
-              <el-table-column prop="templateName" label="模板名称" min-width="180" />
-              <el-table-column prop="templateDesc" label="模板说明" min-width="200" />
-              <el-table-column label="模板类型" width="120"><template #default="{ row }">{{ row.isDefault ? '默认模板' : '自定义模板' }}</template></el-table-column>
-              <el-table-column label="操作" width="160">
-                <template #default="{ row }">
-                  <el-button size="small" link class="btn-aliyun-link" @click="selectTemplate(row)">查看 Schema</el-button>
-                  <el-button size="small" link class="btn-aliyun-link" @click="openDatasetDrawer(row)">建表</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-            <el-empty v-else description="该设备模型下暂无数据模板"><el-button class="btn-aliyun" @click="openTemplateDrawerWithModel(selectedModel)">为该模型新建模板</el-button></el-empty>
-          </div>
-        </main>
-      </template>
 
-      <!-- 5. Category View -->
-      <template v-else-if="selectedCategory">
-        <div class="metric-ribbon">
-          <div class="metric-cell"><span class="label">物理分类</span><strong class="val">{{ selectedCategory.categoryName }}</strong></div>
-          <div class="metric-cell"><span class="label">包含模型数</span><strong class="val">{{ categoryModels(selectedCategory).length }} 个</strong></div>
-          <div class="metric-cell"><span class="label">包含实例数</span><strong class="val highlight">{{ categoryInstances(selectedCategory).length }} 个</strong></div>
-          <div class="metric-cell"><span class="label">关联数据表数</span><strong class="val highlight">{{ categoryDatasets(selectedCategory).length }} 张</strong></div>
+            <!-- 核心列表 2: 数据模板列表 -->
+            <div class="table-panel-flex" style="flex: 0.9; border-top: 1px solid var(--sl-border-base);">
+              <div class="section-toolbar">
+                <div class="section-title">
+                  <span>关联的数据模板</span>
+                  <span class="count-pill">{{ modelTemplates(selectedModel).length }} 个模板</span>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                  <button class="btn-aliyun-cta" type="button" @click="openTemplateDrawerWithModel(selectedModel)">+ 为该模型新建模板</button>
+                </div>
+              </div>
+              <div class="table-scroll-container">
+                <div v-if="modelTemplates(selectedModel).length" class="table-card">
+                  <el-table :data="modelTemplates(selectedModel)" border stripe size="small" height="100%" class="unified-table-el">
+                    <el-table-column prop="templateName" label="模板名称" min-width="180" />
+                    <el-table-column prop="templateDesc" label="模板说明" min-width="200" />
+                    <el-table-column label="模板类型" width="120">
+                      <template #default="{ row }">
+                        <span class="status-dot-badge info">{{ row.isDefault ? '默认模板' : '自定义模板' }}</span>
+                      </template>
+                    </el-table-column>
+                    <el-table-column label="操作" width="160">
+                      <template #default="{ row }">
+                        <button class="btn-link" type="button" @click="selectTemplate(row)">查看 Schema</button>
+                        <button class="btn-link" type="button" style="margin-left: 10px;" @click="openDatasetDrawer(row)">建表</button>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </div>
+                <el-empty v-else description="该设备模型下暂无数据模板">
+                  <button class="btn-aliyun-cta" type="button" @click="openTemplateDrawerWithModel(selectedModel)">为该模型新建模板</button>
+                </el-empty>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- 2.5 视角五：分类视角 (Category View) -->
+        <template v-else-if="selectedCategory">
+          <div class="metric-ribbon">
+            <div class="m-cell">
+              <span class="m-label">物理分类</span>
+              <strong class="m-val">{{ selectedCategory.categoryName }}</strong>
+            </div>
+            <div class="m-cell">
+              <span class="m-label">包含模型数</span>
+              <strong class="m-val">{{ categoryModels(selectedCategory).length }} 个</strong>
+            </div>
+            <div class="m-cell">
+              <span class="m-label">包含实例数</span>
+              <strong class="m-val highlight">{{ categoryInstances(selectedCategory).length }} 个</strong>
+            </div>
+            <div class="m-cell">
+              <span class="m-label">关联数据表数</span>
+              <strong class="m-val highlight">{{ categoryDatasets(selectedCategory).length }} 张</strong>
+            </div>
+          </div>
+
+          <div class="canvas-fixed-layout">
+            <div class="table-panel-flex">
+              <div class="section-toolbar">
+                <div class="section-title">
+                  <span>该分类下的设备模型</span>
+                  <span class="count-pill">{{ categoryModels(selectedCategory).length }} 个模型</span>
+                </div>
+              </div>
+              <div class="table-scroll-container">
+                <div v-if="categoryModels(selectedCategory).length" class="table-card">
+                  <el-table :data="categoryModels(selectedCategory)" border stripe size="small" height="100%" class="unified-table-el">
+                    <el-table-column prop="modelName" label="模型名称" min-width="200" />
+                    <el-table-column prop="modelCode" label="模型编码" min-width="160" />
+                    <el-table-column label="关联模板数" width="120">
+                      <template #default="{ row }">{{ modelTemplates(row).length }}</template>
+                    </el-table-column>
+                    <el-table-column label="衍生实例数" width="120">
+                      <template #default="{ row }">{{ modelInstances(row).length }}</template>
+                    </el-table-column>
+                    <el-table-column label="操作" width="120">
+                      <template #default="{ row }">
+                        <button class="btn-link" type="button" @click="selectModel(row)">进入模型</button>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </div>
+                <el-empty v-else description="该分类下暂无设备模型" />
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- 2.6 空状态 -->
+        <div v-else class="canvas-fixed-layout workspace-empty-view">
+          <el-empty description="请选择左侧数据资产节点查看数据" />
         </div>
 
-        <main class="workspace-body">
-          <div class="table-section">
-            <div class="table-header">
-              <div class="table-title"><strong>该分类下的设备模型</strong><span class="count-pill">{{ categoryModels(selectedCategory).length }} 个模型</span></div>
-            </div>
-            <el-table v-if="categoryModels(selectedCategory).length" :data="categoryModels(selectedCategory)" border stripe size="small">
-              <el-table-column prop="modelName" label="模型名称" min-width="200" />
-              <el-table-column prop="modelCode" label="模型编码" min-width="160" />
-              <el-table-column label="关联模板数" width="120"><template #default="{ row }">{{ modelTemplates(row).length }}</template></el-table-column>
-              <el-table-column label="衍生实例数" width="120"><template #default="{ row }">{{ modelInstances(row).length }}</template></el-table-column>
-              <el-table-column label="操作" width="120">
-                <template #default="{ row }">
-                  <el-button size="small" link class="btn-aliyun-link" @click="selectModel(row)">进入模型</el-button>
-                </template>
-              </el-table-column>
-            </el-table>
-            <el-empty v-else description="该分类下暂无设备模型" />
-          </div>
-        </main>
-      </template>
+      </section>
 
-      <main v-else class="workspace-body">
-        <section class="workspace-empty"><el-empty description="请选择左侧数据资产节点" /></section>
-      </main>
-    </section>
+    </div>
 
-    <el-drawer v-model="datasetDrawer.visible" title="新建数据表" size="680px" class="unified-workflow-drawer">
+    <!-- 3. 新建数据表抽屉 (统一规范) -->
+    <el-drawer v-model="datasetDrawer.visible" title="新建数据表" size="620px" class="unified-workflow-drawer">
       <el-form label-position="top" class="drawer-form">
-        <el-form-item label="数据表说明"><el-input v-model="datasetDrawer.dataDesc" placeholder="例如：高压报警专项数据" /></el-form-item>
+        <el-form-item label="数据表说明">
+          <el-input v-model="datasetDrawer.dataDesc" placeholder="例如：高压报警专项数据" />
+        </el-form-item>
         <el-form-item label="数据模板">
           <div class="template-select-row">
             <el-select v-model="datasetDrawer.templateId" filterable placeholder="请选择同模型模板" @change="onDatasetTemplateChange">
               <el-option v-for="tpl in compatibleTemplates" :key="tpl.id" :label="`${modelName(tpl.deviceModelId)} / ${tpl.templateName}`" :value="tpl.id" />
             </el-select>
-            <el-button size="small" link class="btn-aliyun-link" @click="openTemplateDrawerForCurrentInstance">
+            <button type="button" class="btn-link" @click="openTemplateDrawerForCurrentInstance">
               + 自定义新模板
-            </el-button>
+            </button>
           </div>
         </el-form-item>
-        <el-form-item label="绑定设备实例"><el-select v-model="datasetDrawer.deviceInstanceId" filterable placeholder="请选择同模型设备" @change="onDatasetInstanceChange"><el-option v-for="ins in compatibleInstances" :key="instanceId(ins)" :label="instancePath(ins)" :value="Number(instanceId(ins))" /></el-select></el-form-item>
+        <el-form-item label="绑定设备实例">
+          <el-select v-model="datasetDrawer.deviceInstanceId" filterable placeholder="请选择同模型设备" @change="onDatasetInstanceChange">
+            <el-option v-for="ins in compatibleInstances" :key="instanceId(ins)" :label="instancePath(ins)" :value="Number(instanceId(ins))" />
+          </el-select>
+        </el-form-item>
       </el-form>
-      <template #footer><el-button class="btn-aliyun" @click="datasetDrawer.visible = false">取消</el-button><el-button class="btn-aliyun-cta" :loading="saving" @click="createDataset">保存建表</el-button></template>
+      <template #footer>
+        <div style="display: flex; justify-content: flex-end; gap: 8px;">
+          <button class="btn-aliyun" type="button" @click="datasetDrawer.visible = false">取消</button>
+          <button class="btn-primary-blue" type="button" :disabled="saving" @click="createDataset">保存建表</button>
+        </div>
+      </template>
     </el-drawer>
 
+    <!-- 4. 新增数据模板抽屉 (统一规范) -->
     <el-drawer v-model="templateDrawer.visible" title="新增数据模板" size="680px" class="unified-workflow-drawer">
       <el-form label-position="top" class="drawer-form">
         <div class="form-grid two">
-          <el-form-item label="模板名称"><el-input v-model="templateDrawer.templateName" /></el-form-item>
-          <el-form-item label="绑定模型"><el-select v-model="templateDrawer.deviceModelId" filterable @change="generateFieldsFromModel"><el-option v-for="model in models" :key="modelId(model)" :label="model.modelName" :value="Number(modelId(model))" /></el-select></el-form-item>
+          <el-form-item label="模板名称">
+            <el-input v-model="templateDrawer.templateName" placeholder="输入模板名称" />
+          </el-form-item>
+          <el-form-item label="绑定模型">
+            <el-select v-model="templateDrawer.deviceModelId" filterable placeholder="选择所属模型" @change="generateFieldsFromModel">
+              <el-option v-for="model in models" :key="modelId(model)" :label="model.modelName" :value="Number(modelId(model))" />
+            </el-select>
+          </el-form-item>
         </div>
-        <el-form-item label="模板说明"><el-input v-model="templateDrawer.templateDesc" /></el-form-item>
-        <div class="table-header"><strong>模板字段</strong><el-button size="small" class="btn-aliyun" @click="addTemplateField">新增字段</el-button></div>
+        <el-form-item label="模板说明">
+          <el-input v-model="templateDrawer.templateDesc" placeholder="简要说明模板用途" />
+        </el-form-item>
+        <div class="section-toolbar" style="margin: 8px 0; border: 1px solid var(--sl-border-base); border-radius: 4px;">
+          <div class="section-title"><strong>模板字段定义</strong></div>
+          <button type="button" class="btn-aliyun" @click="addTemplateField">+ 新增字段</button>
+        </div>
         <div class="field-editor">
-          <div class="field-head"><span>模板字段</span><span>字段说明</span><span>绑定属性</span><span>默认值</span><span></span></div>
+          <div class="field-head">
+            <span>模板字段</span>
+            <span>字段说明</span>
+            <span>绑定属性</span>
+            <span>默认值</span>
+            <span></span>
+          </div>
           <div v-for="(field, idx) in templateDrawer.details" :key="field._key" class="field-row">
-            <el-input v-model="field.columnName" />
-            <el-input v-model="field.columnDesc" />
-            <el-select v-model="field.deviceAttrKey" clearable placeholder="可为空"><el-option v-for="attr in selectedTemplateModelAttrs" :key="attr.attributeName" :label="attr.displayName || attr.attributeName" :value="attr.attributeName" /></el-select>
-            <el-input v-model="field.defaultValue" placeholder="无默认值" />
-            <el-button link class="btn-aliyun-danger-link" @click="templateDrawer.details.splice(idx, 1)">删除</el-button>
+            <el-input v-model="field.columnName" placeholder="字段名" />
+            <el-input v-model="field.columnDesc" placeholder="说明" />
+            <el-select v-model="field.deviceAttrKey" clearable placeholder="可为空">
+              <el-option v-for="attr in selectedTemplateModelAttrs" :key="attr.attributeName" :label="attr.displayName || attr.attributeName" :value="attr.attributeName" />
+            </el-select>
+            <el-input v-model="field.defaultValue" placeholder="默认值" />
+            <button type="button" class="btn-link danger" @click="templateDrawer.details.splice(idx, 1)">删除</button>
           </div>
         </div>
       </el-form>
-      <template #footer><el-button class="btn-aliyun" @click="templateDrawer.visible = false">取消</el-button><el-button class="btn-aliyun-cta" :loading="saving" @click="saveTemplate">保存模板</el-button></template>
+      <template #footer>
+        <div style="display: flex; justify-content: flex-end; gap: 8px;">
+          <button class="btn-aliyun" type="button" @click="templateDrawer.visible = false">取消</button>
+          <button class="btn-primary-blue" type="button" :disabled="saving" @click="saveTemplate">保存模板</button>
+        </div>
+      </template>
     </el-drawer>
+
   </div>
 </template>
 
 <script setup>
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, shallowRef, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
-import { Cpu, Folder, FolderOpened, Tickets, Menu, Clock, Odometer, List, Plus, DocumentAdd, Document, Search } from '@element-plus/icons-vue'
+import { Cpu, Folder, Tickets, Plus, DocumentAdd, Document } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
+
+const route = useRoute()
 
 const loading = ref(false)
 const loadingRecords = ref(false)
 const saving = ref(false)
+
 const keyword = ref('')
 const activeKey = ref('')
 const categories = ref([])
@@ -328,193 +606,236 @@ const compatibleTemplates = computed(() => {
 })
 const compatibleInstances = computed(() => {
   const template = templates.value.find(row => Number(row.id) === Number(datasetDrawer.templateId))
-  const selectedModelId = template?.deviceModelId
-  return usableInstances.value.filter(instance => !selectedModelId
-    || String(instance.deviceModelId || instance.modelId) === String(selectedModelId))
+  if (!template) return usableInstances.value
+  return usableInstances.value.filter(ins => String(ins.deviceModelId || ins.modelId) === String(template.deviceModelId))
 })
-const childrenByCategory = computed(() => {
-  const map = new Map()
-  categories.value.forEach(cat => {
-    const parent = cat.parentCategoryId == null ? 'root' : String(cat.parentCategoryId)
-    if (!map.has(parent)) map.set(parent, [])
-    map.get(parent).push(cat)
-  })
-  return map
+const selectedTemplateModelAttrs = computed(() => {
+  const model = models.value.find(m => Number(modelId(m)) === Number(templateDrawer.deviceModelId))
+  return asArray(model?.attributes || model?.attributesPayload || model?.attributesJson)
 })
-const selectedTemplateModelAttrs = computed(() => asArray(modelMap.value[String(templateDrawer.deviceModelId)]?.attributes))
-const valueFields = computed(() => templateDetails.value.filter(row => !isUnitField(row)))
+
+const valueFields = computed(() => templateDetails.value.filter(f => !isUnitField(f)))
 const unitMap = computed(() => {
   const map = new Map()
-  templateDetails.value.filter(isUnitField).forEach(row => {
-    map.set(stripUnit(row.columnName), row.defaultValue || '')
-    if (row.deviceAttrKey) map.set(stripUnit(row.deviceAttrKey), row.defaultValue || '')
+  templateDetails.value.forEach(f => {
+    if (isUnitField(f)) map.set(stripUnit(f.columnName), f.defaultValue || '')
   })
   return map
 })
-const workspaceTag = computed(() => selectedDataset.value ? '数据表' : selectedTemplate.value ? '数据模板' : selectedInstance.value ? '设备实例' : '数据资产')
-const workspaceTitle = computed(() => selectedDataset.value?.dataDesc || selectedDataset.value?.dataTable || selectedTemplate.value?.templateName || selectedInstance.value?.instanceName || '请选择数据对象')
-const breadcrumbPath = computed(() => {
-  if (selectedDataset.value) {
-    const mName = modelName(selectedInstance.value?.deviceModelId)
-    const iName = selectedInstance.value?.instanceName || '-'
-    return `设备模型 (${mName}) / 实例 (${iName})`
+
+// 侧边栏资产树：明确分为「设备类别」与「数据模板」两个一级独立根节点
+const treeData = computed(() => {
+  // 1. 设备类别分组 (大标题无图标)
+  const categoryGroup = {
+    key: 'group-categories',
+    label: '设备类别',
+    type: 'group-header',
+    count: categories.value.length,
+    children: []
   }
-  if (selectedTemplate.value) {
-    const mName = modelName(selectedTemplate.value.deviceModelId)
-    return `设备模型 (${mName})`
+  categories.value.forEach(cat => {
+    const cNode = {
+      key: `cat-${cat.id}`,
+      label: cat.categoryName,
+      type: 'category', // 具体的设备类别 -> 文件夹图标
+      data: cat,
+      count: categoryModels(cat).length,
+      children: []
+    }
+    categoryModels(cat).forEach(model => {
+      const mNode = {
+        key: `model-${modelId(model)}`,
+        label: model.modelName,
+        type: 'model', // 设备模型 -> 文档图标
+        data: model,
+        count: modelInstances(model).length,
+        children: []
+      }
+      modelInstances(model).forEach(ins => {
+        const iNode = {
+          key: `instance-${instanceId(ins)}`,
+          label: ins.instanceName,
+          type: 'instance', // 设备实例 -> 设备/芯片图标
+          data: ins,
+          count: instanceDatasets(ins).length,
+          children: []
+        }
+        instanceDatasets(ins).forEach(ds => {
+          iNode.children.push({
+            key: `dataset-${ds.id}`,
+            label: ds.dataTable,
+            type: 'dataset', // 数据表 -> 票据/表格图标
+            data: ds
+          })
+        })
+        mNode.children.push(iNode)
+      })
+      cNode.children.push(mNode)
+    })
+    categoryGroup.children.push(cNode)
+  })
+
+  // 2. 数据模板分组 (大标题无图标)
+  const templateGroup = {
+    key: 'group-templates',
+    label: '数据模板',
+    type: 'group-header',
+    count: templates.value.length,
+    children: templates.value.map(tpl => ({
+      key: `template-${tpl.id}`,
+      label: tpl.templateName,
+      type: 'template', // 数据模板 -> 文档图标
+      data: tpl
+    }))
   }
-  if (selectedInstance.value) {
-    const mName = modelName(selectedInstance.value.deviceModelId)
-    return `设备模型 (${mName})`
-  }
-  return '数据资产中心'
+
+  return [categoryGroup, templateGroup]
 })
-const assetTree = computed(() => [
-  { key: 'root_device_data', type: 'root', label: '设备数据', count: datasets.value.length, children: buildCategoryNodes('root') },
-  { key: 'root_templates', type: 'root', label: '模板库', count: templates.value.length, children: templates.value.map(t => ({ key: 'template_' + t.id, type: 'template', label: t.templateName + (templateHasModel(t) ? '' : '（模型缺失）'), data: t, count: t.isDefault ? '默认' : '自定义' })) }
-])
-const filteredTree = computed(() => filterTree(assetTree.value, keyword.value.trim().toLowerCase()))
+
+const filteredTree = computed(() => {
+  const q = keyword.value.trim().toLowerCase()
+  if (!q) return treeData.value
+  const filterNode = node => {
+    const matched = String(node.label || '').toLowerCase().includes(q)
+    const children = asArray(node.children).map(filterNode).filter(Boolean)
+    if (matched || children.length) return { ...node, children }
+    return null
+  }
+  return treeData.value.map(filterNode).filter(Boolean)
+})
 
 async function loadAll() {
   loading.value = true
   try {
-    const [catRes, modelRes, insRes, datasetRes, tplRes, typeRes] = await Promise.all([
-      axios.get('/api/device/category/list').catch(() => ({ data: { data: [] } })),
+    const [cRes, mRes, iRes, dRes, tRes, pRes] = await Promise.all([
+      axios.get('/api/device/category/list'),
       axios.get('/api/device/model/list'),
       axios.get('/api/device/instance/list'),
       axios.get('/api/data/index/list'),
       axios.get('/api/data/template/list'),
       axios.get('/api/data/property-type/list')
     ])
-    categories.value = asArray(catRes.data?.data)
-    models.value = asArray(modelRes.data?.data)
-    instances.value = asArray(insRes.data?.data)
-    datasets.value = asArray(datasetRes.data?.data)
-    templates.value = asArray(tplRes.data?.data)
-    propertyTypes.value = asArray(typeRes.data?.data)
-    if (!selectedDataset.value && !selectedTemplate.value && !selectedInstance.value) selectFirstAvailable()
+    categories.value = asArray(cRes.data?.data)
+    models.value = asArray(mRes.data?.data)
+    instances.value = asArray(iRes.data?.data)
+    datasets.value = asArray(dRes.data?.data)
+    templates.value = asArray(tRes.data?.data)
+    propertyTypes.value = asArray(pRes.data?.data)
+    
+    // 如果 URL query 传了 instanceId，则优先按照 query 选中目标实例
+    if (!applyRouteQuery()) {
+      if (!selectedDataset.value && !selectedTemplate.value && !selectedInstance.value && !selectedModel.value && !selectedCategory.value) {
+        selectFirstAvailable()
+      }
+    }
   } catch (err) {
-    ElMessage.error(errorMessage(err, '加载数据中心失败'))
+    ElMessage.error(errorMessage(err, '加载数据中心资产失败'))
   } finally {
     loading.value = false
   }
 }
 
-function buildCategoryNodes(parentKey) {
-  return asArray(childrenByCategory.value.get(parentKey)).map(cat => {
-    const modelNodes = models.value.filter(m => String(m.categoryId) === String(cat.id)).map(model => buildModelNode(model))
-    return { key: 'category_' + cat.id, type: 'category', label: cat.categoryName, data: cat, count: modelNodes.length, children: [...buildCategoryNodes(String(cat.id)), ...modelNodes] }
-  }).filter(node => node.children.length > 0 || node.count > 0)
+function applyRouteQuery() {
+  const qInstanceId = route.query.instanceId
+  if (!qInstanceId || !instances.value.length) return false
+  
+  const targetInstance = instances.value.find(ins => String(instanceId(ins)) === String(qInstanceId))
+  if (!targetInstance) return false
+  
+  const relatedDatasets = instanceDatasets(targetInstance)
+  if (relatedDatasets.length === 1) {
+    selectDataset(relatedDatasets[0])
+    return true
+  } else {
+    selectInstance(targetInstance)
+    return true
+  }
 }
 
-function buildModelNode(model) {
-  const modelInstances = instances.value.filter(ins => String(ins.deviceModelId || ins.modelId) === String(modelId(model)))
-  return { key: 'model_' + modelId(model), type: 'model', label: model.modelName, data: model, count: modelInstances.length, children: modelInstances.map(buildInstanceNode) }
+watch(() => route.query.instanceId, () => {
+  if (instances.value.length) {
+    applyRouteQuery()
+  }
+})
+
+function handleTreeClick(node) {
+  if (node.type === 'dataset') selectDataset(node.data)
+  else if (node.type === 'template') selectTemplate(node.data)
+  else if (node.type === 'instance') selectInstance(node.data)
+  else if (node.type === 'model') selectModel(node.data)
+  else if (node.type === 'category') selectCategory(node.data)
 }
 
-function buildInstanceNode(instance) {
-  const rows = datasets.value.filter(ds => String(ds.deviceInstanceId) === String(instanceId(instance)))
-  return { key: 'instance_' + instanceId(instance), type: 'instance', label: instance.instanceName, data: instance, count: rows.length, children: rows.map(ds => ({ key: 'dataset_' + ds.id, type: 'dataset', label: ds.dataDesc || ds.dataTable, data: ds })) }
-}
-
-function filterTree(nodes, kw) {
-  if (!kw) return nodes
-  return nodes.map(node => {
-    const children = filterTree(asArray(node.children), kw)
-    const hit = String(node.label || '').toLowerCase().includes(kw)
-    return hit || children.length ? { ...node, children } : null
-  }).filter(Boolean)
-}
-
-async function handleTreeClick(node) {
-  activeKey.value = node.key
-  if (node.type === 'dataset') return selectDataset(node.data)
-  if (node.type === 'template') return selectTemplate(node.data)
-  if (node.type === 'instance') return selectInstance(node.data)
-  if (node.type === 'model') return selectModel(node.data)
-  if (node.type === 'category') return selectCategory(node.data)
+function clearAllSelections() {
+  selectedDataset.value = null
+  selectedTemplate.value = null
+  selectedInstance.value = null
+  selectedModel.value = null
+  selectedCategory.value = null
 }
 
 async function selectDataset(dataset) {
+  clearAllSelections()
   selectedDataset.value = dataset
-  selectedTemplate.value = null
+  activeKey.value = `dataset-${dataset.id}`
   selectedInstance.value = instances.value.find(ins => String(instanceId(ins)) === String(dataset.deviceInstanceId)) || null
-  selectedModel.value = null
-  selectedCategory.value = null
-  activeKey.value = 'dataset_' + dataset.id
+  await loadTemplateDetail(dataset.dataTemplateId)
   recordPage.pageNo = 1
-  await loadTemplateDetails(dataset.dataTemplateId)
   await loadRecords()
 }
 
 async function selectTemplate(template) {
+  clearAllSelections()
   selectedTemplate.value = template
-  selectedDataset.value = null
-  selectedInstance.value = null
-  selectedModel.value = null
-  selectedCategory.value = null
-  activeKey.value = 'template_' + template.id
-  records.value = []
-  disposeChart()
-  await loadTemplateDetails(template.id)
+  activeKey.value = `template-${template.id}`
+  await loadTemplateDetail(template.id)
 }
 
 function selectInstance(instance) {
+  clearAllSelections()
   selectedInstance.value = instance
-  selectedDataset.value = null
-  selectedTemplate.value = null
-  selectedModel.value = null
-  selectedCategory.value = null
-  activeKey.value = 'instance_' + instanceId(instance)
-  records.value = []
-  templateDetails.value = []
-  disposeChart()
+  activeKey.value = `instance-${instanceId(instance)}`
 }
 
 function selectModel(model) {
+  clearAllSelections()
   selectedModel.value = model
-  selectedCategory.value = null
-  selectedDataset.value = null
-  selectedTemplate.value = null
-  selectedInstance.value = null
-  activeKey.value = 'model_' + modelId(model)
-  records.value = []
-  templateDetails.value = []
-  disposeChart()
+  activeKey.value = `model-${modelId(model)}`
 }
 
 function selectCategory(category) {
+  clearAllSelections()
   selectedCategory.value = category
-  selectedModel.value = null
-  selectedDataset.value = null
-  selectedTemplate.value = null
-  selectedInstance.value = null
-  activeKey.value = 'category_' + category.id
-  records.value = []
-  templateDetails.value = []
-  disposeChart()
+  activeKey.value = `cat-${category.id}`
 }
 
-async function loadTemplateDetails(templateId) {
+async function loadTemplateDetail(templateId) {
   if (!templateId) { templateDetails.value = []; return }
   if (detailCache[templateId]) { templateDetails.value = detailCache[templateId]; return }
-  const res = await axios.get(`/api/data/template/${templateId}/details`)
-  detailCache[templateId] = asArray(res.data?.data)
-  templateDetails.value = detailCache[templateId]
+  try {
+    const res = await axios.get(`/api/data/template/${templateId}/details`)
+    const details = asArray(res.data?.data)
+    detailCache[templateId] = details
+    templateDetails.value = details
+  } catch (err) {
+    ElMessage.error(errorMessage(err, '加载模板字段失败'))
+  }
 }
 
 async function loadRecords(silent = false) {
-  if (!selectedDataset.value) return
+  if (!selectedDataset.value?.id) { records.value = []; return }
   if (!silent) loadingRecords.value = true
   try {
     const res = await axios.get(`/api/data/record/dataset/${selectedDataset.value.id}`, { params: { pageNo: recordPage.pageNo, pageSize: recordPage.pageSize } })
-    const page = res.data?.data || {}
-    records.value = asArray(page.records)
-    recordPage.total = Number(page.total || 0)
-    await nextTick()
-    renderChart()
+    const data = res.data?.data
+    records.value = asArray(data?.list || data?.records)
+    recordPage.total = Number(data?.total || records.value.length || 0)
+    nextTick(() => {
+      renderChart()
+      nextTick(() => chart.value?.resize())
+    })
   } catch (err) {
-    if (!silent) ElMessage.error(errorMessage(err, '加载数据记录失败'))
+    if (!silent) ElMessage.error(errorMessage(err, '加载采样数据失败'))
   } finally {
     if (!silent) loadingRecords.value = false
   }
@@ -522,7 +843,18 @@ async function loadRecords(silent = false) {
 
 function renderChart() {
   if (!chartRef.value || !selectedDataset.value) return
-  if (!chart.value) chart.value = echarts.init(chartRef.value)
+  
+  // 如果旧实例绑定了已经废弃或重新创建的 DOM，先行妥善释放，彻底解决二次点击不渲染问题
+  if (chart.value) {
+    if (chart.value.getDom() !== chartRef.value || chart.value.isDisposed()) {
+      try { chart.value.dispose() } catch (e) {}
+      chart.value = null
+    }
+  }
+  if (!chart.value) {
+    chart.value = echarts.init(chartRef.value)
+  }
+  
   const sorted = [...records.value].sort((a, b) => new Date(recordTime(a) || 0) - new Date(recordTime(b) || 0))
   const xData = sorted.map(row => formatTime(recordTime(row)))
   const units = [...new Set(valueFields.value.map(field => unitMap.value.get(field.columnName) || unitMap.value.get(field.deviceAttrKey) || '数值'))]
@@ -530,13 +862,13 @@ function renderChart() {
     type: 'value', 
     name: unit, 
     position: idx % 2 ? 'right' : 'left', 
-    offset: idx > 1 ? (idx - 1) * 42 : 0, 
-    splitLine: { show: idx === 0, lineStyle: { type: 'dashed', color: '#cbd5e1' } },
-    axisLabel: { color: '#64748b', fontSize: 11 },
-    nameTextStyle: { color: '#64748b' }
+    offset: idx > 1 ? (idx - 1) * 36 : 0, 
+    splitLine: { show: idx === 0, lineStyle: { type: 'dashed', color: '#e2e8f0' } },
+    axisLabel: { color: '#64748b', fontSize: 10.5 },
+    nameTextStyle: { color: '#64748b', fontSize: 10.5 }
   }))
   
-  const colors = ['#1677ff', '#00b2a9', '#f43f5e', '#faad14', '#722ed1'];
+  const colors = ['#2563eb', '#0284c7', '#16a34a', '#d97706', '#7c3aed'];
   
   const series = valueFields.value.map((field, index) => {
     const unit = unitMap.value.get(field.columnName) || unitMap.value.get(field.deviceAttrKey) || '数值'
@@ -546,13 +878,13 @@ function renderChart() {
       type: 'line', 
       smooth: 0.35, 
       symbol: 'circle',
-      symbolSize: 5,
+      symbolSize: 4,
       showSymbol: false,
       itemStyle: { color: color, borderWidth: 2 },
-      lineStyle: { width: 2.5 },
+      lineStyle: { width: 2 },
       areaStyle: {
         color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-          { offset: 0, color: color + '33' },
+          { offset: 0, color: color + '28' },
           { offset: 1, color: color + '00' }
         ])
       },
@@ -565,140 +897,206 @@ function renderChart() {
     color: colors,
     tooltip: { 
       trigger: 'axis',
-      backgroundColor: '#1e293b',
-      borderColor: '#0f172a',
-      padding: [10, 14],
+      backgroundColor: '#0f172a',
+      borderColor: '#1e293b',
+      padding: [8, 12],
       textStyle: { color: '#f8fafc', fontSize: 12 }
     }, 
-    legend: { top: 4, itemWidth: 16, itemHeight: 8, icon: 'roundRect', textStyle: { color: '#475569', fontSize: 12 } }, 
-    grid: { left: 48, right: Math.max(24, units.length * 42), top: 48, bottom: 32 }, 
+    legend: { top: 0, itemWidth: 14, itemHeight: 6, icon: 'roundRect', textStyle: { color: '#475569', fontSize: 11 } }, 
+    grid: { 
+      left: 10, 
+      right: 16, 
+      top: 26, 
+      bottom: 8, 
+      containLabel: true 
+    }, 
     xAxis: { 
       type: 'category', 
       data: xData, 
       boundaryGap: false,
       axisLine: { lineStyle: { color: '#cbd5e1' } },
-      axisLabel: { color: '#64748b', fontSize: 11, padding: [6, 0, 0, 0] }
+      axisLabel: { color: '#64748b', fontSize: 10.5, padding: [4, 0, 0, 0] }
     }, 
     yAxis: yAxis.length ? yAxis : [{ type: 'value' }], 
     series 
   }, true)
+
+  setTimeout(() => {
+    chart.value?.resize()
+  }, 50)
+}
+
+function exportChartImage() {
+  if (!chart.value) {
+    ElMessage.warning('图表尚未初始化完成')
+    return
+  }
+  const dataURL = chart.value.getDataURL({
+    type: 'png',
+    pixelRatio: 2,
+    backgroundColor: '#ffffff'
+  })
+  const link = document.createElement('a')
+  link.href = dataURL
+  link.download = `${selectedDataset.value?.dataTable || 'telemetry_chart'}.png`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
 }
 
 function openDatasetDrawer(template = null, instance = null) {
   if (template && !templateHasModel(template)) {
-    ElMessage.error('该模板的来源模型不存在，已禁止继续建表')
+    ElMessage.warning('当前模板所属的设备模型在系统中不存在，无法建表')
     return
   }
-  if (instance && !isUsableInstance(instance)) {
-    ElMessage.warning('RETIRED device cannot create data table')
-    return
-  }
-  datasetDrawer.visible = true
-  datasetDrawer.templateId = template?.id || selectedDataset.value?.dataTemplateId || selectedTemplate.value?.id || null
-  if (instance) datasetDrawer.deviceInstanceId = Number(instanceId(instance))
-  else if (selectedDataset.value?.deviceInstanceId) datasetDrawer.deviceInstanceId = Number(selectedDataset.value.deviceInstanceId)
-  else if (selectedInstance.value) datasetDrawer.deviceInstanceId = Number(instanceId(selectedInstance.value))
-  else datasetDrawer.deviceInstanceId = null
   datasetDrawer.dataDesc = ''
-  normalizeDatasetSelection()
-}
+  datasetDrawer.templateId = template?.id ? Number(template.id) : null
+  datasetDrawer.deviceInstanceId = instance ? Number(instanceId(instance)) : null
 
-function normalizeDatasetSelection() {
-  const template = templates.value.find(row => Number(row.id) === Number(datasetDrawer.templateId))
-  const instance = instances.value.find(row => Number(instanceId(row)) === Number(datasetDrawer.deviceInstanceId))
-  if (template && instance && String(template.deviceModelId) !== String(instance.deviceModelId || instance.modelId)) {
-    datasetDrawer.deviceInstanceId = null
+  if (!datasetDrawer.templateId && templateDrawer.deviceModelId) {
+    const firstMatched = templates.value.find(t => String(t.deviceModelId) === String(templateDrawer.deviceModelId))
+    if (firstMatched) datasetDrawer.templateId = Number(firstMatched.id)
   }
+
+  if (datasetDrawer.templateId && !datasetDrawer.deviceInstanceId) {
+    const tpl = templates.value.find(t => Number(t.id) === Number(datasetDrawer.templateId))
+    const firstIns = usableInstances.value.find(ins => String(ins.deviceModelId || ins.modelId) === String(tpl?.deviceModelId))
+    if (firstIns) datasetDrawer.deviceInstanceId = Number(instanceId(firstIns))
+  }
+
+  if (!datasetDrawer.templateId && datasetDrawer.deviceInstanceId) {
+    const ins = instances.value.find(i => Number(instanceId(i)) === Number(datasetDrawer.deviceInstanceId))
+    const firstTpl = templates.value.find(t => String(t.deviceModelId) === String(ins?.deviceModelId || ins?.modelId))
+    if (firstTpl) datasetDrawer.templateId = Number(firstTpl.id)
+  }
+
+  datasetDrawer.visible = true
 }
 
 function onDatasetTemplateChange() {
-  const template = templates.value.find(row => Number(row.id) === Number(datasetDrawer.templateId))
-  const instance = instances.value.find(row => Number(instanceId(row)) === Number(datasetDrawer.deviceInstanceId))
-  if (template && instance && String(template.deviceModelId) !== String(instance.deviceModelId || instance.modelId)) {
-    datasetDrawer.deviceInstanceId = null
+  const currentInstance = instances.value.find(row => Number(instanceId(row)) === Number(datasetDrawer.deviceInstanceId))
+  const tpl = templates.value.find(row => Number(row.id) === Number(datasetDrawer.templateId))
+  if (!tpl) return
+  if (!currentInstance || String(currentInstance.deviceModelId || currentInstance.modelId) !== String(tpl.deviceModelId)) {
+    const matched = usableInstances.value.find(ins => String(ins.deviceModelId || ins.modelId) === String(tpl.deviceModelId))
+    datasetDrawer.deviceInstanceId = matched ? Number(instanceId(matched)) : null
   }
 }
 
 function onDatasetInstanceChange() {
-  const template = templates.value.find(row => Number(row.id) === Number(datasetDrawer.templateId))
-  const instance = instances.value.find(row => Number(instanceId(row)) === Number(datasetDrawer.deviceInstanceId))
-  if (template && instance && String(template.deviceModelId) !== String(instance.deviceModelId || instance.modelId)) {
-    datasetDrawer.templateId = null
+  const currentTpl = templates.value.find(row => Number(row.id) === Number(datasetDrawer.templateId))
+  const ins = instances.value.find(row => Number(instanceId(row)) === Number(datasetDrawer.deviceInstanceId))
+  if (!ins) return
+  const insModelId = ins.deviceModelId || ins.modelId
+  if (!currentTpl || String(currentTpl.deviceModelId) !== String(insModelId)) {
+    const matched = templates.value.find(tpl => String(tpl.deviceModelId) === String(insModelId))
+    datasetDrawer.templateId = matched ? Number(matched.id) : null
   }
 }
-async function createDataset() {
-  const selected = instances.value.find(ins => Number(instanceId(ins)) === Number(datasetDrawer.deviceInstanceId))
-  const template = templates.value.find(row => Number(row.id) === Number(datasetDrawer.templateId))
-  if (selected && !isUsableInstance(selected)) { ElMessage.warning('RETIRED device cannot create data table'); return }
-  if (!template || !selected) { ElMessage.warning('请选择模板和设备实例'); return }
-  if (!templateHasModel(template)) { ElMessage.error('模板来源模型不存在，不能建表'); return }
-  if (String(template.deviceModelId) !== String(selected.deviceModelId || selected.modelId)) {
-    ElMessage.error('模板与设备实例必须属于同一设备模型')
-    return
+
+function openTemplateDrawerWithModel(model) {
+  if (!model) return
+  templateDrawer.templateName = ''
+  templateDrawer.templateDesc = ''
+  templateDrawer.deviceModelId = Number(modelId(model))
+  templateDrawer.details = []
+  generateFieldsFromModel()
+  templateDrawer.visible = true
+}
+
+function openTemplateDrawerForCurrentInstance() {
+  const ins = instances.value.find(row => Number(instanceId(row)) === Number(datasetDrawer.deviceInstanceId))
+  if (ins?.deviceModelId || ins?.modelId) {
+    const model = models.value.find(m => String(modelId(m)) === String(ins.deviceModelId || ins.modelId))
+    if (model) {
+      openTemplateDrawerWithModel(model)
+      return
+    }
   }
+  openTemplateDrawerWithModel(models.value[0] || null)
+}
+
+function generateFieldsFromModel() {
+  const model = models.value.find(m => Number(modelId(m)) === Number(templateDrawer.deviceModelId))
+  if (!model) { templateDrawer.details = []; return }
+  const attrs = asArray(model.attributes || model.attributesPayload || model.attributesJson)
+  const rows = []
+  attrs.forEach(attr => {
+    const colName = attr.attributeName || attr.name || ''
+    const pId = propertyTypeId(attr.dataType || attr.attributeType || attr.type)
+    rows.push({
+      _key: uid(),
+      columnName: colName,
+      columnDesc: attr.displayName || attr.description || colName,
+      deviceAttrKey: colName,
+      propertyTypeId: pId,
+      defaultValue: '',
+      isMetric: true,
+      nullable: true
+    })
+    if (attr.unit) {
+      rows.push({
+        _key: uid(),
+        columnName: `${colName}_unit`,
+        columnDesc: `${attr.displayName || colName}单位`,
+        deviceAttrKey: '',
+        propertyTypeId: propertyTypeId('STRING'),
+        defaultValue: attr.unit,
+        isMetric: false,
+        nullable: true
+      })
+    }
+  })
+  templateDrawer.details = rows
+}
+
+function addTemplateField() {
+  templateDrawer.details.push({
+    _key: uid(),
+    columnName: '',
+    columnDesc: '',
+    deviceAttrKey: '',
+    propertyTypeId: propertyTypeId('DOUBLE'),
+    defaultValue: '',
+    isMetric: true,
+    nullable: true
+  })
+}
+
+async function createDataset() {
+  if (!datasetDrawer.templateId) { ElMessage.warning('请选择数据模板'); return }
+  if (!datasetDrawer.deviceInstanceId) { ElMessage.warning('请选择设备实例'); return }
   saving.value = true
   try {
-    const res = await axios.post('/api/data/index/create-dataset', { templateId: datasetDrawer.templateId, deviceInstanceId: datasetDrawer.deviceInstanceId, dataDesc: datasetDrawer.dataDesc })
+    const payload = {
+      templateId: datasetDrawer.templateId,
+      deviceInstanceId: datasetDrawer.deviceInstanceId,
+      dataDesc: datasetDrawer.dataDesc
+    }
+    const res = await axios.post('/api/data/index/create-dataset', payload)
     if (res.data?.success) {
-      ElMessage.success('数据表已创建')
+      ElMessage.success('数据表创建成功')
       datasetDrawer.visible = false
       await loadAll()
-      if (res.data.data?.id) await selectDataset(res.data.data)
+      const created = res.data.data
+      if (created) selectDataset(created)
     } else ElMessage.error(res.data?.message || '创建失败')
   } catch (err) { ElMessage.error(errorMessage(err, '创建失败')) } finally { saving.value = false }
 }
 
-function openTemplateDrawer() {
-  Object.assign(templateDrawer, { visible: true, templateName: '', templateDesc: '', deviceModelId: null, details: [] })
-}
-
-function openTemplateDrawerWithModel(model) {
-  const modelIdVal = Number(modelId(model))
-  Object.assign(templateDrawer, { visible: true, templateName: '', templateDesc: '', deviceModelId: modelIdVal, details: [] })
-  if (modelIdVal) {
-    generateFieldsFromModel()
-  }
-}
-
-function openTemplateDrawerForCurrentInstance() {
-  const instance = instances.value.find(row => Number(instanceId(row)) === Number(datasetDrawer.deviceInstanceId))
-  const modelIdVal = instance ? Number(instance.deviceModelId || instance.modelId) : (selectedTemplate.value?.deviceModelId || null)
-  Object.assign(templateDrawer, { visible: true, templateName: '', templateDesc: '', deviceModelId: modelIdVal, details: [] })
-  if (modelIdVal) {
-    generateFieldsFromModel()
-  }
-}
-
-function generateFieldsFromModel() {
-  const model = modelMap.value[String(templateDrawer.deviceModelId)]
-  const attrs = asArray(model?.attributes)
-  templateDrawer.details = attrs.flatMap(attr => {
-    const name = attr.attributeName || attr.displayName
-    const desc = attr.displayName || attr.attributeName
-    const rows = [{ _key: uid(), columnName: name, columnDesc: desc, propertyTypeId: propertyTypeId(attr.dataType), columnLength: 255, deviceAttrKey: name, defaultValue: '' }]
-    if (attr.unit) rows.push({ _key: uid(), columnName: `${name}_unit`, columnDesc: `${desc}单位`, propertyTypeId: propertyTypeId('STRING'), columnLength: 50, deviceAttrKey: '', defaultValue: attr.unit })
-    return rows
-  })
-}
-
-function addTemplateField() { templateDrawer.details.push({ _key: uid(), columnName: '', columnDesc: '', propertyTypeId: propertyTypeId('STRING'), columnLength: 255, deviceAttrKey: '', defaultValue: '' }) }
-
-function validateTemplateFields(details) {
-  if (!Array.isArray(details) || details.length === 0) return '数据模板至少需要一个字段'
-  const used = new Set()
-  const reserved = new Set(['id', 'data_index_id', 'create_time', 'ingest_time'])
-  for (const field of details) {
-    const name = String(field.columnName || '').trim().toLowerCase()
-    if (!/^[a-z_][a-z0-9_]*$/.test(name)) return `字段名“${field.columnName || ''}”不合法，只能使用字母、数字和下划线且不能以数字开头`
-    if (reserved.has(name) || used.has(name)) return `字段“${name}”重复或占用系统字段`
-    used.add(name)
-    if (!String(field.deviceAttrKey || '').trim() && !String(field.defaultValue ?? '').trim()) {
-      return `字段“${name}”未绑定模型属性，必须设置默认值`
-    }
+function validateTemplateFields(fields) {
+  if (!fields.length) return '请至少添加一个模板字段'
+  const names = new Set()
+  for (const field of fields) {
+    const name = String(field.columnName || '').trim()
+    if (!name) return '存在未填写字段名的模板字段'
+    if (names.has(name)) return `字段名“${name}”重复，请修改`
+    names.add(name)
     if (!field.propertyTypeId && !String(field.deviceAttrKey || '').trim()) return `字段“${name}”缺少数据类型`
   }
   return ''
 }
+
 async function saveTemplate() {
   if (!templateDrawer.templateName.trim()) { ElMessage.warning('请输入模板名称'); return }
   if (!templateDrawer.deviceModelId) { ElMessage.warning('请选择绑定模型'); return }
@@ -706,7 +1104,13 @@ async function saveTemplate() {
   if (fieldError) { ElMessage.warning(fieldError); return }
   saving.value = true
   try {
-    const payload = { templateName: templateDrawer.templateName, templateDesc: templateDrawer.templateDesc, deviceModelId: templateDrawer.deviceModelId, isDefault: false, details: templateDrawer.details.map(({ _key, ...row }) => ({ ...row, columnLength: row.columnLength || 255 })) }
+    const payload = {
+      templateName: templateDrawer.templateName,
+      templateDesc: templateDrawer.templateDesc,
+      deviceModelId: templateDrawer.deviceModelId,
+      isDefault: false,
+      details: templateDrawer.details.map(({ _key, ...row }) => ({ ...row, columnLength: row.columnLength || 255 }))
+    }
     const res = await axios.post('/api/data/template/save', payload)
     if (res.data?.success) {
       ElMessage.success('模板已保存')
@@ -723,12 +1127,22 @@ async function saveTemplate() {
 
 async function deleteDataset(dataset) {
   const res = await axios.delete(`/api/data/index/delete/${dataset.id}`)
-  if (res.data?.success) { ElMessage.success('数据表已删除'); selectedDataset.value = null; records.value = []; await loadAll() } else ElMessage.error(res.data?.message || '删除失败')
+  if (res.data?.success) {
+    ElMessage.success('数据表已删除')
+    selectedDataset.value = null
+    records.value = []
+    await loadAll()
+  } else ElMessage.error(res.data?.message || '删除失败')
 }
 
 async function deleteTemplate(template) {
   const res = await axios.delete(`/api/data/template/delete/${template.id}`)
-  if (res.data?.success) { ElMessage.success('模板已删除'); selectedTemplate.value = null; templateDetails.value = []; delete detailCache[template.id]; await loadAll() } else ElMessage.error(res.data?.message || '删除失败')
+  if (res.data?.success) {
+    ElMessage.success('模板已删除')
+    selectedTemplate.value = null
+    templateDetails.value = []; delete detailCache[template.id]
+    await loadAll()
+  } else ElMessage.error(res.data?.message || '删除失败')
 }
 
 async function exportDataset() {
@@ -747,11 +1161,33 @@ async function exportDataset() {
     ElMessage.error(errorMessage(err, '导出失败'))
   }
 }
-function selectFirstAvailable() { const firstDataset = datasets.value[0]; if (firstDataset) selectDataset(firstDataset); else if (templates.value[0]) selectTemplate(templates.value[0]) }
-function fieldLabel(field) { const unit = unitMap.value.get(field.columnName) || unitMap.value.get(field.deviceAttrKey); return `${field.columnDesc || field.columnName}${unit ? ' (' + unit + ')' : ''}` }
-function bindingLabel(row) { if (isUnitField(row)) return '-'; return row.deviceAttrKey || '-' }
-function valueOf(row, key) { const value = row?.[key] ?? row?.[String(key).toLowerCase()] ?? row?.data?.[key] ?? row?.payload?.[key]; return value == null || value === '' ? '-' : value }
-function numericOrNull(value) { const n = Number(value); return Number.isFinite(n) ? n : null }
+
+function selectFirstAvailable() {
+  const firstDataset = datasets.value[0]
+  if (firstDataset) selectDataset(firstDataset)
+  else if (templates.value[0]) selectTemplate(templates.value[0])
+}
+
+function fieldLabel(field) {
+  const unit = unitMap.value.get(field.columnName) || unitMap.value.get(field.deviceAttrKey)
+  return `${field.columnDesc || field.columnName}${unit ? ' (' + unit + ')' : ''}`
+}
+
+function bindingLabel(row) {
+  if (isUnitField(row)) return '-'
+  return row.deviceAttrKey || '-'
+}
+
+function valueOf(row, key) {
+  const value = row?.[key] ?? row?.[String(key).toLowerCase()] ?? row?.data?.[key] ?? row?.payload?.[key]
+  return value == null || value === '' ? '-' : value
+}
+
+function numericOrNull(value) {
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
 function recordTime(row) { return row?.create_time || row?.createTime || row?.timestamp || row?.collectTime }
 function recordIngestTime(row) { return row?.ingest_time || row?.ingestTime }
 function formatTime(value) { return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '-' }
@@ -759,9 +1195,16 @@ function isUnitField(row) { return String(row?.columnName || '').endsWith('_unit
 function stripUnit(value) { return String(value || '').replace(/_unit$/, '') }
 function modelId(model) { return model?.modelId || model?.id }
 function isUsableInstance(instance) { return instance?.lifecycleStatus === 'IN_USE' }
+function formatLifecycleStatus(status) {
+  if (status === 'RETIRED') return '已注销 (退役)'
+  return '使用中 (在役)'
+}
+function instanceLifecycleClass(instance) {
+  return instance?.lifecycleStatus === 'RETIRED' ? 'retired' : 'in-use'
+}
 
 function instanceId(instance) { return instance?.instanceId || instance?.id }
-function modelName(id) { return modelMap.value[String(id)]?.modelName || '模型缺失（一致性异常）' }
+function modelName(id) { return modelMap.value[String(id)]?.modelName || '未关联模型' }
 function templateHasModel(template) { return Boolean(template?.deviceModelId && modelMap.value[String(template.deviceModelId)]) }
 function templateName(id) { return templateMap.value[String(id)]?.templateName || '-' }
 function instanceName(id) { return instances.value.find(ins => String(instanceId(ins)) === String(id))?.instanceName || '-' }
@@ -810,236 +1253,453 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.data-workbench {
-  height: calc(100vh - 52px);
+.data-workbench-page {
+  height: calc(100vh - 50px);
+  padding: 10px 14px 14px;
+  background-color: var(--sl-bg-page);
+  box-sizing: border-box;
+  overflow: hidden;
   display: flex;
-  background: #f4f6f9;
-  color: #1e293b;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 }
 
-/* Asset Pane (Left Sidebar - 320px) */
-.asset-pane {
-  width: 320px;
-  min-width: 320px;
+.workbench-canvas {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 270px 1fr;
+  background: var(--sl-bg-surface);
+  border: 1px solid var(--sl-border-base);
+  border-radius: var(--sl-radius-lg);
+  overflow: hidden;
+  box-shadow: var(--sl-shadow-container);
+  min-height: 0;
+  height: 100%;
+}
+
+/* 1. 左侧树 (Tree Sidebar - 极致紧凑) */
+.tree-pane {
   background: #ffffff;
-  border-right: 1px solid #e2e8f0;
+  border-right: 1px solid var(--sl-border-base);
   display: flex;
   flex-direction: column;
-  z-index: 10;
+  overflow: hidden;
+  height: 100%;
 }
-.asset-header {
-  min-height: 50px;
-  padding: 8px 16px;
-  background: #f8fafc;
-  border-bottom: 1px solid #e2e8f0;
+.tree-header-bar {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--sl-border-base);
   display: flex;
-  align-items: center;
   justify-content: space-between;
-}
-.asset-header strong {
-  font-size: 15px;
-  font-weight: 700;
-  color: #0f172a;
-}
-.asset-header span {
-  font-size: 12px;
-  color: #64748b;
-  margin-left: 6px;
-}
-.tree-search-row {
-  padding: 8px 12px;
+  align-items: center;
   background: #ffffff;
-  border-bottom: 1px solid #e2e8f0;
+  flex-shrink: 0;
+}
+.tree-header-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sl-text-heading);
+}
+
+.tree-search-bar {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--sl-border-subtle);
+  background: #ffffff;
+  flex-shrink: 0;
+}
+.tree-search-input {
   width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--sl-border-input);
+  border-radius: var(--sl-radius-sm);
+  font-size: 12px;
+  color: var(--sl-text-heading);
+  outline: none;
+  transition: var(--sl-ease-smooth);
+  background: #ffffff;
   box-sizing: border-box;
 }
-.tree-search-row :deep(.el-input) {
-  width: 100%;
+.tree-search-input:focus {
+  border-color: var(--sl-primary);
+  box-shadow: 0 0 0 1px var(--sl-primary);
 }
-.tree-search-row :deep(.el-input__wrapper) {
-  box-shadow: 0 0 0 1px #cbd5e1 inset;
+
+.tree-list-scroll {
+  flex: 1;
+  padding: 4px 6px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+:deep(.el-tree-node__content) {
+  height: 27px;
+  padding-left: 2px !important;
   border-radius: 4px;
 }
-.tree-search-row :deep(.el-input__wrapper.is-focus) {
-  box-shadow: 0 0 0 1px #1677ff inset;
+:deep(.el-tree-node__expand-icon) {
+  padding: 3px;
+  font-size: 10.5px;
+  color: #94a3b8;
 }
-.asset-tree {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 6px 8px 12px;
+:deep(.el-tree-node__expand-icon.is-leaf) {
+  color: transparent;
+  width: 10.5px;
+  padding: 3px 0 3px 3px;
 }
-.asset-node {
+
+/* 树状层级连接细虚线引导系统 (方案三极简风格) */
+:deep(.el-tree-node__children) {
+  position: relative;
+  margin-left: 10px;
+  padding-left: 2px;
+  border-left: 1px dashed #e2e8f0;
+}
+
+.t-row {
   width: 100%;
+  height: 27px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 3px 6px;
+  padding: 0 6px;
   border-radius: 4px;
-  position: relative;
-  transition: background-color 0.15s ease;
+  cursor: pointer;
+  margin: 0; /* 彻底取消外边距 */
+  background: transparent; /* 常态完全纯净透明 */
+  transition: all 0.15s ease;
+  box-sizing: border-box;
 }
-.asset-node:hover {
+.t-row:hover {
   background: #f1f5f9;
 }
-.asset-node.active {
-  background: #e6f4ff;
-  border-left: 3px solid #1677ff;
+
+/* 大标题：设备类别 / 数据模板 (恢复原版浅灰微边框卡片标题栏) */
+.group-header-row {
+  cursor: default;
+  background: #f1f5f9 !important;
+  border: 1px solid #e2e8f0 !important;
+  padding: 3px 8px;
+  margin: 6px 0 4px;
+  border-radius: 4px;
 }
-.asset-node.active .node-label {
-  color: #0958d9;
+.t-group-label {
+  font-size: 11.5px;
   font-weight: 700;
+  color: #334155;
+  letter-spacing: 0.3px;
 }
-.asset-node-main {
-  min-width: 0;
-  flex: 1;
+
+.node-type-category {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.node-type-model {
+  font-weight: 500;
+  color: #334155;
+}
+
+.node-type-instance {
+  color: #475569;
+}
+
+.node-type-dataset {
+  color: #15803d;
+}
+
+.node-type-template {
+  color: #7e22ce;
+}
+
+/* 激活高亮状态 (方案三：柔和微圆角浅蓝药丸高亮) */
+.t-row.active {
+  background: #eff6ff !important;
+  font-weight: 600;
+}
+.t-row.active .t-label {
+  color: #2563eb !important;
+}
+.t-row.active .t-icon {
+  color: #2563eb !important;
+}
+.t-row.active .t-badge {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.t-row-left {
   display: flex;
   align-items: center;
-  gap: 6px;
-  overflow: hidden;
-  margin-right: 6px;
-}
-.node-label {
+  gap: 5px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
-  color: #1e293b;
+  flex: 1;
+  min-width: 0;
 }
-
-/* Node Icons matching DeviceModelTree */
-.node-icon {
-  display: inline-flex;
-  width: 18px;
-  height: 18px;
-  align-items: center;
-  justify-content: center;
-  font-size: 15px;
+.t-icon {
+  font-size: 13.5px;
+  color: var(--sl-text-secondary);
   flex-shrink: 0;
 }
 .category-icon { color: #64748b; }
 .model-icon { color: #2563eb; }
 .instance-icon { color: #0284c7; }
-.dataset-icon { color: #00b2a9; }
+.dataset-icon { color: #059669; }
 .template-icon { color: #7c3aed; }
 
-/* Side Count & Action Buttons */
-.asset-node-side {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-.count-tag {
-  font-size: 11px;
-  font-style: normal;
-  padding: 1px 6px;
-  border-radius: 10px;
-  background: #e2e8f0;
-  color: #475569;
+.t-label {
+  font-size: 12.5px;
+  color: var(--sl-text-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-/* Node Action Buttons - Always Visible */
-.node-actions {
-  display: inline-flex;
+.t-row-right {
+  display: flex;
   align-items: center;
   gap: 4px;
   flex-shrink: 0;
 }
-/* Alibaba Cloud White Background Button Standard */
-.btn-aliyun {
-  background: #ffffff !important;
-  border: 1px solid #d9d9d9 !important;
-  color: rgba(0, 0, 0, 0.88) !important;
-  font-weight: 400 !important;
-  transition: all 0.15s ease;
+.t-badge {
+  font-size: 10.5px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: #f1f5f9;
+  color: var(--sl-text-secondary);
+  font-family: var(--sl-font-mono);
+  font-weight: 400;
 }
-.btn-aliyun:hover:not(:disabled):not(.is-disabled) {
-  background: #ffffff !important;
-  border-color: #4096ff !important;
-  color: #1677ff !important;
-}
-
-.btn-aliyun-cta {
-  background: #ffffff !important;
-  border: 1px solid #1677ff !important;
-  color: #1677ff !important;
-  font-weight: 500 !important;
-  transition: all 0.15s ease;
-}
-.btn-aliyun-cta:hover:not(:disabled):not(.is-disabled) {
-  background: #1677ff !important;
-  border-color: #1677ff !important;
-  color: #ffffff !important;
+.t-row.active .t-badge {
+  background: #dbeafe;
+  color: #1d4ed8;
 }
 
-.btn-aliyun:disabled,
-.btn-aliyun.is-disabled,
-.btn-aliyun-cta:disabled,
-.btn-aliyun-cta.is-disabled {
-  background: #f5f5f5 !important;
-  border-color: #d9d9d9 !important;
-  color: rgba(0, 0, 0, 0.25) !important;
-  cursor: not-allowed !important;
-}
-
-.btn-aliyun-link {
-  background: transparent !important;
-  border: none !important;
-  color: #1677ff !important;
-  padding: 0 4px !important;
-  font-weight: 400 !important;
-}
-.btn-aliyun-link:hover {
-  color: #4096ff !important;
-  text-decoration: underline !important;
-  background: transparent !important;
-}
-
-.btn-aliyun-danger-link {
-  background: transparent !important;
-  border: none !important;
-  color: #ff4d4f !important;
-  padding: 0 4px !important;
-  font-weight: 400 !important;
-}
-.btn-aliyun-danger-link:hover {
-  color: #ff7875 !important;
-  text-decoration: underline !important;
-  background: transparent !important;
-}
-
-.node-action {
+.node-actions {
   display: inline-flex;
-  width: 22px;
-  height: 22px;
+  align-items: center;
+  gap: 2px;
+}
+.node-action {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0;
-  border: 1px solid #d9d9d9;
-  border-radius: 4px;
+  border: 1px solid var(--sl-border-input);
   background: #ffffff;
-  color: #595959;
+  border-radius: 3px;
   cursor: pointer;
-  font-size: 13px;
-  line-height: 1;
-  transition: all 0.15s ease;
+  color: var(--sl-text-secondary);
+  font-size: 11px;
+  transition: var(--sl-ease-smooth);
+  padding: 0;
 }
 .node-action:hover {
-  background: #ffffff;
-  border-color: #1677ff;
-  color: #1677ff;
+  border-color: var(--sl-primary);
+  color: var(--sl-primary);
+  background: #eff6ff;
 }
-.node-action.model-action {
-  color: #047857;
-  border-color: #a7f3d0;
+
+/* 2. 右侧工作台画卷 (Main Canvas - 锁死视口) */
+.main-canvas-pane {
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+  height: 100%;
+}
+
+.metric-ribbon {
+  padding: 5px 16px;
+  border-bottom: 1px solid var(--sl-border-base);
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  background: #ffffff;
+  flex-shrink: 0;
+}
+.m-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.m-label {
+  font-size: 11px;
+  color: var(--sl-text-secondary);
+  line-height: 1.2;
+}
+.m-val {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sl-text-heading);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  line-height: 1.3;
+}
+.m-val.highlight {
+  font-size: 14.5px;
+  color: var(--sl-primary);
+  font-family: var(--sl-font-mono);
+}
+.m-val.status-val {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.m-val.status-val .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.m-val.status-val.in-use {
+  color: var(--sl-success);
+}
+.m-val.status-val.in-use .dot {
+  background: var(--sl-success);
+}
+.m-val.status-val.retired {
+  color: var(--sl-text-secondary);
+}
+.m-val.status-val.retired .dot {
+  background: var(--sl-text-secondary);
+}
+
+.canvas-fixed-layout {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: #ffffff;
 }
-.node-action.model-action:hover {
+
+.workspace-empty-view {
+  align-items: center;
+  justify-content: center;
+}
+
+.section-toolbar {
+  padding: 6px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #f8fafc;
+  border-bottom: 1px solid var(--sl-border-base);
+  flex-shrink: 0;
+}
+.section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sl-text-heading);
+  display: flex;
+  align-items: center;
+}
+.count-pill {
+  font-size: 11px;
+  color: var(--sl-text-secondary);
+  background: #e2e8f0;
+  padding: 1px 7px;
+  border-radius: 10px;
+  margin-left: 8px;
+  font-weight: normal;
+  font-family: var(--sl-font-mono);
+}
+
+/* 走势图固定区 (满幅伸展) */
+.chart-panel-fixed {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
   background: #ffffff;
-  border-color: #059669;
-  color: #059669;
+}
+.chart-section {
+  padding: 2px 14px 2px 14px;
+  border-bottom: 1px solid var(--sl-border-base);
+  background: #ffffff;
+  width: 100%;
+  box-sizing: border-box;
+}
+.chart-box {
+  width: 100%;
+  height: 255px;
+}
+
+/* 表格自适应区 (微边距大卡片包裹) */
+.table-panel-flex {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.table-scroll-container {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 12px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.table-card {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--sl-border-base);
+  border-radius: var(--sl-radius-sm);
+  overflow: hidden;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+  display: flex;
+  flex-direction: column;
+}
+
+.unified-table-el {
+  width: 100%;
+  height: 100% !important;
+  border: none !important;
+}
+
+:deep(.table-card .el-table) {
+  border: none !important;
+}
+:deep(.table-card .el-table__inner-wrapper) {
+  border: none !important;
+}
+:deep(.table-card .el-table__inner-wrapper::before) {
+  display: none !important;
+}
+
+.time-stamp {
+  font-family: var(--sl-font-mono);
+  font-size: 12px;
+  color: var(--sl-text-secondary);
+}
+.field-val {
+  font-size: 13px;
+  color: var(--sl-text-heading);
+}
+
+.pager-wrap {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  border-top: 1px solid var(--sl-border-base);
+  display: flex;
+  justify-content: flex-end;
+  background: #ffffff;
+}
+
+/* 抽屉样式 */
+.drawer-form {
+  padding: 16px 20px;
 }
 .template-select-row {
   display: flex;
@@ -1051,177 +1711,33 @@ onUnmounted(() => {
   flex: 1;
 }
 
-/* Workspace Area */
-.data-workspace {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  background: #f4f6f9;
-}
-
-/* Workspace Area */
-.data-workspace {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-  background: #f4f6f9;
-}
-
-/* Metric Ribbon - Edge-to-edge Flat Splitter Ribbon (No Cards, No Margins) */
-.metric-ribbon {
-  width: 100%;
+.form-grid.two {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  background: #ffffff;
-  border-bottom: 1px solid #e2e8f0;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
-.metric-cell {
-  padding: 10px 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  border-right: 1px solid #f1f5f9;
-}
-.metric-cell:last-child {
-  border-right: none;
-}
-.metric-cell .label {
-  font-size: 12px;
-  color: #64748b;
-  font-weight: 500;
-}
-.metric-cell .val {
-  font-size: 14px;
-  font-weight: 700;
-  color: #0f172a;
+
+.field-editor {
+  border: 1px solid var(--sl-border-input);
+  border-radius: var(--sl-radius-sm);
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
-.metric-cell .val.highlight {
-  color: #1677ff;
-}
-.metric-cell .val.active-status {
-  color: #059669;
-}
-
-/* Workspace Body (Zero Gap Edge-to-Edge) */
-.workspace-body {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  padding: 0;
-}
-
-/* ECharts Chart Container */
-.chart-box-wrapper {
-  background: #ffffff;
-  border-bottom: 1px solid #e2e8f0;
-  padding: 12px 16px;
-}
-.chart-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-.chart-header strong {
-  font-size: 14px;
-  color: #1e293b;
-}
-.chart-live-tag {
-  font-size: 12px;
-  color: #10b981;
-  display: flex;
-  align-items: center;
-  gap: 5px;
-}
-.chart-live-tag i.live-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #10b981;
-}
-.chart-box {
-  height: 340px;
-  width: 100%;
-}
-
-/* Data Table Section */
-.table-section {
-  background: #ffffff;
-  padding: 12px 16px;
-}
-.table-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 10px;
-}
-.table-title {
-  display: flex;
+.field-head,
+.field-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 1fr) minmax(110px, 1fr) minmax(120px, 1fr) minmax(90px, 0.8fr) 50px;
   align-items: center;
   gap: 8px;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--sl-border-base);
 }
-.table-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.table-header strong {
-  font-size: 14px;
-  color: #0f172a;
-}
-.count-pill {
+.field-head {
+  background: #f8fafc;
+  font-weight: 600;
+  color: var(--sl-text-secondary);
   font-size: 12px;
-  color: #475569;
-  background: #f1f5f9;
-  padding: 2px 8px;
-  border-radius: 12px;
 }
-.record-table, .template-table {
-  width: 100%;
-  border: 1px solid #e2e8f0;
-  border-radius: 4px;
-}
-:deep(.el-table) {
-  --el-table-border-color: #e2e8f0;
-  --el-table-header-bg-color: #f8fafc;
-  --el-table-header-text-color: #334155;
-  --el-table-row-hover-bg-color: #f1f5f9;
-}
-:deep(.el-table th.el-table__cell) {
-  font-weight: 700;
-  font-size: 12px;
-  padding: 8px 0;
-}
-.pager {
-  margin-top: 12px;
-  display: flex;
-  justify-content: flex-end;
-}
-:deep(.el-pagination.is-background .el-pager li.is-active) {
-  background-color: #1677ff;
-}
-
-.workspace-empty {
-  min-height: 400px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #ffffff;
-}
-
-.drawer-form { padding: 0 16px; }
-.form-grid.two { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-.field-editor { border: 1px solid #cbd5e1; border-radius: 4px; overflow: hidden; }
-.field-head, .field-row { display: grid; grid-template-columns: minmax(130px, 1fr) minmax(130px, 1fr) minmax(130px, 1fr) minmax(110px, 0.8fr) 60px; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid #e2e8f0; }
-.field-head { background: #f8fafc; font-weight: 700; color: #475569; font-size: 12px; }
-.field-row:last-child { border-bottom: 0; }
-
-@media (max-width: 1180px) {
-  .metric-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.field-row:last-child {
+  border-bottom: 0;
 }
 </style>

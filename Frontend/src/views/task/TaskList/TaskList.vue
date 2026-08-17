@@ -127,6 +127,9 @@ import { filterExecutableWorkflows, isExecutableWorkflow } from '../../../utils/
 import { taskApi } from '../../../services/taskApi.js'
 import { workflowApi } from '../../../services/workflowApi.js'
 import { reviewTaskConstraintsAfterBindingChange } from './taskConstraintReview.js'
+import { useAuthStore } from '../../../stores/authStore.js'
+
+const authStore = useAuthStore()
 
 interface TaskInstance {
   id: number
@@ -420,6 +423,7 @@ const loadWorkflowRoutes = async (flowModelId: number) => {
   workflowNodes.value[key] = expanded.workflowNodes
   workflowErrors.value[key] = buildBindingWorkflowView(expanded, requirements).errors
 }
+
 const fetchTaskSummary = async (silent = false) => {
   try {
     const res = await axios.get('/api/task/summary')
@@ -510,8 +514,6 @@ const openTaskDetail = (row: TaskInstance) => {
   
   fetchLogsAndSnapshots()
   fetchEffectiveConstraints(row.id)
-  
-  // Start polling detail details
   startDetailsPolling()
 }
 
@@ -531,18 +533,91 @@ const fetchEffectiveConstraints = async (taskId = activeTask.value?.id, silent =
 
 const TERMINAL_TASK_STATUSES = new Set(['SUCCEEDED', 'FAILED', 'TERMINATED'])
 
+let taskEventSource: EventSource | null = null
+
+const startTaskSseStream = (taskId: number) => {
+  stopTaskSseStream()
+  if (!taskId) return
+  try {
+    const token = authStore.token
+    const url = token
+      ? `/api/task/stream/${taskId}?token=${encodeURIComponent(token)}`
+      : `/api/task/stream/${taskId}`
+    taskEventSource = new EventSource(url)
+
+    taskEventSource.addEventListener('log', (event: MessageEvent) => {
+      try {
+        const logData = JSON.parse(event.data)
+        if (logData && !executionLogs.value.some(l => l.id === logData.id)) {
+          executionLogs.value = [...executionLogs.value, logData]
+          latestDetailLogId = Math.max(latestDetailLogId, Number(logData.id || 0))
+        }
+      } catch {}
+    })
+
+    taskEventSource.addEventListener('step', (event: MessageEvent) => {
+      try {
+        const stepData = JSON.parse(event.data)
+        if (stepData) {
+          const existing = nodeSnapshots.value.find(s => s.id === stepData.taskStepId || (s.nodeIdRef && s.nodeIdRef === stepData.nodeIdRef))
+          if (existing) {
+            existing.nodeStatus = stepData.nodeLifecycleState
+            if (stepData.variableSpace) existing.variableSpace = stepData.variableSpace
+          } else {
+            taskApi.snapshots(taskId).then(snapRes => {
+              if (snapRes.data?.success) nodeSnapshots.value = snapRes.data.data || []
+            }).catch(() => {})
+          }
+        }
+      } catch {}
+    })
+
+    taskEventSource.addEventListener('task', (event: MessageEvent) => {
+      try {
+        const taskData = JSON.parse(event.data)
+        if (taskData && activeTask.value) {
+          activeTask.value.taskStatus = taskData.taskStatus
+          const mainMatch = tasks.value.find(t => t.id === taskId)
+          if (mainMatch) {
+            mainMatch.taskStatus = taskData.taskStatus
+          }
+          if (TERMINAL_TASK_STATUSES.has(taskData.taskStatus)) {
+            fetchLogsAndSnapshots(true)
+            stopTaskSseStream()
+          }
+        }
+      } catch {}
+    })
+
+    taskEventSource.onerror = () => {
+      // EventSource 自动重连
+    }
+  } catch (e) {
+    console.error('Task SSE initialization error', e)
+  }
+}
+
+const stopTaskSseStream = () => {
+  if (taskEventSource) {
+    taskEventSource.close()
+    taskEventSource = null
+  }
+}
+
 const syncRuntimeRefresh = () => {
   stopDetailsPolling()
-  if (!monitorDrawerVisible.value || activeTask.value?.taskStatus !== 'RUNNING' || TERMINAL_TASK_STATUSES.has(activeTask.value?.taskStatus || '')) return
-  pollIntervalId = setInterval(() => {
-    if (monitorDrawerVisible.value && activeTask.value?.taskStatus === 'RUNNING') fetchLogsAndSnapshots(true)
-    else stopDetailsPolling()
-  }, 1000)
+  if (!monitorDrawerVisible.value || !activeTask.value) return
+  if (TERMINAL_TASK_STATUSES.has(activeTask.value.taskStatus || '')) {
+    stopTaskSseStream()
+    return
+  }
+  startTaskSseStream(activeTask.value.id)
 }
 
 const startDetailsPolling = syncRuntimeRefresh
 
 const stopDetailsPolling = () => {
+  stopTaskSseStream()
   if (pollIntervalId) {
     clearInterval(pollIntervalId)
     pollIntervalId = null
@@ -580,7 +655,6 @@ const fetchLogsAndSnapshots = async (silent = false) => {
         executionLogs.value = logs
       }
       latestDetailLogId = executionLogs.value.reduce((max, log) => Math.max(max, Number(log.id || 0)), latestDetailLogId)
-      
     }
     
     // Also sync the task instance itself in case status updated

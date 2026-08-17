@@ -24,6 +24,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.smartlab.management.sse.TaskExecutionSseHub;
+
 class TaskControllerTest {
     @Test
     void snapshotsReturnsTaskStepsForRequestedTask() throws Exception {
@@ -35,7 +37,8 @@ class TaskControllerTest {
         step.setNodeStatus("SUCCEEDED");
         when(service.snapshots(6L)).thenReturn(List.of(step));
         MockMvc mvc = MockMvcBuilders.standaloneSetup(new TaskController(service,
-                mock(WorkflowTaskControlService.class), mock(TaskExecutionViewService.class))).build();
+                mock(WorkflowTaskControlService.class), mock(TaskExecutionViewService.class),
+                mock(TaskExecutionSseHub.class))).build();
 
         mvc.perform(get("/api/task/snapshots/6"))
                 .andExpect(status().isOk())
@@ -53,7 +56,7 @@ class TaskControllerTest {
         TaskService service = mock(TaskService.class);
         when(service.preflight(any())).thenReturn(new TaskPreflightResponse(false, List.of(
                 new WorkflowIssue("TASK_BINDING_MISSING", "BINDING", "deviceBindings[slot-a]", "DEV_NODE", "slot-a", true, "缺少绑定", "绑定设备"))));
-        MockMvc mvc = MockMvcBuilders.standaloneSetup(new TaskController(service, mock(WorkflowTaskControlService.class), mock(TaskExecutionViewService.class))).build();
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new TaskController(service, mock(WorkflowTaskControlService.class), mock(TaskExecutionViewService.class), mock(TaskExecutionSseHub.class))).build();
 
         mvc.perform(post("/api/task/preflight").contentType(MediaType.APPLICATION_JSON)
                         .content("{\"flowModelId\":11,\"deviceBindings\":[{\"slotId\":\"slot-a\",\"deviceInstanceId\":7}]}"))

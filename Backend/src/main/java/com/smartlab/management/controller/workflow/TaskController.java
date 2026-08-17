@@ -13,8 +13,11 @@ import com.smartlab.management.entity.workflow.TaskStep;
 import com.smartlab.management.service.db.workflow.TaskExecutionViewService;
 import com.smartlab.management.service.db.workflow.TaskService;
 import com.smartlab.management.dto.workflow.TaskExecutionView;
+import com.smartlab.management.sse.TaskExecutionSseHub;
 import jakarta.validation.Valid;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 import java.util.Map;
@@ -25,12 +28,15 @@ public class TaskController {
     private final TaskService taskService;
     private final WorkflowTaskControlService taskControlService;
     private final TaskExecutionViewService executionViewService;
+    private final TaskExecutionSseHub taskExecutionSseHub;
 
     public TaskController(TaskService taskService, WorkflowTaskControlService taskControlService,
-                              TaskExecutionViewService executionViewService) {
+                          TaskExecutionViewService executionViewService,
+                          TaskExecutionSseHub taskExecutionSseHub) {
         this.taskService = taskService;
         this.taskControlService = taskControlService;
         this.executionViewService = executionViewService;
+        this.taskExecutionSseHub = taskExecutionSseHub;
     }
 
     @GetMapping("/page")
@@ -112,5 +118,8 @@ public class TaskController {
         catch (Exception e) { return ApiResponse.fail(e.getMessage()); }
     }
 
-
+    @GetMapping(value = "/stream/{id}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter stream(@PathVariable Long id) {
+        return taskExecutionSseHub.register(id);
+    }
 }

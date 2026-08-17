@@ -74,5 +74,20 @@ public interface DeviceTwinStatesMapper extends BaseMapper<DeviceTwinStates> {
                              @Param("regionName") String regionName,
                              @Param("stateName") String stateName,
                              @Param("updateTime") OffsetDateTime updateTime);
+
+    @Update("""
+            UPDATE "DEVICE_TWIN_STATES"
+            SET online_status = #{onlineStatus},
+                last_online_time = CASE WHEN #{onlineStatus} = 'ONLINE' THEN #{now} ELSE last_online_time END,
+                update_time = #{now}
+            WHERE instance_id IN (
+                SELECT id FROM "DEVICE_INSTANCES"
+                WHERE bound_adapter_name = #{adapterName}
+                  AND lifecycle_status = 'IN_USE'
+            )
+            """)
+    int updateOnlineStatusByAdapter(@Param("adapterName") String adapterName,
+                                   @Param("onlineStatus") String onlineStatus,
+                                   @Param("now") OffsetDateTime now);
 }
 

@@ -78,6 +78,14 @@ public class IntrinsicConstraintPlanRegistry {
         return plan;
     }
 
+    public IntrinsicConstraintPlan get(Long instanceId) {
+        return instanceId == null ? null : plans.get(instanceId);
+    }
+
+    public IntrinsicConstraintPlan plan(Long instanceId) {
+        return get(instanceId);
+    }
+
     public boolean needsEvaluation(DeviceTwinSnapshot snapshot) {
         return snapshot != null && needsEvaluation(new DeviceTwinSnapshotVersion(
                 snapshot.deviceInstanceId(), snapshot.deviceModelId(), snapshot.revision()));

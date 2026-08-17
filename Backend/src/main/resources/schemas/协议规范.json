@@ -26,8 +26,8 @@
     },
     "ManualControlSignal": {
       "type": "string",
-      "enum": [ "MANUAL_EXECUTE_START", "MANUAL_EXECUTE_ABORT" ],
-      "description": "人工控制台到设备实例状态机的控制信号；MANUAL_EXECUTE_START携带capabilityName与parameters，状态机根据目标能力isAbort路由到普通指令状态机或可插队的终止状态机；MANUAL_EXECUTE_ABORT不携带业务载荷，用于终止目标设备实例当前活动的普通指令"
+      "enum": [ "MANUAL_EXECUTE_START", "MANUAL_EXECUTE_ABORT", "MANUAL_EXECUTE_RESET" ],
+      "description": "人工控制台到设备实例状态机的控制信号；MANUAL_EXECUTE_START携带capabilityName与parameters，状态机根据目标能力isAbort路由到普通指令状态机或可插队的终止状态机；MANUAL_EXECUTE_ABORT不携带业务载荷，用于终止目标设备实例当前活动的普通指令；MANUAL_EXECUTE_RESET不携带业务载荷，用于人工强制复位目标设备实例的指令执行生命周期，释放执行锁并恢复IDLE就绪态"
     },
     "ConstraintControlSignal": {
       "type": "string",
@@ -48,8 +48,8 @@
       "type": "object",
       "description": "系统内部统一信号格式规范",
       "properties": {
-        "signalName": { "type": "string", "description": "具体系统信号名，例如WF_EXECUTE_START、WF_EXECUTE_ABORT、MANUAL_EXECUTE_START、MANUAL_EXECUTE_ABORT、CONSTRAINT_EXECUTE、CONSTRAINT_ABORT、CMD_START、CMD_ABORT、CMD_STATE或OP_STATE" },
-        "payload": { "type": "object", "additionalProperties": true, "description": "可选信号数据；WF_EXECUTE_START和MANUAL_EXECUTE_START携带capabilityName与parameters；CONSTRAINT_EXECUTE携带保留目标capabilityName的ConstraintExecutePayload；CMD_STATE和OP_STATE分别携带对应状态payload；WF_EXECUTE_ABORT、MANUAL_EXECUTE_ABORT和CONSTRAINT_ABORT不携带业务载荷，由目标设备实例当前普通指令上下文解析附属终止能力" }
+        "signalName": { "type": "string", "description": "具体系统信号名，例如WF_EXECUTE_START、WF_EXECUTE_ABORT、MANUAL_EXECUTE_START、MANUAL_EXECUTE_ABORT、MANUAL_EXECUTE_RESET、CONSTRAINT_EXECUTE、CONSTRAINT_ABORT、CMD_START、CMD_ABORT、CMD_STATE或OP_STATE" },
+        "payload": { "type": "object", "additionalProperties": true, "description": "可选信号数据；WF_EXECUTE_START和MANUAL_EXECUTE_START携带capabilityName与parameters；CONSTRAINT_EXECUTE携带保留目标capabilityName的ConstraintExecutePayload；CMD_STATE和OP_STATE分别携带对应状态payload；WF_EXECUTE_ABORT、MANUAL_EXECUTE_ABORT、MANUAL_EXECUTE_RESET和CONSTRAINT_ABORT不携带业务载荷，由目标设备实例当前普通指令上下文解析附属终止能力或执行状态复位" }
       },
       "required": [ "signalName" ]
     },

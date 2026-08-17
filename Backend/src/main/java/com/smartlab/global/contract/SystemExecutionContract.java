@@ -69,6 +69,10 @@ public final class SystemExecutionContract {
                         && AdapterOutboundSignal.CMD_ABORT.name().equals(row.actionSignalName()));
     }
 
+    public static boolean isCommandResetSignal(String signalName) {
+        return ManualControlSignal.MANUAL_EXECUTE_RESET.name().equals(signalName);
+    }
+
     public static List<String> terminalCommandStateNames() {
         return List.of("COMPLETED", "FAILED", "ABORTED");
     }

@@ -1,5 +1,6 @@
 package com.smartlab.engine.statemachine;
 
+import java.time.Instant;
 import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.Set;
@@ -98,6 +99,7 @@ final class DeviceStateMachineRuntime {
         private final Map<String, Object> context;
         private final ExecutionRole role;
         private final Set<String> affectedMessageIds;
+        private final Instant startedAt;
         private String state;
         private CommandExecution attachedAbortExecution;
 
@@ -114,9 +116,14 @@ final class DeviceStateMachineRuntime {
             this.state = state;
             this.context = context == null ? Map.of() : Map.copyOf(context);
             this.role = role;
+            this.startedAt = Instant.now();
             this.affectedMessageIds = affectedMessageIds == null
                     ? Set.of()
                     : Set.copyOf(new LinkedHashSet<>(affectedMessageIds));
+        }
+
+        Instant startedAt() {
+            return startedAt;
         }
 
         String messageId() {

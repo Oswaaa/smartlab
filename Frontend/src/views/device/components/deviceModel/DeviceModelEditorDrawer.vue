@@ -1020,6 +1020,7 @@ const systemTriggerLabels = {
   CONSTRAINT_EXECUTE: '约束能力执行',
   WF_EXECUTE_ABORT: '工作流请求中止',
   MANUAL_EXECUTE_ABORT: '控制台手动中止',
+  MANUAL_EXECUTE_RESET: '控制台人工复位',
   CONSTRAINT_ABORT: '约束违规中止'
 }
 const groupedCommandLifecycleTransitions = computed(() => {

@@ -21,6 +21,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
+import com.smartlab.management.mapper.resource.device.DeviceTwinStatesMapper;
+import org.springframework.scheduling.annotation.Scheduled;
+
 /**
  * Adapter 索引表服务。
  * 对应 ADAPTER_INDEX 表，用于维护设备执行代理的注册配置与在线状态。
@@ -35,23 +38,33 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
     private final AdapterManifestService manifestService;
     private final DeviceInstancesMapper deviceInstancesMapper;
     private final DeviceModelsMapper deviceModelsMapper;
+    private final DeviceTwinStatesMapper deviceTwinStatesMapper;
 
     public AdapterIndexService(AdapterIndexMapper mapper,
                                AdapterManifestService manifestService,
                                DeviceInstancesMapper deviceInstancesMapper) {
-        this(mapper, manifestService, deviceInstancesMapper, null);
+        this(mapper, manifestService, deviceInstancesMapper, null, null);
+    }
+
+    public AdapterIndexService(AdapterIndexMapper mapper,
+                               AdapterManifestService manifestService,
+                               DeviceInstancesMapper deviceInstancesMapper,
+                               DeviceModelsMapper deviceModelsMapper) {
+        this(mapper, manifestService, deviceInstancesMapper, deviceModelsMapper, null);
     }
 
     @Autowired
     public AdapterIndexService(AdapterIndexMapper mapper,
                                AdapterManifestService manifestService,
                                DeviceInstancesMapper deviceInstancesMapper,
-                               DeviceModelsMapper deviceModelsMapper) {
+                               DeviceModelsMapper deviceModelsMapper,
+                               DeviceTwinStatesMapper deviceTwinStatesMapper) {
         super(mapper);
         this.mapper = mapper;
         this.manifestService = manifestService;
         this.deviceInstancesMapper = deviceInstancesMapper;
         this.deviceModelsMapper = deviceModelsMapper;
+        this.deviceTwinStatesMapper = deviceTwinStatesMapper;
     }
 
     /**
@@ -205,7 +218,7 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
     }
 
     /**
-     * 记录 Adapter 心跳并更新状态。
+     * 记录 Adapter 心跳并更新状态，同时联动更新下属使用中 (IN_USE) 设备实例的在线状态。
      */
     public AdapterIndex heartbeat(String adapterName, String status) {
         AdapterIndex adapter = getByName(adapterName);
@@ -213,9 +226,38 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
             adapter = new AdapterIndex();
             adapter.setAdapterName(adapterName);
         }
-        adapter.setStatus(status == null || status.isBlank() ? "ONLINE" : status);
-        adapter.setLastHeartbeat(OffsetDateTime.now());
-        return save(adapter);
+        String resolvedStatus = status == null || status.isBlank() ? "ONLINE" : status;
+        adapter.setStatus(resolvedStatus);
+        OffsetDateTime now = OffsetDateTime.now();
+        adapter.setLastHeartbeat(now);
+        AdapterIndex saved = save(adapter);
+        if (deviceTwinStatesMapper != null && adapterName != null && !adapterName.isBlank()) {
+            deviceTwinStatesMapper.updateOnlineStatusByAdapter(adapterName, resolvedStatus, now);
+        }
+        return saved;
+    }
+
+    /**
+     * 自动扫描超时未上报心跳的 Adapter（超过 30 秒），置为 OFFLINE 并联动将其下属设备实例置为 OFFLINE。
+     */
+    @Scheduled(fixedDelay = 5000)
+    public void scanAndExpireHeartbeats() {
+        OffsetDateTime threshold = OffsetDateTime.now().minusSeconds(30);
+        List<AdapterIndex> onlineAdapters = mapper.selectList(
+                Wrappers.<AdapterIndex>lambdaQuery().eq(AdapterIndex::getStatus, "ONLINE")
+        );
+        if (onlineAdapters == null || onlineAdapters.isEmpty()) return;
+        OffsetDateTime now = OffsetDateTime.now();
+        for (AdapterIndex adapter : onlineAdapters) {
+            if (adapter.getLastHeartbeat() == null || adapter.getLastHeartbeat().isBefore(threshold)) {
+                adapter.setStatus("OFFLINE");
+                adapter.setUpdateTime(now);
+                mapper.updateById(adapter);
+                if (deviceTwinStatesMapper != null && adapter.getAdapterName() != null) {
+                    deviceTwinStatesMapper.updateOnlineStatusByAdapter(adapter.getAdapterName(), "OFFLINE", now);
+                }
+            }
+        }
     }
 
     /**

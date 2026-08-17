@@ -2,8 +2,11 @@ package com.smartlab.management.service.db.workflow;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
+import com.smartlab.global.event.TaskExecutionLogEvent;
 import com.smartlab.management.entity.workflow.ExecutionLog;
 import com.smartlab.management.mapper.workflow.ExecutionLogMapper;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
@@ -15,9 +18,16 @@ public class ExecutionLogService {
     private static final Set<String> SOURCE_TYPES = Set.of("TASK", "MANUAL", "CONSTRAINT", "SYSTEM", "ADAPTER");
     private static final Set<String> LEVELS = Set.of("INFO", "WARN", "ERROR");
     private final ExecutionLogMapper mapper;
+    private final ApplicationEventPublisher eventPublisher;
 
     public ExecutionLogService(ExecutionLogMapper mapper) {
+        this(mapper, null);
+    }
+
+    @Autowired
+    public ExecutionLogService(ExecutionLogMapper mapper, ApplicationEventPublisher eventPublisher) {
         this.mapper = mapper;
+        this.eventPublisher = eventPublisher;
     }
 
     public ExecutionLog append(String sourceType, Long taskId, Long taskStepId, Long deviceInstanceId,
@@ -33,6 +43,9 @@ public class ExecutionLogService {
         log.setLogInfo(message);
         log.setLogTime(OffsetDateTime.now());
         mapper.insert(log);
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(new TaskExecutionLogEvent(log));
+        }
         return log;
     }
 

@@ -73,10 +73,5 @@ public class DeviceInstances {
     public void setCommConfig(JsonNode commConfig) {
         this.instanceConfig = commConfig;
     }
-
-    public Boolean getIsOnline() {
-        return null;
-    }
-
 }
 

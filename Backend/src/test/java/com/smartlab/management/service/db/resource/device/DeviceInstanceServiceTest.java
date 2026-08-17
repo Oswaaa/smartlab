@@ -147,6 +147,31 @@ class DeviceInstanceServiceTest {
         verify(fixture.instances, never()).updateById(any(DeviceInstances.class));
     }
 
+    @Test
+    void requireOnlineRejectsWhenOfflineOrExpired() {
+        Fixture fixture = new Fixture();
+        DeviceTwinStates offlineTwin = new DeviceTwinStates();
+        offlineTwin.setOnlineStatus("OFFLINE");
+        when(fixture.twins.selectOne(any())).thenReturn(offlineTwin);
+        assertThrows(IllegalStateException.class, () -> fixture.service.requireOnline(7L));
+
+        DeviceTwinStates expiredTwin = new DeviceTwinStates();
+        expiredTwin.setOnlineStatus("ONLINE");
+        expiredTwin.setLastOnlineTime(java.time.OffsetDateTime.now().minusSeconds(35));
+        when(fixture.twins.selectOne(any())).thenReturn(expiredTwin);
+        assertThrows(IllegalStateException.class, () -> fixture.service.requireOnline(7L));
+    }
+
+    @Test
+    void requireOnlinePassesWhenFreshAndOnline() {
+        Fixture fixture = new Fixture();
+        DeviceTwinStates freshTwin = new DeviceTwinStates();
+        freshTwin.setOnlineStatus("ONLINE");
+        freshTwin.setLastOnlineTime(java.time.OffsetDateTime.now().minusSeconds(5));
+        when(fixture.twins.selectOne(any())).thenReturn(freshTwin);
+        fixture.service.requireOnline(7L);
+    }
+
     private static DeviceInstances instance(Long id, String status) {
         DeviceInstances instance = new DeviceInstances();
         instance.setId(id);

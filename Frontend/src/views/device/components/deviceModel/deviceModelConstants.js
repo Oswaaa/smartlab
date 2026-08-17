@@ -303,7 +303,8 @@ function normalizeCommandParameter(param) {
 }
 
 function normalizeEventsToFlatList(events) {
-  if (Array.isArray(events)) return []
+  if (!events) return []
+  if (Array.isArray(events)) return events
 
   const rows = []
   asArray(events?.cmdEvents).forEach(event => {

@@ -142,7 +142,8 @@ export function normalizeCommandParameter(param) {
 }
 
 export function normalizeEventsToFlatList(events) {
-  if (!events || Array.isArray(events)) return []
+  if (!events) return []
+  if (Array.isArray(events)) return events
   return [
     ...asArray(events.cmdEvents).map(event => ({
       eventName: stringValue(event.eventName || event.name),
@@ -157,7 +158,17 @@ export function normalizeEventsToFlatList(events) {
   ]
 }
 
-export function normalizeAttributes(value) { return asArray(value).map(item => ({ _key: item._key || makeUiKey('attr'), name: stringValue(item.attributeName || item.name), displayName: stringValue(item.displayName || item.attributeName || item.name), valueKind: item.valueKind === 'DISCRETE' ? 'DISCRETE' : 'CONTINUOUS', dataType: normalizeDataType(item.dataType, 'DOUBLE', attributeDataTypes), unit: stringValue(item.unit) })) }
+export function normalizeAttributes(value) {
+  return asArray(value).map(item => ({
+    _key: item._key || makeUiKey('attr'),
+    name: stringValue(item.attributeName || item.name),
+    attributeName: stringValue(item.attributeName || item.name),
+    displayName: stringValue(item.displayName || item.attributeName || item.name),
+    valueKind: item.valueKind === 'DISCRETE' ? 'DISCRETE' : 'CONTINUOUS',
+    dataType: normalizeDataType(item.dataType, 'DOUBLE', attributeDataTypes),
+    unit: stringValue(item.unit)
+  }))
+}
 
 export function normalizeCapabilities(value) {
   const capabilities = asArray(value).map(item => {

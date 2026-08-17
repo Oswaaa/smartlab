@@ -540,7 +540,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
 
     private Set<String> standardSystemSignals() {
         return Set.of(
-                "WF_EXECUTE_START", "WF_EXECUTE_ABORT", "MANUAL_EXECUTE_START", "MANUAL_EXECUTE_ABORT",
+                "WF_EXECUTE_START", "WF_EXECUTE_ABORT", "MANUAL_EXECUTE_START", "MANUAL_EXECUTE_ABORT", "MANUAL_EXECUTE_RESET",
                 "CONSTRAINT_EXECUTE", "CONSTRAINT_ABORT", "CMD_START", "CMD_ABORT", "CMD_STATE", "OP_STATE");
     }
 
@@ -837,8 +837,8 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
                     || !expectedInterface.path("interfaceType").asText()
                             .equals(actualInterface.path("interfaceType").asText())
                     || !textSet(expectedInterface.path("allowedSignals"))
-                            .equals(textSet(actualInterface.path("allowedSignals")))) {
-                throw new IllegalArgumentException("状态机接口不符合定稿定义: " + name);
+                            .containsAll(textSet(actualInterface.path("allowedSignals")))) {
+                throw new IllegalArgumentException("状态机接口包含未定义的非法信号: " + name);
             }
         }
 

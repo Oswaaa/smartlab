@@ -64,6 +64,7 @@ public final class ProtocolContract {
         policies.put(WorkflowControlSignal.WF_EXECUTE_ABORT.name(), SignalPayloadPolicy.NONE);
         policies.put(ManualControlSignal.MANUAL_EXECUTE_START.name(), SignalPayloadPolicy.COMMAND);
         policies.put(ManualControlSignal.MANUAL_EXECUTE_ABORT.name(), SignalPayloadPolicy.NONE);
+        policies.put(ManualControlSignal.MANUAL_EXECUTE_RESET.name(), SignalPayloadPolicy.NONE);
         policies.put(ConstraintControlSignal.CONSTRAINT_EXECUTE.name(), SignalPayloadPolicy.CONSTRAINT_EXECUTE);
         policies.put(ConstraintControlSignal.CONSTRAINT_ABORT.name(), SignalPayloadPolicy.NONE);
         policies.put(AdapterOutboundSignal.CMD_START.name(), SignalPayloadPolicy.COMMAND);

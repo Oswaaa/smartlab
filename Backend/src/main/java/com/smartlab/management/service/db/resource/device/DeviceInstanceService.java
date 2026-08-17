@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.common.PageResult;
+import com.smartlab.management.dto.resource.device.DeviceInstanceDTO;
 import com.smartlab.management.entity.resource.device.DeviceComponents;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
 import com.smartlab.management.entity.resource.device.DeviceInstanceLifecycle;
@@ -25,6 +26,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.io.Serializable;
+import java.time.Duration;
 import java.time.OffsetDateTime;
 import java.util.HashMap;
 import java.util.List;
@@ -80,6 +82,11 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
         return mapper.selectList(query.orderByDesc(DeviceInstances::getId));
     }
 
+    public List<DeviceInstanceDTO> listDTO(String lifecycleStatus) {
+        List<DeviceInstances> records = list(lifecycleStatus);
+        return assembleDTOs(records);
+    }
+
     public PageResult<DeviceInstances> page(long pageNo, long pageSize, String modelId, String keyword,
                                              Boolean online, String lifecycleStatus) {
         LambdaQueryWrapper<DeviceInstances> query = Wrappers.lambdaQuery();
@@ -102,6 +109,54 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
             }).toList();
         }
         return new PageResult<>(page.getTotal(), page.getCurrent(), page.getSize(), records);
+    }
+
+    public PageResult<DeviceInstanceDTO> pageDTO(long pageNo, long pageSize, String modelId, String keyword,
+                                                 Boolean online, String lifecycleStatus) {
+        LambdaQueryWrapper<DeviceInstances> query = Wrappers.lambdaQuery();
+        Long parsedModelId = parseId(modelId);
+        if (parsedModelId != null) {
+            query.eq(DeviceInstances::getDeviceModelId, parsedModelId);
+        }
+        applyLifecycleFilter(query, lifecycleStatus);
+        if (keyword != null && !keyword.isBlank()) {
+            query.like(DeviceInstances::getInstanceName, keyword.trim());
+        }
+        query.orderByDesc(DeviceInstances::getId);
+        Page<DeviceInstances> page = mapper.selectPage(new Page<>(Math.max(1, pageNo), Math.max(1, pageSize)), query);
+        List<DeviceInstances> records = page.getRecords();
+        List<DeviceInstanceDTO> dtos = assembleDTOs(records);
+        if (online != null) {
+            dtos = dtos.stream().filter(dto -> online.equals(dto.getIsOnline())).toList();
+        }
+        return new PageResult<>(page.getTotal(), page.getCurrent(), page.getSize(), dtos);
+    }
+
+    private List<DeviceInstanceDTO> assembleDTOs(List<DeviceInstances> records) {
+        if (records == null || records.isEmpty()) return List.of();
+        List<Long> instanceIds = records.stream().map(DeviceInstances::getId).filter(Objects::nonNull).toList();
+        Map<Long, DeviceTwinStates> twinMap = twinStatesMapper.selectList(
+                Wrappers.<DeviceTwinStates>lambdaQuery().in(DeviceTwinStates::getInstanceId, instanceIds)
+        ).stream().collect(java.util.stream.Collectors.toMap(DeviceTwinStates::getInstanceId, s -> s, (a, b) -> a));
+
+        return records.stream().map(inst -> {
+            DeviceTwinStates twin = twinMap.get(inst.getId());
+            DeviceInstanceDTO dto = new DeviceInstanceDTO();
+            dto.setId(inst.getId());
+            dto.setDeviceModelId(inst.getDeviceModelId());
+            dto.setInstanceName(inst.getInstanceName());
+            dto.setInstanceConfig(inst.getInstanceConfig());
+            dto.setBoundAdapterName(inst.getBoundAdapterName());
+            dto.setBoundDevicePoint(inst.getBoundDevicePoint());
+            dto.setLifecycleStatus(inst.getLifecycleStatus());
+            dto.setPicture(inst.getPicture());
+            dto.setCreateTime(inst.getCreateTime());
+            String onlineStatus = twin != null && twin.getOnlineStatus() != null ? twin.getOnlineStatus() : "OFFLINE";
+            dto.setOnlineStatus(onlineStatus);
+            dto.setIsOnline("ONLINE".equalsIgnoreCase(onlineStatus));
+            dto.setCurrentCmdState(twin != null ? twin.getCurrentCmdState() : "IDLE");
+            return dto;
+        }).toList();
     }
 
     public Map<String, Long> summary(String modelId) {
@@ -255,6 +310,17 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
     private void requireUsable(DeviceInstances instance, String message) {
         if (!DeviceInstanceLifecycle.isUsable(instance)) {
             throw new IllegalStateException(message);
+        }
+    }
+
+    public void requireOnline(Long instanceId) {
+        DeviceTwinStates state = getSnapshot(instanceId);
+        if (state == null || !"ONLINE".equalsIgnoreCase(state.getOnlineStatus())) {
+            throw new IllegalStateException("设备当前处于离线状态 (OFFLINE)，无法下发控制指令");
+        }
+        if (state.getLastOnlineTime() == null
+                || Duration.between(state.getLastOnlineTime(), OffsetDateTime.now()).getSeconds() > 30) {
+            throw new IllegalStateException("设备通信已断开（超过30秒未收到心跳遥测），当前处于离线状态，无法下发控制指令");
         }
     }
 

@@ -737,7 +737,7 @@ class DeviceModelServiceTest {
                 addInterface(interfaces, "Interface_workflow_in", "IN", "WORKFLOW", "WF_EXECUTE_START",
                                 "WF_EXECUTE_ABORT");
                 addInterface(interfaces, "Interface_control_in", "IN", "CONTROL", "MANUAL_EXECUTE_START",
-                                "MANUAL_EXECUTE_ABORT");
+                                "MANUAL_EXECUTE_ABORT", "MANUAL_EXECUTE_RESET");
                 addInterface(interfaces, "Interface_constraint_in", "IN", "CONSTRAINT", "CONSTRAINT_EXECUTE",
                                 "CONSTRAINT_ABORT");
                 addInterface(interfaces, "Interface_adapter_in", "IN", "ADAPTER", "SENT_EVENT", "RUNNING_EVENT",

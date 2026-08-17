@@ -31,11 +31,14 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -113,7 +116,8 @@ public class StateMachineEngine implements StateMachineCommandPort {
                                           Map<String, Object> parameters) {
         String resolvedSignal = signalName == null || signalName.isBlank() ? "MANUAL_EXECUTE_START" : signalName;
         if (!SystemExecutionContract.isCommandStartSignal(resolvedSignal)
-                && !SystemExecutionContract.isCommandAbortSignal(resolvedSignal)) {
+                && !SystemExecutionContract.isCommandAbortSignal(resolvedSignal)
+                && !SystemExecutionContract.isCommandResetSignal(resolvedSignal)) {
             throw new IllegalArgumentException("不是可由人工控制台发送的状态机信号: " + resolvedSignal);
         }
         Map<String, Object> context = new HashMap<>();
@@ -122,7 +126,7 @@ public class StateMachineEngine implements StateMachineCommandPort {
             context.put("parameters", parameters == null ? Map.of() : Map.copyOf(parameters));
         }
         List<ObjectNode> emittedSignals = dispatchSignalByType(instanceId, "CONTROL", resolvedSignal, context);
-        if (emittedSignals.isEmpty()) {
+        if (emittedSignals.isEmpty() && !SystemExecutionContract.isCommandResetSignal(resolvedSignal)) {
             String currentCmd = observedCommandState(instanceId);
             throw new IllegalStateException("当前指令执行生命周期状态为" + currentCmd + "，状态机拒绝此人工操作");
         }
@@ -143,6 +147,47 @@ public class StateMachineEngine implements StateMachineCommandPort {
             context.put("messageId", message.path("messageId").asText());
         }
         return dispatchSignalByType(instanceId, "ADAPTER", eventName, context);
+    }
+
+    @Value("${smartlab.state-machine.command-timeout-seconds:10}")
+    private long commandTimeoutSeconds = 10;
+
+    /**
+     * 指令执行超时看门狗：定时扫描处于 SENT 状态超过时限的指令，自动触发 FAILED 熔断并复位至 IDLE。
+     */
+    @Scheduled(fixedDelayString = "${smartlab.state-machine.command-timeout-scan-ms:1000}")
+    public void checkCommandExecutionTimeouts() {
+        if (deviceRuntimes.isEmpty()) return;
+        Instant now = Instant.now();
+        for (Map.Entry<Long, DeviceStateMachineRuntime> entry : deviceRuntimes.entrySet()) {
+            Long instanceId = entry.getKey();
+            DeviceStateMachineRuntime runtime = entry.getValue();
+            if (!runtime.lock().tryLock()) continue;
+            try {
+                DeviceStateMachineRuntime.CommandExecution normal = runtime.normalExecution();
+                if (normal != null && "SENT".equals(normal.state()) && normal.startedAt() != null) {
+                    long elapsedSeconds = Duration.between(normal.startedAt(), now).getSeconds();
+                    if (elapsedSeconds >= commandTimeoutSeconds) {
+                        log.warn("设备指令发送超时未收到响应，看门狗自动熔断并复位: instanceId={}, capability={}, elapsed={}s",
+                                instanceId, normal.capabilityName(), elapsedSeconds);
+                        IntrinsicConstraintPlan plan = requireRuntimePlan(instanceId);
+                        DeviceInstances instance = plan.instance();
+                        DeviceModels model = plan.model();
+                        DeviceTwinStates twinState = inMemoryTwinState(plan, null);
+                        List<ObjectNode> emitted = new ArrayList<>();
+                        transitionNormalState(instance, model, twinState,
+                                "", "", normal, "FAILED", emitted);
+                        runtime.removeExecution(normal);
+                        resetTerminalCommandState(instance, model, twinState,
+                                "", "", emitted);
+                    }
+                }
+            } catch (Exception e) {
+                log.error("检查指令超时异常, instanceId={}", instanceId, e);
+            } finally {
+                runtime.lock().unlock();
+            }
+        }
     }
 
     /** Releases transient command execution state after the instance retirement commits. */
@@ -379,11 +424,25 @@ public class StateMachineEngine implements StateMachineCommandPort {
         if (SystemExecutionContract.isCommandAbortSignal(signalName)) {
             return startAttachedAbort(runtime, instance, model, twinState, interfaceName, signalName, context);
         }
+        if (SystemExecutionContract.isCommandResetSignal(signalName)) {
+            return handleManualReset(runtime, instance, model, twinState, interfaceName, signalName, context);
+        }
         if (isAdapterInputInterface(model, interfaceName)) {
             return handleAdapterEvent(runtime, instance, model, twinState, currentOpState,
                     interfaceName, signalName, context);
         }
         return handleOperationOnlyEvent(instance, model, twinState, currentOpState, interfaceName, signalName, context);
+    }
+
+    private List<ObjectNode> handleManualReset(DeviceStateMachineRuntime runtime, DeviceInstances instance,
+                                               DeviceModels model, DeviceTwinStates twinState, String interfaceName,
+                                               String signalName, Map<String, Object> context) {
+        runtime.normalExecution(null);
+        runtime.terminationExecution(null);
+        List<ObjectNode> emitted = new ArrayList<>();
+        resetTerminalCommandState(instance, model, twinState, interfaceName, signalName, emitted);
+        log.info("设备指令周期已通过人工复位信号恢复: instanceId={}, signal={}", instance.getId(), signalName);
+        return List.copyOf(emitted);
     }
 
     private List<ObjectNode> startExecution(DeviceStateMachineRuntime runtime, DeviceInstances instance,
@@ -412,9 +471,13 @@ public class StateMachineEngine implements StateMachineCommandPort {
             throw new IllegalArgumentException("终止目标messageId与当前普通命令不一致");
         }
         CapabilityCommand source = resolveCapability(model, normal.capabilityName());
-        CapabilityCommand abort = source.abortCapabilityName().isBlank() ? null : resolveCapability(model, source.abortCapabilityName());
-        if (abort == null) throw new IllegalStateException("能力未配置终止能力: " + normal.capabilityName());
-        if (!abort.isAbort()) throw new IllegalStateException("终止能力必须声明isAbort=true: " + abort.capabilityName());
+        CapabilityCommand abort = source != null && !source.abortCapabilityName().isBlank() ? resolveCapability(model, source.abortCapabilityName()) : null;
+        if (abort == null) {
+            throw new IllegalStateException("设备能力未在物模型中配置关联的终止能力，无法执行硬件停机: " + normal.capabilityName());
+        }
+        if (!abort.isAbort()) {
+            throw new IllegalStateException("终止能力必须声明isAbort=true: " + abort.capabilityName());
+        }
         if (!abort.scope().contains(normal.capabilityName())) {
             throw new IllegalStateException("终止能力scope必须包含其关联普通能力: " + normal.capabilityName());
         }

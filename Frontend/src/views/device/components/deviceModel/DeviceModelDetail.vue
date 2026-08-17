@@ -376,8 +376,8 @@
                   </div>
                   <div v-if="defaultTemplateAttributes.length === 0" class="compact-empty inline-empty">暂无默认数据模板配置</div>
                   <div v-else class="attribute-grid">
-                    <article v-for="attr in defaultTemplateAttributes" :key="attr.attributeName || attr.displayName" class="attribute-tile">
-                      <div class="tile-title">{{ attr.displayName || '-' }}</div>
+                    <article v-for="attr in defaultTemplateAttributes" :key="attr.attributeName || attr.name || attr.displayName" class="attribute-tile">
+                      <div class="tile-title">{{ attr.displayName || attr.attributeName || attr.name || '-' }}</div>
                       <div class="tile-meta">
                         <span>{{ attr.dataType || '-' }}</span>
                         <span v-if="attr.unit">{{ attr.unit }}</span>

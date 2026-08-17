@@ -58,6 +58,10 @@
       {
         "ruleName": "ABORT_SCOPE_DEFAULT_TRANSITION",
         "comment": "附属终止指令B或终止状态机指令C开始执行时，按其scope记录该设备实例中capabilityName匹配的活动普通指令；B或C进入COMPLETED后，对尚未收到Adapter明确终态的匹配普通指令默认转为ABORTED，Adapter已明确上报的COMPLETED、FAILED或ABORTED终态不得被默认结果覆盖；B或C进入FAILED或超时未完成时不得执行默认ABORTED转移"
+      },
+      {
+        "ruleName": "MANUAL_EXECUTION_RESET",
+        "comment": "人工控制台发送 MANUAL_EXECUTE_RESET 信号时，状态机引擎强制清空目标设备实例当前的普通指令与终止指令执行句柄，将指令生命周期结清并复位回 IDLE 初始态，触发 IDLE 的 onEntry 广播以更新内存观测快照及数据库，释放设备执行锁"
       }
     ],
     "operationStateRules": [
@@ -106,7 +110,7 @@
     ],
     "standardInterfaces": [
       { "comment": "工作流指令输入接口：接收工作流节点发起的能力执行或终止请求", "name": "Interface_workflow_in", "direction": "IN", "interfaceType": "WORKFLOW", "allowedSignalsRef": "协议规范.json#/definitions/WorkflowControlSignal" },
-      { "comment": "人工控制输入接口：接收控制台发起的能力执行或终止请求", "name": "Interface_control_in", "direction": "IN", "interfaceType": "CONTROL", "allowedSignalsRef": "协议规范.json#/definitions/ManualControlSignal" },
+      { "comment": "人工控制输入接口：接收控制台发起的能力执行、终止或复位请求", "name": "Interface_control_in", "direction": "IN", "interfaceType": "CONTROL", "allowedSignalsRef": "协议规范.json#/definitions/ManualControlSignal" },
       { "comment": "约束输入接口：接收约束引擎针对指定设备发出的能力执行或终止请求", "name": "Interface_constraint_in", "direction": "IN", "interfaceType": "CONSTRAINT", "allowedSignalsRef": "协议规范.json#/definitions/ConstraintControlSignal" },
       { "comment": "Adapter事件输入接口：只接收adapterContract.events中的eventNametelemetryTopic数据由后端直接映射设备属性并入库，不经过状态机接口", "name": "Interface_adapter_in", "direction": "IN", "interfaceType": "ADAPTER", "allowedSignals": [] },
       { "comment": "Adapter命令输出接口：状态机引擎根据当前设备实例运行时已经确定的普通能力、附属终止能力或直接执行的isAbort=true能力构造CommandMessageFormat后发送给Adapter", "name": "Interface_adapter_out", "direction": "OUT", "interfaceType": "ADAPTER", "allowedSignalsRef": "协议规范.json#/definitions/AdapterOutboundSignal" },

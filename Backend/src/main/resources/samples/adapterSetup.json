@@ -97,21 +97,13 @@
       "devicePoint": "Reactor1",
       "templateName": "ReactorUnitTemplate",
       "description": "1号测试反应单元",
-      "index": 1,
-      "attributeMapping": {
-        "temperature": "R1_TEMP",
-        "pressure":    "R1_PRESS"
-      }
+      "index": 1
     },
     {
       "devicePoint": "Reactor2",
       "templateName": "ReactorUnitTemplate",
       "description": "2号测试反应单元",
-      "index": 2,
-      "attributeMapping": {
-        "temperature": "R2_TEMP",
-        "pressure":    "R2_PRESS"
-      }
+      "index": 2
     }
   ]
 }

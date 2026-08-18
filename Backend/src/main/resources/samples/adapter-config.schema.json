@@ -55,8 +55,7 @@
         "parameters": "[deviceTemplates.\u003ctemplateName\u003e.commands.\u003ccommandName\u003e.parameters]",
         "cmdEvents": "[deviceTemplates.\u003ctemplateName\u003e.events.cmdEvents]",
         "opEvents": "[deviceTemplates.\u003ctemplateName\u003e.events.opEvents]",
-        "devicePoint": "[devicePoints.\u003cdevicePoint\u003e]",
-        "attributeMapping": "[devicePoints.\u003cdevicePoint\u003e.attributeMapping]"
+        "devicePoint": "[devicePoints.\u003cdevicePoint\u003e]"
     },
     "x-iniValueGrammar": {
         "attribute": "[\u003cDataType\u003e][\u003cdescription\u003e]",
@@ -212,18 +211,11 @@
                 },
                 "description": {
                     "type": "string"
-                },
-                "attributeMapping": {
-                    "type": "object",
-                    "additionalProperties": {
-                        "type": "string"
-                    }
                 }
             },
             "required": [
                 "devicePoint",
-                "templateName",
-                "attributeMapping"
+                "templateName"
             ],
             "additionalProperties": true
         }

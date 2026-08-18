@@ -106,8 +106,10 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
         if (entity.getId() == null) {
             entity.setCreateTime(now);
             if (entity.getStatus() == null || entity.getStatus().isBlank()) {
-                entity.setStatus("UNKNOWN");
+                entity.setStatus("ENABLED");
             }
+        } else if (entity.getStatus() == null || entity.getStatus().isBlank()) {
+            entity.setStatus("ENABLED");
         }
         entity.setUpdateTime(now);
         return super.save(entity);
@@ -124,7 +126,7 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
     }
 
     /**
-     * 保存 AdapterRegisterRequest。rawConfigContent 是 adapter 自己提供的 manifest。
+     * 保存 AdapterRegisterRequest 到 ADAPTER_INDEX。
      */
     public AdapterIndex register(Map<String, Object> payload) {
         ObjectNode manifest = manifestFromRegisterPayload(payload);
@@ -134,12 +136,15 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
             adapter = new AdapterIndex();
             adapter.setAdapterName(adapterName);
             adapter.setCreateTime(OffsetDateTime.now());
+            adapter.setStatus("ENABLED");
         } else if (hasReferencingDeviceModel(adapterName)) {
-            throw new IllegalStateException("Adapter " + adapterName + " 已有关联设备模型，不能重新注册。请先删除所有关联模型后再试。");
+            throw new IllegalStateException("Adapter " + adapterName + " 已有关联设备模型，不能更新配置。请先删除所有关联模型后再试。");
         }
         adapter.setOriginalConfig(stringValue(payload.get("rawConfigContent")));
         adapter.setParsedConfig(manifest);
-        adapter.setStatus(stringValue(payload.getOrDefault("status", "REGISTERED")));
+        if (adapter.getStatus() == null || adapter.getStatus().isBlank()) {
+            adapter.setStatus("ENABLED");
+        }
         adapter.setUpdateTime(OffsetDateTime.now());
         return save(adapter);
     }
@@ -218,46 +223,74 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
     }
 
     /**
-     * 记录 Adapter 心跳并更新状态，同时联动更新下属使用中 (IN_USE) 设备实例的在线状态。
+     * 记录 Adapter 心跳并更新时间戳，若处于 ENABLED 状态则联动更新下属使用中 (IN_USE) 设备实例为 ONLINE。
      */
     public AdapterIndex heartbeat(String adapterName, String status) {
         AdapterIndex adapter = getByName(adapterName);
         if (adapter == null) {
             adapter = new AdapterIndex();
             adapter.setAdapterName(adapterName);
+            adapter.setStatus("ENABLED");
+        } else if (adapter.getStatus() == null || adapter.getStatus().isBlank()) {
+            adapter.setStatus("ENABLED");
         }
-        String resolvedStatus = status == null || status.isBlank() ? "ONLINE" : status;
-        adapter.setStatus(resolvedStatus);
         OffsetDateTime now = OffsetDateTime.now();
         adapter.setLastHeartbeat(now);
         AdapterIndex saved = save(adapter);
-        if (deviceTwinStatesMapper != null && adapterName != null && !adapterName.isBlank()) {
-            deviceTwinStatesMapper.updateOnlineStatusByAdapter(adapterName, resolvedStatus, now);
+        if (deviceTwinStatesMapper != null && adapterName != null && !adapterName.isBlank()
+                && !"DISABLED".equalsIgnoreCase(adapter.getStatus())) {
+            deviceTwinStatesMapper.updateOnlineStatusByAdapter(adapterName, "ONLINE", now);
         }
         return saved;
     }
 
     /**
-     * 自动扫描超时未上报心跳的 Adapter（超过 30 秒），置为 OFFLINE 并联动将其下属设备实例置为 OFFLINE。
+     * 自动扫描超时未上报心跳的 Adapter（超过 30 秒），联动将其下属设备实例置为 OFFLINE。
      */
     @Scheduled(fixedDelay = 5000)
     public void scanAndExpireHeartbeats() {
         OffsetDateTime threshold = OffsetDateTime.now().minusSeconds(30);
-        List<AdapterIndex> onlineAdapters = mapper.selectList(
-                Wrappers.<AdapterIndex>lambdaQuery().eq(AdapterIndex::getStatus, "ONLINE")
+        List<AdapterIndex> expiredAdapters = mapper.selectList(
+                Wrappers.<AdapterIndex>lambdaQuery()
+                        .isNotNull(AdapterIndex::getLastHeartbeat)
+                        .lt(AdapterIndex::getLastHeartbeat, threshold)
         );
-        if (onlineAdapters == null || onlineAdapters.isEmpty()) return;
+        if (expiredAdapters == null || expiredAdapters.isEmpty()) return;
         OffsetDateTime now = OffsetDateTime.now();
-        for (AdapterIndex adapter : onlineAdapters) {
-            if (adapter.getLastHeartbeat() == null || adapter.getLastHeartbeat().isBefore(threshold)) {
-                adapter.setStatus("OFFLINE");
-                adapter.setUpdateTime(now);
-                mapper.updateById(adapter);
-                if (deviceTwinStatesMapper != null && adapter.getAdapterName() != null) {
-                    deviceTwinStatesMapper.updateOnlineStatusByAdapter(adapter.getAdapterName(), "OFFLINE", now);
-                }
+        for (AdapterIndex adapter : expiredAdapters) {
+            if (deviceTwinStatesMapper != null && adapter.getAdapterName() != null) {
+                deviceTwinStatesMapper.updateOnlineStatusByAdapter(adapter.getAdapterName(), "OFFLINE", now);
             }
         }
+    }
+
+    /**
+     * 更新 Adapter 的管理状态 (ENABLED / DISABLED)。
+     */
+    public AdapterIndex updateStatus(Long id, String status) {
+        AdapterIndex adapter = getById(id);
+        if (adapter == null) {
+            throw new IllegalArgumentException("Adapter 不存在: " + id);
+        }
+        String resolvedStatus = "DISABLED".equalsIgnoreCase(status) ? "DISABLED" : "ENABLED";
+        adapter.setStatus(resolvedStatus);
+        OffsetDateTime now = OffsetDateTime.now();
+        adapter.setUpdateTime(now);
+        save(adapter);
+        if (deviceTwinStatesMapper != null && adapter.getAdapterName() != null) {
+            if ("DISABLED".equals(resolvedStatus)) {
+                deviceTwinStatesMapper.updateOnlineStatusByAdapter(adapter.getAdapterName(), "OFFLINE", now);
+            } else if (adapter.getLastHeartbeat() != null && adapter.getLastHeartbeat().isAfter(now.minusSeconds(30))) {
+                deviceTwinStatesMapper.updateOnlineStatusByAdapter(adapter.getAdapterName(), "ONLINE", now);
+            }
+        }
+        return adapter;
+    }
+
+    public boolean isAdapterDisabled(String adapterName) {
+        if (adapterName == null || adapterName.isBlank()) return false;
+        AdapterIndex adapter = getByName(adapterName);
+        return adapter != null && "DISABLED".equalsIgnoreCase(adapter.getStatus());
     }
 
     /**

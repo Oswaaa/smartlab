@@ -367,6 +367,9 @@ public class AdapterManifestService {
             Iterator<Map.Entry<String, JsonNode>> fields = point.fields();
             while (fields.hasNext()) {
                 Map.Entry<String, JsonNode> field = fields.next();
+                if ("attributeMapping".equals(field.getKey())) {
+                    continue;
+                }
                 node.set(field.getKey(), field.getValue());
             }
         }
@@ -453,30 +456,6 @@ public class AdapterManifestService {
 
     private void validatePointAgainstTemplate(JsonNode point, JsonNode template) {
         String devicePoint = point.path("devicePoint").asText();
-        Set<String> templateAttrs = new HashSet<>();
-        for (JsonNode attr : array(template.get("attributes"))) {
-            templateAttrs.add(attr.path("name").asText());
-        }
-        JsonNode mapping = point.path("attributeMapping");
-        for (String templateAttr : templateAttrs) {
-            if (!mapping.hasNonNull(templateAttr) || mapping.path(templateAttr).asText("").isBlank()) {
-                throw new IllegalArgumentException("devicePoint " + devicePoint + " 缺少属性映射: " + templateAttr);
-            }
-        }
-        Iterator<String> mappingNames = mapping.fieldNames();
-        Set<String> rawAttributes = new HashSet<>();
-        while (mappingNames.hasNext()) {
-            String name = mappingNames.next();
-            if (!templateAttrs.contains(name)) {
-                throw new IllegalArgumentException("devicePoint " + devicePoint + " 声明了模板中不存在的属性映射: " + name);
-            }
-            String rawAttribute = mapping.path(name).asText("").trim();
-            if (!rawAttributes.add(rawAttribute)) {
-                throw new IllegalArgumentException("devicePoint " + devicePoint
-                        + " 的多个模板属性不能映射到同一原始字段: " + rawAttribute);
-            }
-        }
-
         for (JsonNode command : array(template.get("commands"))) {
             for (JsonNode param : array(command.get("parameters"))) {
                 if (!param.path("internal").asBoolean(false)) {
@@ -645,9 +624,9 @@ public class AdapterManifestService {
             }
             String mappingSectionName = "devicePoints." + pointName + ".attributeMapping";
             Map<String, String> mappingSection = sections.get(mappingSectionName);
-            ObjectNode mapping = point.putObject("attributeMapping");
             if (mappingSection != null) {
                 consumed.add(mappingSectionName);
+                ObjectNode mapping = point.putObject("attributeMapping");
                 for (Map.Entry<String, String> mappingEntry : mappingSection.entrySet()) {
                     requireIdentifier(mappingEntry.getKey(), "属性映射名");
                     if (mappingEntry.getValue().isBlank()) {

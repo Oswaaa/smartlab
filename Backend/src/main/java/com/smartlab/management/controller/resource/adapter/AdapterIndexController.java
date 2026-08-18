@@ -64,6 +64,19 @@ public class AdapterIndexController {
     }
 
     /**
+     * 更新 Adapter 的管理状态 (ENABLED / DISABLED)。
+     */
+    @PostMapping("/{id}/status")
+    public ApiResponse<AdapterIndex> updateStatus(@PathVariable Long id, @RequestBody Map<String, String> payload) {
+        try {
+            String status = payload == null ? "ENABLED" : payload.getOrDefault("status", "ENABLED");
+            return ApiResponse.ok(service.updateStatus(id, status));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    /**
      * 解析 AdapterRegisterRequest，但不写入 ADAPTER_INDEX。
      */
     @PostMapping("/parse-register")

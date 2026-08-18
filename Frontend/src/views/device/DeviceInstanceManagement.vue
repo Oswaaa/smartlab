@@ -1,18 +1,19 @@
 <template>
-  <div class="industrial-workbench instance-workbench">
-    <!-- G2: 复用 DeviceModelTree.vue 侧边栏（只读模式） -->
-    <DeviceModelTree
-      v-model:keyword="sidebarKeyword"
-      :categories="categories"
-      :models="models"
-      :selected-model-id="selectedModelId"
-      :selected-category-id="selectedCategoryId"
-      :loading="modelsLoading"
-      :readonly="true"
-      class="workbench-sidebar"
-      @select-model="selectModel"
-      @select-category="selectCategory"
-    />
+  <div class="device-instance-page">
+    <div class="instance-workbench-canvas">
+      <!-- G2: 复用 DeviceModelTree.vue 侧边栏（只读模式） -->
+      <DeviceModelTree
+        v-model:keyword="sidebarKeyword"
+        :categories="categories"
+        :models="models"
+        :selected-model-id="selectedModelId"
+        :selected-category-id="selectedCategoryId"
+        :loading="modelsLoading"
+        :readonly="true"
+        class="workbench-sidebar"
+        @select-model="selectModel"
+        @select-category="selectCategory"
+      />
 
     <main class="workbench-main">
       <!-- 顶部工具栏 -->
@@ -58,7 +59,7 @@
             row-key="instanceId"
             @row-click="viewDetails"
           >
-            <el-table-column label="设备实例名称 / ID" min-width="190">
+            <el-table-column label="设备实例名称 / ID" min-width="90">
               <template #default="{ row }">
                 <div class="instance-name-cell">
                   <span class="inst-title">{{ row.instanceName }}</span>
@@ -66,12 +67,12 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="所属物模型" min-width="160">
+            <el-table-column label="所属模型" min-width="80">
               <template #default="{ row }">
                 <span class="model-name-text">{{ getModelName(row.modelId) }}</span>
               </template>
             </el-table-column>
-            <el-table-column label="Adapter 代理 / 绑定点位" min-width="220">
+            <el-table-column label="Adapter 代理 / 绑定点位" min-width="120">
               <template #default="{ row }">
                 <div class="binding-cell">
                   <div class="binding-item">
@@ -85,17 +86,17 @@
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="MQTT 物理通信主题" min-width="320">
+            <el-table-column label="MQTT 物理通信主题" min-width="250">
               <template #default="{ row }">
                 <div class="topic-compact-cell">
                   <div v-for="topic in mqttTopicRows(row.boundAdapterName, row.boundDevicePoint)" :key="topic.type" class="topic-item">
                     <span class="topic-lbl">{{ topic.label }}:</span>
-                    <code class="topic-code">{{ topic.topic || '-' }}</code>
+                    <code class="topic-code" :title="topic.topic">{{ topic.topic || '-' }}</code>
                   </div>
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="生命周期" width="115" align="center">
+            <el-table-column label="使用状态" width="95" align="center">
               <template #default="{ row }">
                 <span v-if="row.lifecycleStatus === 'RETIRED'" class="status-indicator retired">
                   <span class="dot"></span>已注销
@@ -105,7 +106,7 @@
                 </span>
               </template>
             </el-table-column>
-            <el-table-column label="通信状态" width="100" align="center">
+            <el-table-column label="通信状态" width="90" align="center">
               <template #default="{ row }">
                 <span v-if="row.lifecycleStatus === 'RETIRED'" class="muted">-</span>
                 <span v-else-if="row.isOnline" class="status-indicator online">
@@ -116,7 +117,7 @@
                 </span>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="140" align="center" fixed="right">
+            <el-table-column label="操作" width="120" align="center" fixed="right">
               <template #default="{ row }">
                 <div class="row-actions" @click.stop>
                   <button class="btn-link" type="button" @click="viewDetails(row)">监控与配置</button>
@@ -145,11 +146,12 @@
         </div>
       </div>
     </main>
+    </div>
 
     <!-- 设备实例运行监控与详细配置全功能大抽屉 -->
     <el-drawer
       v-model="drawerVisible"
-      size="84%"
+      size="80%"
       class="instance-detail-drawer unified-workflow-drawer"
       :destroy-on-close="true"
       :with-header="false"
@@ -334,73 +336,148 @@
               </div>
             </el-tab-pane>
 
-            <!-- Tab 2: 控制调试 (双栏大厂调试背板) -->
+            <!-- Tab 2: 控制调试 (双栏大厂工业调试背板) -->
             <el-tab-pane v-if="canControlActiveInstance" label="控制调试" name="control">
-              <div class="tab-pane-content control-tab-workbench">
-                <div class="control-left-panel">
-                  <div class="sub-section-head">
-                    <span class="head-title">手动指令下发</span>
-                    <span class="head-desc">向物理适配器发送单次执行或调试命令</span>
-                  </div>
-                  <el-form label-position="top" size="small" class="manual-control-form">
-                    <el-form-item label="选择设备操作能力" required>
-                      <el-select v-model="controlCapabilityName" style="width: 100%" placeholder="选择模型定义的能力" @change="resetControlParams">
-                        <el-option
-                          v-for="capability in activeInstanceCapabilities"
-                          :key="capability.capabilityName"
-                          :label="`${capability.displayName || capability.capabilityName} · Adapter: ${capability.adapterCommandName || '-'}`"
-                          :value="capability.capabilityName"
-                        />
-                      </el-select>
-                    </el-form-item>
-                    <div class="control-param-grid" v-if="activeControlParams.length">
-                      <el-form-item v-for="param in activeControlParams" :key="paramKey(param)" :label="param.displayName || param.name || param.paramName">
-                        <el-switch v-if="isBooleanType(param.dataType)" v-model="controlParamValues[paramKey(param)]" />
-                        <el-input-number
-                          v-else-if="isNumberType(param.dataType)"
-                          v-model="controlParamValues[paramKey(param)]"
-                          :precision="isIntegerType(param.dataType) ? 0 : undefined"
-                          :controls="false"
-                          style="width: 100%"
-                        />
-                        <el-input v-else v-model="controlParamValues[paramKey(param)]" :placeholder="param.dataType || 'STRING'" />
-                        <div class="field-hint">数据类型: {{ param.dataType || '-' }}</div>
-                      </el-form-item>
+              <div class="tab-pane-content control-tab-workbench full-height-workbench">
+                <!-- 左栏：控制与状态元数据 (上下结构) -->
+                <div class="control-left-col">
+                  <!-- 1. 手动指令下发面板 -->
+                  <div class="control-card control-form-card">
+                    <div class="card-title-bar">
+                      <span class="card-title">下发指令</span>
                     </div>
-                    <div v-else class="empty-inline">该操作无需配置参数。</div>
-                  </el-form>
-                  <div class="control-action-bar">
-                    <button
-                      class="btn-primary-blue"
-                      type="button"
-                      :disabled="sendingControl || !controlCapabilityName || activeInstanceCommandState !== 'IDLE'"
-                      @click="sendManualCommand"
-                    >
-                      <el-icon v-if="sendingControl" class="is-loading"><Loading /></el-icon>
-                      <el-icon v-else><VideoPlay /></el-icon>
-                      <span>{{ commandButtonText }}</span>
-                    </button>
-                    <button
-                      v-if="activeInstanceCommandState !== 'IDLE'"
-                      class="btn-danger-outline"
-                      type="button"
-                      :disabled="abortingControl || !canAbortActiveCapability"
-                      :title="!canAbortActiveCapability ? '该能力未在物模型中定义中止命令，无法下发硬件停机。如需解除上位机锁请使用右上角【人工复位】' : '向物理设备发送真实停机指令 (MANUAL_EXECUTE_ABORT)'"
-                      @click="handleAbortCommand"
-                    >
-                      <el-icon v-if="abortingControl" class="is-loading"><Loading /></el-icon>
-                      <el-icon v-else><VideoPause /></el-icon>
-                      <span>{{ abortingControl ? '中止中...' : (canAbortActiveCapability ? '终止当前执行' : '未配置终止能力') }}</span>
-                    </button>
+                    <el-form label-position="top" size="small" class="manual-control-form">
+                      <el-form-item label="设备操作能力" required class="tree-select-form-item">
+                        <!-- 树状折叠单下拉触发器 -->
+                        <div
+                          class="custom-tree-select-trigger"
+                          :class="{ open: treeDropdownOpen }"
+                          @click="treeDropdownOpen = !treeDropdownOpen"
+                        >
+                          <div class="trigger-selected-content" v-if="activeControlCapability">
+                            <span class="trigger-entity-tag">{{ activeControlGroup?.shortName }}</span>
+                            <span class="trigger-sep">·</span>
+                            <span class="trigger-cap-title">{{ activeControlCapability.displayName || activeControlCapability.capabilityName }}</span>
+                          </div>
+                          <span v-else class="trigger-placeholder">请选择设备操作能力</span>
+                          <span class="custom-select-caret"></span>
+                        </div>
+
+                        <!-- 遮罩与折叠下拉面板 -->
+                        <div v-if="treeDropdownOpen" class="tree-select-backdrop" @click="treeDropdownOpen = false"></div>
+                        <div v-if="treeDropdownOpen" class="tree-select-dropdown-panel">
+                          <div
+                            v-for="group in aggregatedControlGroups"
+                            :key="group.key"
+                            class="tree-group-section"
+                            :class="{ collapsed: !!collapsedEntityGroups[group.key] }"
+                          >
+                            <!-- 分组标题栏 (左侧折叠三角 + 名称，右侧显示模型名) -->
+                            <div class="tree-group-header" @click.stop="toggleGroupCollapse(group.key)">
+                              <div class="group-header-left">
+                                <span class="group-fold-caret" :class="{ 'is-collapsed': !!collapsedEntityGroups[group.key] }"></span>
+                                <span class="group-title-text">{{ group.name }}</span>
+                              </div>
+                              <span class="group-model-badge">{{ group.modelName }}</span>
+                            </div>
+
+                            <!-- 子能力列表 (展开时展示，仅展示操作名称) -->
+                            <div v-show="!collapsedEntityGroups[group.key]" class="tree-group-items">
+                              <div
+                                v-for="cap in group.capabilities"
+                                :key="cap.capabilityName"
+                                class="tree-cap-row"
+                                :class="{ active: selectedControlEntityKey === group.key && controlCapabilityName === cap.capabilityName }"
+                                @click.stop="selectControlCapability(group.key, cap.capabilityName)"
+                              >
+                                <div class="cap-row-left">
+                                  <span class="cap-bullet"></span>
+                                  <span class="cap-display-name">{{ cap.displayName || cap.capabilityName }}</span>
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </el-form-item>
+
+                      <div class="control-param-grid" v-if="activeControlParams.length">
+                        <el-form-item v-for="param in activeControlParams" :key="paramKey(param)" :label="param.displayName || param.name || param.paramName">
+                          <el-switch v-if="isBooleanType(param.dataType)" v-model="controlParamValues[paramKey(param)]" />
+                          <el-input-number
+                            v-else-if="isNumberType(param.dataType)"
+                            v-model="controlParamValues[paramKey(param)]"
+                            :precision="isIntegerType(param.dataType) ? 0 : undefined"
+                            :controls="false"
+                            style="width: 100%"
+                          />
+                          <el-input v-else v-model="controlParamValues[paramKey(param)]" :placeholder="param.dataType || 'STRING'" />
+                          <div class="field-hint">数据类型: {{ param.dataType || '-' }}</div>
+                        </el-form-item>
+                      </div>
+                      <div v-else class="empty-inline">当前所选操作无需配置外部参数。</div>
+                    </el-form>
+                    <div class="control-action-bar">
+                      <button
+                        class="btn-primary-blue"
+                        type="button"
+                        :disabled="sendingControl || !controlCapabilityName || activeInstanceCommandState !== 'IDLE'"
+                        @click="sendManualCommand"
+                      >
+                        <span>{{ commandButtonText }}</span>
+                      </button>
+                      <button
+                        v-if="activeInstanceCommandState !== 'IDLE'"
+                        class="btn-danger-outline"
+                        type="button"
+                        :disabled="abortingControl || !canAbortActiveCapability"
+                        :title="!canAbortActiveCapability ? '该能力未在物模型中定义中止命令' : '向物理设备发送停机指令 (MANUAL_EXECUTE_ABORT)'"
+                        @click="handleAbortCommand"
+                      >
+                        <span>{{ abortingControl ? '中止中...' : (canAbortActiveCapability ? '终止执行' : '未配置终止能力') }}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- 2. 指令生命周期与通信元数据卡片 -->
+                  <div class="control-card control-meta-card">
+                    <div class="card-title-bar">
+                      <span class="card-title">指令执行生命周期</span>
+                      <span class="m-val status-val" :class="cmdStateClass(activeInstanceCommandState)">
+                        <span class="dot"></span>{{ activeInstanceCommandState }}
+                      </span>
+                    </div>
+                    <div class="meta-card-body">
+                      <!-- 详细通道与状态描述 -->
+                      <el-descriptions :column="1" border size="small" class="meta-descriptions">
+                        <el-descriptions-item label="目标实体">
+                          <strong class="text-heading">{{ activeControlGroup?.name || '-' }}</strong>
+                        </el-descriptions-item>
+                        <el-descriptions-item label="当前动作">
+                          <strong class="text-heading">{{ activeControlCapability?.displayName || activeControlCapability?.capabilityName || '未选择操作' }}</strong>
+                          <span v-if="activeControlCapability?.adapterCommandName" class="mono-text text-primary" style="margin-left: 6px;">(Adapter: {{ activeControlCapability.adapterCommandName }})</span>
+                        </el-descriptions-item>
+                        <el-descriptions-item label="生命周期状态">
+                          <span class="text-heading">{{ cmdStateDescription(activeInstanceCommandState) }}</span>
+                        </el-descriptions-item>
+                        <el-descriptions-item label="下发点位">
+                          <strong class="mono-text text-primary">{{ activeControlGroup?.boundDevicePoint || '-' }}</strong>
+                          <span class="text-secondary" style="margin-left: 6px;">(所属 Adapter: {{ activeControlGroup?.boundAdapterName || '-' }})</span>
+                        </el-descriptions-item>
+                        <el-descriptions-item label="指令主题">
+                          <code class="mono-text topic-inline-code">smartlab/adapter/{{ activeControlGroup?.boundAdapterName || '-' }}/{{ activeControlGroup?.boundDevicePoint || '-' }}/command</code>
+                        </el-descriptions-item>
+                      </el-descriptions>
+                    </div>
                   </div>
                 </div>
 
-                <!-- 黑色控制台调试日志反馈 -->
-                <div class="control-right-panel">
+                <!-- 右栏：全高工业通信与调试终端 -->
+                <div class="control-right-panel full-height-console">
                   <div class="console-header">
                     <div class="console-title">
                       <span class="console-dot"></span>
                       <span>下发反馈与通信终端</span>
+                      <span class="log-count-tag" v-if="consoleLogs.length">({{ consoleLogs.length }})</span>
                     </div>
                     <div class="console-actions">
                       <button
@@ -414,6 +491,10 @@
                         <el-icon><Warning /></el-icon>
                         <span>人工复位</span>
                       </button>
+                      <button class="btn-link console-copy-btn" type="button" @click="copyConsoleLogs" v-if="consoleLogs.length">
+                        <el-icon><CopyDocument /></el-icon>
+                        <span>复制</span>
+                      </button>
                       <button class="btn-link console-clear-btn" type="button" @click="clearConsoleLogs">清空记录</button>
                     </div>
                   </div>
@@ -424,7 +505,9 @@
                       <span class="console-text">{{ log.text }}</span>
                     </div>
                     <div v-if="consoleLogs.length === 0" class="console-empty">
-                      暂无指令下发记录。请在左侧选择操作、配置参数并点击下发...
+                      <div class="empty-icon"><el-icon :size="24"><Connection /></el-icon></div>
+                      <div class="empty-title">暂无指令下发与通信记录</div>
+                      <div class="empty-hint">在左侧选择操作能力配置参数并点击【开始执行】，将在此处实时捕获下发报文及设备响应</div>
                     </div>
                   </div>
                 </div>
@@ -854,7 +937,7 @@
       v-model="createDrawerVisible"
       title="添加设备实例"
       direction="rtl"
-      size="78%"
+      size="80%"
       destroy-on-close
       class="instance-create-drawer unified-workflow-drawer"
     >
@@ -1257,6 +1340,7 @@ const operationStateSummary = computed(() => operationStateRegions.value
 
 const cmdStateClass = (state?: string) => {
   const s = String(state || '').toUpperCase()
+  if (s.includes('ABORTING') || s.includes('SENT') || s.includes('RECEIV')) return 'running'
   if (s.includes('RUN') || s.includes('EXEC') || s.includes('DO')) return 'running'
   if (s.includes('COMPLET') || s.includes('FINISH') || s.includes('SUCCESS')) return 'completed'
   if (s.includes('FAIL') || s.includes('ERR') || s.includes('ABORT')) return 'error'
@@ -1265,11 +1349,15 @@ const cmdStateClass = (state?: string) => {
 
 const cmdStateDescription = (state?: string) => {
   const s = String(state || '').toUpperCase()
-  if (!s || s === 'IDLE' || s === 'CMD_IDLE') return '设备处于空闲待命状态，准备接收下行控制指令。'
-  if (s.includes('RUN') || s.includes('EXEC')) return '设备当前正在执行指令动作，实时推进任务周期。'
-  if (s.includes('COMPLET') || s.includes('SUCCESS')) return '上一指令周期已成功执行完毕，已退出动作。'
-  if (s.includes('FAIL') || s.includes('ERR')) return '指令执行过程中发生异常中断或被安全机制拒执。'
-  return `当前指令执行周期状态: ${state}`
+  if (!s || s === 'IDLE' || s === 'CMD_IDLE') return '空闲待命中'
+  if (s === 'SENT' || s === 'CMD_SENT') return '指令已下发，等待驱动确认'
+  if (s === 'RECEIVED' || s === 'CMD_RECEIVED') return '驱动已接收'
+  if (s.includes('ABORTING')) return '正在终止中'
+  if (s.includes('RUN') || s.includes('EXEC')) return '动作执行中'
+  if (s.includes('COMPLET') || s.includes('SUCCESS')) return '执行成功完成'
+  if (s.includes('ABORT')) return '执行已被终止'
+  if (s.includes('FAIL') || s.includes('ERR')) return '执行失败异常'
+  return `${state}`
 }
 
 const activeInstanceCommandState = computed(() => {
@@ -1295,21 +1383,102 @@ const activeInstanceIsOnline = computed(() => {
   return state?.onlineStatus === 'ONLINE' || activeInstance.value.online === true
 })
 
-const activeInstanceCapabilities = computed(() => {
-  const capabilities = asArray(activeInstanceModel.value?.capabilitySpec?.capabilities || activeInstanceModel.value?.capabilities)
-  return normalizeManualControlCapabilities(capabilities)
+const selectedControlEntityKey = ref<string>('main')
+const treeDropdownOpen = ref<boolean>(false)
+const collapsedEntityGroups = ref<Record<string, boolean>>({})
+
+const toggleGroupCollapse = (key: string) => {
+  collapsedEntityGroups.value[key] = !collapsedEntityGroups.value[key]
+}
+
+// 聚合主设备及所有已挂载拓扑组件的操作能力
+const aggregatedControlGroups = computed(() => {
+  if (!activeInstance.value) return []
+  const groups: Array<{
+    key: string
+    name: string
+    shortName: string
+    modelName: string
+    isComponent: boolean
+    targetInstanceId: string
+    boundAdapterName: string
+    boundDevicePoint: string
+    capabilities: any[]
+  }> = []
+
+  // 1. 主设备能力
+  const mainCaps = normalizeManualControlCapabilities(
+    asArray(activeInstanceModel.value?.capabilitySpec?.capabilities || activeInstanceModel.value?.capabilities)
+  )
+  groups.push({
+    key: 'main',
+    name: `主设备 (${activeInstance.value.instanceName || activeInstance.value.instanceId})`,
+    shortName: '主设备',
+    modelName: activeInstanceModel.value?.modelName || activeInstance.value.modelId || '-',
+    isComponent: false,
+    targetInstanceId: activeInstance.value.instanceId,
+    boundAdapterName: activeInstance.value.boundAdapterName || '',
+    boundDevicePoint: activeInstance.value.boundDevicePoint || '',
+    capabilities: mainCaps
+  })
+
+  // 2. 挂载在用的拓扑组件能力
+  const comps = asArray(instanceComponents.value).filter(
+    (c: any) => c.selfInstanceId && c.status !== '已更换'
+  )
+
+  for (const comp of comps) {
+    const childInstance = deviceList.value.find((d: any) => String(d.instanceId) === String(comp.selfInstanceId))
+    if (!childInstance) continue
+    const childModel = findModelById(childInstance.modelId)
+    const childCaps = normalizeManualControlCapabilities(
+      asArray(childModel?.capabilitySpec?.capabilities || childModel?.capabilities)
+    )
+    if (childCaps.length > 0) {
+      groups.push({
+        key: `comp_${comp.selfInstanceId}`,
+        name: `${comp.componentName || '组件'} (${comp.slotCode ? '槽位: ' + comp.slotCode + ' · ' : ''}${childInstance.instanceName || childInstance.instanceId})`,
+        shortName: `${comp.componentName || '组件'}`,
+        modelName: childModel?.modelName || childInstance.modelId || '-',
+        isComponent: true,
+        targetInstanceId: childInstance.instanceId,
+        boundAdapterName: childInstance.boundAdapterName || '',
+        boundDevicePoint: childInstance.boundDevicePoint || '',
+        capabilities: childCaps
+      })
+    }
+  }
+
+  return groups
 })
 
-const activeControlCapability = computed(() => activeInstanceCapabilities.value.find((capability: any) => capability.capabilityName === controlCapabilityName.value) || null)
+const activeControlGroup = computed(() => {
+  return aggregatedControlGroups.value.find(g => g.key === selectedControlEntityKey.value) || aggregatedControlGroups.value[0] || null
+})
+
+const activeControlCapability = computed(() => {
+  if (!activeControlGroup.value) return null
+  return activeControlGroup.value.capabilities.find((capability: any) => capability.capabilityName === controlCapabilityName.value) || null
+})
+
 const activeControlParams = computed(() => asArray(activeControlCapability.value?.parameters).filter((param: any) => !param.internal))
+
 const canAbortActiveCapability = computed(() => {
-  if (!activeInstance.value || !activeControlCapability.value) return false
+  if (!activeControlGroup.value || !activeControlCapability.value) return false
   const cap = activeControlCapability.value
   if (cap.abortCapabilityName) return true
-  const allCaps = activeInstanceCapabilities.value
+  const allCaps = activeControlGroup.value.capabilities
   return allCaps.some((c: any) => c.isAbort && asArray(c.scope).includes(cap.capabilityName))
 })
-const activeMqttTopicRows = computed(() => mqttTopicRows(activeInstance.value?.boundAdapterName, activeInstance.value?.boundDevicePoint))
+
+const selectControlCapability = (groupKey: string, capName: string) => {
+  selectedControlEntityKey.value = groupKey
+  controlCapabilityName.value = capName
+  resetControlParams()
+  treeDropdownOpen.value = false
+}
+
+const activeMqttTopicRows = computed(() => mqttTopicRows(activeControlGroup.value?.boundAdapterName || activeInstance.value?.boundAdapterName, activeControlGroup.value?.boundDevicePoint || activeInstance.value?.boundDevicePoint))
 
 // 遥测属性指标卡（展示全部物模型属性，严格对齐 Schema 标准字段 attributeName）
 const kpiAttributes = computed(() => {
@@ -1636,8 +1805,8 @@ const viewDetails = (instance: DeviceInstance) => {
     }
   }
 
-  activeInstance.value.boundAdapterName ||= activeInstance.value.instanceConfig.boundAdapterName || ''
-  activeInstance.value.boundDevicePoint ||= activeInstance.value.instanceConfig.boundDevicePoint || ''
+  activeInstance.value.boundAdapterName ||= ''
+  activeInstance.value.boundDevicePoint ||= ''
   
   // 加载实例安全约束
   const cfg = activeInstance.value.instanceConfig || {}
@@ -1661,8 +1830,8 @@ const viewDetails = (instance: DeviceInstance) => {
   } else {
     drawerDevicePointOptions.value = []
   }
-  datasetCreateForm.value = { templateId: '', dataDesc: '' }
-  controlCapabilityName.value = activeInstanceCapabilities.value[0]?.capabilityName || ''
+  selectedControlEntityKey.value = 'main'
+  controlCapabilityName.value = aggregatedControlGroups.value[0]?.capabilities[0]?.capabilityName || ''
   resetControlParams()
   isEditingConstraints.value = false
   
@@ -2301,8 +2470,8 @@ function normalizeModel(raw: any): DeviceModel {
 
 function normalizeInstance(raw: any): DeviceInstance {
   const instanceConfig = raw.instanceConfig || {}
-  const boundAdapterName = raw.boundAdapterName || instanceConfig.boundAdapterName || ''
-  const boundDevicePoint = raw.boundDevicePoint || instanceConfig.boundDevicePoint || ''
+  const boundAdapterName = raw.boundAdapterName || ''
+  const boundDevicePoint = raw.boundDevicePoint || ''
   return {
     ...raw,
     instanceId: String(raw.instanceId || raw.id || ''),
@@ -2536,14 +2705,28 @@ const clearConsoleLogs = () => {
   }
 }
 
+const copyConsoleLogs = async () => {
+  if (!consoleLogs.value.length) return
+  const text = consoleLogs.value.map((l: any) => `[${l.time}] [${l.tag}] ${l.text}`).join('\n')
+  try {
+    await navigator.clipboard.writeText(text)
+    ElMessage.success('通信日志已复制到剪贴板')
+  } catch (e) {
+    ElMessage.error('复制失败')
+  }
+}
+
 const resettingControl = ref(false)
 const abortingControl = ref(false)
 
 const handleAbortCommand = async () => {
   if (!activeInstance.value) return
+  const targetInstanceId = activeControlGroup.value?.targetInstanceId || activeInstance.value.instanceId
+  const targetName = activeControlGroup.value?.shortName || '设备'
+
   try {
     await ElMessageBox.confirm(
-      '确定要向物理设备下发终止信号 (MANUAL_EXECUTE_ABORT) 吗？物理设备将执行安全停机并退出当前指令周期。',
+      `确定要向【${targetName}】下发终止信号 (MANUAL_EXECUTE_ABORT) 吗？物理设备将执行安全停机并退出当前指令周期。`,
       '终止执行确认',
       { confirmButtonText: '确定终止', cancelButtonText: '取消', type: 'warning' }
     )
@@ -2552,9 +2735,9 @@ const handleAbortCommand = async () => {
   }
 
   abortingControl.value = true
-  appendConsoleLog('中止', 'fail', '已向物理设备发送终止信号 (MANUAL_EXECUTE_ABORT)，等待安全停机...')
+  appendConsoleLog('中止', 'fail', `已向【${targetName}】发送终止信号 (MANUAL_EXECUTE_ABORT)，等待安全停机...`)
   try {
-    const res = await axios.post(`/api/device/instance/control/${activeInstance.value.instanceId}`, {
+    const res = await axios.post(`/api/device/instance/control/${targetInstanceId}`, {
       signalName: 'MANUAL_EXECUTE_ABORT'
     })
     if (res.data?.success) {
@@ -2592,7 +2775,8 @@ const handleForceResetCommand = async () => {
 
   resettingControl.value = true
   try {
-    const res = await axios.post(`/api/device/instance/control/${activeInstance.value.instanceId}`, {
+    const targetInstanceId = activeControlGroup.value?.targetInstanceId || activeInstance.value.instanceId
+    const res = await axios.post(`/api/device/instance/control/${targetInstanceId}`, {
       signalName: 'MANUAL_EXECUTE_RESET'
     })
     if (res.data?.success) {
@@ -2611,18 +2795,18 @@ const handleForceResetCommand = async () => {
 
 const sendManualCommand = async () => {
   if (!activeInstance.value || activeInstanceRetired.value || !controlCapabilityName.value) return
-  if (!activeInstanceIsOnline.value) {
-    ElMessage.warning('物理 Adapter 处于离线状态 (OFFLINE)，无法下发指令')
-    appendConsoleLog('系统', 'fail', '物理 Adapter 当前离线，已阻断指令下发')
-    return
-  }
   sendingControl.value = true
   
-  const capability = activeControlCapability.value
+  const targetInstanceId = activeControlGroup.value?.targetInstanceId || activeInstance.value.instanceId
+  const targetName = activeControlGroup.value?.shortName || '设备'
+  const targetPoint = activeControlGroup.value?.boundDevicePoint || '-'
+  const capDisplayName = activeControlCapability.value?.displayName || activeControlCapability.value?.capabilityName || controlCapabilityName.value
   const params = buildControlParameters()
 
+  appendConsoleLog('下发', 'send', `向【${targetName}】下发指令: ${capDisplayName} (点位: ${targetPoint})`)
+
   try {
-    const res = await axios.post(`/api/device/instance/control/${activeInstance.value.instanceId}`, {
+    const res = await axios.post(`/api/device/instance/control/${targetInstanceId}`, {
       capabilityName: controlCapabilityName.value,
       signalName: manualControlSignals[0] || 'MANUAL_EXECUTE_START',
       parameters: params
@@ -2655,19 +2839,31 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* ── 一体化无界工作台基准 ── */
-.instance-workbench {
-  display: flex;
+/* ── 一体化无界工作台基准 (与设备模型、数据中心 100% 对齐) ── */
+.device-instance-page {
   height: calc(100vh - 50px);
+  padding: 10px 14px 14px;
+  background-color: var(--sl-bg-page);
+  box-sizing: border-box;
   overflow: hidden;
-  background: var(--sl-bg-page);
+  display: flex;
+}
+
+.instance-workbench-canvas {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 270px minmax(0, 1fr);
+  background: #ffffff;
+  border: 1px solid var(--sl-border-base);
+  border-radius: var(--sl-radius-lg);
+  box-shadow: var(--sl-shadow-container);
+  overflow: hidden;
+  min-height: 0;
 }
 
 .workbench-sidebar {
-  width: 270px;
-  flex-shrink: 0;
   border-right: 1px solid var(--sl-border-base);
-  background: #ffffff;
+  height: 100%;
 }
 
 .workbench-main {
@@ -2677,6 +2873,7 @@ onUnmounted(() => {
   flex-direction: column;
   background: #ffffff;
   overflow: hidden;
+  height: 100%;
 }
 
 /* ── 顶部工具栏 ── */
@@ -2740,10 +2937,10 @@ onUnmounted(() => {
 .binding-k { color: var(--sl-text-secondary); font-weight: 600; min-width: 52px; }
 .binding-v { color: var(--sl-text-body); }
 
-.topic-compact-cell { display: flex; flex-direction: column; gap: 2px; }
-.topic-item { display: flex; align-items: center; gap: 6px; font-size: 11px; }
+.topic-compact-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.topic-item { display: flex; align-items: center; gap: 6px; font-size: 11px; min-width: 0; }
 .topic-lbl { color: var(--sl-text-secondary); font-weight: 600; min-width: 36px; flex-shrink: 0; }
-.topic-code { color: var(--sl-text-heading); font-family: var(--sl-font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topic-code { color: var(--sl-text-heading); font-family: var(--sl-font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
 /* ── 状态指示灯 ── */
 .status-indicator {
@@ -2929,6 +3126,11 @@ onUnmounted(() => {
   min-height: 0;
   overflow-y: auto;
   padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+}
+.instance-tabs :deep(.el-tab-pane) {
+  height: 100%;
 }
 
 .tab-pane-content {
@@ -3226,98 +3428,394 @@ onUnmounted(() => {
 .sub-section-head .head-desc { font-size: 11px; color: var(--sl-text-secondary); }
 .snapshot-val-highlight { font-weight: 600; color: var(--sl-primary); }
 
-/* ── 控制调试 Tab ── */
+/* ── 控制调试 Tab (全高自适应工业调试背板) ── */
 .control-tab-workbench {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
-}
-.control-left-panel {
-  background: #ffffff;
-  border: 1px solid var(--sl-border-base);
-  border-radius: var(--sl-radius-sm);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.manual-control-form {
-  padding: 12px;
+  gap: 14px;
   flex: 1;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+.control-left-col {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
+  min-height: 0;
+  height: 100%;
 }
-.control-param-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 8px 10px;
-}
-.control-action-bar {
-  padding: 10px 12px;
-  background: #f8fafc;
-  border-top: 1px solid var(--sl-border-base);
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  justify-content: flex-start;
-}
-
-.btn-danger-outline {
-  height: 32px;
-  padding: 0 14px;
-  border-radius: var(--sl-radius-sm);
-  font-size: 13px;
-  font-weight: 500;
-  cursor: pointer;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  background: #fff;
-  border: 1px solid #f87171;
-  color: #dc2626;
-  transition: all var(--sl-transition-base);
-}
-.btn-danger-outline:hover {
-  background: #fef2f2;
-  border-color: #ef4444;
-}
-.btn-danger-outline:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.control-right-panel {
-  background: #0f172a;
-  border: 1px solid #334155;
-  border-radius: var(--sl-radius-sm);
+.control-card {
+  background: #ffffff;
+  border: 1px solid var(--sl-border-base, #e2e8f0);
+  border-radius: var(--sl-radius-sm, 6px);
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
-.console-header {
-  background: #1e293b;
-  border-bottom: 1px solid #334155;
-  padding: 7px 12px;
+.control-form-card {
+  flex-shrink: 0;
+}
+.control-meta-card {
+  flex: 1;
+  min-height: 0;
+}
+
+.card-title-bar {
+  padding: 8px 14px;
+  background: #f8fafc;
+  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
+  flex-shrink: 0;
 }
-.console-title { display: flex; align-items: center; gap: 6px; color: #f8fafc; font-size: 12px; font-weight: 700; }
-.console-dot { width: 6px; height: 6px; border-radius: 50%; background: #38bdf8; }
-.console-actions { display: flex; align-items: center; gap: 12px; }
-.console-reset-btn { color: #f59e0b; font-size: 11px; display: inline-flex; align-items: center; gap: 4px; }
+.card-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sl-text-heading, #0f172a);
+}
+.card-sub {
+  font-size: 11px;
+  color: var(--sl-text-secondary, #64748b);
+}
+
+.manual-control-form {
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.manual-control-form :deep(.el-form-item) {
+  margin-bottom: 0 !important;
+}
+.manual-control-form :deep(.el-form-item__label) {
+  padding-bottom: 3px !important;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sl-text-heading, #0f172a);
+  line-height: 1.2;
+}
+
+/* 树状折叠单下拉选择器样式 */
+.tree-select-form-item {
+  position: relative;
+}
+.custom-tree-select-trigger {
+  width: 100%;
+  height: 32px;
+  min-height: 32px;
+  border: 1px solid var(--sl-border-input, #cbd5e1);
+  border-radius: var(--sl-radius-sm, 4px);
+  padding: 0 10px;
+  font-size: 12.5px;
+  background: #ffffff;
+  color: var(--sl-text-heading, #0f172a);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+.custom-tree-select-trigger:hover,
+.custom-tree-select-trigger.open {
+  border-color: var(--sl-primary, #2563eb);
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.1);
+}
+.trigger-selected-content {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 0;
+  line-height: 1.3;
+}
+.trigger-entity-tag {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--sl-text-heading, #0f172a);
+}
+.trigger-sep {
+  font-size: 10.5px;
+  color: var(--sl-text-secondary, #94a3b8);
+}
+.trigger-cap-title {
+  font-weight: 600;
+  color: var(--sl-primary, #2563eb);
+}
+.trigger-adapter-badge {
+  font-family: var(--sl-font-mono, monospace);
+  font-size: 10.5px;
+  color: var(--sl-text-secondary, #64748b);
+  background: #f1f5f9;
+  padding: 1px 5px;
+  border-radius: 3px;
+}
+.trigger-placeholder {
+  color: var(--sl-text-placeholder, #94a3b8);
+  font-size: 12px;
+}
+.custom-select-caret {
+  width: 0;
+  height: 0;
+  border-left: 4.5px solid transparent;
+  border-right: 4.5px solid transparent;
+  border-top: 5px solid var(--sl-text-secondary, #94a3b8);
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+}
+.custom-tree-select-trigger.open .custom-select-caret {
+  transform: rotate(180deg);
+}
+
+/* 遮罩与弹层 */
+.tree-select-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 199;
+}
+.tree-select-dropdown-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border: 1px solid var(--sl-border-base, #e2e8f0);
+  border-radius: var(--sl-radius-sm, 6px);
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
+  z-index: 200;
+  max-height: 260px;
+  overflow-y: auto;
+  padding: 4px;
+}
+.tree-group-section {
+  border-radius: 4px;
+  margin-bottom: 2px;
+  overflow: hidden;
+}
+.tree-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  background: #f8fafc;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sl-text-heading, #0f172a);
+  cursor: pointer;
+  border-radius: 4px;
+  user-select: none;
+  transition: background 0.15s ease;
+}
+.tree-group-header:hover {
+  background: #eff6ff;
+}
+.group-header-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.group-fold-caret {
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid var(--sl-text-secondary, #64748b);
+  transition: transform 0.18s ease;
+  flex-shrink: 0;
+}
+.group-fold-caret.is-collapsed {
+  transform: rotate(-90deg);
+}
+.group-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.group-model-badge {
+  font-size: 10.5px;
+  font-weight: 500;
+  font-family: var(--sl-font-mono, monospace);
+  color: var(--sl-text-secondary, #64748b);
+  background: #f1f5f9;
+  border: 1px solid var(--sl-border-base, #e2e8f0);
+  padding: 1px 7px;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+/* 子操作项 */
+.tree-group-items {
+  padding: 2px 0 2px 10px;
+}
+.tree-cap-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--sl-text-body, #334155);
+  border-radius: 4px;
+  cursor: pointer;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+.tree-cap-row:hover {
+  background: #eff6ff;
+  color: var(--sl-primary, #2563eb);
+}
+.tree-cap-row.active {
+  background: #dbeafe;
+  color: var(--sl-primary, #2563eb);
+  font-weight: 600;
+}
+.cap-row-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cap-bullet {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--sl-border-input, #94a3b8);
+}
+.tree-cap-row.active .cap-bullet {
+  background: var(--sl-primary, #2563eb);
+}
+.cap-adapter-mono {
+  font-family: var(--sl-font-mono, monospace);
+  font-size: 10.5px;
+  color: var(--sl-text-secondary, #64748b);
+}
+.tree-cap-row.active .cap-adapter-mono {
+  color: var(--sl-primary, #2563eb);
+}
+
+.control-param-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px 12px;
+}
+.control-param-grid .field-hint {
+  font-size: 10.5px;
+  color: var(--sl-text-secondary, #64748b);
+  margin-top: 1px;
+  line-height: 1.2;
+}
+
+.control-action-bar {
+  padding: 8px 12px;
+  background: #f8fafc;
+  border-top: 1px solid var(--sl-border-base, #e2e8f0);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-start;
+}
+
+/* 指令生命周期步骤与元信息 */
+.meta-card-body {
+  flex: 1;
+  padding: 8px 12px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.meta-descriptions {
+  flex: 1;
+}
+.meta-descriptions :deep(.el-descriptions__cell) {
+  padding: 5px 8px !important;
+}
+.topic-inline-code {
+  font-size: 10.5px;
+  color: var(--sl-primary, #2563eb);
+  background: var(--sl-primary-light, #eff6ff);
+  padding: 1px 5px;
+  border-radius: 3px;
+  word-break: break-all;
+}
+
+/* 全高工业控制终端 */
+.control-right-panel {
+  background: #0b1120;
+  border: 1px solid #1e293b;
+  border-radius: var(--sl-radius-sm, 6px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  height: 100%;
+}
+.console-header {
+  background: #111827;
+  border-bottom: 1px solid #1e293b;
+  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+.console-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: #f3f4f6;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.console-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #38bdf8;
+  box-shadow: 0 0 6px rgba(56, 189, 248, 0.6);
+}
+.log-count-tag {
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: normal;
+}
+.console-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.console-reset-btn {
+  color: #f59e0b;
+  font-size: 11.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
 .console-reset-btn:hover { color: #fbbf24; }
-.console-clear-btn { color: #94a3b8; font-size: 11px; }
+.console-copy-btn {
+  color: #38bdf8;
+  font-size: 11.5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.console-copy-btn:hover { color: #7dd3fc; }
+.console-clear-btn { color: #94a3b8; font-size: 11.5px; }
 .console-clear-btn:hover { color: #f8fafc; }
+
 .console-body {
   flex: 1;
-  padding: 10px 12px;
-  font-family: var(--sl-font-mono);
-  font-size: 11px;
-  color: #cbd5e1;
-  line-height: 1.6;
+  padding: 12px 14px;
+  font-family: var(--sl-font-mono, monospace);
+  font-size: 11.5px;
+  color: #e2e8f0;
+  line-height: 1.65;
   overflow-y: auto;
-  max-height: 380px;
+  min-height: 0;
 }
 .console-line { margin-bottom: 4px; word-break: break-all; }
 .console-line.send { color: #38bdf8; }
@@ -3326,9 +3824,33 @@ onUnmounted(() => {
 .console-line.fail { color: #f87171; }
 .console-line.abort { color: #fb923c; }
 .console-line.info { color: #94a3b8; }
-.console-time { color: #64748b; margin-right: 4px; }
-.console-tag { font-weight: 700; margin-right: 4px; }
-.console-empty { color: #475569; text-align: center; padding-top: 100px; font-style: italic; }
+.console-time { color: #64748b; margin-right: 6px; }
+.console-tag { font-weight: 700; margin-right: 6px; }
+.console-empty {
+  color: #475569;
+  text-align: center;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 40px 20px;
+}
+.console-empty .empty-icon {
+  color: #334155;
+}
+.console-empty .empty-title {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 500;
+}
+.console-empty .empty-hint {
+  color: #475569;
+  font-size: 11.5px;
+  max-width: 320px;
+  line-height: 1.5;
+}
 
 /* ── 归档数据与安全约束 ── */
 .dataset-create-toolbar {

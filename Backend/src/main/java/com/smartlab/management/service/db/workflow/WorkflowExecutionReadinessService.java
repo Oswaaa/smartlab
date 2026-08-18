@@ -19,7 +19,6 @@ import java.util.Set;
 /** 执行任务前检查其绑定设备和 Adapter 是否真实具备下发条件。 */
 @Service
 public class WorkflowExecutionReadinessService {
-    private static final Set<String> ONLINE_ADAPTER_STATES = Set.of("ALIVE", "ONLINE");
 
     private final WorkflowTaskResourceService resourceService;
     private final DeviceTwinStateService twinStateService;
@@ -92,9 +91,8 @@ public class WorkflowExecutionReadinessService {
             throw new IllegalStateException("设备实例“" + displayName(instance) + "”绑定的Adapter未注册: " + adapterName);
         }
         String status = adapter.getStatus() == null ? "" : adapter.getStatus().trim().toUpperCase(Locale.ROOT);
-        if (!ONLINE_ADAPTER_STATES.contains(status)) {
-            throw new IllegalStateException("Adapter“" + adapterName + "”当前状态为"
-                    + (status.isBlank() ? "UNKNOWN" : status) + "，不能启动任务");
+        if ("DISABLED".equals(status)) {
+            throw new IllegalStateException("Adapter“" + adapterName + "”已被停用，不能启动任务");
         }
         Instant heartbeatDeadline = Instant.now().minusSeconds(adapterHeartbeatTimeoutSeconds);
         if (adapter.getLastHeartbeat() == null || adapter.getLastHeartbeat().toInstant().isBefore(heartbeatDeadline)) {

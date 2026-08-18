@@ -5,7 +5,7 @@
           <el-anchor class="detail-anchor-menu" @click="(e) => e.preventDefault()" container=".edit-scroll-content .el-scrollbar__wrap" :offset="20">
             <el-anchor-link href="#edit-basic" title="01 基础信息" />
             <el-anchor-link href="#edit-ability" title="02 属性功能" />
-            <el-anchor-link href="#edit-adapter" title="03 适配器契约" />
+            <el-anchor-link href="#edit-adapter" title="03 Adapter 契约" />
             <el-anchor-link href="#edit-mapping" title="04 映射关系" />
             <el-anchor-link href="#edit-state" title="05 状态机" />
             <el-anchor-link href="#edit-constraint" title="06 内置约束" />
@@ -164,7 +164,7 @@
                     <span class="grid-th col-center">操作</span>
                   </div>
                   <div v-for="(row, $index) in draft.ports" :key="$index" class="grid-table-row port-grid-cols">
-                    <div class="grid-td"><el-input v-model="row.displayName" size="small" placeholder="例如：温度输出口" /></div>
+                    <div class="grid-td"><el-input v-model="row.portName" size="small" placeholder="例如：温度输出口" /></div>
                     <div class="grid-td">
                       <el-select v-model="row.direction" size="small" style="width: 100%;">
                         <el-option label="输入" value="IN" />
@@ -182,13 +182,13 @@
               </div>
             </div>
 
-            <!-- 03 适配器契约配置（命令清单、遥测属性、事件清单合并在同一卡片中） -->
+            <!-- 03 Adapter 契约配置（命令清单、遥测属性、事件清单合并在同一卡片中） -->
             <div id="edit-adapter" class="anchor-section holistic-section-card">
               <div class="section-card-head">
                 <div class="section-card-title">
                   <span class="sec-idx-badge">03</span>
-                  <span class="sec-title-text">适配器契约配置</span>
-                  <span class="sec-desc-text">选择契约驱动来源，包含命令清单、遥测属性与事件清单</span>
+                  <span class="sec-title-text">Adapter 契约</span>
+                  <span class="sec-desc-text">选择契约驱动来源，包含命令清单、遥测属性与事件清单（Adapter 定义由注册配置提供）</span>
                 </div>
                 <el-tag size="small" type="info" effect="plain">驱动契约</el-tag>
               </div>
@@ -199,9 +199,9 @@
                     <el-form-item label="协议类型">
                       <el-text>{{ draft.adapterContract.config.protocol || '—' }}</el-text>
                     </el-form-item>
-                    <el-form-item label="注册适配器">
+                    <el-form-item label="注册 Adapter">
                       <div class="registered-adapter-picker" v-loading="registeredAdapterLoading">
-                        <el-select v-model="selectedRegisteredAdapterName" filterable clearable placeholder="选择已注册适配器" @change="handleRegisteredAdapterChange">
+                        <el-select v-model="selectedRegisteredAdapterName" filterable clearable placeholder="选择已注册 Adapter" @change="handleRegisteredAdapterChange">
                           <el-option
                             v-for="adapter in registeredAdapters"
                             :key="adapter.adapterName || adapter.id"
@@ -228,10 +228,10 @@
                   </el-form>
                 </div>
 
-                <!-- 2. 适配器命令清单 -->
+                <!-- 2. Adapter 命令清单 -->
                 <div class="contract-sub-section">
                   <div class="contract-sub-header">
-                    <span class="sub-header-title">适配器命令清单</span>
+                    <span class="sub-header-title">3.1 命令清单</span>
                     <span class="sub-header-count">{{ draft.adapterContract.commands.length }} 项</span>
                   </div>
                   <div v-if="draft.adapterContract.commands.length > 0" class="editor-card-list command-editor-list">
@@ -258,16 +258,16 @@
                       <div v-else class="compact-empty inline-empty">该命令没有系统可见参数</div>
                     </article>
                   </div>
-                  <div v-else class="compact-empty block-empty">当前适配器类别未声明命令</div>
+                  <div v-else class="compact-empty block-empty">当前 Adapter 类别未声明命令</div>
                 </div>
 
-                <!-- 3. 适配器遥测属性 -->
+                <!-- 3. Adapter 遥测属性 -->
                 <div class="contract-sub-section">
                   <div class="contract-sub-header">
-                    <span class="sub-header-title">适配器遥测属性</span>
+                    <span class="sub-header-title">3.2 遥测属性</span>
                     <span class="sub-header-count">{{ draft.adapterContract.telemetry.adapterAttributes.length }} 项</span>
                   </div>
-                  <div v-if="draft.adapterContract.telemetry.adapterAttributes.length === 0" class="compact-empty block-empty">当前适配器类别未声明遥测属性</div>
+                  <div v-if="draft.adapterContract.telemetry.adapterAttributes.length === 0" class="compact-empty block-empty">当前 Adapter 类别未声明遥测属性</div>
                   <div v-else class="grid-table-container">
                     <div class="grid-table-header telemetry-grid-cols">
                       <span class="grid-th">属性字段</span>
@@ -282,13 +282,13 @@
                   </div>
                 </div>
 
-                <!-- 4. 适配器事件清单 -->
+                <!-- 4. Adapter 事件清单 -->
                 <div class="contract-sub-section">
                   <div class="contract-sub-header">
-                    <span class="sub-header-title">适配器事件清单</span>
+                    <span class="sub-header-title">3.3 事件清单</span>
                     <span class="sub-header-count">{{ draft.adapterContract.events.length }} 项</span>
                   </div>
-                  <div v-if="draft.adapterContract.events.length === 0" class="compact-empty block-empty">当前适配器类别未声明事件</div>
+                  <div v-if="draft.adapterContract.events.length === 0" class="compact-empty block-empty">当前 Adapter 类别未声明事件</div>
                   <div v-else class="grid-table-container">
                     <div class="grid-table-header event-grid-cols">
                       <span class="grid-th">事件域</span>
@@ -310,7 +310,7 @@
                 <div class="section-card-title">
                   <span class="sec-idx-badge">04</span>
                   <span class="sec-title-text">属性映射</span>
-                  <span class="sec-desc-text">将模型业务属性与适配器遥测字段逐一对应</span>
+                  <span class="sec-desc-text">将模型业务属性与 Adapter 遥测字段逐一对应</span>
                 </div>
                 <button class="btn-aliyun-cta" type="button" @click="addAttributeMapping">
                   <el-icon><Plus /></el-icon><span>新增映射</span>
@@ -322,7 +322,7 @@
                   <div class="grid-table-header attrmap-grid-cols">
                     <span class="grid-th">模型属性</span>
                     <span class="grid-th col-center"></span>
-                    <span class="grid-th">适配器属性</span>
+                    <span class="grid-th">Adapter 属性</span>
                     <span class="grid-th col-center">操作</span>
                   </div>
                   <div v-for="(row, $index) in draft.adapterContract.telemetry.attributesMapping" :key="$index" class="grid-table-row attrmap-grid-cols">
@@ -333,7 +333,7 @@
                     </div>
                     <div class="grid-td col-center map-arrow">→</div>
                     <div class="grid-td">
-                      <el-select v-model="row.adapterAttrName" size="small" filterable placeholder="选择适配器属性" style="width: 100%;" @change="handleAdapterAttributeMappingChange(row)">
+                      <el-select v-model="row.adapterAttrName" size="small" filterable placeholder="选择 Adapter 属性" style="width: 100%;" @change="handleAdapterAttributeMappingChange(row)">
                         <el-option v-for="attr in adapterAttributeNameOptionsDetailed" :key="attr.telemetryName" :label="attr.telemetryName + (isAttrDataTypeMatch(row.modelAttributeKey, attr.dataType) ? '' : '（类型不匹配）')" :value="attr.telemetryName" :disabled="isAdapterAttributeUsed(attr.telemetryName, row) || !isAttrDataTypeMatch(row.modelAttributeKey, attr.dataType)" />
                       </el-select>
                     </div>
@@ -348,7 +348,7 @@
                 <div class="section-card-title">
                   <span class="sec-idx-badge">04</span>
                   <span class="sec-title-text">操作映射</span>
-                  <span class="sec-desc-text">将模型操作及其参数映射到适配器命令的系统可见参数</span>
+                  <span class="sec-desc-text">将模型操作及其参数映射到 Adapter 命令的系统可见参数</span>
                 </div>
                 <button class="btn-aliyun-cta" type="button" @click="addFunctionMapping">
                   <el-icon><Plus /></el-icon><span>新增映射</span>
@@ -362,7 +362,7 @@
                       <div class="function-map-selects">
                         <label><span>模型操作</span><el-select v-model="row.capabilityKey" size="small" filterable placeholder="选择模型操作" @change="handleFunctionMappingCapabilityChange(row)"><el-option v-for="capability in capabilitySelectOptions" :key="capability.key" :label="capability.label" :value="capability.key" :disabled="isCapabilityMapped(capability.key, row)" /></el-select></label>
                         <span class="mapping-direction">→</span>
-                        <label><span>适配器命令</span><el-select v-model="row.adapterCommandName" size="small" filterable clearable placeholder="选择适配器命令" @change="handleFunctionMappingCommandChange(row)"><el-option v-for="cmd in commandNameOptions" :key="cmd" :label="cmd" :value="cmd" /></el-select></label>
+                        <label><span>Adapter 命令</span><el-select v-model="row.adapterCommandName" size="small" filterable clearable placeholder="选择 Adapter 命令" @change="handleFunctionMappingCommandChange(row)"><el-option v-for="cmd in commandNameOptions" :key="cmd" :label="cmd" :value="cmd" /></el-select></label>
                       </div>
                       <button class="btn-link danger" type="button" @click="removeRow(draft.functionMappings, rowIndex)">删除</button>
                     </div>
@@ -377,7 +377,7 @@
                       <div class="nested-param-table-head">
                         <span class="pm-col-cap">功能参数</span>
                         <span class="pm-col-arr"></span>
-                        <span class="pm-col-cmd">适配器命令参数</span>
+                        <span class="pm-col-cmd">Adapter 命令参数</span>
                         <span class="pm-col-mode">取值模式</span>
                         <span class="pm-col-act">操作</span>
                       </div>
@@ -413,196 +413,256 @@
               </div>
             </div>
 
+            <!-- 05 状态机（严格一体化章节大卡片） -->
             <div id="edit-state" class="anchor-section holistic-section-card">
               <div class="section-card-head">
                 <div class="section-card-title">
                   <span class="sec-idx-badge">05</span>
-                  <span class="sec-title-text">执行生命周期转移规则</span>
-                  <span class="sec-desc-text">指令生命周期主线与适配器事件绑定一体化网格</span>
+                  <span class="sec-title-text">状态机</span>
+                  <span class="sec-desc-text">通信接口、指令生命周期与功能流转规则</span>
                 </div>
-                <el-tag size="small" effect="plain" type="info">系统内置规范</el-tag>
+                <span class="tag tag-info">系统标准契约</span>
               </div>
+
               <div class="section-card-body">
-                <div class="grid-table-container lifecycle-table-deep-border">
-                  <div class="grid-table-header lifecycle-grid-cols">
-                    <span class="grid-th">阶段流转</span>
-                    <span class="grid-th">规则属性与说明</span>
-                    <span class="grid-th">触发机制与事件绑定</span>
+                <!-- 5.1 接口定义 -->
+                <div class="flat-sub-table">
+                  <div class="sub-section-title-bar">
+                    <span class="sub-title">5.1 接口定义</span>
+                    <span class="sub-count">共 {{ stateMachineInterfaceRows.length }} 个接口</span>
                   </div>
-                  <div v-for="(row, $index) in mergedLifecycleRules" :key="$index" class="grid-table-row lifecycle-grid-cols" :class="{ 'system-row-bg': row.type === 'system' }">
-                    <div class="grid-td lifecycle-td">
-                      <div class="flow-pill-left">
-                        <el-tag size="small" type="info" effect="plain" class="flow-state-tag">{{ row.fromStateNames ? row.fromStateNames.join(' / ') : row.fromStateName }}</el-tag>
-                        <el-icon class="flow-arrow-icon"><Right /></el-icon>
-                        <el-tag size="small" :type="targetStateClass(row.toStateName)" effect="light" class="flow-state-tag">{{ row.toStateName || '保持原状态' }}</el-tag>
-                      </div>
-                    </div>
-                    <div class="grid-td lifecycle-td">
-                      <div class="rule-meta-wrap-left">
-                        <span class="system-rule-tag" v-if="row.type === 'system'">系统固定规则</span>
-                        <span class="user-rule-tag" :class="row.kind ? row.kind.toLowerCase() : ''" v-else>{{ ruleKindLabel(row.kind) }}</span>
-                        <div class="rule-desc-text-left">{{ row.description }}</div>
-                      </div>
-                    </div>
-                    <div class="grid-td lifecycle-td">
-                      <div v-if="row.type === 'system'" class="system-triggers-grid-2col">
-                        <div v-for="(trig, tIdx) in row.triggers" :key="tIdx" class="system-trigger-line-2col">
-                          <div class="trig-left-col">
-                            <span class="trig-label-tag">{{ trig.label }}:</span>
-                            <span class="locked-action-badge"><el-icon><Lock /></el-icon>{{ trig.interfaceName }}</span>
+                  <table class="industrial-table">
+                    <thead>
+                      <tr>
+                        <th style="width: 220px;">接口标识</th>
+                        <th style="width: 80px;">方向</th>
+                        <th style="width: 120px;">类型</th>
+                        <th>允许流通信号</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="iface in stateMachineInterfaceRows" :key="iface.name">
+                        <td><strong class="mono-text text-heading">{{ iface.name }}</strong></td>
+                        <td>
+                          <span class="text-primary">{{ directionLabel(iface.direction) }}</span>
+                        </td>
+                        <td><span class="mono-text">{{ iface.interfaceType || '-' }}</span></td>
+                        <td>
+                          <div v-if="iface.allowedSignals?.length" class="signal-tags-wrap">
+                            <span v-for="sig in iface.allowedSignals" :key="sig" class="signal-tag-pill mono-text">{{ sig }}</span>
                           </div>
-                          <div class="trig-right-col">
-                            <span class="signal-tag-bold"><el-icon><Discount /></el-icon>{{ trig.signalName }}</span>
-                          </div>
-                        </div>
-                      </div>
-                      <div v-else class="adapter-binding-wrap-left">
-                        <div v-if="row.kind === 'TERMINATION'" class="termination-default-note">
-                          <el-tag size="small" type="warning" effect="light">终止成功默认转换</el-tag>
-                          <span>终止能力完成后，系统自动将原指令转为 ABORTED</span>
-                        </div>
-                        <div class="binding-interface-grid-2col">
-                          <div class="trig-left-col">
-                            <span class="trig-label-tag">{{ row.triggerPolicy === 'REQUIRED' ? '必选绑定' : '可选绑定' }}:</span>
-                            <span class="locked-action-badge"><el-icon><Lock /></el-icon>{{ adapterInterfaceName() }}</span>
-                          </div>
-                          <div class="trig-right-col">
-                            <el-select v-model="executionLifecycleBindings[row.key]" clearable filterable size="small" style="width: 100%;" :placeholder="row.triggerPolicy === 'REQUIRED' ? '请选择适配器命令事件' : '可选：选择适配器明确终止事件'">
-                              <el-option v-for="eventName in adapterCmdEventOptions" :key="eventName" :label="eventName" :value="eventName" />
-                            </el-select>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
+                          <span v-else class="text-secondary">-</span>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
-              </div>
-            </div>
 
-            <div class="holistic-section-card">
-              <div class="section-card-head">
-                <div class="section-card-title">
-                  <span class="sec-idx-badge">05</span>
-                  <span class="sec-title-text">功能状态分区</span>
-                  <span class="sec-desc-text">描述设备并行的业务维度，支持自定义多状态分区</span>
+                <!-- 5.2 执行生命周期 -->
+                <div class="flat-sub-table" style="margin-top: 12px;">
+                  <div class="sub-section-title-bar">
+                    <span class="sub-title">5.2 执行生命周期</span>
+                    <span class="sub-count">内置规范 + Adapter 事件绑定</span>
+                  </div>
+                  <table class="industrial-table lifecycle-table-deep-border">
+                    <thead>
+                      <tr>
+                        <th style="width: 210px;">阶段转移</th>
+                        <th style="width: 200px;">规则说明</th>
+                        <th>触发接口信号与驱动事件绑定</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="(row, $index) in mergedLifecycleRules" :key="$index" :class="{ 'system-row-bg': row.type === 'system' }">
+                        <td>
+                          <div class="flow-pill-left">
+                            <template v-if="row.fromStateNames?.length">
+                              <span v-for="(name, nIdx) in row.fromStateNames" :key="name" class="tag tag-gray">
+                                {{ name }}<span v-if="nIdx < row.fromStateNames.length - 1" style="margin-left: 2px; color: #94a3b8;">/</span>
+                              </span>
+                            </template>
+                            <span v-else class="tag tag-gray">{{ row.fromStateName }}</span>
+                            <span style="margin: 0 4px; font-weight: 700; color: var(--sl-text-secondary);">➔</span>
+                            <span class="tag tag-gray">{{ row.toStateName || '保持原状态' }}</span>
+                          </div>
+                        </td>
+                        <td>
+                          <div class="rule-meta-wrap-left">
+                            <span class="tag tag-primary" v-if="row.type === 'system'">系统固定规则</span>
+                            <span class="tag tag-info" v-else>{{ ruleKindLabel(row.kind) }}</span>
+                            <div style="font-size: 11px; color: #64748b; margin-top: 2px;">{{ row.description }}</div>
+                          </div>
+                        </td>
+                        <td>
+                          <div v-if="row.type === 'system'" class="system-triggers-grid-2col">
+                            <div v-for="(trig, tIdx) in row.triggers" :key="tIdx" class="system-trigger-line-2col">
+                              <div class="trig-left-col">
+                                <span style="color: #64748b;">{{ trig.label }}:</span>
+                                <span class="mono-text">{{ trig.interfaceName }}</span>
+                              </div>
+                              <div class="trig-right-col">
+                                <span class="tag tag-primary">{{ trig.signalName }}</span>
+                              </div>
+                            </div>
+                          </div>
+                          <div v-else class="adapter-binding-wrap-left">
+                            <div v-if="row.kind === 'TERMINATION'" class="termination-default-note" style="margin-bottom: 4px;">
+                              <span class="tag tag-warning">终止成功默认转换</span>
+                              <span style="font-size: 11px; color: #64748b; margin-left: 6px;">终止能力完成后，系统自动将原指令转为 ABORTED（可选Adapter事件）</span>
+                            </div>
+                            <div class="system-triggers-grid-2col">
+                              <div class="trig-left-col">
+                                <span :style="row.triggerPolicy === 'REQUIRED' ? 'color: var(--sl-danger); font-weight: 600;' : 'color: #64748b;'">{{ row.triggerPolicy === 'REQUIRED' ? '必选绑定:' : '可选绑定:' }}</span>
+                                <span class="mono-text">{{ adapterInterfaceName() }}</span>
+                              </div>
+                              <div class="trig-right-col">
+                                <el-select v-model="executionLifecycleBindings[row.key]" clearable filterable size="small" style="width: 100%;" :placeholder="row.triggerPolicy === 'REQUIRED' ? '请选择Adapter命令事件' : '可选：选择Adapter明确终止事件'">
+                                  <el-option v-for="eventName in adapterCmdEventOptions" :key="eventName" :label="eventName" :value="eventName" />
+                                </el-select>
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
                 </div>
-                <button class="btn-aliyun-cta" type="button" @click="addOpStateRegion">
-                  <el-icon><Plus /></el-icon><span>新增分区</span>
-                </button>
-              </div>
-              <div class="section-card-body padded">
-                <div v-for="(region, rIndex) in draft.opState.regions" :key="region._key || rIndex" class="region-block">
-                  <div class="region-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-                    <div style="display: flex; gap: 8px; align-items: center;">
-                      <el-input v-model="region.regionName" size="small" placeholder="分区名称" style="width: 180px;" />
-                      <el-tag size="small" :type="region.regionType === 'EXCEPTION' ? 'danger' : 'primary'" effect="plain">
-                        {{ region.regionType === 'EXCEPTION' ? '异常区域' : '功能区域' }}
-                      </el-tag>
-                    </div>
-                    <button class="btn-link danger" type="button" @click="removeOpStateRegion(rIndex)">删除分区</button>
-                  </div>
-                  <div v-if="region.regionType === 'OPERATIONAL'" class="state-summary-row">
-                    <span class="state-summary-label">初始状态</span>
-                    <div class="state-input-with-warning">
-                      <el-select v-model="region.initialStateName" filterable allow-create size="small" class="state-inline-select">
-                        <el-option v-for="name in getRegionStateOptions(region)" :key="name" :label="name" :value="name" />
-                      </el-select>
-                      <span class="warning-slot"><el-tooltip v-if="isRegionInitialStateInvalid(region)" content="该状态不存在" placement="top"><el-icon class="inline-warning-icon"><Warning /></el-icon></el-tooltip></span>
-                    </div>
-                  </div>
-                  <div v-else class="state-summary-row"><span class="state-summary-label">初始状态</span><span class="section-note">异常区域不设置初始状态</span></div>
-                  <div class="state-summary-row align-top">
-                    <span class="state-summary-label">状态列表</span>
-                    <div class="state-token-list">
-                      <el-tag v-for="(state, $index) in region.states" :key="state._key || $index" size="small" closable @close="removeOpState(region, $index)" class="state-token filled closable-state-token">
-                        <span class="state-token-text">{{ state.stateName || '未命名' }}</span>
-                        <span class="state-token-warning-slot"><el-tooltip v-if="stateUsageWarning(state.stateName, region.regionName)" :content="stateUsageWarning(state.stateName, region.regionName)" placement="top"><el-icon class="state-warning-icon"><Warning /></el-icon></el-tooltip></span>
-                      </el-tag>
-                      <el-input v-if="opStateInputVisibleMap[region._key]" :ref="el => setOpStateInputRef(el, region._key)" v-model="opStateInputValueMap[region._key]" size="small" class="state-name-input" @keyup.enter="handleOpStateInputConfirm(region)" @blur="handleOpStateInputConfirm(region)" />
-                      <button v-else class="btn-aliyun" type="button" style="padding: 2px 8px; font-size: 11px;" @click="showOpStateInput(region)">
-                        <el-icon><Plus /></el-icon><span>新增状态</span>
+
+                <!-- 5.3 功能状态分区 (完全改回原来样式与全量增删能力) -->
+                <div class="flat-sub-table" style="margin-top: 12px;">
+                  <div class="sub-section-title-bar">
+                    <span class="sub-title">5.3 功能状态分区</span>
+                    <el-dropdown v-if="!hasExceptionRegion" trigger="click" @command="handleAddRegionCommand">
+                      <button class="btn-aliyun-cta" type="button">
+                        <el-icon><Plus /></el-icon><span>新增分区</span>
                       </button>
-                    </div>
+                      <template #dropdown>
+                        <el-dropdown-menu>
+                          <el-dropdown-item command="OPERATIONAL">功能分区 (Operational)</el-dropdown-item>
+                          <el-dropdown-item command="EXCEPTION">异常分区 (Exception)</el-dropdown-item>
+                        </el-dropdown-menu>
+                      </template>
+                    </el-dropdown>
+                    <button v-else class="btn-aliyun-cta" type="button" @click="addOpStateRegion('OPERATIONAL')">
+                      <el-icon><Plus /></el-icon><span>新增分区</span>
+                    </button>
                   </div>
-                </div>
-              </div>
-            </div>
+                  <div style="padding: 10px 12px;">
+                    <div v-for="(region, rIndex) in draft.opState.regions" :key="region._key || rIndex" class="region-block">
+                      <div class="region-header" style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
+                        <div style="display: flex; gap: 8px; align-items: center;">
+                          <el-input v-model="region.regionName" size="small" placeholder="分区名称" style="width: 180px;" />
+                          <el-tag size="small" :type="region.regionType === 'EXCEPTION' ? 'danger' : 'primary'" effect="plain">
+                            {{ region.regionType === 'EXCEPTION' ? '异常区域' : '功能区域' }}
+                          </el-tag>
+                        </div>
+                        <button class="btn-link danger" type="button" @click="removeOpStateRegion(rIndex)">删除分区</button>
+                      </div>
 
-            <div class="holistic-section-card">
-              <div class="section-card-head">
-                <div class="section-card-title">
-                  <span class="sec-idx-badge">05</span>
-                  <span class="sec-title-text">功能状态转移规则</span>
-                  <span class="sec-desc-text">配置适配器功能事件触发的业务状态转移，每条规则采用紧凑双行卡片排布</span>
-                </div>
-                <button class="btn-aliyun-cta" type="button" @click="addStateTransition">
-                  <el-icon><Plus /></el-icon><span>新增规则</span>
-                </button>
-              </div>
-              <div class="section-card-body padded">
-                <div v-if="stateMachineWarningMessages.length" class="state-warning-panel" style="margin-bottom: 12px;"><div v-for="message in stateMachineWarningMessages" :key="message" class="state-warning-item"><el-icon class="inline-warning-icon"><Warning /></el-icon><span>{{ message }}</span></div></div>
-                <div v-if="operationTransitionRows.length === 0" class="compact-empty block-empty">暂无功能状态转移规则，可使用上方按钮添加</div>
-                <div v-else class="trans-rule-card-list">
-                  <div v-for="(row, $index) in operationTransitionRows" :key="row._key || $index" class="trans-rule-item-card">
-                    <!-- 第一行：序号、说明、所属分区、状态流转、删除 -->
-                    <div class="trans-card-row-top">
-                      <div class="trans-field-cell desc-cell">
-                        <span class="field-mini-label">#{{ $index + 1 }} 规则说明</span>
-                        <div class="field-with-warning">
-                          <span class="warning-slot"><el-tooltip v-if="transitionWarning(row)" :content="transitionWarning(row)" placement="top"><el-icon class="inline-warning-icon"><Warning /></el-icon></el-tooltip></span>
-                          <el-input v-model="row.description" size="small" placeholder="规则说明，例如：启动完成进入运行态" />
+                      <div v-if="region.regionType === 'OPERATIONAL'" class="state-summary-row">
+                        <span class="state-summary-label">初始状态</span>
+                        <div class="state-input-with-warning">
+                          <el-select v-model="region.initialStateName" filterable allow-create size="small" class="state-inline-select">
+                            <el-option v-for="name in getRegionStateOptions(region)" :key="name" :label="name" :value="name" />
+                          </el-select>
+                          <span class="warning-slot"><el-tooltip v-if="isRegionInitialStateInvalid(region)" content="该状态不存在" placement="top"><el-icon class="inline-warning-icon"><Warning /></el-icon></el-tooltip></span>
                         </div>
                       </div>
+                      <div v-else class="state-summary-row"><span class="state-summary-label">初始状态</span><span class="section-note">异常区域不设置初始状态</span></div>
 
-                      <div class="trans-field-cell region-cell">
-                        <span class="field-mini-label">所属分区</span>
-                        <el-select v-model="row.regionName" size="small" style="width: 130px;">
-                          <el-option v-for="region in functionalOpRegions" :key="region._key" :label="region.regionName" :value="region.regionName" />
-                        </el-select>
-                      </div>
-
-                      <div class="trans-field-cell flow-cell">
-                        <span class="field-mini-label">状态流转</span>
-                        <div class="transition-state-pair">
-                          <state-select v-model="row.fromStateName" :options="getRegionStateOptionsByName(row.regionName)" placeholder="原状态" />
-                          <el-icon class="flow-arrow-icon"><Right /></el-icon>
-                          <state-select v-model="row.toStateName" :options="getRegionStateOptionsByName(row.regionName)" placeholder="目标状态" />
-                        </div>
-                      </div>
-
-                      <button class="btn-link danger trans-del-btn" type="button" @click="removeObjectRow(draft.stateTransitions, row)">
-                        <el-icon><Delete /></el-icon><span>删除</span>
-                      </button>
-                    </div>
-
-                    <!-- 第二行：触发条件、转移动作（动作水平横向展开，添加动作在最右边） -->
-                    <div class="trans-card-row-bottom">
-                      <div class="trans-field-cell trigger-cell">
-                        <span class="field-mini-label">触发条件</span>
-                        <div class="transition-trigger-editor">
-                          <span class="adapter-iface-tag">{{ adapterInterfaceName() || '适配器事件' }}</span>
-                          <state-select v-model="row.trigger.signalName" :options="adapterOpEventOptions" placeholder="选择或输入触发事件" />
-                        </div>
-                      </div>
-
-                      <div class="trans-field-cell action-cell">
-                        <span class="field-mini-label">转移动作</span>
-                        <div class="transition-action-horizontal-list">
-                          <div v-for="(act, aIdx) in row.actions" :key="aIdx" class="transition-action-chip">
-                            <span class="action-editor-label">发送</span>
-                            <el-select v-model="act.payload.signalName" size="small" filterable clearable allow-create placeholder="选择/输入信号" style="width: 140px;">
-                              <el-option v-for="sig in getAvailableActionSignals(act.payload?.interfaceName)" :key="sig" :label="sig" :value="sig" />
-                            </el-select>
-                            <button class="btn-chip-del" type="button" @click="row.actions.splice(aIdx, 1)">✕</button>
-                          </div>
-                          <button class="btn-aliyun btn-add-action-inline" type="button" @click="ensureTransitionAction(row)">
-                            <el-icon><Plus /></el-icon><span>添加动作</span>
+                      <div class="state-summary-row align-top">
+                        <span class="state-summary-label">状态列表</span>
+                        <div class="state-token-list">
+                          <el-tag v-for="(state, $index) in region.states" :key="state._key || $index" size="small" closable @close="removeOpState(region, $index)" class="state-token filled closable-state-token">
+                            <span class="state-token-text">{{ state.stateName || '未命名' }}</span>
+                            <span class="state-token-warning-slot"><el-tooltip v-if="stateUsageWarning(state.stateName, region.regionName)" :content="stateUsageWarning(state.stateName, region.regionName)" placement="top"><el-icon class="state-warning-icon"><Warning /></el-icon></el-tooltip></span>
+                          </el-tag>
+                          <el-input v-if="opStateInputVisibleMap[region._key]" :ref="el => setOpStateInputRef(el, region._key)" v-model="opStateInputValueMap[region._key]" size="small" class="state-name-input" @keyup.enter="handleOpStateInputConfirm(region)" @blur="handleOpStateInputConfirm(region)" />
+                          <button v-else class="btn-aliyun" type="button" style="padding: 2px 8px; font-size: 11px;" @click="showOpStateInput(region)">
+                            <el-icon><Plus /></el-icon><span>新增状态</span>
                           </button>
                         </div>
                       </div>
                     </div>
                   </div>
                 </div>
+
+                <!-- 5.4 功能状态转移规则 -->
+                <div class="flat-sub-table" style="margin-top: 12px;">
+                  <div class="sub-section-title-bar">
+                    <span class="sub-title">5.4 功能状态转移规则</span>
+                    <button class="btn-aliyun-cta" type="button" @click="addStateTransition">
+                      <el-icon><Plus /></el-icon><span>新增规则</span>
+                    </button>
+                  </div>
+                  <div style="padding: 10px 12px;">
+                    <div v-if="stateMachineWarningMessages.length" class="state-warning-panel" style="margin-bottom: 10px;">
+                      <div v-for="message in stateMachineWarningMessages" :key="message" class="state-warning-item">
+                        <el-icon class="inline-warning-icon"><Warning /></el-icon><span>{{ message }}</span>
+                      </div>
+                    </div>
+                    <div v-if="operationTransitionRows.length === 0" class="compact-empty block-empty">暂无功能状态转移规则，可使用上方按钮添加</div>
+                    <div v-else class="trans-rule-card-list">
+                      <div v-for="(row, $index) in operationTransitionRows" :key="row._key || $index" class="trans-rule-item-card">
+                        <!-- 第一行：序号、说明、所属分区、状态流转、删除 -->
+                        <div class="trans-card-row-top">
+                          <span style="font-size: 11px; font-weight: 700; color: var(--sl-text-secondary);">#{{ $index + 1 }}</span>
+                          <div class="field-with-warning" style="flex: 1;">
+                            <span class="warning-slot"><el-tooltip v-if="transitionWarning(row)" :content="transitionWarning(row)" placement="top"><el-icon class="inline-warning-icon"><Warning /></el-icon></el-tooltip></span>
+                            <el-input v-model="row.description" size="small" placeholder="规则说明，例如：启动完成进入运行态" />
+                          </div>
+
+                          <span style="font-size: 11px; color: #64748b;">所属分区:</span>
+                          <el-select v-model="row.regionName" size="small" style="width: 120px;">
+                            <el-option v-for="region in functionalOpRegions" :key="region._key" :label="region.regionName" :value="region.regionName" />
+                          </el-select>
+
+                          <span style="font-size: 11px; color: #64748b;">状态转移:</span>
+                          <div class="transition-state-pair">
+                            <state-select v-model="row.fromStateName" :options="getRegionStateOptionsByName(row.regionName)" placeholder="原状态" style="width: 100px;" />
+                            <span style="color: #94a3b8; font-weight: 700; margin: 0 2px;">→</span>
+                            <state-select v-model="row.toStateName" :options="getRegionStateOptionsByName(row.regionName)" placeholder="目标状态" style="width: 100px;" />
+                          </div>
+
+                          <button class="btn-link danger" type="button" style="font-size: 11.5px; margin-left: auto;" @click="removeObjectRow(draft.stateTransitions, row)">
+                            <el-icon><Delete /></el-icon><span>删除</span>
+                          </button>
+                        </div>
+
+                        <!-- 第二行：触发条件、转移动作 -->
+                        <div class="trans-card-row-bottom">
+                          <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="font-size: 11px; color: #64748b; flex-shrink: 0;">触发接口信号:</span>
+                            <div style="display: flex; flex-direction: column; gap: 2px;">
+                              <span class="mono-text" style="font-size: 11px; color: #64748b; line-height: 1.2;">{{ adapterInterfaceName() || 'Interface_adapter_in' }}</span>
+                              <state-select v-model="row.trigger.signalName" :options="adapterOpEventOptions" placeholder="选择或输入触发事件" style="width: 220px;" />
+                            </div>
+                          </div>
+
+                          <div style="display: flex; align-items: center; gap: 6px; margin-left: auto;">
+                            <span style="font-size: 11px; color: #64748b;">转移动作:</span>
+                            <div v-if="row.actions?.length" class="transition-action-horizontal-list">
+                              <div v-for="(act, aIdx) in row.actions" :key="aIdx" class="transition-action-chip">
+                                <span class="action-badge-verb" style="font-size: 10px;">SEND</span>
+                                <el-select v-model="act.payload.signalName" size="small" filterable clearable allow-create placeholder="选择/输入信号" style="width: 130px;">
+                                  <el-option v-for="sig in getAvailableActionSignals(act.payload?.interfaceName)" :key="sig" :label="sig" :value="sig" />
+                                </el-select>
+                                <span class="action-sep">➔</span>
+                                <span class="mono-text" style="font-size: 11px; color: #475569;">{{ act.payload?.interfaceName || 'Interface_adapter_out' }}</span>
+                                <button class="btn-chip-del" type="button" @click="row.actions.splice(aIdx, 1)">✕</button>
+                              </div>
+                            </div>
+                            <span v-else style="font-size: 11px; color: #94a3b8;">暂无额外过程动作</span>
+                            <button class="btn-aliyun" type="button" style="padding: 1px 6px; font-size: 11px;" @click="ensureTransitionAction(row)">
+                              <el-icon><Plus /></el-icon><span>添加动作</span>
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
               </div>
             </div>
 
@@ -787,7 +847,7 @@ import {
   asArray, firstDefined, deepClone, ensureArrayField, isNumeric,
   numericOrNull, stringValue, stringId, normalizeDataType, makeUiKey,
   findKeyByName, lookupName, reserveIdentifier, materializedName,
-  eventTypeLabel, operatorLabel, valueKindLabel, directionLabel,
+  eventTypeLabel, operatorLabel, valueKindLabel, directionLabel, interfaceRoleLabel,
   formatTime, formatJson, dataTypeOptions, describeAction,
   capabilityParamDisplayName, functionMappingGroups, capabilityMappingRows,
   displayAttributeName, normalizeCommandParameter, isAdapterInternalParameter,
@@ -1034,7 +1094,7 @@ const groupedCommandLifecycleTransitions = computed(() => {
       key: 'sys_start',
       fromStateName: 'IDLE',
       toStateName: 'SENT',
-      description: '下发指令并启动 (自动向适配器发送报文)',
+      description: '下发指令并启动 (自动向 Adapter 发送报文)',
       triggers: startRules.map(r => ({
         interfaceName: r.trigger?.interfaceName,
         signalName: r.trigger?.signalName,
@@ -1051,7 +1111,7 @@ const groupedCommandLifecycleTransitions = computed(() => {
       key: 'sys_abort',
       fromStateNames: [...new Set(abortRules.map(r => r.fromStateName))],
       toStateName: 'ABORTING',
-      description: '下发指令中止请求 (自动向适配器发送 ABORT 报文)',
+      description: '下发指令中止请求 (自动向 Adapter 发送 ABORT 报文)',
       triggers: abortRules.map(r => ({
         interfaceName: r.trigger?.interfaceName,
         signalName: r.trigger?.signalName,
@@ -1132,11 +1192,24 @@ function transitionWarning(row) {
   return ''
 }
 
+function stateTagClass(stateName) {
+  const s = String(stateName || '').toUpperCase()
+  if (s === 'COMPLETED') return 'tag-success'
+  if (s === 'FAILED') return 'tag-danger'
+  if (s === 'ABORTING' || s === 'ABORTED') return 'tag-warning'
+  if (s === 'RUNNING') return 'tag-primary'
+  if (s === 'SENT') return 'tag-purple'
+  if (s === 'IDLE') return 'tag-gray'
+  return 'tag-gray'
+}
+
 function targetStateClass(toStateName) {
-  if (toStateName === 'COMPLETED') return 'success'
-  if (toStateName === 'ABORTED') return 'warning'
-  if (toStateName === 'FAILED') return 'danger'
-  return 'primary'
+  const s = String(toStateName || '').toUpperCase()
+  if (s === 'COMPLETED') return 'success'
+  if (s === 'ABORTED' || s === 'ABORTING') return 'warning'
+  if (s === 'FAILED') return 'danger'
+  if (s === 'RUNNING') return 'primary'
+  return 'info'
 }
 
 function ruleKindLabel(kind) {
@@ -1488,10 +1561,10 @@ function removeAttribute(index) {
   draft.ports.forEach(port => { if (port.bindingAttrKey === removed._key) port.bindingAttrKey = '' })
 }
 
-function addPort() { draft.ports.push({ _key: makeUiKey('port'), portName: '', displayName: '', direction: 'OUT', bindingAttrKey: '', bindingAttrName: '' }) }
+function addPort() { draft.ports.push({ _key: makeUiKey('port'), portName: '', direction: 'OUT', bindingAttrKey: '', bindingAttrName: '', description: '' }) }
 function capabilityLabel(capability) {
   const index = draft.capabilities.indexOf(capability)
-  return capability.displayName || capability.name || '操作' + (index + 1)
+  return capability.displayName || capability.capabilityName || '操作' + (index + 1)
 }
 
 function terminationCapabilityOptions(capability) {
@@ -1800,18 +1873,36 @@ function setOpStateInputRef(el, key) {
   }
 }
 
-function addOpStateRegion() {
+const hasExceptionRegion = computed(() => {
+  return (draft.opState.regions || []).some(r => r.regionType === 'EXCEPTION')
+})
+
+function addOpStateRegion(type = 'OPERATIONAL') {
   const newKey = makeUiKey('region')
   if (!draft.opState.regions) {
     draft.opState.regions = []
   }
-  draft.opState.regions.push({
-    _key: newKey,
-    regionName: '新建分区',
-    regionType: 'OPERATIONAL',
-    initialStateName: 'IDLE',
-    states: [{ _key: makeUiKey('state'), stateName: 'IDLE', onEntry: [] }]
-  })
+  if (type === 'EXCEPTION') {
+    draft.opState.regions.push({
+      _key: newKey,
+      regionName: 'Exception',
+      regionType: 'EXCEPTION',
+      initialStateName: '',
+      states: [{ _key: makeUiKey('state'), stateName: 'ABNORMAL', onEntry: defaultStateEntryActions('OP', 'ABNORMAL') }]
+    })
+  } else {
+    draft.opState.regions.push({
+      _key: newKey,
+      regionName: '新建分区',
+      regionType: 'OPERATIONAL',
+      initialStateName: 'IDLE',
+      states: [{ _key: makeUiKey('state'), stateName: 'IDLE', onEntry: defaultStateEntryActions('OP', 'IDLE') }]
+    })
+  }
+}
+
+function handleAddRegionCommand(command) {
+  addOpStateRegion(command)
 }
 
 function handleRegionTypeChange(region) {
@@ -1862,7 +1953,7 @@ function removeObjectRow(rows, row) { const index = rows.indexOf(row); if (index
 
 function addStateTransition() {
   if (!draft.adapterContract?.config?.adapterName && asArray(draft.adapterContract?.events).length === 0) {
-    ElMessage.warning('请先载入适配器契约配置')
+    ElMessage.warning('请先载入 Adapter 契约配置')
     return
   }
   if (functionalOpRegions.value.length === 0) {
@@ -2455,19 +2546,121 @@ function summaryText(model) {
   flex-shrink: 0;
   min-width: 54px;
 }
-.lifecycle-table-deep-border {
-  border: 1.5px solid #94a3b8 !important;
+/* ── 子表与顶格平铺工业表格 (对齐效果图规范) ── */
+.flat-sub-table {
+  border: 1px solid var(--sl-border-base, #e2e8f0);
+  border-radius: var(--sl-radius-sm, 4px);
+  overflow: hidden;
+  background: #ffffff;
+}
+.sub-section-title-bar {
+  height: 30px;
+  padding: 0 10px;
+  background: #f8fafc;
+  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.sub-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--sl-text-heading, #0f172a);
+}
+.sub-count {
+  font-size: 11px;
+  color: var(--sl-text-secondary, #64748b);
+  font-family: var(--sl-font-mono, monospace);
+}
+
+.industrial-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  text-align: left;
+  background: #ffffff;
+}
+.industrial-table th {
+  background: #f8fafc;
+  color: var(--sl-text-secondary, #64748b);
+  font-weight: 600;
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+  white-space: nowrap;
+}
+.industrial-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+  vertical-align: middle;
+  color: var(--sl-text-body, #334155);
+}
+.industrial-table tr:hover td {
+  background: var(--sl-bg-hover, #f8fafc);
+}
+.industrial-table tr:last-child td {
+  border-bottom: none;
+}
+
+/* 标签徽章体系 */
+.tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.25;
+  white-space: nowrap;
+  font-family: var(--sl-font-mono, monospace);
+}
+.tag-primary { background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; }
+.tag-success { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
+.tag-danger { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
+.tag-warning { background: #fffbeb; color: #d97706; border: 1px solid #fde68a; }
+.tag-purple { background: #f5f3ff; color: #7c3aed; border: 1px solid #ddd6fe; }
+.tag-gray { background: #f1f5f9; color: #475569; border: 1px solid #cbd5e1; }
+.tag-info { background: #f8fafc; color: #0284c7; border: 1px solid #bae6fd; }
+
+/* 允许信号清晰小标签药丸 */
+.signal-tags-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 6px;
+  align-items: center;
+}
+.signal-tag-pill {
+  display: inline-block;
+  padding: 2px 7px;
   border-radius: 4px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #0f172a;
+  font-size: 11.5px;
+  font-weight: 500;
+  font-family: var(--sl-font-mono, monospace);
 }
-.lifecycle-table-deep-border .grid-table-header {
-  background: #f1f5f9;
-  border-bottom: 1.5px solid #94a3b8 !important;
+
+.action-badge-verb {
+  display: inline-block;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+  font-size: 10px;
+  font-weight: 700;
+  font-family: var(--sl-font-mono, monospace);
+  letter-spacing: 0.5px;
 }
-.lifecycle-table-deep-border .grid-table-row {
-  border-bottom: 1px solid #cbd5e1 !important;
+.action-sep {
+  color: #94a3b8;
+  font-weight: 700;
+  font-size: 11px;
 }
-.lifecycle-table-deep-border .grid-table-row:last-child {
-  border-bottom: none !important;
+
+.lifecycle-table-deep-border {
+  border-top: 1px solid #94a3b8 !important;
 }
 
 .trig-label-left {

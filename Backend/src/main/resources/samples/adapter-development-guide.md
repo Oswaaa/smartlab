@@ -391,8 +391,7 @@ COMMAND_RUNNING = 指令执行中
     {
       "devicePoint": "Reactor_01",
       "templateName": "Reactor_Basic",
-      "index": 1,
-      "attributeMapping": {}
+      "index": 1
     }
   ]
 }

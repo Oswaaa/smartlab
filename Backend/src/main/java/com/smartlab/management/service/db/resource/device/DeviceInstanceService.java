@@ -34,6 +34,10 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
+import com.smartlab.management.entity.resource.adapter.AdapterIndex;
+import com.smartlab.management.mapper.resource.adapter.AdapterIndexMapper;
+import org.springframework.beans.factory.annotation.Autowired;
+
 /**
  * 设备实例表服务，只负责实例持久化和实例快照基础读写。
  */
@@ -51,6 +55,9 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
     private final DeviceComponentService deviceComponentService;
     private final DeviceModelService deviceModelService;
     private final ApplicationEventPublisher eventPublisher;
+
+    @Autowired(required = false)
+    private AdapterIndexMapper adapterIndexMapper;
 
     public DeviceInstanceService(DeviceInstancesMapper mapper,
                                  DeviceTwinStatesMapper twinStatesMapper,
@@ -226,18 +233,10 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
         }
 
         ObjectNode configNode = toObjectNode(first(payload, "instanceConfig", "commConfig"));
-        if (instance.getBoundAdapterName() == null || instance.getBoundAdapterName().isBlank()) {
-            instance.setBoundAdapterName(text(configNode, "boundAdapterName", text(configNode, "adapterName", null)));
-        }
-        if (instance.getBoundDevicePoint() == null || instance.getBoundDevicePoint().isBlank()) {
-            instance.setBoundDevicePoint(text(configNode, "boundDevicePoint", text(configNode, "devicePoint", null)));
-        }
         if (payload.containsKey("localConstraints")) {
             configNode.set("constraints", JsonNodeSupport.toNode(payload.get("localConstraints")));
         }
         if (hasAdapterBinding(instance)) {
-            configNode.put("boundAdapterName", instance.getBoundAdapterName());
-            configNode.put("boundDevicePoint", instance.getBoundDevicePoint());
             configNode.set("adapterBinding", protocolMapperService.buildAdapterBinding(
                     instance.getDeviceModelId(),
                     instance.getBoundAdapterName(),
@@ -314,6 +313,13 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
     }
 
     public void requireOnline(Long instanceId) {
+        DeviceInstances instance = mapper.selectById(instanceId);
+        if (instance != null && instance.getBoundAdapterName() != null && !instance.getBoundAdapterName().isBlank() && adapterIndexMapper != null) {
+            AdapterIndex adapter = adapterIndexMapper.selectOne(Wrappers.<AdapterIndex>lambdaQuery().eq(AdapterIndex::getAdapterName, instance.getBoundAdapterName().trim()).last("limit 1"));
+            if (adapter != null && "DISABLED".equalsIgnoreCase(adapter.getStatus())) {
+                throw new IllegalStateException("设备绑定的 Adapter“" + instance.getBoundAdapterName() + "”已被停用，无法下发控制指令");
+            }
+        }
         DeviceTwinStates state = getSnapshot(instanceId);
         if (state == null || !"ONLINE".equalsIgnoreCase(state.getOnlineStatus())) {
             throw new IllegalStateException("设备当前处于离线状态 (OFFLINE)，无法下发控制指令");

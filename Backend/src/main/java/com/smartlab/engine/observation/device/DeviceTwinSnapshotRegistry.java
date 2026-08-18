@@ -89,9 +89,10 @@ public class DeviceTwinSnapshotRegistry {
             changed.fields().forEachRemaining(entry -> merged.set(entry.getKey(), entry.getValue().deepCopy()));
             long revision = previous == null ? 1 : previous.revision() + 1;
             Instant now = Instant.now();
+            String currentOnlineStatus = previous != null && previous.onlineStatus() != null ? previous.onlineStatus() : "OFFLINE";
             updated = new DeviceTwinSnapshot(instanceId,
                     modelId == null && previous != null ? previous.deviceModelId() : modelId,
-                    merged, "ONLINE", observedAt == null ? now : observedAt, now, revision,
+                    merged, currentOnlineStatus, observedAt == null ? now : observedAt, now, revision,
                     ObservationStatus.VALID, SnapshotOrigin.LIVE);
             if (reference.compareAndSet(previous, updated)) break;
         }

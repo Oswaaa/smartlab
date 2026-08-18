@@ -30,7 +30,6 @@ public interface DeviceTwinStatesMapper extends BaseMapper<DeviceTwinStates> {
     @Update("""
             UPDATE "DEVICE_TWIN_STATES"
             SET current_attr = COALESCE(current_attr, '{}'::jsonb) || CAST(#{attributePatchJson} AS jsonb),
-                online_status = 'ONLINE',
                 last_online_time = #{observedAt},
                 update_time = #{updateTime}
             WHERE instance_id = #{instanceId}

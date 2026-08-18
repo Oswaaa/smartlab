@@ -54,8 +54,7 @@ class AdapterPayloadMapperServiceTest {
         category.putArray("devicePoints").addObject()
                 .put("devicePoint", "point-1")
                 .put("templateName", "ReactorTemplate")
-                .put("categoryName", "Reactor")
-                .putObject("attributeMapping");
+                .put("categoryName", "Reactor");
         adapter.setParsedConfig(manifest);
         when(adapters.requireAdapter("adapter-B")).thenReturn(adapter);
 

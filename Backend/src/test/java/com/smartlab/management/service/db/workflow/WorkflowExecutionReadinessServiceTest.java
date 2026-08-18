@@ -59,6 +59,20 @@ class WorkflowExecutionReadinessServiceTest {
     }
 
     @Test
+    void rejectsDisabledAdapterBeforeTaskStarts() {
+        Fixture fixture = fixture();
+        DeviceTwinStates twin = new DeviceTwinStates();
+        twin.setOnlineStatus("ONLINE");
+        when(fixture.twins().getByInstanceId(7L)).thenReturn(twin);
+        AdapterIndex adapter = adapter("DISABLED", OffsetDateTime.now());
+        when(fixture.adapters().getByName("adapter-a")).thenReturn(adapter);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class,
+                () -> fixture.service().validate(null));
+        assertTrue(error.getMessage().contains("已被停用"));
+    }
+
+    @Test
     void inspectsOfflineDeviceWithoutThrowing() {
         Fixture fixture = fixture();
         DeviceTwinStates twin = new DeviceTwinStates();

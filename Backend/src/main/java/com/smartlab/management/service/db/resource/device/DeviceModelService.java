@@ -592,9 +592,24 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             }
             String interfaceName = trigger.path("interfaceName").asText("");
             String signalName = trigger.path("signalName").asText("");
-            if (!"Interface_adapter_in".equals(interfaceName) || signalName.isBlank()) {
-                throw new IllegalArgumentException("设备特有状态转移只能由Interface_adapter_in的Adapter事件触发");
+            if (signalName.isBlank()) {
+                throw new IllegalArgumentException("状态转移trigger.signalName不能为空");
             }
+
+            // 1. 系统内置规则分流与合法性比对
+            if (!"Interface_adapter_in".equals(interfaceName)) {
+                boolean isSystem = SystemExecutionContract.findStateMachineSystemTransition(
+                        stateSpace, fromState, interfaceName, signalName)
+                        .filter(expected -> expected.toStateName().equals(toState))
+                        .isPresent();
+                if (isSystem) {
+                    // 合法系统内置规则：自动分流并忽略，不存入数据库（由状态机引擎内核硬编码统一保障）
+                    continue;
+                }
+                throw new IllegalArgumentException("非法的系统内置转移规则或已被篡改: " + fromState + " ➔ " + toState + " (" + interfaceName + " / " + signalName + ")");
+            }
+
+            // 2. 自定义规则入库（仅允许由 Interface_adapter_in 触发）
             ObjectNode transition = targetTransitions.addObject();
             if (source.has("description")) {
                 transition.put("description", source.path("description").asText(""));

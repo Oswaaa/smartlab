@@ -1,0 +1,919 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartLab 2.0 - 业务功能状态转移规则 UI 效果图</title>
+  <style>
+    :root {
+      --sl-primary: #2563eb;
+      --sl-primary-hover: #1d4ed8;
+      --sl-primary-light: #eff6ff;
+      --sl-primary-border: #bfdbfe;
+      --sl-success: #16a34a;
+      --sl-success-light: #f0fdf4;
+      --sl-success-border: #bbf7d0;
+      --sl-danger: #dc2626;
+      --sl-danger-light: #fef2f2;
+      --sl-danger-border: #fecaca;
+      --sl-warning: #d97706;
+      --sl-warning-light: #fffbeb;
+      --sl-warning-border: #fde68a;
+      --sl-purple: #7c3aed;
+      --sl-purple-light: #f5f3ff;
+      --sl-purple-border: #ddd6fe;
+      --sl-gray: #475569;
+      --sl-gray-light: #f1f5f9;
+      --sl-gray-border: #cbd5e1;
+      
+      --sl-bg-page: #f1f5f9;
+      --sl-bg-card: #ffffff;
+      --sl-text-heading: #0f172a;
+      --sl-text-body: #334155;
+      --sl-text-secondary: #64748b;
+      --sl-border-base: #e2e8f0;
+      --sl-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+      --sl-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--sl-font-family);
+      background-color: var(--sl-bg-page);
+      color: var(--sl-text-body);
+      font-size: 13px;
+      line-height: 1.5;
+      padding: 24px;
+    }
+
+    .mockup-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* 顶部横幅 */
+    .top-header {
+      background: #ffffff;
+      border: 1px solid var(--sl-border-base);
+      border-radius: 8px;
+      padding: 16px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    }
+    .header-title-wrap h1 {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--sl-text-heading);
+    }
+    .header-title-wrap p {
+      font-size: 12px;
+      color: var(--sl-text-secondary);
+      margin-top: 4px;
+    }
+
+    /* 色彩对照体系卡片 */
+    .palette-card {
+      background: #ffffff;
+      border: 1px solid var(--sl-border-base);
+      border-radius: 8px;
+      padding: 16px 20px;
+    }
+    .palette-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--sl-text-heading);
+      margin-bottom: 12px;
+    }
+    .palette-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+    }
+    .palette-item {
+      border: 1px solid var(--sl-border-base);
+      border-radius: 6px;
+      padding: 10px 12px;
+      background: #fafbfc;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .palette-item .item-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .palette-item .item-desc {
+      font-size: 11.5px;
+      color: var(--sl-text-secondary);
+    }
+
+    /* 标签气泡标准样式 */
+    .tag {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11.5px;
+      font-weight: 600;
+      font-family: var(--sl-font-mono);
+      white-space: nowrap;
+    }
+    .tag-primary { background: var(--sl-primary-light); color: var(--sl-primary); border: 1px solid var(--sl-primary-border); }
+    .tag-success { background: var(--sl-success-light); color: var(--sl-success); border: 1px solid var(--sl-success-border); }
+    .tag-danger { background: var(--sl-danger-light); color: var(--sl-danger); border: 1px solid var(--sl-danger-border); }
+    .tag-warning { background: var(--sl-warning-light); color: var(--sl-warning); border: 1px solid var(--sl-warning-border); }
+    .tag-purple { background: var(--sl-purple-light); color: var(--sl-purple); border: 1px solid var(--sl-purple-border); }
+    .tag-gray { background: var(--sl-gray-light); color: var(--sl-gray); border: 1px solid var(--sl-gray-border); }
+
+    /* 清晰信号小药丸 (无 · 分隔) */
+    .signal-tags-wrap {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+    .signal-tag-pill {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      color: #0f172a;
+      font-size: 11.5px;
+      font-weight: 600;
+      font-family: var(--sl-font-mono);
+    }
+
+    /* 区域章节大卡片 */
+    .holistic-section-card {
+      border: 1px solid var(--sl-border-base);
+      border-radius: 8px;
+      background: #ffffff;
+      overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.02);
+    }
+    .section-card-head {
+      background: #ffffff;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--sl-border-base);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .section-card-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .sec-idx-badge {
+      display: inline-flex;
+      width: 24px;
+      height: 20px;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--sl-primary-border);
+      border-radius: 4px;
+      background: var(--sl-primary-light);
+      color: var(--sl-primary);
+      font-size: 11px;
+      font-weight: 700;
+      font-family: var(--sl-font-mono);
+    }
+    .sec-title-text {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--sl-text-heading);
+    }
+    .sec-desc-text {
+      font-size: 12px;
+      color: var(--sl-text-secondary);
+      margin-left: 4px;
+      font-weight: 400;
+    }
+    .section-card-body {
+      padding: 16px;
+    }
+
+    /* 子表格平铺规范 */
+    .flat-sub-table {
+      border: 1px solid var(--sl-border-base);
+      border-radius: 6px;
+      overflow: hidden;
+      background: #ffffff;
+      margin-bottom: 16px;
+    }
+    .flat-sub-table:last-child {
+      margin-bottom: 0;
+    }
+    .sub-section-title-bar {
+      height: 34px;
+      padding: 0 12px;
+      background: #f8fafc;
+      border-bottom: 1px solid var(--sl-border-base);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .sub-title {
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--sl-text-heading);
+    }
+    .sub-count {
+      font-size: 11.5px;
+      color: var(--sl-text-secondary);
+      font-family: var(--sl-font-mono);
+    }
+
+    /* 工业表格样式 */
+    .industrial-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      text-align: left;
+    }
+    .industrial-table th {
+      background: #f8fafc;
+      color: var(--sl-text-secondary);
+      font-weight: 600;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--sl-border-base);
+      white-space: nowrap;
+    }
+    .industrial-table td {
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--sl-border-base);
+      vertical-align: middle;
+      color: var(--sl-text-body);
+    }
+    .industrial-table tr:hover td {
+      background: #f8fafc;
+    }
+    .industrial-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    /* 结构化动作芯片 */
+    .action-display-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 1px 7px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 4px;
+      line-height: 1.4;
+      vertical-align: middle;
+    }
+    .action-badge-verb {
+      display: inline-block;
+      padding: 0 4px;
+      border-radius: 3px;
+      background: #eff6ff;
+      color: #2563eb;
+      border: 1px solid #bfdbfe;
+      font-size: 10px;
+      font-weight: 700;
+      font-family: var(--sl-font-mono);
+      letter-spacing: 0.5px;
+    }
+    .action-target-iface {
+      font-family: var(--sl-font-mono);
+      font-size: 11px;
+      color: #475569;
+    }
+    .action-sep {
+      color: #94a3b8;
+      font-weight: 700;
+      font-size: 11px;
+    }
+    .action-target-sig {
+      font-family: var(--sl-font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      color: #0f172a;
+    }
+
+    /* 触发机制双行排版 */
+    .trigger-cell-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .trigger-cell-item {
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+    }
+    .trigger-iface-line {
+      font-family: var(--sl-font-mono);
+      font-size: 11px;
+      color: #64748b;
+      line-height: 1.2;
+    }
+    .trigger-signal-line {
+      font-family: var(--sl-font-mono);
+      font-size: 12px;
+      font-weight: 700;
+      color: #0f172a;
+      line-height: 1.3;
+    }
+
+    /* 抽屉内双行紧凑转移规则卡片 */
+    .trans-rule-card-list {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      padding: 12px;
+    }
+    .trans-rule-item-card {
+      border: 1px solid var(--sl-border-base);
+      border-radius: 6px;
+      background: #ffffff;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+      transition: all 0.15s ease;
+    }
+    .trans-rule-item-card:hover {
+      border-color: #cbd5e1;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+    }
+    .trans-card-row-top {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      width: 100%;
+    }
+    .trans-card-row-bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      width: 100%;
+      padding-top: 8px;
+      border-top: 1px dashed #f1f5f9;
+    }
+
+    /* 控件模拟 */
+    .mock-input {
+      height: 28px;
+      border: 1px solid var(--sl-border-base);
+      border-radius: 4px;
+      padding: 0 8px;
+      font-size: 12px;
+      color: var(--sl-text-heading);
+      background: #ffffff;
+      outline: none;
+    }
+    .mock-select {
+      height: 28px;
+      border: 1px solid var(--sl-border-base);
+      border-radius: 4px;
+      padding: 0 24px 0 8px;
+      font-size: 12px;
+      color: var(--sl-text-heading);
+      background: #ffffff url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='%2364748b'%3E%3Cpath d='M0 0l5 6 5-6z'/%3E%3C/svg%3E") no-repeat right 8px center;
+      appearance: none;
+      outline: none;
+    }
+
+    .btn-aliyun-cta {
+      height: 26px;
+      padding: 0 10px;
+      background: #ffffff;
+      color: var(--sl-primary);
+      border: 1px solid var(--sl-primary-border);
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .btn-aliyun {
+      height: 24px;
+      padding: 0 8px;
+      background: #ffffff;
+      color: var(--sl-text-body);
+      border: 1px solid var(--sl-border-base);
+      border-radius: 4px;
+      font-size: 11px;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .btn-link-danger {
+      background: transparent;
+      border: none;
+      color: var(--sl-danger);
+      font-size: 12px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+
+    /* 原版功能状态分区卡片样式 */
+    .region-block {
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+      background: #fafbfc;
+      padding: 12px;
+      margin-bottom: 10px;
+    }
+    .region-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .state-summary-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .state-summary-row.align-top {
+      align-items: flex-start;
+      margin-bottom: 0;
+    }
+    .state-summary-label {
+      font-size: 11.5px;
+      color: var(--sl-text-secondary);
+      font-weight: 600;
+      width: 60px;
+      flex-shrink: 0;
+    }
+    .state-token-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+    .state-token {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 8px;
+      background: #f1f5f9;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      font-size: 11.5px;
+      font-weight: 500;
+    }
+    .state-close-btn {
+      color: #94a3b8;
+      cursor: pointer;
+      font-size: 11px;
+    }
+    .state-close-btn:hover { color: var(--sl-danger); }
+  </style>
+</head>
+<body>
+
+  <div class="mockup-container">
+
+    <!-- 头部说明 -->
+    <div class="top-header">
+      <div class="header-title-wrap">
+        <h1>SmartLab 2.0 业务功能状态转移与色彩体系规范</h1>
+        <p>包含 7 大状态气泡配色、独立信号小药丸、原版功能状态分区以及双行紧凑业务转移规则设计。</p>
+      </div>
+      <span class="tag tag-success">标准设计方案 1.2</span>
+    </div>
+
+    <!-- 1. 状态气泡颜色定义 -->
+    <div class="palette-card">
+      <div class="palette-title">1. 状态气泡颜色对照体系</div>
+      <div class="palette-grid">
+        <div class="palette-item">
+          <div class="item-head">
+            <span class="tag tag-gray">IDLE</span>
+            <strong style="font-size: 11px; color: var(--sl-gray);">空闲/初始态</strong>
+          </div>
+          <span class="item-desc">灰色 (Slate)，中性就绪</span>
+        </div>
+        <div class="palette-item">
+          <div class="item-head">
+            <span class="tag tag-purple">SENT</span>
+            <strong style="font-size: 11px; color: var(--sl-purple);">已下发</strong>
+          </div>
+          <span class="item-desc">紫色 (Purple)，待驱动确认</span>
+        </div>
+        <div class="palette-item">
+          <div class="item-head">
+            <span class="tag tag-primary">RUNNING</span>
+            <strong style="font-size: 11px; color: var(--sl-primary);">执行中</strong>
+          </div>
+          <span class="item-desc">蓝色 (Blue)，活跃主线</span>
+        </div>
+        <div class="palette-item">
+          <div class="item-head">
+            <span class="tag tag-success">COMPLETED</span>
+            <strong style="font-size: 11px; color: var(--sl-success);">已完成</strong>
+          </div>
+          <span class="item-desc">绿色 (Green)，成功终止态</span>
+        </div>
+        <div class="palette-item">
+          <div class="item-head">
+            <span class="tag tag-danger">FAILED</span>
+            <strong style="font-size: 11px; color: var(--sl-danger);">失败</strong>
+          </div>
+          <span class="item-desc">红色 (Red)，异常终止态</span>
+        </div>
+        <div class="palette-item">
+          <div class="item-head">
+            <span class="tag tag-warning">ABORTING / ABORTED</span>
+            <strong style="font-size: 11px; color: var(--sl-warning);">中止中/已中止</strong>
+          </div>
+          <span class="item-desc">橙色 (Amber)，人工干预/约束刹车</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. 抽屉内 05 状态机规范与规则定义 -->
+    <div class="holistic-section-card">
+      <div class="section-card-head">
+        <div class="section-card-title">
+          <span class="sec-idx-badge">05</span>
+          <span class="sec-title-text">状态机</span>
+          <span class="sec-desc-text">通信接口、指令生命周期与功能流转规则</span>
+        </div>
+        <span class="tag tag-info" style="background: #f8fafc; color: #0284c7; border: 1px solid #bae6fd;">系统标准契约</span>
+      </div>
+
+      <div class="section-card-body">
+        
+        <!-- 5.1 接口定义 (去掉职责说明，信号独立小标签药丸，无·) -->
+        <div class="flat-sub-table">
+          <div class="sub-section-title-bar">
+            <span class="sub-title">5.1 接口定义</span>
+            <span class="sub-count">共 5 个接口</span>
+          </div>
+          <table class="industrial-table">
+            <thead>
+              <tr>
+                <th style="width: 220px;">接口标识</th>
+                <th style="width: 80px;">方向</th>
+                <th style="width: 120px;">类型</th>
+                <th>允许流通信号</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong style="font-family: var(--sl-font-mono);">Interface_workflow_in</strong></td>
+                <td><span style="color: var(--sl-primary); font-weight: 500;">输入</span></td>
+                <td><span style="font-family: var(--sl-font-mono);">WORKFLOW</span></td>
+                <td>
+                  <div class="signal-tags-wrap">
+                    <span class="signal-tag-pill">WF_EXECUTE_START</span>
+                    <span class="signal-tag-pill">WF_EXECUTE_ABORT</span>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><strong style="font-family: var(--sl-font-mono);">Interface_adapter_in</strong></td>
+                <td><span style="color: var(--sl-primary); font-weight: 500;">输入</span></td>
+                <td><span style="font-family: var(--sl-font-mono);">ADAPTER</span></td>
+                <td>
+                  <div class="signal-tags-wrap">
+                    <span class="signal-tag-pill">ADAPTER_CMD_ACCEPTED</span>
+                    <span class="signal-tag-pill">ADAPTER_CMD_COMPLETED</span>
+                    <span class="signal-tag-pill">ADAPTER_CMD_FAILED</span>
+                    <span class="signal-tag-pill">HEAT_TEMP_REACHED</span>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td><strong style="font-family: var(--sl-font-mono);">Interface_adapter_out</strong></td>
+                <td><span style="color: var(--sl-primary); font-weight: 500;">输出</span></td>
+                <td><span style="font-family: var(--sl-font-mono);">ADAPTER</span></td>
+                <td>
+                  <div class="signal-tags-wrap">
+                    <span class="signal-tag-pill">CMD_START</span>
+                    <span class="signal-tag-pill">CMD_ABORT</span>
+                    <span class="signal-tag-pill">OP_STATE</span>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 5.2 执行生命周期 (统一灰色气泡) -->
+        <div class="flat-sub-table">
+          <div class="sub-section-title-bar">
+            <span class="sub-title">5.2 执行生命周期</span>
+            <span class="sub-count">内置规范 + Adapter 事件绑定</span>
+          </div>
+          <table class="industrial-table">
+            <thead>
+              <tr>
+                <th style="width: 220px;">阶段转移</th>
+                <th style="width: 200px;">规则说明</th>
+                <th>触发接口信号与驱动事件绑定</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>
+                  <span class="tag tag-gray">IDLE</span>
+                  <span style="margin: 0 4px; font-weight: 700; color: var(--sl-text-secondary);">➔</span>
+                  <span class="tag tag-gray">SENT</span>
+                </td>
+                <td>
+                  <span class="tag tag-primary">系统固定规则</span>
+                  <div style="font-size: 11px; color: #64748b; margin-top: 2px;">下发指令并启动 (自动向 Adapter 发送报文)</div>
+                </td>
+                <td>
+                  <span style="color: #64748b; font-size: 11px;">Interface_workflow_in:</span>
+                  <span class="tag tag-primary" style="margin-left: 6px;">WF_EXECUTE_START</span>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <span class="tag tag-gray">SENT</span>
+                  <span style="margin: 0 4px; font-weight: 700; color: var(--sl-text-secondary);">➔</span>
+                  <span class="tag tag-gray">RUNNING</span>
+                </td>
+                <td>
+                  <span class="tag tag-info" style="background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe;">正常推进阶段</span>
+                  <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Adapter 接收确认事件</div>
+                </td>
+                <td>
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="color: var(--sl-danger); font-size: 11px; font-weight: 600;">必选绑定:</span>
+                    <span style="font-family: var(--sl-font-mono); font-size: 11.5px;">Interface_adapter_in</span>
+                    <select class="mock-select" style="width: 220px;">
+                      <option>Device_Cmd_Accepted</option>
+                    </select>
+                  </div>
+                </td>
+              </tr>
+              <tr>
+                <td>
+                  <span class="tag tag-gray">RUNNING</span>
+                  <span style="margin: 0 4px; font-weight: 700; color: var(--sl-text-secondary);">➔</span>
+                  <span class="tag tag-gray">COMPLETED</span>
+                </td>
+                <td>
+                  <span class="tag tag-info" style="background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe;">正常推进阶段</span>
+                  <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Adapter 完成执行事件</div>
+                </td>
+                <td>
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <span style="color: var(--sl-danger); font-size: 11px; font-weight: 600;">必选绑定:</span>
+                    <span style="font-family: var(--sl-font-mono); font-size: 11.5px;">Interface_adapter_in</span>
+                    <select class="mock-select" style="width: 220px;">
+                      <option>Device_Cmd_Completed</option>
+                    </select>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <!-- 5.3 功能状态分区 (恢复原版设计) -->
+        <div class="flat-sub-table">
+          <div class="sub-section-title-bar">
+            <span class="sub-title">5.3 功能状态分区</span>
+            <button class="btn-aliyun-cta" type="button">
+              <span>+ 新增分区</span>
+            </button>
+          </div>
+          <div style="padding: 12px;">
+            <!-- 功能分区 1 -->
+            <div class="region-block">
+              <div class="region-header">
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <input type="text" class="mock-input" value="Main" style="width: 140px; font-weight: 700;" />
+                  <span class="tag tag-success">功能区域</span>
+                </div>
+                <button class="btn-link-danger" type="button">删除分区</button>
+              </div>
+              <div class="state-summary-row">
+                <span class="state-summary-label">初始状态</span>
+                <select class="mock-select" style="width: 140px;">
+                  <option>IDLE</option>
+                  <option>HEATING</option>
+                  <option>MAINTAINING</option>
+                </select>
+              </div>
+              <div class="state-summary-row align-top">
+                <span class="state-summary-label">状态列表</span>
+                <div class="state-token-list">
+                  <span class="state-token">IDLE <span class="state-close-btn">✕</span></span>
+                  <span class="state-token">HEATING <span class="state-close-btn">✕</span></span>
+                  <span class="state-token">MAINTAINING <span class="state-close-btn">✕</span></span>
+                  <button class="btn-aliyun" type="button">+ 新增状态</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 异常分区 -->
+            <div class="region-block" style="background: #fef2f2; border-color: #fecaca;">
+              <div class="region-header">
+                <div style="display: flex; gap: 8px; align-items: center;">
+                  <strong style="color: #b91c1c; font-size: 13px;">Exception</strong>
+                  <span class="tag tag-danger">异常区域</span>
+                </div>
+              </div>
+              <div class="state-summary-row">
+                <span class="state-summary-label">初始状态</span>
+                <span style="font-size: 11.5px; color: #64748b;">异常区域不设置初始状态</span>
+              </div>
+              <div class="state-summary-row align-top">
+                <span class="state-summary-label">状态列表</span>
+                <div class="state-token-list">
+                  <span class="state-token" style="background: #ffffff; border-color: #fca5a5; color: #b91c1c;">OVER_TEMP</span>
+                  <span class="state-token" style="background: #ffffff; border-color: #fca5a5; color: #b91c1c;">COMM_TIMEOUT</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5.4 业务功能状态转移规则 (双行紧凑卡片排布) -->
+        <div class="flat-sub-table">
+          <div class="sub-section-title-bar">
+            <span class="sub-title">5.4 功能状态转移规则</span>
+            <button class="btn-aliyun-cta" type="button">
+              <span>+ 新增规则</span>
+            </button>
+          </div>
+          <div class="trans-rule-card-list">
+            
+            <!-- 规则卡片 1 -->
+            <div class="trans-rule-item-card">
+              <div class="trans-card-row-top">
+                <span style="font-size: 11px; font-weight: 700; color: var(--sl-text-secondary);">#1</span>
+                <input type="text" class="mock-input" value="加热开始，进入加热中" style="flex: 1;" />
+
+                <span style="font-size: 11.5px; color: #64748b;">所属分区:</span>
+                <select class="mock-select" style="width: 120px;">
+                  <option>Main</option>
+                </select>
+
+                <span style="font-size: 11.5px; color: #64748b;">状态转移:</span>
+                <div style="display: flex; align-items: center; gap: 4px;">
+                  <select class="mock-select" style="width: 100px;"><option>IDLE</option></select>
+                  <span style="color: #94a3b8; font-weight: 700;">→</span>
+                  <select class="mock-select" style="width: 100px;"><option>HEATING</option></select>
+                </div>
+
+                <button class="btn-link-danger" type="button" style="margin-left: auto;">删除</button>
+              </div>
+
+              <div class="trans-card-row-bottom">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="font-size: 11px; color: #64748b; flex-shrink: 0;">触发接口信号:</span>
+                  <div style="display: flex; flex-direction: column; gap: 2px;">
+                    <span style="font-family: var(--sl-font-mono); font-size: 11px; color: #64748b; line-height: 1.2;">Interface_adapter_in</span>
+                    <select class="mock-select" style="width: 220px;">
+                      <option>HEAT_START_EVENT</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 6px; margin-left: auto;">
+                  <span style="font-size: 11px; color: #64748b;">转移动作:</span>
+                  <div class="action-display-chip">
+                    <span class="action-badge-verb">SEND</span>
+                    <select class="mock-select" style="width: 130px; height: 24px; font-size: 11px;">
+                      <option>CMD_START</option>
+                    </select>
+                    <span class="action-sep">➔</span>
+                    <span class="action-target-iface">Interface_adapter_out</span>
+                    <span style="color: #ef4444; cursor: pointer; font-size: 11px; margin-left: 2px;">✕</span>
+                  </div>
+                  <button class="btn-aliyun" type="button">+ 添加动作</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 规则卡片 2 -->
+            <div class="trans-rule-item-card">
+              <div class="trans-card-row-top">
+                <span style="font-size: 11px; font-weight: 700; color: var(--sl-text-secondary);">#2</span>
+                <input type="text" class="mock-input" value="达到目标温度，进入恒温保持" style="flex: 1;" />
+
+                <span style="font-size: 11.5px; color: #64748b;">所属分区:</span>
+                <select class="mock-select" style="width: 120px;">
+                  <option>Main</option>
+                </select>
+
+                <span style="font-size: 11.5px; color: #64748b;">状态转移:</span>
+                <div style="display: flex; align-items: center; gap: 4px;">
+                  <select class="mock-select" style="width: 100px;"><option>HEATING</option></select>
+                  <span style="color: #94a3b8; font-weight: 700;">→</span>
+                  <select class="mock-select" style="width: 110px;"><option>MAINTAINING</option></select>
+                </div>
+
+                <button class="btn-link-danger" type="button" style="margin-left: auto;">删除</button>
+              </div>
+
+              <div class="trans-card-row-bottom">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                  <span style="font-size: 11px; color: #64748b; flex-shrink: 0;">触发接口信号:</span>
+                  <div style="display: flex; flex-direction: column; gap: 2px;">
+                    <span style="font-family: var(--sl-font-mono); font-size: 11px; color: #64748b; line-height: 1.2;">Interface_adapter_in</span>
+                    <select class="mock-select" style="width: 220px;">
+                      <option>HEAT_TEMP_REACHED</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 6px; margin-left: auto;">
+                  <span style="font-size: 11px; color: #64748b;">转移动作:</span>
+                  <span style="font-size: 11px; color: #94a3b8;">暂无额外过程动作</span>
+                  <button class="btn-aliyun" type="button">+ 添加动作</button>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- 3. 模型详情页面中的 5.5 业务状态转移规则 (展示态，已彻底删除无意义的进入动作列) -->
+    <div class="flat-sub-table" style="box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+      <div class="sub-section-title-bar">
+        <span class="sub-title">5.5 业务状态转移规则</span>
+        <span class="sub-count">共 2 条</span>
+      </div>
+      <table class="industrial-table">
+        <thead>
+          <tr>
+            <th style="width: 200px;">规则描述</th>
+            <th style="width: 120px;">所属分区</th>
+            <th style="width: 220px;">状态转移</th>
+            <th style="width: 260px;">触发接口信号</th>
+            <th style="width: 240px;">过程转移动作</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>加热开始，进入加热中</strong></td>
+            <td><span style="font-weight: 500;">Main</span></td>
+            <td>
+              <span class="tag tag-gray">IDLE</span>
+              <span style="margin: 0 4px; font-weight: 700; color: var(--sl-text-secondary);">→</span>
+              <span class="tag tag-primary">HEATING</span>
+            </td>
+            <td>
+              <div class="trigger-cell-list">
+                <div class="trigger-cell-item">
+                  <div class="trigger-iface-line">Interface_adapter_in</div>
+                  <div class="trigger-signal-line">HEAT_START_EVENT</div>
+                </div>
+              </div>
+            </td>
+            <td>
+              <div class="action-display-chip">
+                <span class="action-badge-verb">SEND</span>
+                <span class="action-target-sig">CMD_START</span>
+                <span class="action-sep">➔</span>
+                <span class="action-target-iface">Interface_adapter_out</span>
+              </div>
+            </td>
+          </tr>
+          <tr>
+            <td><strong>达到目标温度，进入恒温保持</strong></td>
+            <td><span style="font-weight: 500;">Main</span></td>
+            <td>
+              <span class="tag tag-primary">HEATING</span>
+              <span style="margin: 0 4px; font-weight: 700; color: var(--sl-text-secondary);">→</span>
+              <span class="tag tag-primary">MAINTAINING</span>
+            </td>
+            <td>
+              <div class="trigger-cell-list">
+                <div class="trigger-cell-item">
+                  <div class="trigger-iface-line">Interface_adapter_in</div>
+                  <div class="trigger-signal-line">HEAT_TEMP_REACHED</div>
+                </div>
+              </div>
+            </td>
+            <td><span style="color: var(--sl-text-secondary);">-</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+</body>
+</html>

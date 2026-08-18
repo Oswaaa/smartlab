@@ -65,12 +65,30 @@ export function formatJson(value) { return JSON.stringify(value || {}, null, 2) 
 
 export function dataTypeOptions(base, current) { return current && !base.includes(current) ? [...base, current] : base }
 
+export function interfaceRoleLabel(row) {
+  if (!row) return '-'
+  const name = row.name || ''
+  const type = row.interfaceType || ''
+  if (name.includes('workflow')) return '工作流调度引擎指令入口，控制执行与中止'
+  if (name.includes('control')) return '控制台前端手动下发指令与单步调试接口'
+  if (name.includes('constraint')) return '内置约束联锁触发入口，超限自动产生中止保护'
+  if (name === 'Interface_adapter_in' || (row.direction === 'IN' && type === 'ADAPTER')) return '接收底层驱动上报的指令周期事件与业务事件'
+  if (name === 'Interface_adapter_out' || (row.direction === 'OUT' && type === 'ADAPTER')) return '转移动作输出：向硬件 Adapter 下发控制报文'
+  if (name === 'Interface_state_out' || (row.direction === 'OUT' && type === 'STATE')) return '进入动作输出：进入新状态时全局广播最新状态'
+  return type + ' 接口'
+}
+
 export function describeAction(action) {
-  if (!action?.actionName) return ''
+  if (!action?.actionName) return '-'
   if (action.actionName === 'SEND') {
-    const interfaceName = action.payload?.interfaceName || '接口'
-    const signalName = action.payload?.signalName || '信号'
-    return '输出 ' + interfaceName + ' / ' + signalName
+    const interfaceName = action.payload?.interfaceName || ''
+    const signalName = action.payload?.signalName || ''
+    if (interfaceName && signalName) {
+      return `${action.actionName} · ${interfaceName} · ${signalName}`
+    }
+    if (signalName) {
+      return `${action.actionName} · ${signalName}`
+    }
   }
   return action.actionName
 }
@@ -175,7 +193,7 @@ export function normalizeCapabilities(value) {
     const params = asArray(item.parameters).map(param => ({
       _key: param._key || makeUiKey('param'),
       name: stringValue(param.name),
-      displayName: stringValue(param.displayName || param.name),
+      displayName: stringValue(param.displayName),
       dataType: normalizeDataType(param.dataType, 'DOUBLE', attributeDataTypes)
     }))
     const parameterMapping = asArray(item.parameterMapping).map(mapping => ({
@@ -187,10 +205,13 @@ export function normalizeCapabilities(value) {
       fixedValue: mapping.fixedValue ?? ''
     }))
     const isAbort = item.isAbort === true
+    const capabilityName = stringValue(item.capabilityName)
+    const displayName = stringValue(item.displayName)
     return {
       _key: item._key || makeUiKey('cap'),
-      name: stringValue(item.capabilityName || item.name),
-      displayName: stringValue(item.displayName || item.capabilityName || item.name),
+      name: capabilityName,
+      capabilityName,
+      displayName,
       adapterCommandName: stringValue(item.adapterCommandName),
       isAbort,
       abortCapabilityName: isAbort ? null : (stringValue(item.abortCapabilityName) || null),
@@ -203,7 +224,7 @@ export function normalizeCapabilities(value) {
   })
   const capabilityKeyByName = new Map()
   capabilities.forEach(capability => {
-    if (capability.name && !capabilityKeyByName.has(capability.name)) capabilityKeyByName.set(capability.name, capability._key)
+    if (capability.capabilityName && !capabilityKeyByName.has(capability.capabilityName)) capabilityKeyByName.set(capability.capabilityName, capability._key)
   })
   capabilities.forEach(capability => {
     if (!capability.isAbort) {
@@ -293,7 +314,16 @@ export function normalizeAdapterContract(value, attributes = []) {
   }
 }
 
-export function normalizePorts(value, attributes = []) { return asArray(value).map(item => ({ _key: item._key || makeUiKey('port'), portName: stringValue(item.portName), displayName: stringValue(item.displayName || item.portName), direction: item.direction || 'OUT', bindingAttrName: stringValue(item.bindingAttrName), bindingAttrKey: item.bindingAttrKey || findKeyByName(attributes, item.bindingAttrName) })) }
+export function normalizePorts(value, attributes = []) {
+  return asArray(value).map(item => ({
+    _key: item._key || makeUiKey('port'),
+    portName: stringValue(item.portName),
+    direction: item.direction || 'OUT',
+    bindingAttrName: stringValue(item.bindingAttrName),
+    bindingAttrKey: item.bindingAttrKey || findKeyByName(attributes, item.bindingAttrName),
+    description: stringValue(item.description)
+  }))
+}
 
 export function normalizeOperator(value) {
   const text = String(value || '').trim()
@@ -388,9 +418,37 @@ export function normalizeTransitions(value) {
 export function normalizePayload(value) { return value && typeof value === 'object' && !Array.isArray(value) ? value : {} }
 
 export function normalizeModelBundle(value) {
+  const capabilityModel = value?.capabilityModel || {}
+  const stateMachineModel = value?.stateMachineModel || {}
+  const rawTransitions = asArray(stateMachineModel.transitions)
+  const sysTransitions = defaultCommandLifecycleTransitions().map(t => ({
+    stateSpace: 'CMD',
+    description: t.description || (t.toStateName === 'SENT' ? '下发指令并启动 (自动向 Adapter 发送报文)' : '下发指令中止请求 (自动向 Adapter 发送 ABORT 报文)'),
+    fromStateName: t.fromStateName,
+    toStateName: t.toStateName,
+    trigger: t.trigger ? { interfaceName: t.trigger.interfaceName, signalName: t.trigger.signalName } : null,
+    actions: asArray(t.actions).map(a => ({ actionName: a.actionName, payload: a.payload || {} }))
+  }))
+
+  const isDuplicate = (t, list) => list.some(item =>
+    item.stateSpace === t.stateSpace &&
+    item.fromStateName === t.fromStateName &&
+    item.toStateName === t.toStateName &&
+    item.trigger?.interfaceName === t.trigger?.interfaceName &&
+    item.trigger?.signalName === t.trigger?.signalName
+  )
+
+  const mergedTransitions = [
+    ...sysTransitions,
+    ...rawTransitions.filter(t => !isDuplicate(t, sysTransitions))
+  ]
+
   return {
-    capabilityModel: value?.capabilityModel || {},
-    stateMachineModel: value?.stateMachineModel || {}
+    capabilityModel,
+    stateMachineModel: {
+      ...stateMachineModel,
+      transitions: mergedTransitions
+    }
   }
 }
 

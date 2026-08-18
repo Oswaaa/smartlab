@@ -8,9 +8,6 @@
       <button v-if="!readonly" class="btn-aliyun-cta" type="button" aria-label="新建根类别" @click="startCreateRoot">
         <el-icon><FolderAdd /></el-icon><span>新增类别</span>
       </button>
-      <button v-else class="btn-aliyun" type="button" @click="emit('select-category', { categoryId: '' })">
-        <el-icon><List /></el-icon><span>全部实例</span>
-      </button>
     </header>
 
     <div class="tree-search-row">

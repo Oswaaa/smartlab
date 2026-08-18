@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartLab 2.0 - 状态机模型全景因果架构与 UI 重构设计方案</title>
+  <style>
+    :root {
+      --sl-primary: #2563eb;
+      --sl-primary-light: #eff6ff;
+      --sl-primary-border: #bfdbfe;
+      --sl-text-heading: #0f172a;
+      --sl-text-body: #334155;
+      --sl-text-secondary: #64748b;
+      --sl-border-base: #e2e8f0;
+      --sl-border-subtle: #f1f5f9;
+      --sl-bg-page: #f8fafc;
+      --sl-bg-card: #ffffff;
+      --sl-bg-subtle: #f8fafc;
+      --sl-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "微软雅黑", sans-serif;
+      --sl-font-mono: "JetBrains Mono", "Cascadia Code", "Fira Code", Consolas, Menlo, monospace;
+      --sl-success: #16a34a;
+      --sl-success-light: #f0fdf4;
+      --sl-warning: #d97706;
+      --sl-danger: #dc2626;
+      --sl-danger-light: #fef2f2;
+      --sl-purple: #7c3aed;
+      --sl-purple-light: #f5f3ff;
+      --sl-cyan: #0891b2;
+      --sl-cyan-light: #ecfeff;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: var(--sl-font-family);
+      background: var(--sl-bg-page);
+      color: var(--sl-text-body);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      padding: 24px;
+    }
+
+    .app-container {
+      max-width: 1360px;
+      margin: 0 auto;
+      background: #ffffff;
+      border: 1px solid var(--sl-border-base);
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
+      overflow: hidden;
+    }
+
+    /* 顶部导航与架构概览 */
+    .header-bar {
+      padding: 18px 24px;
+      background: #ffffff;
+      border-bottom: 1px solid var(--sl-border-base);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .header-title-group h1 {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--sl-text-heading);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .header-tag {
+      font-size: 11px;
+      padding: 2px 8px;
+      background: var(--sl-primary-light);
+      color: var(--sl-primary);
+      border: 1px solid var(--sl-primary-border);
+      border-radius: 4px;
+      font-weight: 600;
+      font-family: var(--sl-font-mono);
+    }
+    .header-desc {
+      font-size: 13px;
+      color: var(--sl-text-secondary);
+      margin-top: 4px;
+    }
+
+    /* 视图切换按钮 */
+    .view-toggles {
+      display: flex;
+      gap: 8px;
+      background: var(--sl-bg-subtle);
+      padding: 4px;
+      border-radius: 6px;
+      border: 1px solid var(--sl-border-base);
+    }
+    .view-btn {
+      padding: 6px 14px;
+      font-size: 12.5px;
+      font-weight: 500;
+      border-radius: 4px;
+      border: none;
+      background: transparent;
+      color: var(--sl-text-secondary);
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .view-btn.active {
+      background: #ffffff;
+      color: var(--sl-primary);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+      font-weight: 600;
+    }
+
+    /* 概念因果图解区 (Causal Blueprint) */
+    .blueprint-card {
+      margin: 20px 24px;
+      padding: 16px 20px;
+      background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+      border: 1px solid var(--sl-border-base);
+      border-radius: 6px;
+    }
+    .blueprint-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--sl-text-heading);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .pipeline-grid {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr;
+      gap: 8px;
+      align-items: center;
+    }
+    .pipeline-step {
+      background: #ffffff;
+      border: 1px solid var(--sl-border-base);
+      border-radius: 6px;
+      padding: 10px 14px;
+      position: relative;
+    }
+    .step-tag {
+      font-size: 10px;
+      font-weight: 700;
+      font-family: var(--sl-font-mono);
+      color: var(--sl-text-secondary);
+      margin-bottom: 4px;
+      display: block;
+      text-transform: uppercase;
+    }
+    .step-title {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--sl-text-heading);
+      margin-bottom: 2px;
+    }
+    .step-detail {
+      font-size: 11.5px;
+      color: var(--sl-text-secondary);
+      font-family: var(--sl-font-mono);
+    }
+    .pipeline-arrow {
+      color: var(--sl-text-secondary);
+      font-weight: 700;
+      font-size: 14px;
+      text-align: center;
+    }
+
+    /* 内容章节 */
+    .section-block {
+      margin-bottom: 24px;
+      border-top: 1px solid var(--sl-border-base);
+    }
+    .section-head {
+      padding: 10px 24px;
+      background: #f8fafc;
+      border-bottom: 1px solid var(--sl-border-base);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .section-head-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .sec-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 24px;
+      height: 20px;
+      background: var(--sl-primary-light);
+      border: 1px solid var(--sl-primary-border);
+      border-radius: 4px;
+      color: var(--sl-primary);
+      font-size: 11px;
+      font-weight: 700;
+      font-family: var(--sl-font-mono);
+    }
+    .sec-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--sl-text-heading);
+    }
+    .sec-count {
+      font-size: 12px;
+      color: var(--sl-text-secondary);
+      font-family: var(--sl-font-mono);
+    }
+
+    /* 二级子表条 */
+    .sub-head {
+      padding: 8px 24px;
+      background: #ffffff;
+      border-bottom: 1px solid var(--sl-border-base);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .sub-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--sl-text-heading);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .sub-badge {
+      font-size: 11px;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-weight: 500;
+    }
+    .sub-badge.cmd { background: var(--sl-primary-light); color: var(--sl-primary); }
+    .sub-badge.op { background: var(--sl-purple-light); color: var(--sl-purple); }
+    .sub-badge.iface { background: var(--sl-cyan-light); color: var(--sl-cyan); }
+
+    /* 表格样式 */
+    .clean-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12.5px;
+      text-align: left;
+    }
+    .clean-table th {
+      background: #ffffff;
+      color: var(--sl-text-secondary);
+      font-weight: 600;
+      font-size: 11.5px;
+      padding: 8px 24px;
+      border-bottom: 1px solid var(--sl-border-base);
+      white-space: nowrap;
+    }
+    .clean-table td {
+      padding: 9px 24px;
+      border-bottom: 1px solid var(--sl-border-subtle);
+      color: var(--sl-text-body);
+      vertical-align: middle;
+    }
+    .clean-table tr:hover td {
+      background: #f8fafc;
+    }
+
+    /* 纯净流标签 */
+    .mono-tag {
+      font-family: var(--sl-font-mono);
+      font-size: 12px;
+      font-weight: 400;
+    }
+    .tag-interface {
+      color: var(--sl-cyan);
+      font-weight: 500;
+    }
+    .tag-signal {
+      color: var(--sl-text-heading);
+      font-weight: 600;
+    }
+    .tag-action-send {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #f1f5f9;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11.5px;
+      font-family: var(--sl-font-mono);
+      border: 1px solid #e2e8f0;
+      color: var(--sl-text-body);
+    }
+    .tag-action-send.outbound {
+      background: var(--sl-primary-light);
+      border-color: var(--sl-primary-border);
+      color: var(--sl-primary);
+    }
+    .tag-action-send.state-broad {
+      background: var(--sl-success-light);
+      border-color: #bbf7d0;
+      color: var(--sl-success);
+    }
+
+    .state-shift-box {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-family: var(--sl-font-mono);
+      font-size: 12px;
+    }
+    .state-pill {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-weight: 600;
+    }
+    .state-pill.from {
+      background: #f1f5f9;
+      color: var(--sl-text-body);
+    }
+    .state-pill.to {
+      background: var(--sl-primary-light);
+      color: var(--sl-primary);
+      border: 1px solid var(--sl-primary-border);
+    }
+    .state-pill.to-op {
+      background: var(--sl-purple-light);
+      color: var(--sl-purple);
+      border: 1px solid #ddd6fe;
+    }
+    .state-pill.to-danger {
+      background: var(--sl-danger-light);
+      color: var(--sl-danger);
+      border: 1px solid #fecaca;
+    }
+
+    /* 状态空间卡片网格 */
+    .states-grid {
+      padding: 16px 24px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 12px;
+      background: #ffffff;
+    }
+    .state-card {
+      border: 1px solid var(--sl-border-base);
+      border-radius: 6px;
+      padding: 12px 14px;
+      background: #ffffff;
+      transition: all 0.15s ease;
+    }
+    .state-card:hover {
+      border-color: var(--sl-primary-border);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+    .state-card-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 8px;
+    }
+    .state-card-name {
+      font-size: 13px;
+      font-weight: 700;
+      font-family: var(--sl-font-mono);
+      color: var(--sl-text-heading);
+    }
+    .state-card-badge {
+      font-size: 11px;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-weight: 500;
+    }
+    .state-card-badge.initial { background: #fef3c7; color: #b45309; }
+    .state-card-actions-box {
+      background: #f8fafc;
+      border-radius: 4px;
+      padding: 6px 10px;
+      border: 1px solid #e2e8f0;
+    }
+    .state-action-label {
+      font-size: 11px;
+      color: var(--sl-text-secondary);
+      font-weight: 600;
+      margin-bottom: 4px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    /* 抽屉编辑对比视图 */
+    .drawer-mock-container {
+      margin: 20px 24px;
+      border: 2px dashed var(--sl-primary-border);
+      border-radius: 8px;
+      padding: 20px;
+      background: #fafafa;
+    }
+    .drawer-mock-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .drawer-mock-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--sl-primary);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .editor-rule-card {
+      background: #ffffff;
+      border: 1px solid var(--sl-border-base);
+      border-radius: 6px;
+      padding: 14px 16px;
+      margin-bottom: 10px;
+      display: grid;
+      grid-template-columns: 2fr 1.5fr 1.5fr 2fr;
+      gap: 12px;
+      align-items: center;
+    }
+    .editor-cell-label {
+      font-size: 11px;
+      color: var(--sl-text-secondary);
+      font-weight: 600;
+      margin-bottom: 4px;
+      display: block;
+    }
+    .mock-input {
+      width: 100%;
+      height: 30px;
+      padding: 0 8px;
+      border: 1px solid var(--sl-border-base);
+      border-radius: 4px;
+      font-size: 12px;
+      font-family: var(--sl-font-mono);
+      background: #ffffff;
+      color: var(--sl-text-body);
+    }
+    .mock-select {
+      width: 100%;
+      height: 30px;
+      padding: 0 8px;
+      border: 1px solid var(--sl-border-base);
+      border-radius: 4px;
+      font-size: 12px;
+      font-family: var(--sl-font-mono);
+      background: #ffffff;
+      color: var(--sl-text-heading);
+    }
+  </style>
+</head>
+<body>
+
+<div class="app-container">
+
+  <!-- 顶部状态栏 -->
+  <div class="header-bar">
+    <div class="header-title-group">
+      <h1>
+        <span>05 状态机模型 · 全景因果架构与运行逻辑重构方案</span>
+        <span class="header-tag">STATE_MACHINE_V2</span>
+      </h1>
+      <p class="header-desc">
+        完整解耦并清晰呈现：<strong>状态节点 (States)</strong> · <strong>进入动作 (onEntry)</strong> · <strong>接口与信号 (Interfaces & Signals)</strong> · <strong>转移过程动作 (Transit Actions)</strong>
+      </p>
+    </div>
+    <div class="view-toggles">
+      <button class="view-btn active" onclick="switchTab('readonly')">📐 详情页展示视图</button>
+      <button class="view-btn" onclick="switchTab('drawer')">✏️ 抽屉编辑交互设计</button>
+    </div>
+  </div>
+
+  <!-- 因果执行流水线图解 -->
+  <div class="blueprint-card">
+    <div class="blueprint-title">
+      <span>💡 状态机单次流转的因果执行管道 (Causal Pipeline)</span>
+    </div>
+    <div class="pipeline-grid">
+      <div class="pipeline-step">
+        <span class="step-tag">Step 1 · 外部输入触发</span>
+        <div class="step-title">接口信号接收</div>
+        <div class="step-detail">Interface_workflow_in · WF_EXECUTE_START</div>
+      </div>
+      <div class="pipeline-arrow">➔</div>
+      <div class="pipeline-step">
+        <span class="step-tag">Step 2 · 状态跃迁判定</span>
+        <div class="step-title">从原状态跃迁到新状态</div>
+        <div class="step-detail">IDLE ➔ SENT</div>
+      </div>
+      <div class="pipeline-arrow">➔</div>
+      <div class="pipeline-step">
+        <span class="step-tag">Step 3 · 过程转移动作 (Transit)</span>
+        <div class="step-title">执行转移伴随动作</div>
+        <div class="step-detail">SEND ➔ Interface_adapter_out.CMD_START</div>
+      </div>
+      <div class="pipeline-arrow">➔</div>
+      <div class="pipeline-step">
+        <span class="step-tag">Step 4 · 进入目标状态 (onEntry)</span>
+        <div class="step-title">执行目标状态进入动作</div>
+        <div class="step-detail">SEND ➔ Interface_state_out.CMD_STATE</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 只读展示视图区 -->
+  <div id="readonly-view">
+
+    <!-- 05.1 通信接口契约全景 -->
+    <div class="section-block">
+      <div class="section-head">
+        <div class="section-head-left">
+          <span class="sec-badge">5.1</span>
+          <span class="sec-title">通信接口契约全景 (Interfaces & Signal Matrix)</span>
+        </div>
+        <span class="sec-count">共 6 个接口 · 18 个协议信号</span>
+      </div>
+      <table class="clean-table">
+        <thead>
+          <tr>
+            <th style="width: 200px;">接口标识 (Interface)</th>
+            <th style="width: 100px;">流向 / 方向</th>
+            <th style="width: 120px;">接口类型</th>
+            <th>允许信号集合 (Allowed Signals) 与语义说明</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong class="mono-tag tag-interface">Interface_workflow_in</strong></td>
+            <td><span class="sub-badge cmd">IN (输入)</span></td>
+            <td>WORKFLOW</td>
+            <td>
+              <span class="mono-tag tag-signal">WF_EXECUTE_START</span> (工作流启动指令) · 
+              <span class="mono-tag tag-signal">WF_EXECUTE_ABORT</span> (工作流中止指令)
+            </td>
+          </tr>
+          <tr>
+            <td><strong class="mono-tag tag-interface">Interface_control_in</strong></td>
+            <td><span class="sub-badge cmd">IN (输入)</span></td>
+            <td>CONTROL</td>
+            <td>
+              <span class="mono-tag tag-signal">MANUAL_EXECUTE_START</span> (控制台手动启动) · 
+              <span class="mono-tag tag-signal">MANUAL_EXECUTE_ABORT</span> (控制台手动中止)
+            </td>
+          </tr>
+          <tr>
+            <td><strong class="mono-tag tag-interface">Interface_constraint_in</strong></td>
+            <td><span class="sub-badge cmd">IN (输入)</span></td>
+            <td>CONSTRAINT</td>
+            <td>
+              <span class="mono-tag tag-signal">CONSTRAINT_EXECUTE</span> (约束闭环执行) · 
+              <span class="mono-tag tag-signal">CONSTRAINT_ABORT</span> (约束违规停机)
+            </td>
+          </tr>
+          <tr>
+            <td><strong class="mono-tag tag-interface">Interface_adapter_in</strong></td>
+            <td><span class="sub-badge op">IN (输入)</span></td>
+            <td>ADAPTER</td>
+            <td>
+              <span class="mono-tag tag-signal">COMMAND_RECEIVED</span> · 
+              <span class="mono-tag tag-signal">COMMAND_RUNNING</span> · 
+              <span class="mono-tag tag-signal">COMMAND_COMPLETED</span> · 
+              <span class="mono-tag tag-signal">COMMAND_FAILED</span> · 
+              <span class="mono-tag tag-signal">HEATING_STARTED</span> · 
+              <span class="mono-tag tag-signal">TARGET_TEMPERATURE_REACHED</span> · 
+              <span class="mono-tag tag-signal">COOLING_STARTED</span> · 
+              <span class="mono-tag tag-signal">TEMPERATURE_NORMAL</span>
+            </td>
+          </tr>
+          <tr>
+            <td><strong class="mono-tag tag-interface">Interface_adapter_out</strong></td>
+            <td><span class="sub-badge iface">OUT (输出)</span></td>
+            <td>ADAPTER</td>
+            <td>
+              <span class="tag-action-send outbound">SEND · CMD_START</span> (向驱动下发执行) · 
+              <span class="tag-action-send outbound">SEND · CMD_ABORT</span> (向驱动下发终止)
+            </td>
+          </tr>
+          <tr>
+            <td><strong class="mono-tag tag-interface">Interface_state_out</strong></td>
+            <td><span class="sub-badge iface">OUT (输出)</span></td>
+            <td>STATE</td>
+            <td>
+              <span class="tag-action-send state-broad">SEND · CMD_STATE</span> (对外广播指令生命周期状态) · 
+              <span class="tag-action-send state-broad">SEND · OP_STATE</span> (对外广播业务功能状态)
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 05.2 状态空间定义与进入动作 (onEntry) -->
+    <div class="section-block">
+      <div class="section-head">
+        <div class="section-head-left">
+          <span class="sec-badge">5.2</span>
+          <span class="sec-title">状态空间定义与进入动作 (States & onEntry Actions)</span>
+        </div>
+        <span class="sec-count">1 个指令空间 · 2 个功能分区</span>
+      </div>
+
+      <!-- 指令生命周期状态节点 -->
+      <div class="sub-head">
+        <span class="sub-title">指令生命周期空间 (cmdLifecycleSpace) <span class="sub-badge cmd">初始状态: IDLE</span></span>
+        <span class="sec-count">共 7 个状态节点</span>
+      </div>
+      <div class="states-grid">
+        <div class="state-card">
+          <div class="state-card-head">
+            <span class="state-card-name">IDLE</span>
+            <span class="state-card-badge initial">Initial</span>
+          </div>
+          <div class="state-card-actions-box">
+            <span class="state-action-label">⚡ onEntry (进入动作)</span>
+            <span class="tag-action-send state-broad">SEND · Interface_state_out · CMD_STATE</span>
+          </div>
+        </div>
+        <div class="state-card">
+          <div class="state-card-head"><span class="state-card-name">SENT</span></div>
+          <div class="state-card-actions-box">
+            <span class="state-action-label">⚡ onEntry (进入动作)</span>
+            <span class="tag-action-send state-broad">SEND · Interface_state_out · CMD_STATE</span>
+          </div>
+        </div>
+        <div class="state-card">
+          <div class="state-card-head"><span class="state-card-name">RUNNING</span></div>
+          <div class="state-card-actions-box">
+            <span class="state-action-label">⚡ onEntry (进入动作)</span>
+            <span class="tag-action-send state-broad">SEND · Interface_state_out · CMD_STATE</span>
+          </div>
+        </div>
+        <div class="state-card">
+          <div class="state-card-head"><span class="state-card-name">COMPLETED</span></div>
+          <div class="state-card-actions-box">
+            <span class="state-action-label">⚡ onEntry (进入动作)</span>
+            <span class="tag-action-send state-broad">SEND · Interface_state_out · CMD_STATE</span>
+          </div>
+        </div>
+        <div class="state-card">
+          <div class="state-card-head"><span class="state-card-name">FAILED</span></div>
+          <div class="state-card-actions-box">
+            <span class="state-action-label">⚡ onEntry (进入动作)</span>
+            <span class="tag-action-send state-broad">SEND · Interface_state_out · CMD_STATE</span>
+          </div>
+        </div>
+        <div class="state-card">
+          <div class="state-card-head"><span class="state-card-name">ABORTING</span></div>
+          <div class="state-card-actions-box">
+            <span class="state-action-label">⚡ onEntry (进入动作)</span>
+            <span class="tag-action-send state-broad">SEND · Interface_state_out · CMD_STATE</span>
+          </div>
+        </div>
+        <div class="state-card">
+          <div class="state-card-head"><span class="state-card-name">ABORTED</span></div>
+          <div class="state-card-actions-box">
+            <span class="state-action-label">⚡ onEntry (进入动作)</span>
+            <span class="tag-action-send state-broad">SEND · Interface_state_out · CMD_STATE</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 功能状态分区 -->
+      <div class="sub-head" style="border-top: 1px solid var(--sl-border-base);">
+        <span class="sub-title">业务功能状态分区 (opStateSpace) <span class="sub-badge op">Main (OPERATIONAL) · Exception (EXCEPTION)</span></span>
+        <span class="sec-count">共 4 个业务状态节点</span>
+      </div>
+      <div class="states-grid">
+        <div class="state-card">
+          <div class="state-card-head">
+            <span class="state-card-name">Main :: IDLE</span>
+            <span class="state-card-badge initial">Initial</span>
+          </div>
+          <div class="state-card-actions-box">
+            <span class="state-action-label">⚡ onEntry (进入动作)</span>
+            <span class="tag-action-send state-broad">SEND · Interface_state_out · OP_STATE</span>
+          </div>
+        </div>
+        <div class="state-card">
+          <div class="state-card-head"><span class="state-card-name">Main :: 加热中</span></div>
+          <div class="state-card-actions-box">
+            <span class="state-action-label">⚡ onEntry (进入动作)</span>
+            <span class="tag-action-send state-broad">SEND · Interface_state_out · OP_STATE</span>
+          </div>
+        </div>
+        <div class="state-card">
+          <div class="state-card-head"><span class="state-card-name">Main :: 散热中</span></div>
+          <div class="state-card-actions-box">
+            <span class="state-action-label">⚡ onEntry (进入动作)</span>
+            <span class="tag-action-send state-broad">SEND · Interface_state_out · OP_STATE</span>
+          </div>
+        </div>
+        <div class="state-card" style="border-color: #fecaca; background: #fffbfb;">
+          <div class="state-card-head">
+            <span class="state-card-name" style="color: var(--sl-danger);">Exception :: 温度异常</span>
+            <span class="state-card-badge" style="background: var(--sl-danger-light); color: var(--sl-danger);">异常状态</span>
+          </div>
+          <div class="state-card-actions-box">
+            <span class="state-action-label">⚡ onEntry (进入动作)</span>
+            <span class="tag-action-send state-broad">SEND · Interface_state_out · OP_STATE</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 05.3 指令执行生命周期规则 -->
+    <div class="section-block">
+      <div class="section-head">
+        <div class="section-head-left">
+          <span class="sec-badge">5.3</span>
+          <span class="sec-title">指令执行生命周期规则 (Command Lifecycle Pipeline)</span>
+        </div>
+        <span class="sec-count">共 12 条转移规则</span>
+      </div>
+      <table class="clean-table">
+        <thead>
+          <tr>
+            <th style="width: 180px;">规则描述</th>
+            <th style="width: 250px;">1. 触发机制 (Trigger Interface · Signal)</th>
+            <th style="width: 170px;">2. 状态跃迁 (From ➔ To)</th>
+            <th style="width: 230px;">3. 过程转移动作 (Transit Actions)</th>
+            <th>4. 目标进入动作 (Target onEntry)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>工作流触发启动</td>
+            <td><span class="mono-tag tag-interface">Interface_workflow_in</span> · <span class="mono-tag tag-signal">WF_EXECUTE_START</span></td>
+            <td><div class="state-shift-box"><span class="state-pill from">IDLE</span> ➔ <span class="state-pill to">SENT</span></div></td>
+            <td><span class="tag-action-send outbound">SEND · Interface_adapter_out · CMD_START</span></td>
+            <td><span class="tag-action-send state-broad">SEND · Interface_state_out · CMD_STATE</span></td>
+          </tr>
+          <tr>
+            <td>控制台手动启动</td>
+            <td><span class="mono-tag tag-interface">Interface_control_in</span> · <span class="mono-tag tag-signal">MANUAL_EXECUTE_START</span></td>
+            <td><div class="state-shift-box"><span class="state-pill from">IDLE</span> ➔ <span class="state-pill to">SENT</span></div></td>
+            <td><span class="tag-action-send outbound">SEND · Interface_adapter_out · CMD_START</span></td>
+            <td><span class="tag-action-send state-broad">SEND · Interface_state_out · CMD_STATE</span></td>
+          </tr>
+          <tr>
+            <td>约束能力闭环执行</td>
+            <td><span class="mono-tag tag-interface">Interface_constraint_in</span> · <span class="mono-tag tag-signal">CONSTRAINT_EXECUTE</span></td>
+            <td><div class="state-shift-box"><span class="state-pill from">IDLE</span> ➔ <span class="state-pill to">SENT</span></div></td>
+            <td><span class="tag-action-send outbound">SEND · Interface_adapter_out · CMD_START</span></td>
+            <td><span class="tag-action-send state-broad">SEND · Interface_state_out · CMD_STATE</span></td>
+          </tr>
+          <tr>
+            <td>驱动回执进入执行中</td>
+            <td><span class="mono-tag tag-interface">Interface_adapter_in</span> · <span class="mono-tag tag-signal">COMMAND_RUNNING</span></td>
+            <td><div class="state-shift-box"><span class="state-pill from">SENT</span> ➔ <span class="state-pill to">RUNNING</span></div></td>
+            <td><span class="mono-tag" style="color: var(--sl-text-secondary);">-</span></td>
+            <td><span class="tag-action-send state-broad">SEND · Interface_state_out · CMD_STATE</span></td>
+          </tr>
+          <tr>
+            <td>驱动回执推进完成</td>
+            <td><span class="mono-tag tag-interface">Interface_adapter_in</span> · <span class="mono-tag tag-signal">COMMAND_COMPLETED</span></td>
+            <td><div class="state-shift-box"><span class="state-pill from">RUNNING</span> ➔ <span class="state-pill to">COMPLETED</span></div></td>
+            <td><span class="mono-tag" style="color: var(--sl-text-secondary);">-</span></td>
+            <td><span class="tag-action-send state-broad">SEND · Interface_state_out · CMD_STATE</span></td>
+          </tr>
+          <tr>
+            <td>驱动回执执行失败</td>
+            <td><span class="mono-tag tag-interface">Interface_adapter_in</span> · <span class="mono-tag tag-signal">COMMAND_FAILED</span></td>
+            <td><div class="state-shift-box"><span class="state-pill from">RUNNING</span> ➔ <span class="state-pill to-danger">FAILED</span></div></td>
+            <td><span class="mono-tag" style="color: var(--sl-text-secondary);">-</span></td>
+            <td><span class="tag-action-send state-broad">SEND · Interface_state_out · CMD_STATE</span></td>
+          </tr>
+          <tr>
+            <td>工作流请求中止 (已发)</td>
+            <td><span class="mono-tag tag-interface">Interface_workflow_in</span> · <span class="mono-tag tag-signal">WF_EXECUTE_ABORT</span></td>
+            <td><div class="state-shift-box"><span class="state-pill from">SENT</span> ➔ <span class="state-pill to-danger">ABORTING</span></div></td>
+            <td><span class="tag-action-send outbound">SEND · Interface_adapter_out · CMD_ABORT</span></td>
+            <td><span class="tag-action-send state-broad">SEND · Interface_state_out · CMD_STATE</span></td>
+          </tr>
+          <tr>
+            <td>工作流请求中止 (运行中)</td>
+            <td><span class="mono-tag tag-interface">Interface_workflow_in</span> · <span class="mono-tag tag-signal">WF_EXECUTE_ABORT</span></td>
+            <td><div class="state-shift-box"><span class="state-pill from">RUNNING</span> ➔ <span class="state-pill to-danger">ABORTING</span></div></td>
+            <td><span class="tag-action-send outbound">SEND · Interface_adapter_out · CMD_ABORT</span></td>
+            <td><span class="tag-action-send state-broad">SEND · Interface_state_out · CMD_STATE</span></td>
+          </tr>
+          <tr>
+            <td>控制台手动中止 (已发)</td>
+            <td><span class="mono-tag tag-interface">Interface_control_in</span> · <span class="mono-tag tag-signal">MANUAL_EXECUTE_ABORT</span></td>
+            <td><div class="state-shift-box"><span class="state-pill from">SENT</span> ➔ <span class="state-pill to-danger">ABORTING</span></div></td>
+            <td><span class="tag-action-send outbound">SEND · Interface_adapter_out · CMD_ABORT</span></td>
+            <td><span class="tag-action-send state-broad">SEND · Interface_state_out · CMD_STATE</span></td>
+          </tr>
+          <tr>
+            <td>控制台手动中止 (运行中)</td>
+            <td><span class="mono-tag tag-interface">Interface_control_in</span> · <span class="mono-tag tag-signal">MANUAL_EXECUTE_ABORT</span></td>
+            <td><div class="state-shift-box"><span class="state-pill from">RUNNING</span> ➔ <span class="state-pill to-danger">ABORTING</span></div></td>
+            <td><span class="tag-action-send outbound">SEND · Interface_adapter_out · CMD_ABORT</span></td>
+            <td><span class="tag-action-send state-broad">SEND · Interface_state_out · CMD_STATE</span></td>
+          </tr>
+          <tr>
+            <td>约束违规中止 (已发)</td>
+            <td><span class="mono-tag tag-interface">Interface_constraint_in</span> · <span class="mono-tag tag-signal">CONSTRAINT_ABORT</span></td>
+            <td><div class="state-shift-box"><span class="state-pill from">SENT</span> ➔ <span class="state-pill to-danger">ABORTING</span></div></td>
+            <td><span class="tag-action-send outbound">SEND · Interface_adapter_out · CMD_ABORT</span></td>
+            <td><span class="tag-action-send state-broad">SEND · Interface_state_out · CMD_STATE</span></td>
+          </tr>
+          <tr>
+            <td>约束违规中止 (运行中)</td>
+            <td><span class="mono-tag tag-interface">Interface_constraint_in</span> · <span class="mono-tag tag-signal">CONSTRAINT_ABORT</span></td>
+            <td><div class="state-shift-box"><span class="state-pill from">RUNNING</span> ➔ <span class="state-pill to-danger">ABORTING</span></div></td>
+            <td><span class="tag-action-send outbound">SEND · Interface_adapter_out · CMD_ABORT</span></td>
+            <td><span class="tag-action-send state-broad">SEND · Interface_state_out · CMD_STATE</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <!-- 05.4 业务功能状态流转规则 -->
+    <div class="section-block">
+      <div class="section-head">
+        <div class="section-head-left">
+          <span class="sec-badge">5.4</span>
+          <span class="sec-title">业务功能状态流转规则 (Operational State Pipeline)</span>
+        </div>
+        <span class="sec-count">共 4 条转移规则</span>
+      </div>
+      <table class="clean-table">
+        <thead>
+          <tr>
+            <th style="width: 100px;">所属分区</th>
+            <th style="width: 250px;">1. 触发机制 (Trigger Interface · Signal)</th>
+            <th style="width: 170px;">2. 状态跃迁 (From ➔ To)</th>
+            <th style="width: 200px;">3. 过程转移动作 (Transit Actions)</th>
+            <th>4. 目标进入动作 (Target onEntry)</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="mono-tag">Main</span></td>
+            <td><span class="mono-tag tag-interface">Interface_adapter_in</span> · <span class="mono-tag tag-signal">HEATING_STARTED</span></td>
+            <td><div class="state-shift-box"><span class="state-pill from">IDLE</span> ➔ <span class="state-pill to-op">加热中</span></div></td>
+            <td><span class="mono-tag" style="color: var(--sl-text-secondary);">-</span></td>
+            <td><span class="tag-action-send state-broad">SEND · Interface_state_out · OP_STATE</span></td>
+          </tr>
+          <tr>
+            <td><span class="mono-tag">Main</span></td>
+            <td><span class="mono-tag tag-interface">Interface_adapter_in</span> · <span class="mono-tag tag-signal">TARGET_TEMPERATURE_REACHED</span></td>
+            <td><div class="state-shift-box"><span class="state-pill from">加热中</span> ➔ <span class="state-pill to-op">IDLE</span></div></td>
+            <td><span class="mono-tag" style="color: var(--sl-text-secondary);">-</span></td>
+            <td><span class="tag-action-send state-broad">SEND · Interface_state_out · OP_STATE</span></td>
+          </tr>
+          <tr>
+            <td><span class="mono-tag">Main</span></td>
+            <td><span class="mono-tag tag-interface">Interface_adapter_in</span> · <span class="mono-tag tag-signal">COOLING_STARTED</span></td>
+            <td><div class="state-shift-box"><span class="state-pill from">IDLE</span> ➔ <span class="state-pill to-op">散热中</span></div></td>
+            <td><span class="mono-tag" style="color: var(--sl-text-secondary);">-</span></td>
+            <td><span class="tag-action-send state-broad">SEND · Interface_state_out · OP_STATE</span></td>
+          </tr>
+          <tr>
+            <td><span class="mono-tag">Main</span></td>
+            <td><span class="mono-tag tag-interface">Interface_adapter_in</span> · <span class="mono-tag tag-signal">TARGET_TEMPERATURE_REACHED</span></td>
+            <td><div class="state-shift-box"><span class="state-pill from">散热中</span> ➔ <span class="state-pill to-op">IDLE</span></div></td>
+            <td><span class="mono-tag" style="color: var(--sl-text-secondary);">-</span></td>
+            <td><span class="tag-action-send state-broad">SEND · Interface_state_out · OP_STATE</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+  </div>
+
+  <!-- 抽屉编辑交互视图区 (默认隐藏，可通过按钮切换) -->
+  <div id="drawer-view" style="display: none;">
+    <div class="drawer-mock-container">
+      <div class="drawer-mock-head">
+        <div class="drawer-mock-title">
+          <span>⚙️ 抽屉端状态机模型高级配置面板 (Drawer Editor)</span>
+        </div>
+        <span class="sec-count">所见即所得的因果流水线编辑器</span>
+      </div>
+
+      <div style="margin-bottom: 20px;">
+        <h4 style="font-size: 13px; font-weight: 700; margin-bottom: 10px; color: var(--sl-text-heading);">
+          1. 业务状态分区与进入动作编辑 (onEntry Actions)
+        </h4>
+        <div class="editor-rule-card" style="grid-template-columns: 1.5fr 1fr 1fr 2.5fr;">
+          <div>
+            <span class="editor-cell-label">分区名称 (Region)</span>
+            <input class="mock-input" value="Main (OPERATIONAL)" disabled />
+          </div>
+          <div>
+            <span class="editor-cell-label">状态节点名称 (State)</span>
+            <input class="mock-input" value="加热中" />
+          </div>
+          <div>
+            <span class="editor-cell-label">是否为初始状态</span>
+            <select class="mock-select"><option>否</option><option>是 (Initial)</option></select>
+          </div>
+          <div>
+            <span class="editor-cell-label">进入动作 (onEntry 广播)</span>
+            <div style="display: flex; gap: 6px; align-items: center;">
+              <input class="mock-input" value="SEND ➔ Interface_state_out.OP_STATE" style="background: #f8fafc;" readonly />
+              <button class="view-btn" style="border: 1px solid var(--sl-border-base); font-size: 11px; padding: 4px 8px;">配置动作</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <h4 style="font-size: 13px; font-weight: 700; margin-bottom: 10px; color: var(--sl-text-heading);">
+          2. 业务流转规则编辑 (Pipeline Rule Builder)
+        </h4>
+        <div class="editor-rule-card">
+          <div>
+            <span class="editor-cell-label">触发接口与事件 (Trigger)</span>
+            <select class="mock-select">
+              <option>Interface_adapter_in · HEATING_STARTED</option>
+              <option>Interface_adapter_in · TARGET_TEMPERATURE_REACHED</option>
+              <option>Interface_adapter_in · COOLING_STARTED</option>
+            </select>
+          </div>
+          <div>
+            <span class="editor-cell-label">原状态 (From)</span>
+            <select class="mock-select"><option>IDLE</option><option>加热中</option><option>散热中</option></select>
+          </div>
+          <div>
+            <span class="editor-cell-label">目标状态 (To)</span>
+            <select class="mock-select"><option>加热中</option><option>IDLE</option><option>散热中</option></select>
+          </div>
+          <div>
+            <span class="editor-cell-label">过程转移动作 (Transit Actions)</span>
+            <div style="display: flex; gap: 6px; align-items: center;">
+              <input class="mock-input" placeholder="无转移动作 (-)" />
+              <button class="view-btn" style="border: 1px solid var(--sl-border-base); font-size: 11px; padding: 4px 8px;">+ 动作</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+</div>
+
+<script>
+  function switchTab(tab) {
+    const readonlyView = document.getElementById('readonly-view');
+    const drawerView = document.getElementById('drawer-view');
+    const btns = document.querySelectorAll('.view-btn');
+    
+    if (tab === 'readonly') {
+      readonlyView.style.display = 'block';
+      drawerView.style.display = 'none';
+      btns[0].classList.add('active');
+      btns[1].classList.remove('active');
+    } else {
+      readonlyView.style.display = 'none';
+      drawerView.style.display = 'block';
+      btns[0].classList.remove('active');
+      btns[1].classList.add('active');
+    }
+  }
+</script>
+
+</body>
+</html>

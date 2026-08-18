@@ -150,7 +150,13 @@ public class MqttAdapterMessagingService implements MqttCallback {
     }
 
     public List<Map<String, Object>> pendingAdapterRegistrations() {
-        List<Map<String, Object>> list = new ArrayList<>(pendingAdapterRegistrations.values());
+        List<Map<String, Object>> list = new ArrayList<>();
+        for (Map<String, Object> item : pendingAdapterRegistrations.values()) {
+            String name = (String) item.get("adapterName");
+            if (name != null && adapterIndexService.getByName(name.trim()) == null) {
+                list.add(item);
+            }
+        }
         list.sort((left, right) -> String.valueOf(right.get("receivedAt")).compareTo(String.valueOf(left.get("receivedAt"))));
         return list;
     }
@@ -326,6 +332,12 @@ public class MqttAdapterMessagingService implements MqttCallback {
             if (adapterName.isBlank()) {
                 throw new IllegalArgumentException("Adapter 注册报文缺少 adapterName");
             }
+            if (adapterIndexService.getByName(adapterName) != null) {
+                pendingAdapterRegistrations.remove(adapterName);
+                emitRegistrationEvent("pending_snapshot", pendingAdapterRegistrations());
+                log.info("收到 Adapter 注册请求，但 {} 已在数据库中完成注册，忽略该待审核请求", adapterName);
+                return;
+            }
             body.put("adapterName", adapterName);
             Map<String, Object> pending = new LinkedHashMap<>();
             pending.put("adapterName", adapterName);
@@ -350,21 +362,22 @@ public class MqttAdapterMessagingService implements MqttCallback {
         }
 
         Map<String, String> variables = topicMatch.variables();
+        String adapterName = variables.get("adapterName");
         if ("heartbeatTopic".equals(topicMatch.topicName())) {
             protocolDictionaryService.validateDefinition("AdapterHeartbeat", payload);
-            adapterIndexService.heartbeat(variables.get("adapterName"), payload.path("status").asText("ONLINE"));
+            adapterIndexService.heartbeat(adapterName, payload.path("status").asText("ONLINE"));
             return;
         }
         if ("telemetryTopic".equals(topicMatch.topicName())) {
             protocolDictionaryService.validateDefinition("TelemetryMessageFormat", payload);
             validatePayloadIdentity(variables, payload);
-            protocolMapperService.applyTelemetry(variables.get("adapterName"), variables.get("devicePoint"), payload);
+            protocolMapperService.applyTelemetry(adapterName, variables.get("devicePoint"), payload);
             return;
         }
         if ("eventTopic".equals(topicMatch.topicName())) {
             protocolDictionaryService.validateDefinition("EventMessageFormat", payload);
             validatePayloadIdentity(variables, payload);
-            protocolMapperService.applyAdapterEvent(variables.get("adapterName"), variables.get("devicePoint"), payload);
+            protocolMapperService.applyAdapterEvent(adapterName, variables.get("devicePoint"), payload);
         }
     }
 

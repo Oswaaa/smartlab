@@ -159,7 +159,7 @@ public class ConstraintEngine {
 
     private void executeActions(RuntimeConstraint constraint, ConstraintRule rule, ScopeState scope,
                                 Map<String, JsonNode> values) {
-        for (JsonNode action : elements(rule.getViolationActions())) {
+        for (JsonNode action : elements(constraint.violationActions())) {
             String actionTaken;
             try {
                 actionTaken = executeAction(action, scope, rule, values);
@@ -195,7 +195,9 @@ public class ConstraintEngine {
         }
         if (!"DEVICE_CAPABILITY".equals(actionType)) throw new IllegalArgumentException("未知违规动作类型: " + actionType);
         Long deviceInstanceId = positiveLong(action.get("deviceInstanceId"));
-        if (deviceInstanceId == null) throw new IllegalArgumentException("设备能力违规动作缺少deviceInstanceId");
+        if (deviceInstanceId == null) {
+            throw new IllegalArgumentException("设备能力违规动作缺少deviceInstanceId");
+        }
         String capabilityName = text(action, "capabilityName");
         stateMachineCommandPort.executeConstraintCapability(deviceInstanceId, capabilityName,
                 action.path("parameters").isObject()
@@ -214,7 +216,7 @@ public class ConstraintEngine {
         logEntry.setDeviceInstanceId(scope.deviceInstanceId == null ? positiveLong(action.get("deviceInstanceId")) : scope.deviceInstanceId);
         logEntry.setObservedVariable(constraint.observedVariables());
         logEntry.setExpression(JsonNodeSupport.toNode(rule.getExpression()));
-        logEntry.setActualValue(snapshot(values));
+        logEntry.setActualValue(actualSnapshot(rule, values, scope));
         logEntry.setVariableSnapshot(scopeSnapshot(constraint, action));
         logEntry.setActionTaken(actionTaken);
         violationLogService.save(logEntry);
@@ -267,6 +269,23 @@ public class ConstraintEngine {
     private ObjectNode snapshot(Map<String, JsonNode> values) {
         ObjectNode result = JsonNodeSupport.objectNode();
         values.forEach((name, value) -> result.set(name, value == null ? null : value.deepCopy()));
+        return result;
+    }
+
+    /** 绑定变量快照 + 表达式里 delta/avg/rate 在违规时刻的求值，不写回 bindings。 */
+    private ObjectNode actualSnapshot(ConstraintRule rule, Map<String, JsonNode> values, ScopeState scope) {
+        ObjectNode result = snapshot(values);
+        Map<String, List<ConstraintExpressionEvaluator.TimedValue>> history =
+                histories(rule.getBindings(), scope.histories);
+        Instant now = Instant.now();
+        for (String call : expressionEvaluator.temporalFunctionCalls(rule.getExpression())) {
+            if (result.has(call)) continue;
+            try {
+                result.set(call, expressionEvaluator.evaluateValue(call, values, history, now));
+            } catch (RuntimeException ignored) {
+                // 判别式已成立时函数一般可求值；窗口数据不足则保持变量快照
+            }
+        }
         return result;
     }
 

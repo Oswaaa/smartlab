@@ -196,6 +196,7 @@ public class TaskConstraintService {
                 }
             } else if ("TASK_LIFECYCLE_STATE".equals(sourceType)) {
                 source.put("taskId", task.getId());
+                if (task.getFlowModelId() != null) source.put("workflowTemplateId", task.getFlowModelId());
             }
         }
     }

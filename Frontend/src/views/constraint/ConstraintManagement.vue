@@ -116,7 +116,11 @@
                 <div class="row-actions" @click.stop>
                   <button class="btn-link" type="button" @click="openDetail(row)">详情</button>
                   <button v-if="canEdit" class="btn-link" type="button" @click="open(row)">编辑</button>
-                  <el-popconfirm v-if="canDelete" title="确认删除该约束规则？" @confirm="remove(row)">
+                  <el-popconfirm
+                    v-if="canDelete"
+                    title="若该规则已有违规记录将无法删除，只能停用。确认删除？"
+                    @confirm="remove(row)"
+                  >
                     <template #reference>
                       <button class="btn-link danger" type="button">删除</button>
                     </template>
@@ -309,10 +313,7 @@
                   {{ act }}
                 </span>
               </div>
-              <div class="meta-formula-text">
-                <span>判定公式：<code>{{ getInstantiatedExpr(currentDetailRule) }}</code></span>
-                <span style="margin-left: 18px; color: #64748b;">公式模板：<code>{{ currentDetailRule?.expression }}</code></span>
-              </div>
+              <p v-if="formulaExplainText" class="formula-explain">{{ formulaExplainText }}</p>
 
               <div v-if="currentDetailRule?.description" class="meta-desc-text">
                 规则说明：{{ currentDetailRule.description }}
@@ -335,7 +336,12 @@
                   <tr v-for="(b, name) in (currentDetailRule?.bindings || {})" :key="name">
                     <td><code>@{{ name }}</code></td>
                     <td>{{ b.bindingType === 'OBSERVABLE' ? '观测数据' : '固定常量' }}</td>
-                    <td>{{ resolveBindingTargetDesc(b) }}</td>
+                    <td>
+                      <div class="target-cell">
+                        <strong>{{ bindingTarget(b).primary }}</strong>
+                        <span>{{ bindingTarget(b).secondary }}</span>
+                      </div>
+                    </td>
                     <td>{{ resolveBindingDataType(b) }}</td>
                   </tr>
                 </tbody>
@@ -386,9 +392,13 @@
                     <span style="color: #dc2626; font-weight: 600;">{{ formatActualValue(row.actualValue) }}</span>
                   </template>
                 </el-table-column>
-                <el-table-column prop="actionTaken" label="处置结果" min-width="160">
+                <el-table-column label="处置结果" min-width="220">
                   <template #default="{ row }">
-                    <span>{{ row.actionTaken || '成功执行' }}</span>
+                    <div v-for="view in [actionTakenView(row)]" :key="row.id || row.violationTime" class="action-taken-cell">
+                      <span class="taken-status" :class="view.ok ? 'ok' : 'fail'">{{ view.status }}</span>
+                      <span v-if="view.summary" class="taken-summary">{{ view.summary }}</span>
+                      <span v-if="view.detail" class="taken-detail">{{ view.detail }}</span>
+                    </div>
                   </template>
                 </el-table-column>
               </el-table>
@@ -445,7 +455,7 @@ import { ElMessage } from 'element-plus'
 import { Download, Plus, Refresh } from '@element-plus/icons-vue'
 import { useAuthStore } from '../../stores/authStore'
 import ConstraintRuleEditor from '../../components/constraint/ConstraintRuleEditor.vue'
-import { formatRuleSentenceTokens, sourceCategoryLabel, instantiateExpression } from '../../utils/constraintExpression.js'
+import { formatRuleSentenceTokens, sourceCategoryLabel, instantiateExpression, explainConstraintExpression, describeBindingTarget, formatViolationActionTaken, formatDeviceActionLabel, modelCapabilities } from '../../utils/constraintExpression.js'
 
 const auth = useAuthStore()
 const canCreate = computed(() => auth.hasPermission('constraint_rule:create'))
@@ -523,6 +533,20 @@ const filteredItems = computed(() => {
 
 function getSentenceTokens(rule: any) {
   return formatRuleSentenceTokens(rule, models.value, instances.value)
+}
+
+const formulaExplainText = computed(() => {
+  const rule = currentDetailRule.value
+  if (!rule?.expression) return ''
+  return explainConstraintExpression(rule.expression, rule.windowSeconds)
+})
+
+function bindingTarget(binding: any) {
+  return describeBindingTarget(binding, models.value, instances.value)
+}
+
+function actionTakenView(row: any) {
+  return formatViolationActionTaken(row, models.value, instances.value)
 }
 
 function isAttributeRule(rule: any): boolean {
@@ -645,7 +669,7 @@ async function remove(row: any) {
     ElMessage.success('约束规则已删除')
     load()
   } catch (e: any) {
-    ElMessage.error(e.message || '删除失败')
+    ElMessage.error(e.response?.data?.message || e.message || '删除失败')
   }
 }
 
@@ -1032,22 +1056,6 @@ async function loadViolationLogs() {
   }
 }
 
-function resolveBindingTargetDesc(b: any): string {
-  if (b.bindingType === 'LITERAL') return `固定值: ${b.value}`
-  const src = b.source || {}
-  const inst = instances.value.find(i => Number(i.id) === Number(src.deviceInstanceId))
-  const mdl = models.value.find(m => Number(m.id || m.modelId) === Number(src.deviceModelId || inst?.deviceModelId))
-  const prefix = inst?.instanceName || mdl?.modelName || (src.deviceInstanceId ? `实例${src.deviceInstanceId}` : '设备')
-  if (src.sourceType === 'DEVICE_ATTRIBUTE') {
-    const attr = (mdl?.attributes || []).find((a: any) => a.attributeName === src.targetName)
-    return `${prefix} · 属性 ${attr?.displayName || src.targetName}`
-  }
-  if (src.sourceType === 'DEVICE_OPERATION_STATE') return `${prefix} · 分区 ${src.regionName}`
-  if (src.sourceType === 'DEVICE_COMMAND_LIFECYCLE') return `${prefix} · 指令生命周期`
-  if (src.sourceType === 'TASK_LIFECYCLE_STATE') return `任务 ${src.taskId ? '#' + src.taskId : '当前任务'} 状态`
-  return `${prefix} (未知属性)`
-}
-
 function resolveBindingDataType(b: any): string {
   if (b.bindingType === 'LITERAL') return typeof b.value === 'number' ? '数值' : typeof b.value === 'boolean' ? '布尔值' : '字符串'
   const map: any = { DOUBLE: '浮点数', INTEGER: '整数', STRING: '字符串', BOOLEAN: '布尔值', JSON: 'JSON' }
@@ -1056,8 +1064,7 @@ function resolveBindingDataType(b: any): string {
 
 function resolveActionModel(act: any) {
   const inst = instances.value.find(i => Number(i.id) === Number(act.deviceInstanceId))
-  const modelId = act.deviceModelId || inst?.deviceModelId
-  const mdl = models.value.find(m => Number(m.id || m.modelId) === Number(modelId))
+  const mdl = models.value.find(m => Number(m.id || m.modelId) === Number(act.deviceModelId))
   return { inst, mdl }
 }
 
@@ -1066,16 +1073,13 @@ function resolveActionContent(act: any): string {
     const map: any = { ABORT: '终止当前任务', PAUSE: '暂停当前任务', ALERT: '发布系统告警' }
     return map[act.action] || act.action || '系统动作'
   }
-  const { inst, mdl } = resolveActionModel(act)
-  const cap = (mdl?.capabilities || []).find((c: any) => c.capabilityName === act.capabilityName)
-  const dev = inst?.instanceName || (act.deviceInstanceId ? `设备${act.deviceInstanceId}` : '设备')
-  return `${dev} · ${cap?.displayName || act.capabilityName}`
+  return formatDeviceActionLabel(act, models.value, instances.value, ' · ')
 }
 
 function resolveActionParams(act: any): string {
   if (act.actionType === 'SYSTEM') return act.targetTaskId ? `目标任务 #${act.targetTaskId}` : '作用于当前任务'
   const { mdl } = resolveActionModel(act)
-  const cap = (mdl?.capabilities || []).find((c: any) => c.capabilityName === act.capabilityName)
+  const cap = modelCapabilities(mdl).find((c: any) => c.capabilityName === act.capabilityName)
   const entries = Object.entries(act.parameters || {})
   if (!entries.length) return '无额外参数'
   const paramDefs = Array.isArray(cap?.parameters) ? cap.parameters : []
@@ -1095,10 +1099,17 @@ function formatActualValue(val: any) {
   if (val === null || val === undefined) return '-'
   if (typeof val === 'object') {
     return Object.entries(val)
-      .map(([k, v]) => `${k}=${v}`)
+      .map(([k, v]) => `${k}=${formatActualScalar(v)}`)
       .join(', ')
   }
-  return String(val)
+  return formatActualScalar(val)
+}
+
+function formatActualScalar(value: any) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return Number.isInteger(value) ? String(value) : String(Math.round(value * 10000) / 10000)
+  }
+  return String(value)
 }
 
 onMounted(() => {
@@ -1305,14 +1316,51 @@ onUnmounted(() => {
   justify-content: space-between;
   align-items: center;
 }
-.meta-formula-text {
+.meta-desc-text {
   font-size: 12px;
   color: var(--sl-text-secondary);
-  margin-top: 8px;
+  margin-top: 6px;
 }
-.meta-formula-text code {
-  color: var(--sl-primary);
-  font-family: var(--sl-font-mono);
+.formula-explain {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--sl-text-secondary);
+  line-height: 1.6;
+}
+.target-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.35;
+}
+.target-cell strong {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sl-text-heading);
+}
+.target-cell span {
+  font-size: 12px;
+  color: var(--sl-text-secondary);
+}
+.action-taken-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  line-height: 1.35;
+}
+.taken-status {
+  font-size: 12px;
+  font-weight: 600;
+}
+.taken-status.ok { color: var(--sl-success); }
+.taken-status.fail { color: var(--sl-danger); }
+.taken-summary {
+  font-size: 13px;
+  color: var(--sl-text-heading);
+}
+.taken-detail {
+  font-size: 12px;
+  color: var(--sl-text-secondary);
 }
 
 .live-status-pill {
@@ -1514,11 +1562,6 @@ onUnmounted(() => {
   font-size: 12.5px;
 }
 .trigger-window { color: var(--sl-text-secondary); font-size: 12px; }
-.meta-desc-text {
-  font-size: 12px;
-  color: var(--sl-text-secondary);
-  margin-top: 6px;
-}
 
 .datacenter-link {
   color: var(--sl-primary);

@@ -308,7 +308,7 @@ export function formatRuleSentenceTokens(rule, models = [], instances = []) {
       } else if (src.sourceType === 'DEVICE_COMMAND_LIFECYCLE') {
         desc = `${targetPrefix}.CMD状态`
       } else if (src.sourceType === 'TASK_LIFECYCLE_STATE') {
-        desc = '任务实例状态'
+        desc = src.taskId ? `任务#${src.taskId}状态` : '工作流任务状态'
       } else if (src.sourceType === 'NODE_LIFECYCLE_STATE') {
         desc = `${src.nodeName || '节点'}.生命周期`
       } else if (src.sourceType === 'NODE_INTERNAL_VARIABLE') {
@@ -336,11 +336,7 @@ export function formatRuleSentenceTokens(rule, models = [], instances = []) {
       return sysMap[act.action] || act.action || '系统处置'
     }
     if (act.actionType === 'DEVICE_CAPABILITY') {
-      const inst = instances.find(i => Number(i.id) === Number(act.deviceInstanceId))
-      const mdl = models.find(m => Number(m.id || m.modelId) === Number(inst?.deviceModelId))
-      const cap = (mdl?.capabilities || []).find(c => c.capabilityName === act.capabilityName)
-      const devName = inst?.instanceName || (act.deviceInstanceId ? `设备${act.deviceInstanceId}` : '设备')
-      return `${devName}.${cap?.displayName || act.capabilityName || '能力'}`
+      return formatDeviceActionLabel(act, models, instances)
     }
     return '执行处置'
   })
@@ -353,5 +349,167 @@ export function formatRuleSentenceTokens(rule, models = [], instances = []) {
     conditionExpr: instantiatedCondition,
     windowText,
     actionLabels: actionLabels.length ? actionLabels : ['发布系统告警']
+  }
+}
+
+const SYSTEM_ACTION_LABELS = {
+  ABORT: '终止当前任务',
+  PAUSE: '暂停当前任务',
+  ALERT: '发布系统告警'
+}
+
+const TEMPORAL_FN_EXPLAIN = {
+  rate: seconds => `rate(测点, ${seconds}) 表示过去 ${seconds} 秒内该测点每秒的平均变化量（末值减首值，再除以首末样本的实际间隔）`,
+  delta: seconds => `delta(测点, ${seconds}) 表示过去 ${seconds} 秒内该测点的变化量（窗口内末值减首值）`,
+  avg: seconds => `avg(测点, ${seconds}) 表示过去 ${seconds} 秒内该测点全部样本的算术平均值`
+}
+
+export function explainConstraintExpression(expression, windowSeconds) {
+  const source = String(expression || '')
+  const parts = []
+  const seen = new Set()
+  const matcher = /\b(delta|avg|rate)\s*\(\s*[^,()]+,\s*([^,()]+)\)/gi
+  let match
+  while ((match = matcher.exec(source))) {
+    const name = match[1].toLowerCase()
+    const windowArg = String(match[2] || '').trim()
+    const key = `${name}:${windowArg}`
+    if (seen.has(key) || !TEMPORAL_FN_EXPLAIN[name]) continue
+    seen.add(key)
+    parts.push(TEMPORAL_FN_EXPLAIN[name](windowArg))
+  }
+  if (windowSeconds && Number(windowSeconds) > 0) {
+    parts.push(`「持续 ${windowSeconds} 秒」表示条件连续成立达到该时间后才触发`)
+  } else {
+    parts.push('「瞬时判定」表示条件一旦成立就触发，不再额外等待')
+  }
+  return parts.join('。') + '。'
+}
+
+export function describeBindingTarget(binding, models = [], instances = []) {
+  if (!binding) return { primary: '-', secondary: '' }
+  if (binding.bindingType === 'LITERAL') {
+    return { primary: String(binding.value ?? ''), secondary: '固定阈值' }
+  }
+  const src = binding.source || {}
+  const inst = instances.find(i => Number(i.id) === Number(src.deviceInstanceId))
+  const mdl = models.find(m => Number(m.id || m.modelId) === Number(src.deviceModelId))
+  const objectName = inst?.instanceName || mdl?.modelName || (src.deviceInstanceId ? `设备 #${src.deviceInstanceId}` : '')
+
+  if (src.sourceType === 'DEVICE_ATTRIBUTE') {
+    const attr = (mdl?.attributes || []).find(a => a.attributeName === src.targetName)
+    return { primary: attr?.displayName || src.targetName || '未指定', secondary: `${objectName || '设备'}·属性` }
+  }
+  if (src.sourceType === 'DEVICE_OPERATION_STATE') {
+    return { primary: src.regionName || '未指定分区', secondary: `${objectName || '设备'}·功能状态` }
+  }
+  if (src.sourceType === 'DEVICE_COMMAND_LIFECYCLE') {
+    return { primary: '指令生命周期', secondary: objectName ? `${objectName}·指令` : '设备·指令' }
+  }
+  if (src.sourceType === 'TASK_LIFECYCLE_STATE') {
+    return { primary: '任务状态', secondary: src.taskId ? `任务 #${src.taskId}` : (src.workflowTemplateId ? `工作流 #${src.workflowTemplateId}·全任务` : '全任务') }
+  }
+  if (src.sourceType === 'NODE_LIFECYCLE_STATE') {
+    return { primary: '节点生命周期', secondary: src.nodeName || '节点' }
+  }
+  if (src.sourceType === 'NODE_INTERNAL_VARIABLE') {
+    return { primary: src.variableName || '未指定', secondary: `${src.nodeName || '节点'}·内部变量` }
+  }
+  return { primary: '未知测点', secondary: objectName || '监测对象' }
+}
+
+export function parseActionTaken(actionTaken) {
+  const raw = String(actionTaken || '').trim()
+  if (!raw) return { ok: true, kind: 'empty' }
+
+  if (raw.startsWith('FAILED:')) {
+    const rest = raw.slice('FAILED:'.length)
+    const split = rest.indexOf(':')
+    const type = split >= 0 ? rest.slice(0, split) : rest
+    const error = split >= 0 ? rest.slice(split + 1) : ''
+    if (type === 'DEVICE_CAPABILITY') return { ok: false, kind: 'device', error }
+    if (type === 'SYSTEM') return { ok: false, kind: 'system', error }
+    return { ok: false, kind: 'unknown', error: rest }
+  }
+
+  if (raw.startsWith('DEVICE_CAPABILITY:')) {
+    const capabilityName = raw.split(':').slice(1).filter(part => part && part !== 'CONSTRAINT_EXECUTE').join(':')
+    return { ok: true, kind: 'device', capabilityName }
+  }
+
+  if (raw.startsWith('SYSTEM:')) {
+    return { ok: true, kind: 'system', systemAction: raw.slice('SYSTEM:'.length) }
+  }
+
+  return { ok: true, kind: 'unknown' }
+}
+
+export function modelCapabilities(mdl) {
+  if (Array.isArray(mdl?.capabilities) && mdl.capabilities.length) return mdl.capabilities
+  if (Array.isArray(mdl?.capabilitySpec?.capabilities)) return mdl.capabilitySpec.capabilities
+  return []
+}
+
+export function bindingDeviceModelId(bindings) {
+  if (!bindings || typeof bindings !== 'object') return null
+  const list = Array.isArray(bindings) ? bindings : Object.values(bindings)
+  for (const binding of list) {
+    const id = Number(binding?.source?.deviceModelId || binding?.deviceModelId)
+    if (id > 0) return id
+  }
+  return null
+}
+
+export function formatDeviceActionLabel(act, models = [], instances = [], separator = '.') {
+  const inst = instances.find(i => Number(i.id) === Number(act?.deviceInstanceId))
+  const mdl = models.find(m => Number(m.id || m.modelId) === Number(act?.deviceModelId))
+  const cap = modelCapabilities(mdl).find(c => c.capabilityName === act?.capabilityName)
+  const devName = inst?.instanceName || (act?.deviceInstanceId ? `设备${act.deviceInstanceId}` : '与观测同源')
+  return `${devName}${separator}${cap?.displayName || act?.capabilityName || '能力'}`
+}
+
+function instanceLabel(deviceInstanceId, instances = []) {
+  if (!deviceInstanceId) return ''
+  const inst = instances.find(i => Number(i.id) === Number(deviceInstanceId))
+  return inst?.instanceName || `设备 #${deviceInstanceId}`
+}
+
+function capabilityLabel(deviceInstanceId, capabilityName, models = [], instances = []) {
+  if (!capabilityName) return ''
+  const inst = instances.find(i => Number(i.id) === Number(deviceInstanceId))
+  const mdl = models.find(m => Number(m.id || m.modelId) === Number(inst?.deviceModelId || inst?.modelId))
+  const cap = modelCapabilities(mdl).find(c => c.capabilityName === capabilityName)
+  return cap?.displayName || ''
+}
+
+export function formatViolationActionTaken(log, models = [], instances = []) {
+  const parsed = parseActionTaken(log?.actionTaken)
+  const deviceLabel = instanceLabel(log?.deviceInstanceId, instances)
+  const capLabel = capabilityLabel(log?.deviceInstanceId, parsed.capabilityName, models, instances)
+
+  if (parsed.kind === 'system') {
+    return {
+      ok: parsed.ok,
+      status: parsed.ok ? '已执行' : '执行失败',
+      summary: SYSTEM_ACTION_LABELS[parsed.systemAction] || '系统处置',
+      detail: parsed.error || ''
+    }
+  }
+
+  if (parsed.kind === 'device') {
+    const summary = [deviceLabel, capLabel || (parsed.ok ? '设备能力' : '')].filter(Boolean).join(' · ')
+    return {
+      ok: parsed.ok,
+      status: parsed.ok ? '已下发' : '下发失败',
+      summary: summary || '设备能力',
+      detail: parsed.error || ''
+    }
+  }
+
+  return {
+    ok: parsed.ok,
+    status: parsed.ok ? '已执行' : '执行失败',
+    summary: '',
+    detail: parsed.error || ''
   }
 }

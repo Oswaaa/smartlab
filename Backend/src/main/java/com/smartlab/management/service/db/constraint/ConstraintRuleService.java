@@ -12,7 +12,9 @@ import com.smartlab.management.dto.common.PageResult;
 import com.smartlab.management.entity.constraint.ConstraintRule;
 import com.smartlab.management.entity.resource.device.DeviceInstanceLifecycle;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
+import com.smartlab.management.entity.constraint.ViolationLog;
 import com.smartlab.management.mapper.constraint.ConstraintRuleMapper;
+import com.smartlab.management.mapper.constraint.ViolationLogMapper;
 import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
@@ -38,21 +40,24 @@ public class ConstraintRuleService extends ManagementCrudService<ConstraintRule>
     private final DeviceInstancesMapper deviceInstancesMapper;
     private final ConstraintExpressionEvaluator expressionEvaluator;
     private final ApplicationEventPublisher eventPublisher;
+    private final ViolationLogMapper violationLogMapper;
 
     @Autowired
     public ConstraintRuleService(ConstraintRuleMapper mapper, DeviceInstancesMapper deviceInstancesMapper,
                                  ConstraintExpressionEvaluator expressionEvaluator,
-                                 ApplicationEventPublisher eventPublisher) {
+                                 ApplicationEventPublisher eventPublisher,
+                                 ViolationLogMapper violationLogMapper) {
         super(mapper);
         this.mapper = mapper;
         this.deviceInstancesMapper = deviceInstancesMapper;
         this.expressionEvaluator = expressionEvaluator;
         this.eventPublisher = eventPublisher;
+        this.violationLogMapper = violationLogMapper;
     }
 
     public ConstraintRuleService(ConstraintRuleMapper mapper, DeviceInstancesMapper deviceInstancesMapper,
                                  ConstraintExpressionEvaluator expressionEvaluator) {
-        this(mapper, deviceInstancesMapper, expressionEvaluator, event -> { });
+        this(mapper, deviceInstancesMapper, expressionEvaluator, event -> { }, null);
     }
 
     public List<ConstraintRule> list(Boolean isEnabled) {
@@ -103,8 +108,16 @@ public class ConstraintRuleService extends ManagementCrudService<ConstraintRule>
 
     @Override
     public void delete(java.io.Serializable id) {
+        Long ruleId = id instanceof Long value ? value : id == null ? null : Long.valueOf(String.valueOf(id));
+        if (violationLogMapper != null && ruleId != null) {
+            Long count = violationLogMapper.selectCount(
+                    new QueryWrapper<ViolationLog>().eq("constraint_rule_id", ruleId));
+            if (count != null && count > 0) {
+                throw new IllegalStateException("该约束规则存在违规审计记录（共 " + count + " 条），禁止删除，仅支持停用");
+            }
+        }
         super.delete(id);
-        eventPublisher.publishEvent(new ConstraintRulesChangedEvent(id instanceof Long value ? value : null));
+        eventPublisher.publishEvent(new ConstraintRulesChangedEvent(ruleId));
     }
 
     private void normalize(ConstraintRule entity) {
@@ -132,7 +145,8 @@ public class ConstraintRuleService extends ManagementCrudService<ConstraintRule>
         }
         requireArray(entity.getViolationActions(), "violationActions");
         for (int index = 0; index < entity.getViolationActions().size(); index++) {
-            validateViolationAction(entity.getViolationActions().get(index), "violationActions[" + index + "]");
+            validateViolationAction(entity.getViolationActions().get(index), entity.getBindings(), taskScoped,
+                    "violationActions[" + index + "]");
         }
     }
 
@@ -189,6 +203,8 @@ public class ConstraintRuleService extends ManagementCrudService<ConstraintRule>
         boolean hasDeviceSource = false;
         boolean hasTaskScopedSource = false;
         boolean hasDeviceWildcard = false;
+        Set<Long> explicitTaskIds = new java.util.HashSet<>();
+        boolean hasTaskWildcard = false;
         var fields = bindings.fields();
         while (fields.hasNext()) {
             JsonNode binding = fields.next().getValue();
@@ -203,7 +219,14 @@ public class ConstraintRuleService extends ManagementCrudService<ConstraintRule>
                 else explicitDeviceInstanceIds.add(instanceId);
             } else if (Set.of("NODE_LIFECYCLE_STATE", "NODE_INTERNAL_VARIABLE", "TASK_LIFECYCLE_STATE").contains(sourceType)) {
                 hasTaskScopedSource = true;
-                if (source.has("workflowTemplateId")) workflowTemplateIds.add(requirePositiveLong(source, "workflowTemplateId", "bindings.source"));
+                if (source.has("workflowTemplateId") && !source.path("workflowTemplateId").isNull()) {
+                    workflowTemplateIds.add(requirePositiveLong(source, "workflowTemplateId", "bindings.source"));
+                }
+                if ("TASK_LIFECYCLE_STATE".equals(sourceType)) {
+                    Long taskId = optionalLong(source.get("taskId"));
+                    if (taskId == null) hasTaskWildcard = true;
+                    else explicitTaskIds.add(taskId);
+                }
             }
         }
         if (hasDeviceSource && hasTaskScopedSource) {
@@ -217,6 +240,9 @@ public class ConstraintRuleService extends ManagementCrudService<ConstraintRule>
         }
         if (workflowTemplateIds.size() > 1) {
             throw new IllegalArgumentException("同一约束规则的节点数据源必须引用同一workflowTemplateId");
+        }
+        if (explicitTaskIds.size() > 1 || (hasTaskWildcard && !explicitTaskIds.isEmpty())) {
+            throw new IllegalArgumentException("同一约束规则的任务数据源必须使用同一明确taskId，或全部不指定taskId");
         }
     }
 
@@ -257,12 +283,15 @@ public class ConstraintRuleService extends ManagementCrudService<ConstraintRule>
                 requireText(source, "nodeName", scope);
                 requireText(source, "variableName", scope);
             }
-            case "TASK_LIFECYCLE_STATE" -> requirePositiveLong(source, "taskId", scope);
+            case "TASK_LIFECYCLE_STATE" -> {
+                requirePositiveLong(source, "workflowTemplateId", scope);
+                optionalPositiveLong(source, "taskId", scope);
+            }
             default -> throw new IllegalArgumentException("未知可观测对象类型: " + sourceType);
         }
     }
 
-    private void validateViolationAction(JsonNode action, String scope) {
+    private void validateViolationAction(JsonNode action, JsonNode bindings, boolean taskScoped, String scope) {
         requireObject(action, scope);
         String actionType = requireText(action, "actionType", scope);
         if ("SYSTEM".equals(actionType)) {
@@ -271,24 +300,72 @@ public class ConstraintRuleService extends ManagementCrudService<ConstraintRule>
                 throw new IllegalArgumentException(scope + ".action不符合约束模型规范: " + systemAction);
             }
             JsonNode targetTaskId = action.get("targetTaskId");
-            if (!"ALERT".equals(systemAction)
-                    && (targetTaskId == null || targetTaskId.isNull() || !targetTaskId.canConvertToLong() || targetTaskId.asLong() <= 0)) {
-                throw new IllegalArgumentException(scope + ".targetTaskId必须是正整数");
+            boolean hasTargetTask = targetTaskId != null && !targetTaskId.isNull()
+                    && targetTaskId.canConvertToLong() && targetTaskId.asLong() > 0;
+            if (!"ALERT".equals(systemAction) && !hasTargetTask
+                    && (taskScoped || !taskObservablesAreWildcard(bindings))) {
+                throw new IllegalArgumentException(scope + ".targetTaskId必须是正整数；仅当任务或节点观测为全工作流实例时允许省略，执行时与触发任务同源");
             }
             return;
         }
         if (!"DEVICE_CAPABILITY".equals(actionType)) {
             throw new IllegalArgumentException(scope + ".actionType必须是SYSTEM或DEVICE_CAPABILITY");
         }
-        long deviceInstanceId = requirePositiveLong(action, "deviceInstanceId", scope);
-        DeviceInstances instance = deviceInstancesMapper.selectById(deviceInstanceId);
-        if (instance == null) throw new IllegalArgumentException(scope + "引用的设备实例不存在");
-        if (!DeviceInstanceLifecycle.isUsable(instance)) throw new IllegalStateException(scope + "引用的设备实例已注销");
         requireText(action, "capabilityName", scope);
+        long actionModelId = requirePositiveLong(action, "deviceModelId", scope);
+        Long deviceInstanceId = optionalLong(action.get("deviceInstanceId"));
+        if (deviceInstanceId != null) {
+            DeviceInstances instance = deviceInstancesMapper.selectById(deviceInstanceId);
+            if (instance == null) throw new IllegalArgumentException(scope + "引用的设备实例不存在");
+            if (!DeviceInstanceLifecycle.isUsable(instance)) throw new IllegalStateException(scope + "引用的设备实例已注销");
+            if (!Long.valueOf(actionModelId).equals(instance.getDeviceModelId())) {
+                throw new IllegalArgumentException(scope + ".deviceModelId必须与目标设备实例的模型一致");
+            }
+        } else if (taskScoped || !deviceObservablesAreWildcard(bindings)) {
+            throw new IllegalArgumentException(scope + ".deviceInstanceId必须指定；仅当设备观测为全模型实例时允许省略，执行时与触发实例同源");
+        }
         JsonNode parameters = action.get("parameters");
         if (parameters != null && !parameters.isNull() && !parameters.isObject()) {
             throw new IllegalArgumentException(scope + ".parameters必须是对象");
         }
+    }
+
+    /** 所有设备观测都未指定实例时，动作可以省略实例，运行时绑定到触发该规则的 twin。 */
+    private boolean deviceObservablesAreWildcard(JsonNode bindings) {
+        if (bindings == null || !bindings.isObject()) return false;
+        boolean hasDeviceSource = false;
+        var fields = bindings.fields();
+        while (fields.hasNext()) {
+            JsonNode binding = fields.next().getValue();
+            if (!"OBSERVABLE".equals(text(binding, "bindingType"))) continue;
+            JsonNode source = binding.path("source");
+            String sourceType = text(source, "sourceType");
+            if (!Set.of("DEVICE_ATTRIBUTE", "DEVICE_OPERATION_STATE", "DEVICE_COMMAND_LIFECYCLE").contains(sourceType)) {
+                continue;
+            }
+            hasDeviceSource = true;
+            if (optionalLong(source.get("deviceInstanceId")) != null) return false;
+        }
+        return hasDeviceSource;
+    }
+
+    /** 所有任务/节点观测都未指定 taskId 时，系统动作可以省略目标任务，运行时绑定到触发该规则的任务。 */
+    private boolean taskObservablesAreWildcard(JsonNode bindings) {
+        if (bindings == null || !bindings.isObject()) return false;
+        boolean hasTaskSource = false;
+        var fields = bindings.fields();
+        while (fields.hasNext()) {
+            JsonNode binding = fields.next().getValue();
+            if (!"OBSERVABLE".equals(text(binding, "bindingType"))) continue;
+            JsonNode source = binding.path("source");
+            String sourceType = text(source, "sourceType");
+            if (!Set.of("NODE_LIFECYCLE_STATE", "NODE_INTERNAL_VARIABLE", "TASK_LIFECYCLE_STATE").contains(sourceType)) {
+                continue;
+            }
+            hasTaskSource = true;
+            if ("TASK_LIFECYCLE_STATE".equals(sourceType) && optionalLong(source.get("taskId")) != null) return false;
+        }
+        return hasTaskSource;
     }
 
     private void requireArray(JsonNode node, String scope) {

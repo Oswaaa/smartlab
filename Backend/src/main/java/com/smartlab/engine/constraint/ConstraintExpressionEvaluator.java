@@ -113,6 +113,33 @@ public class ConstraintExpressionEvaluator {
         if (!result.isNumber()) throw new IllegalArgumentException("工作流计算expression必须返回数值");
     }
 
+    /** 表达式中出现的 delta/avg/rate 调用原文，用于违规日志写入函数求值。 */
+    public List<String> temporalFunctionCalls(String expression) {
+        LinkedHashSet<String> result = new LinkedHashSet<>();
+        if (expression == null || expression.isBlank()) return List.of();
+        Matcher matcher = Pattern.compile("\\b(delta|avg|rate)\\s*\\(", Pattern.CASE_INSENSITIVE).matcher(expression);
+        while (matcher.find()) {
+            int open = matcher.end() - 1;
+            int depth = 0;
+            for (int index = open; index < expression.length(); index++) {
+                char character = expression.charAt(index);
+                if (character == '(') depth++;
+                else if (character == ')') {
+                    depth--;
+                    if (depth == 0) {
+                        result.add(normalizeCall(expression.substring(matcher.start(), index + 1)));
+                        break;
+                    }
+                }
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    private static String normalizeCall(String call) {
+        return call.replaceAll("\\s+", " ").replace(" (", "(").trim();
+    }
+
     public Set<String> referencedVariables(String expression) {
         if (expression == null || expression.isBlank()) throw new IllegalArgumentException("约束expression不能为空");
         Set<String> result = new LinkedHashSet<>();

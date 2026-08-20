@@ -169,6 +169,45 @@ class ConstraintEngineTest {
                 org.mockito.ArgumentMatchers.argThat(parameters -> "temperature".equals(parameters.get("reason"))));
     }
 
+    @Test
+    void deviceActionWithoutInstanceDoesNotBorrowScope() {
+        ConstraintRule rule = rule();
+        ObjectNode action = JsonNodeSupport.objectNode();
+        action.put("actionType", "DEVICE_CAPABILITY");
+        action.put("capabilityName", "EmergencyStop");
+        rule.setViolationActions(JsonNodeSupport.MAPPER.createArrayNode().add(action));
+        StateMachineCommandPort commands = mock(StateMachineCommandPort.class);
+        ConstraintEngine engine = engine(mock(ViolationLogService.class), commands,
+                mock(ApplicationEventPublisher.class));
+        ObservableKey key = temperatureKey();
+
+        engine.evaluate(runtime(rule, key, null), Map.of(key, snapshot(key, 82, 1)));
+
+        org.mockito.Mockito.verifyNoInteractions(commands);
+    }
+
+    @Test
+    void violationSnapshotIncludesTemporalFunctionValue() {
+        ConstraintRule rule = rule();
+        rule.setExpression("rate(temperature, 30) > limit");
+        ((ObjectNode) rule.getBindings().path("limit")).put("value", 0);
+        Instant now = Instant.now();
+        ObservableKey key = temperatureKey();
+        ViolationLogService logs = mock(ViolationLogService.class);
+        ConstraintEngine engine = engine(logs, mock(StateMachineCommandPort.class),
+                mock(ApplicationEventPublisher.class));
+
+        engine.evaluate(runtime(rule, key, null), Map.of(key, snapshot(key, 20, 2)), Map.of(key, List.of(
+                new ObservationSample(key, JsonNodeSupport.toNode(10), now.minusSeconds(10), 1),
+                new ObservationSample(key, JsonNodeSupport.toNode(20), now, 2))));
+
+        ArgumentCaptor<ViolationLog> captor = ArgumentCaptor.forClass(ViolationLog.class);
+        verify(logs).save(captor.capture());
+        assertEquals(20, captor.getValue().getActualValue().path("temperature").asInt());
+        assertEquals(0, captor.getValue().getActualValue().path("limit").asInt());
+        assertEquals(1.0, captor.getValue().getActualValue().path("rate(temperature, 30)").asDouble(), 0.01);
+    }
+
     private ConstraintEngine engine(ViolationLogService logs, StateMachineCommandPort commands,
                                     ApplicationEventPublisher events) {
         return engine(logs, commands, events, mock(ConstraintScopeSnapshotReader.class));

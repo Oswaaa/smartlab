@@ -48,6 +48,7 @@ class TaskConstraintServiceTest {
         ArrayNode normalized = service.normalizeAndValidate(task, input);
 
         assertEquals(7L, normalized.path(0).path("bindings").path("taskState").path("source").path("taskId").asLong());
+        assertEquals(3L, normalized.path(0).path("bindings").path("taskState").path("source").path("workflowTemplateId").asLong());
         assertEquals(7L, normalized.path(0).path("violationActions").path(0).path("targetTaskId").asLong());
         verify(ruleService).validateTaskDefinition(any());
     }

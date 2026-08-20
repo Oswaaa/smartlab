@@ -53,4 +53,12 @@ class ConstraintExpressionEvaluatorTest {
         assertThrows(ConstraintExpressionEvaluator.TemporalDataUnavailableException.class,
                 () -> evaluator.evaluateWorkflowValue("rate(temperature, 30)", variables, Map.of(), now));
     }
+
+    @Test
+    void extractsTemporalFunctionCallsFromPredicate() {
+        assertEquals(List.of("rate(value, 10)"),
+                evaluator.temporalFunctionCalls("rate(value, 10) > limit"));
+        assertEquals(List.of("delta(value, 10)", "avg(value, 60)"),
+                evaluator.temporalFunctionCalls("delta(value, 10) > 1 && avg(value, 60) > limit"));
+    }
 }

@@ -149,7 +149,7 @@ public class EffectiveConstraintModelCompiler {
                 String signature = canonical(observableSource).toString();
                 String observableName = observableNames.get(signature);
                 if (observableName == null) {
-                    observableName = uniqueObservableName(source, variableName, usedObservableNames);
+                    observableName = uniqueObservableName(observableSource, usedObservableNames);
                     observableNames.put(signature, observableName);
                     ObjectNode exportedObservable = ((ObjectNode) observableSource).deepCopy();
                     exportedObservable.put("name", observableName);
@@ -249,7 +249,34 @@ public class EffectiveConstraintModelCompiler {
         RuntimeConstraintKey key = new RuntimeConstraintKey(source.origin(), source.stableKey(), scope,
                 template.ruleVersion());
         target.put(key, new RuntimeConstraint(key, source.rule(), scoped, taskId, null, deviceId,
-                template.observedVariables()));
+                template.observedVariables(), stampActions(source.rule().getViolationActions(), taskId, deviceId)));
+    }
+
+    /** 模板动作可以省略实例/任务；拆份后写入这一份要执行的完整命令，执行器不再向观测作用域借地址。 */
+    private JsonNode stampActions(JsonNode sourceActions, Long taskId, Long deviceId) {
+        ArrayNode result = JsonNodeSupport.arrayNode();
+        if (sourceActions == null || !sourceActions.isArray()) return result;
+        for (JsonNode action : sourceActions) {
+            if (!action.isObject()) {
+                result.add(action.deepCopy());
+                continue;
+            }
+            ObjectNode copy = action.deepCopy();
+            String actionType = copy.path("actionType").asText();
+            if ("DEVICE_CAPABILITY".equals(actionType)
+                    && positive(copy.get("deviceInstanceId")) == null && deviceId != null) {
+                copy.put("deviceInstanceId", deviceId);
+            }
+            if ("SYSTEM".equals(actionType)) {
+                String systemAction = copy.path("action").asText();
+                if (("ABORT".equals(systemAction) || "PAUSE".equals(systemAction))
+                        && positive(copy.get("targetTaskId")) == null && taskId != null) {
+                    copy.put("targetTaskId", taskId);
+                }
+            }
+            result.add(copy);
+        }
+        return result;
     }
 
     private Map<ObservableKey, Set<RuntimeConstraintKey>> dependencyIndex(
@@ -362,12 +389,54 @@ public class EffectiveConstraintModelCompiler {
                 || type == ObservableObjectType.DEVICE_COMMAND_LIFECYCLE;
     }
 
-    private String uniqueObservableName(RuleSource source, String variableName, Set<String> usedNames) {
-        String base = sanitize(source.origin().toLowerCase() + "_" + source.stableKey() + "_" + variableName);
+    private String uniqueObservableName(JsonNode source, Set<String> usedNames) {
+        String base = sanitize(observableIdentityName(source));
         String candidate = base;
         int suffix = 2;
         while (!usedNames.add(candidate)) candidate = base + "_" + suffix++;
         return candidate;
+    }
+
+    /** 按 source 身份字段命名，不使用规则 id 或表达式变量名。 */
+    private String observableIdentityName(JsonNode source) {
+        String sourceType = text(source, "sourceType");
+        if (sourceType == null) return "observable";
+        return switch (sourceType) {
+            case "DEVICE_ATTRIBUTE" -> join("attr", idPart(source, "deviceModelId"), instanceOrAll(source),
+                    tokenPart(source, "targetName"));
+            case "DEVICE_OPERATION_STATE" -> join("op", idPart(source, "deviceModelId"), instanceOrAll(source),
+                    tokenPart(source, "regionName"));
+            case "DEVICE_COMMAND_LIFECYCLE" -> join("cmd", idPart(source, "deviceModelId"), instanceOrAll(source));
+            case "NODE_LIFECYCLE_STATE" -> join("node", idPart(source, "workflowTemplateId"), tokenPart(source, "nodeName"));
+            case "NODE_INTERNAL_VARIABLE" -> join("nvar", idPart(source, "workflowTemplateId"),
+                    tokenPart(source, "nodeName"), tokenPart(source, "variableName"));
+            case "TASK_LIFECYCLE_STATE" -> join("task", idPart(source, "workflowTemplateId"), taskOrAll(source));
+            default -> "observable";
+        };
+    }
+
+    private String instanceOrAll(JsonNode source) {
+        Long instanceId = positive(source.get("deviceInstanceId"));
+        return instanceId == null ? "all" : String.valueOf(instanceId);
+    }
+
+    private String taskOrAll(JsonNode source) {
+        Long taskId = positive(source.get("taskId"));
+        return taskId == null ? "all" : String.valueOf(taskId);
+    }
+
+    private String idPart(JsonNode source, String field) {
+        Long value = positive(source.get(field));
+        return value == null ? "0" : String.valueOf(value);
+    }
+
+    private String tokenPart(JsonNode source, String field) {
+        String value = text(source, field);
+        return value == null ? "unnamed" : sanitize(value);
+    }
+
+    private String join(String... parts) {
+        return String.join("_", parts);
     }
 
     private String runtimeFingerprint(String modelHash,

@@ -77,7 +77,7 @@
       "description": "可观测对象的公共字段",
       "type": "object",
       "properties": {
-        "name": { "type": "string", "description": "可观测对象唯一标识名，在同一约束模型内唯一；被constraints[].bindings中的observableName引用" },
+        "name": { "type": "string", "description": "可观测对象唯一标识名，在同一约束模型内唯一；由source身份字段生成（如attr_{modelId}_{instanceId|all}_{targetName}），被constraints[].bindings中的observableName引用" },
         "sourceType": {
           "type": "string",
           "enum": [ "DEVICE_ATTRIBUTE", "DEVICE_OPERATION_STATE", "DEVICE_COMMAND_LIFECYCLE", "NODE_LIFECYCLE_STATE", "NODE_INTERNAL_VARIABLE", "TASK_LIFECYCLE_STATE" ]
@@ -176,33 +176,35 @@
         },
         "targetTaskId": {
           "type": [ "integer", "null" ],
-          "description": "目标任务实例IDABORT和PAUSE必须填写；ALERT允许为null"
+          "description": "目标任务实例ID（可选）。ABORT/PAUSE不填则对触发该规则的观测任务执行，即与观测同源；指定时始终打到该任务。ALERT允许为null"
         }
       },
-      "required": [ "actionType", "action", "targetTaskId" ]
+      "required": [ "actionType", "action" ]
     },
     "deviceCapabilityViolationAction": {
       "description": "DEVICE_CAPABILITY：通过目标设备状态机执行指定能力；统一发送CONSTRAINT_EXECUTE，由状态机根据能力模型的isAbort路由到普通或可插队终止状态机；CONSTRAINT_ABORT仅用于终止目标设备当前活动的普通命令",
       "type": "object",
       "properties": {
         "actionType": { "type": "string", "const": "DEVICE_CAPABILITY" },
-        "deviceInstanceId": { "type": "integer", "description": "目标设备实例ID" },
+        "deviceModelId": { "type": "integer", "description": "目标设备模型ID；能力名按此模型解析。运行时若省略deviceInstanceId，编译拆份后写入触发实例" },
+        "deviceInstanceId": { "type": "integer", "description": "目标设备实例ID（可选）；不填则对触发该规则的观测实例执行，即与观测同源。指定时始终打到该实例" },
         "capabilityName": { "type": "string", "description": "引用设备能力模型capabilities[].capabilityName" },
         "parameters": { "type": "object", "description": "能力参数（可选），具体字段结构由设备能力模型定义" }
       },
-      "required": [ "actionType", "deviceInstanceId", "capabilityName" ]
+      "required": [ "actionType", "deviceModelId", "capabilityName" ]
     },
     "taskLifecycleObservable": {
-      "description": "TASK_LIFECYCLE_STATE：监测某个任务实例的整体执行状态，对应数据库TASK_STATUS",
+      "description": "TASK_LIFECYCLE_STATE：监测某个工作流模板下任务实例的整体执行状态，对应数据库TASK_STATUS",
       "allOf": [
         { "$ref": "#/definitions/observableBase" },
         {
           "type": "object",
           "properties": {
             "sourceType": { "type": "string", "const": "TASK_LIFECYCLE_STATE" },
-            "taskId": { "type": "integer", "description": "目标任务实例ID" }
+            "workflowTemplateId": { "type": "integer", "description": "目标工作流模型ID" },
+            "taskId": { "type": "integer", "description": "目标任务实例ID（可选）；不填则监控该工作流模板下所有活跃任务" }
           },
-          "required": [ "sourceType", "taskId" ]
+          "required": [ "sourceType", "workflowTemplateId" ]
         }
       ]
     }

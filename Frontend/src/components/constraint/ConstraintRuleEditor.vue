@@ -132,12 +132,20 @@
 
             <template v-else-if="item.sourceType === 'TASK_LIFECYCLE_STATE'">
               <div v-if="taskMode" class="task-mode-hint">自动绑定当前执行任务的状态</div>
-              <div v-else class="field field-grow">
-                <span class="field-label">目标任务</span>
-                <el-select v-model="item.taskId" size="small" filterable placeholder="选择目标任务">
-                  <el-option v-for="task in tasks" :key="task.id" :label="(task.taskName || '任务') + ' #' + task.id" :value="task.id" />
-                </el-select>
-              </div>
+              <template v-else>
+                <div class="field field-grow">
+                  <span class="field-label">工作流</span>
+                  <el-select v-model="item.workflowTemplateId" size="small" filterable placeholder="选择工作流模板" @change="item.taskId = null">
+                    <el-option v-for="flow in availableWorkflows" :key="flow.id" :label="flow.flowName || ('流程' + flow.id)" :value="flow.id" />
+                  </el-select>
+                </div>
+                <div class="field field-grow">
+                  <span class="field-label">目标任务（可选）</span>
+                  <el-select v-model="item.taskId" size="small" filterable clearable placeholder="全任务实例">
+                    <el-option v-for="task in tasksFor(item.workflowTemplateId)" :key="task.id" :label="(task.taskName || '任务') + ' #' + task.id" :value="task.id" />
+                  </el-select>
+                </div>
+              </template>
             </template>
 
             <template v-else-if="isNodeSource(item.sourceType)">
@@ -288,45 +296,52 @@
           </div>
 
 
-          <!-- 设备能力动作 -->
-          <div v-if="act.actionType === 'DEVICE_CAPABILITY'" class="action-inputs-grid">
-            <template v-if="taskMode">
-              <el-form-item label="任务设备" style="margin-bottom: 0;">
-                <el-select v-model="act.resourceKey" size="small" @change="selectActionResource(act)">
-                  <el-option v-for="res in taskResources" :key="res.bindingKey" :label="resourceLabel(res)" :value="res.bindingKey" />
-                </el-select>
-              </el-form-item>
-            </template>
-            <template v-else>
-              <el-form-item label="设备模型" style="margin-bottom: 0;">
-                <el-select v-model="act.deviceModelId" size="small" filterable @change="resetActionDevice(act)">
-                  <el-option v-for="m in models" :key="m.id" :label="m.modelName" :value="m.id" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="设备实例" style="margin-bottom: 0;">
-                <el-select v-model="act.deviceInstanceId" size="small" placeholder="选择执行实例">
-                  <el-option v-for="inst in instancesFor(act.deviceModelId)" :key="inst.id" :label="inst.instanceName || ('实例' + inst.id)" :value="inst.id" />
-                </el-select>
-              </el-form-item>
-            </template>
+          <div v-if="act.actionType === 'DEVICE_CAPABILITY'" class="action-device-block">
+            <div class="action-inputs-grid action-row-targets">
+              <template v-if="taskMode">
+                <el-form-item label="任务设备" style="margin-bottom: 0;">
+                  <el-select v-model="act.resourceKey" size="small" @change="selectActionResource(act)">
+                    <el-option v-for="res in taskResources" :key="res.bindingKey" :label="resourceLabel(res)" :value="res.bindingKey" />
+                  </el-select>
+                </el-form-item>
+              </template>
+              <template v-else>
+                <el-form-item label="设备模型" style="margin-bottom: 0;">
+                  <el-select v-model="act.deviceModelId" size="small" filterable @change="resetActionDevice(act)">
+                    <el-option v-for="m in models" :key="m.id" :label="m.modelName" :value="m.id" />
+                  </el-select>
+                </el-form-item>
+                <el-form-item :label="deviceBindingsAreModelWide ? '执行实例（可选）' : '设备实例'" style="margin-bottom: 0;">
+                  <el-select
+                    v-model="act.deviceInstanceId"
+                    size="small"
+                    :clearable="deviceBindingsAreModelWide"
+                    :placeholder="deviceBindingsAreModelWide ? '与观测同源' : '选择执行实例'"
+                  >
+                    <el-option v-for="inst in instancesFor(act.deviceModelId)" :key="inst.id" :label="inst.instanceName || ('实例' + inst.id)" :value="inst.id" />
+                  </el-select>
+                </el-form-item>
+              </template>
+            </div>
 
-            <el-form-item label="执行能力" style="margin-bottom: 0;">
-              <el-select v-model="act.capabilityName" size="small" filterable @change="initParameters(act)">
-                <el-option v-for="cap in capabilitiesFor(act.deviceModelId)" :key="cap.capabilityName" :label="cap.displayName || cap.capabilityName" :value="cap.capabilityName" />
-              </el-select>
-            </el-form-item>
-
-            <!-- 动态参数列表 -->
-            <template v-if="parameterDefinitions(act).length">
-              <el-form-item v-for="param in parameterDefinitions(act)" :key="param.name" :label="param.displayName" style="margin-bottom: 0;">
-                <el-select v-if="param.dataType === 'BOOLEAN'" v-model="act.parameters[param.name]" size="small">
-                  <el-option label="true" :value="true" />
-                  <el-option label="false" :value="false" />
+            <div class="action-inputs-grid action-row-capability">
+              <el-form-item label="执行能力" style="margin-bottom: 0;">
+                <el-select v-model="act.capabilityName" size="small" filterable @change="initParameters(act)">
+                  <el-option v-for="cap in capabilitiesFor(act.deviceModelId)" :key="cap.capabilityName" :label="cap.displayName || cap.capabilityName" :value="cap.capabilityName" />
                 </el-select>
-                <el-input-number v-else-if="isNumeric(param.dataType)" v-model="act.parameters[param.name]" size="small" :controls="false" />
-                <el-input v-else v-model="act.parameters[param.name]" size="small" />
               </el-form-item>
-            </template>
+
+              <template v-if="parameterDefinitions(act).length">
+                <el-form-item v-for="param in parameterDefinitions(act)" :key="param.name" :label="param.displayName" style="margin-bottom: 0;">
+                  <el-select v-if="param.dataType === 'BOOLEAN'" v-model="act.parameters[param.name]" size="small">
+                    <el-option label="true" :value="true" />
+                    <el-option label="false" :value="false" />
+                  </el-select>
+                  <el-input-number v-else-if="isNumeric(param.dataType)" v-model="act.parameters[param.name]" size="small" :controls="false" />
+                  <el-input v-else v-model="act.parameters[param.name]" size="small" />
+                </el-form-item>
+              </template>
+            </div>
           </div>
 
           <!-- 系统动作 -->
@@ -338,8 +353,14 @@
                 <el-option label="发布系统告警" value="ALERT" />
               </el-select>
             </el-form-item>
-            <el-form-item v-if="!taskMode && act.action !== 'ALERT'" label="目标任务" style="margin-bottom: 0;">
-              <el-select v-model="act.targetTaskId" size="small" filterable placeholder="指定触发违规的目标任务">
+            <el-form-item v-if="!taskMode && act.action !== 'ALERT'" :label="taskBindingsAreTemplateWide ? '目标任务（可选）' : '目标任务'" style="margin-bottom: 0;">
+              <el-select
+                v-model="act.targetTaskId"
+                size="small"
+                filterable
+                :clearable="taskBindingsAreTemplateWide"
+                :placeholder="taskBindingsAreTemplateWide ? '与观测同源' : '指定触发违规的目标任务'"
+              >
                 <el-option v-for="task in tasks" :key="task.id" :label="(task.taskName || '任务') + ' #' + task.id" :value="task.id" />
               </el-select>
             </el-form-item>
@@ -357,7 +378,10 @@ import {
   extractExpressionVariables,
   toBackendExpression,
   validateDisplayExpressionSyntax,
-  sourceCategoryLabel
+  sourceCategoryLabel,
+  formatDeviceActionLabel,
+  modelCapabilities,
+  bindingDeviceModelId
 } from '../../utils/constraintExpression.js'
 
 const props = withDefaults(
@@ -617,13 +641,26 @@ const isNumeric = (t: string) => t === 'INTEGER' || t === 'DOUBLE'
 const isDeviceSource = (t: string) => ['DEVICE_ATTRIBUTE', 'DEVICE_OPERATION_STATE', 'DEVICE_COMMAND_LIFECYCLE'].includes(t)
 const isNodeSource = (t: string) => ['NODE_LIFECYCLE_STATE', 'NODE_INTERNAL_VARIABLE'].includes(t)
 
+const deviceBindingsAreModelWide = computed(() => {
+  if (props.taskMode) return false
+  const obs = form.bindings.filter((b: any) => b.bindingType === 'OBSERVABLE' && isDeviceSource(b.sourceType))
+  return obs.length > 0 && obs.every((b: any) => !b.deviceInstanceId)
+})
+
+const taskBindingsAreTemplateWide = computed(() => {
+  if (props.taskMode) return false
+  const obs = form.bindings.filter((b: any) => b.bindingType === 'OBSERVABLE' && (isNodeSource(b.sourceType) || b.sourceType === 'TASK_LIFECYCLE_STATE'))
+  return obs.length > 0 && obs.every((b: any) => b.sourceType !== 'TASK_LIFECYCLE_STATE' || !b.taskId)
+})
+
 const sourceLabel = (t: string) => sourceCategoryLabel(t)
 const dataTypeLabel = (t: string) => ({ DOUBLE: '浮点数', INTEGER: '整数', STRING: '字符串', BOOLEAN: '布尔值', JSON: 'JSON对象' } as any)[t] || t || '-'
 
 const model = (id: any) => props.models.find((x: any) => Number(x.id || x.modelId) === Number(id))
 const instancesFor = (id: any) => props.instances.filter((x: any) => Number(x.deviceModelId || x.modelId) === Number(id))
+const tasksFor = (flowId: any) => props.tasks.filter((x: any) => Number(x.flowModelId) === Number(flowId))
 const attributesFor = (id: any) => (Array.isArray(model(id)?.attributes) ? model(id).attributes : [])
-const capabilitiesFor = (id: any) => (Array.isArray(model(id)?.capabilities) ? model(id).capabilities : [])
+const capabilitiesFor = (id: any) => modelCapabilities(model(id))
 const operationRegions = (id: any) => (Array.isArray(model(id)?.opState?.regions) ? model(id).opState.regions : [])
 
 function internalVariablesFor(item: any) {
@@ -677,7 +714,9 @@ function nodesFor(flowId: any) {
 }
 
 function addAction() {
-  form.actions.push(newAction())
+  const act = newAction()
+  act.deviceModelId = bindingDeviceModelId(form.bindings)
+  form.actions.push(act)
 }
 
 function resetAction(act: any) {
@@ -733,7 +772,7 @@ const previewData = computed(() => {
       } else if (b.sourceType === 'DEVICE_COMMAND_LIFECYCLE') {
         varMap[b.name] = `${prefix}.CMD状态`
       } else if (b.sourceType === 'TASK_LIFECYCLE_STATE') {
-        varMap[b.name] = '任务实例状态'
+        varMap[b.name] = b.taskId ? `任务#${b.taskId}状态` : '工作流任务状态'
       } else if (b.sourceType === 'NODE_LIFECYCLE_STATE') {
         varMap[b.name] = `${b.nodeName || '节点'}.生命周期`
       } else if (b.sourceType === 'NODE_INTERNAL_VARIABLE') {
@@ -756,11 +795,7 @@ const previewData = computed(() => {
       return map[act.action] || act.action || '系统处置'
     }
     if (act.actionType === 'DEVICE_CAPABILITY') {
-      const inst = props.instances.find(i => Number(i.id) === Number(act.deviceInstanceId))
-      const mdl = props.models.find(m => Number(m.id || m.modelId) === Number(act.deviceModelId))
-      const cap = (mdl?.capabilities || []).find((c: any) => c.capabilityName === act.capabilityName)
-      const devName = inst?.instanceName || (act.deviceInstanceId ? `设备${act.deviceInstanceId}` : '设备')
-      return `${devName}.${cap?.displayName || act.capabilityName || '能力'}`
+      return formatDeviceActionLabel(act, props.models, props.instances)
     }
     return '处置动作'
   })
@@ -808,33 +843,46 @@ function bindingPayload(item: any) {
       if (!item.variableName) throw Error(`@${item.name} 缺少内部变量`)
       source.variableName = item.variableName
     }
-  } else if (!props.taskMode && item.sourceType === 'TASK_LIFECYCLE_STATE') {
-    if (!item.taskId) throw Error(`@${item.name} 请指定目标任务`)
-    source.taskId = item.taskId
+  } else if (item.sourceType === 'TASK_LIFECYCLE_STATE') {
+    if (props.taskMode) {
+      if (availableWorkflows.value.length === 1) source.workflowTemplateId = availableWorkflows.value[0].id
+    } else {
+      if (!item.workflowTemplateId) throw Error(`@${item.name} 请选择工作流模板`)
+      source.workflowTemplateId = item.workflowTemplateId
+      if (item.taskId) source.taskId = item.taskId
+    }
   }
   return { bindingType: 'OBSERVABLE', source }
 }
 
 function actionPayload(act: any) {
   if (act.actionType === 'SYSTEM') {
-    if (!props.taskMode && act.action !== 'ALERT' && !act.targetTaskId) {
+    if (!props.taskMode && act.action !== 'ALERT' && !act.targetTaskId && !taskBindingsAreTemplateWide.value) {
       throw Error(`${act.action} 必须选择目标任务`)
     }
     return {
       actionType: 'SYSTEM',
       action: act.action,
-      targetTaskId: props.taskMode ? null : act.action === 'ALERT' ? null : act.targetTaskId
+      targetTaskId: props.taskMode ? null : act.targetTaskId || null
     }
   }
-  if (!act.deviceInstanceId || !act.capabilityName) {
-    throw Error('设备能力动作必须选择具体执行实例与能力')
+  if (!act.capabilityName) {
+    throw Error('设备能力动作必须选择执行能力')
   }
-  return {
+  if (!act.deviceModelId) {
+    throw Error('设备能力动作必须选择设备模型')
+  }
+  if (!act.deviceInstanceId && (props.taskMode || !deviceBindingsAreModelWide.value)) {
+    throw Error('设备能力动作必须选择具体执行实例')
+  }
+  const payload: Record<string, any> = {
     actionType: 'DEVICE_CAPABILITY',
-    deviceInstanceId: act.deviceInstanceId,
+    deviceModelId: Number(act.deviceModelId),
     capabilityName: act.capabilityName,
     parameters: act.parameters || {}
   }
+  if (act.deviceInstanceId) payload.deviceInstanceId = act.deviceInstanceId
+  return payload
 }
 
 function validateAndBuild() {
@@ -910,14 +958,13 @@ function loadRule(rule?: any) {
   if (rule?.violationActions && rule.violationActions.length) {
     form.actions = rule.violationActions.map((act: any) => {
       const res = props.taskResources.find((x: any) => Number(x.deviceInstanceId) === Number(act.deviceInstanceId))
-      const inst = props.instances.find((x: any) => Number(x.id) === Number(act.deviceInstanceId))
       return {
         ...newAction(),
         actionType: act.actionType || 'DEVICE_CAPABILITY',
         action: act.action || 'ALERT',
         targetTaskId: act.targetTaskId || null,
         resourceKey: res?.bindingKey || '',
-        deviceModelId: res?.deviceModelId || inst?.deviceModelId || inst?.modelId || null,
+        deviceModelId: act.deviceModelId || null,
         deviceInstanceId: act.deviceInstanceId || null,
         capabilityName: act.capabilityName || '',
         parameters: act.parameters || {}
@@ -1303,11 +1350,28 @@ defineExpose({ validateAndBuild, loadRule })
   align-items: center;
   margin-bottom: 10px;
 }
+.action-device-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 .action-inputs-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 10px;
+  gap: 8px;
   align-items: center;
+}
+.action-row-targets,
+.action-row-capability {
+  grid-template-columns: minmax(180px, 1fr) minmax(240px, 1.4fr);
+}
+.action-row-targets :deep(.el-select),
+.action-row-capability :deep(.el-select) {
+  width: 100%;
+}
+.action-row-targets :deep(.el-select__placeholder) {
+  overflow: visible;
+  text-overflow: clip;
 }
 
 .task-mode-hint {

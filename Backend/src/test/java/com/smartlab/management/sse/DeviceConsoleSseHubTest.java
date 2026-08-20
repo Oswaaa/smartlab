@@ -32,10 +32,13 @@ class DeviceConsoleSseHubTest {
                 101L, "Interface_state_out", "STATE", signal, Map.of("capabilityName", "heat")
         );
 
-        // Broadcast to registered emitter
+        SseEmitter globalEmitter = hub.registerGlobal();
+        assertNotNull(globalEmitter);
+
+        // Broadcast to registered and global emitters
         hub.handleStateMachineSignal(event);
 
-        // Broadcast for untracked instance should not fail
+        // Broadcast for untracked instance should broadcast to globalEmitter without failing
         StateMachineInterfaceSignalEvent untrackedEvent = new StateMachineInterfaceSignalEvent(
                 999L, "Interface_state_out", "STATE", signal, Map.of()
         );

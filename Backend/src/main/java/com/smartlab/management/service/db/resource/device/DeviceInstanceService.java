@@ -35,8 +35,24 @@ import java.util.Objects;
 import java.util.Set;
 
 import com.smartlab.management.entity.resource.adapter.AdapterIndex;
+import com.smartlab.management.entity.resource.data.DataIndex;
+import com.smartlab.management.entity.workflow.ExecutionLog;
+import com.smartlab.management.entity.constraint.ViolationLog;
+import com.smartlab.management.entity.resource.scene.SceneDetail;
+import com.smartlab.management.entity.resource.device.ResourceStructure;
+import com.smartlab.management.entity.workflow.Task;
+import com.smartlab.management.entity.constraint.ConstraintRule;
 import com.smartlab.management.mapper.resource.adapter.AdapterIndexMapper;
+import com.smartlab.management.mapper.workflow.ExecutionLogMapper;
+import com.smartlab.management.mapper.constraint.ViolationLogMapper;
+import com.smartlab.management.mapper.resource.scene.SceneDetailMapper;
+import com.smartlab.management.mapper.resource.device.ResourceStructureMapper;
+import com.smartlab.management.mapper.resource.device.DeviceComponentsMapper;
+import com.smartlab.management.mapper.workflow.TaskMapper;
+import com.smartlab.management.mapper.constraint.ConstraintRuleMapper;
+import com.smartlab.management.service.db.workflow.WorkflowTaskResourceService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.jdbc.core.JdbcTemplate;
 
 /**
  * 设备实例表服务，只负责实例持久化和实例快照基础读写。
@@ -57,7 +73,34 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
     private final ApplicationEventPublisher eventPublisher;
 
     @Autowired(required = false)
-    private AdapterIndexMapper adapterIndexMapper;
+    AdapterIndexMapper adapterIndexMapper;
+
+    @Autowired(required = false)
+    ExecutionLogMapper executionLogMapper;
+
+    @Autowired(required = false)
+    ViolationLogMapper violationLogMapper;
+
+    @Autowired(required = false)
+    SceneDetailMapper sceneDetailMapper;
+
+    @Autowired(required = false)
+    ResourceStructureMapper resourceStructureMapper;
+
+    @Autowired(required = false)
+    DeviceComponentsMapper deviceComponentsMapper;
+
+    @Autowired(required = false)
+    TaskMapper taskMapper;
+
+    @Autowired(required = false)
+    WorkflowTaskResourceService workflowTaskResourceService;
+
+    @Autowired(required = false)
+    ConstraintRuleMapper constraintRuleMapper;
+
+    @Autowired(required = false)
+    JdbcTemplate jdbcTemplate;
 
     public DeviceInstanceService(DeviceInstancesMapper mapper,
                                  DeviceTwinStatesMapper twinStatesMapper,
@@ -290,8 +333,169 @@ public class DeviceInstanceService extends ManagementCrudService<DeviceInstances
     }
 
     @Override
+    @Transactional(rollbackFor = Exception.class)
     public void delete(Serializable id) {
-        throw new IllegalStateException("设备实例不支持物理删除，请使用注销操作");
+        Long instanceId = parseId(String.valueOf(id));
+        if (instanceId == null) {
+            throw new IllegalArgumentException("设备实例ID不能为空");
+        }
+        DeviceInstances instance = mapper.selectById(instanceId);
+        if (instance == null) {
+            throw new IllegalArgumentException("设备实例不存在: " + instanceId);
+        }
+
+        // 1. 状态前置：必须是已注销状态
+        if (!DeviceInstanceLifecycle.RETIRED.equals(instance.getLifecycleStatus())) {
+            throw new IllegalStateException("只有已注销的设备实例才允许彻底删除，请先注销设备");
+        }
+
+        // 2. 防线1：检查实验执行日志 EXECUTION_LOG
+        if (executionLogMapper != null) {
+            Long logCount = executionLogMapper.selectCount(
+                    Wrappers.<ExecutionLog>lambdaQuery().eq(ExecutionLog::getDeviceInstanceId, instanceId));
+            if (logCount != null && logCount > 0) {
+                throw new IllegalStateException("该设备已产生实验执行日志（共 " + logCount + " 条），涉及历史审计追溯，禁止物理删除，仅支持保持注销状态");
+            }
+        }
+
+        // 3. 防线2：检查采集数据集物理表 DATA_INDEX & 物理数据行
+        List<DataIndex> dataIndices = dataIndexService != null ? dataIndexService.listByDeviceInstance(instanceId) : List.of();
+        if (jdbcTemplate != null && dataIndices != null) {
+            for (DataIndex index : dataIndices) {
+                if (index.getDataTable() != null && !index.getDataTable().isBlank()) {
+                    try {
+                        Integer rowCount = jdbcTemplate.queryForObject(
+                                "SELECT COUNT(1) FROM \"" + index.getDataTable().replace("\"", "\"\"") + "\"",
+                                Integer.class
+                        );
+                        if (rowCount != null && rowCount > 0) {
+                            throw new IllegalStateException("该设备已采集并存储了实验数据（共 " + rowCount + " 条），禁止物理删除，仅支持保持注销状态");
+                        }
+                    } catch (IllegalStateException e) {
+                        throw e;
+                    } catch (Exception ignored) {
+                        // 忽略物理表不存在等异常，允许继续后续级联删除
+                    }
+                }
+            }
+        }
+
+        // 4. 防线3：检查工作流任务 TASK.resource_map
+        if (taskMapper != null && workflowTaskResourceService != null) {
+            List<Task> tasks = taskMapper.selectList(Wrappers.emptyWrapper());
+            for (Task task : tasks) {
+                if (task.getResourceMap() != null) {
+                    Set<Long> boundIds = workflowTaskResourceService.boundDeviceInstanceIds(task.getResourceMap());
+                    if (boundIds != null && boundIds.contains(instanceId)) {
+                        String taskName = task.getTaskName() != null ? task.getTaskName() : String.valueOf(task.getId());
+                        throw new IllegalStateException("该设备曾参与实验工作流任务【" + taskName + "】，禁止物理删除，仅支持保持注销状态");
+                    }
+                }
+            }
+        }
+
+        // 5. 防线4：检查违规审计日志 VIOLATION_LOG
+        if (violationLogMapper != null) {
+            Long violationCount = violationLogMapper.selectCount(
+                    Wrappers.<ViolationLog>lambdaQuery().eq(ViolationLog::getDeviceInstanceId, instanceId));
+            if (violationCount != null && violationCount > 0) {
+                throw new IllegalStateException("该设备存在安全违规审计记录（共 " + violationCount + " 条），禁止物理删除，仅支持保持注销状态");
+            }
+        }
+
+        // 6. 防线5：检查 3D 场景与拓扑管路 SCENE_DETAIL & RESOURCE_STRUCTURE
+        if (sceneDetailMapper != null) {
+            Long sceneCount = sceneDetailMapper.selectCount(
+                    Wrappers.<SceneDetail>lambdaQuery().eq(SceneDetail::getDeviceInstanceId, instanceId));
+            if (sceneCount != null && sceneCount > 0) {
+                throw new IllegalStateException("该设备仍绑定在3D场景中（共 " + sceneCount + " 处），请先在场景中移除该设备");
+            }
+        }
+        if (resourceStructureMapper != null) {
+            Long structCount = resourceStructureMapper.selectCount(
+                    Wrappers.<ResourceStructure>lambdaQuery()
+                            .eq(ResourceStructure::getSourceInstanceId, instanceId)
+                            .or()
+                            .eq(ResourceStructure::getTargetInstanceId, instanceId));
+            if (structCount != null && structCount > 0) {
+                throw new IllegalStateException("该设备仍绑定在设备拓扑管路结构中（共 " + structCount + " 处），请先在拓扑中解绑");
+            }
+        }
+
+        // 7. 防线6：检查是否作为子部件被安装在其他父设备上 DEVICE_COMPONENTS.self_instance_id
+        if (deviceComponentsMapper != null) {
+            Long mountedCount = deviceComponentsMapper.selectCount(
+                    Wrappers.<DeviceComponents>lambdaQuery().eq(DeviceComponents::getSelfInstanceId, instanceId));
+            if (mountedCount != null && mountedCount > 0) {
+                throw new IllegalStateException("该设备作为子部件安装在其他设备中，请先在父设备中卸载该部件后再删除");
+            }
+        }
+
+        // 8. 防线7：检查全局约束规则强绑定 CONSTRAINT_RULE
+        if (constraintRuleMapper != null) {
+            List<ConstraintRule> rules = constraintRuleMapper.selectList(Wrappers.emptyWrapper());
+            for (ConstraintRule rule : rules) {
+                if (hasExplicitInstanceBinding(rule.getBindings(), instanceId) || hasExplicitInstanceAction(rule.getViolationActions(), instanceId)) {
+                    String ruleName = rule.getRuleName() != null ? rule.getRuleName() : String.valueOf(rule.getId());
+                    throw new IllegalStateException("该设备被约束规则【" + ruleName + "】绑定，禁止物理删除，请先解除约束规则绑定");
+                }
+            }
+        }
+
+        // 9. 级联清理
+        // 9.1 清理关联的空 DataIndex 及物理表
+        if (dataIndexService != null && dataIndices != null) {
+            for (DataIndex index : dataIndices) {
+                try {
+                    dataIndexService.delete(index.getId());
+                } catch (Exception ignored) {
+                }
+            }
+        }
+
+        // 9.2 清理属于该实例的组件槽位
+        if (deviceComponentsMapper != null) {
+            deviceComponentsMapper.delete(
+                    Wrappers.<DeviceComponents>lambdaQuery().eq(DeviceComponents::getParentInstanceId, instanceId));
+        }
+
+        // 9.3 清理孪生快照
+        twinStatesMapper.delete(Wrappers.<DeviceTwinStates>lambdaQuery().eq(DeviceTwinStates::getInstanceId, instanceId));
+
+        // 9.4 物理删除设备实例主记录
+        mapper.deleteById(instanceId);
+
+        // 9.5 刷新适配器路由表
+        protocolMapperService.refreshAdapterRouteTable();
+    }
+
+    private boolean hasExplicitInstanceBinding(JsonNode bindings, Long instanceId) {
+        if (bindings == null || !bindings.isObject() || instanceId == null) return false;
+        var fields = bindings.fields();
+        while (fields.hasNext()) {
+            JsonNode binding = fields.next().getValue();
+            JsonNode source = binding.path("source");
+            if (source.hasNonNull("deviceInstanceId") && source.path("deviceInstanceId").asLong(0) == instanceId) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private boolean hasExplicitInstanceAction(JsonNode actions, Long instanceId) {
+        if (actions == null || instanceId == null) return false;
+        if (actions.isArray()) {
+            for (JsonNode item : actions) {
+                if (item.hasNonNull("deviceInstanceId") && item.path("deviceInstanceId").asLong(0) == instanceId) {
+                    return true;
+                }
+            }
+        } else if (actions.isObject()) {
+            if (actions.hasNonNull("deviceInstanceId") && actions.path("deviceInstanceId").asLong(0) == instanceId) {
+                return true;
+            }
+        }
+        return false;
     }
 
     public DeviceInstances requireUsable(Long instanceId) {

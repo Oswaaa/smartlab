@@ -172,6 +172,42 @@ class DeviceInstanceServiceTest {
         fixture.service.requireOnline(7L);
     }
 
+    @Test
+    void deleteRejectsActiveInstance() {
+        Fixture fixture = new Fixture();
+        DeviceInstances inUse = instance(7L, DeviceInstanceLifecycle.IN_USE);
+        when(fixture.instances.selectById(7L)).thenReturn(inUse);
+        assertThrows(IllegalStateException.class, () -> fixture.service.delete("7"));
+        verify(fixture.instances, never()).deleteById(any(java.io.Serializable.class));
+    }
+
+    @Test
+    void deleteRejectsWhenExecutionLogsExist() {
+        Fixture fixture = new Fixture();
+        DeviceInstances retired = instance(7L, DeviceInstanceLifecycle.RETIRED);
+        when(fixture.instances.selectById(7L)).thenReturn(retired);
+        fixture.service.executionLogMapper = mock(com.smartlab.management.mapper.workflow.ExecutionLogMapper.class);
+        when(fixture.service.executionLogMapper.selectCount(any())).thenReturn(3L);
+
+        assertThrows(IllegalStateException.class, () -> fixture.service.delete("7"));
+        verify(fixture.instances, never()).deleteById(any(java.io.Serializable.class));
+    }
+
+    @Test
+    void deleteCascadesWhenCleanAndRetired() {
+        Fixture fixture = new Fixture();
+        DeviceInstances retired = instance(7L, DeviceInstanceLifecycle.RETIRED);
+        when(fixture.instances.selectById(7L)).thenReturn(retired);
+        fixture.service.executionLogMapper = mock(com.smartlab.management.mapper.workflow.ExecutionLogMapper.class);
+        when(fixture.service.executionLogMapper.selectCount(any())).thenReturn(0L);
+
+        fixture.service.delete("7");
+
+        verify(fixture.instances).deleteById(7L);
+        verify(fixture.twins).delete(any());
+        verify(fixture.routes).refreshAdapterRouteTable();
+    }
+
     private static DeviceInstances instance(Long id, String status) {
         DeviceInstances instance = new DeviceInstances();
         instance.setId(id);

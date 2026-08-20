@@ -15,6 +15,10 @@ import com.smartlab.management.entity.resource.data.DataTemplateDetail;
 import com.smartlab.management.entity.resource.data.DataTemplateMain;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
 import com.smartlab.management.entity.resource.device.DeviceModels;
+import com.smartlab.management.entity.workflow.FlowNode;
+import com.smartlab.management.entity.constraint.ConstraintRule;
+import com.smartlab.management.mapper.workflow.FlowNodeMapper;
+import com.smartlab.management.mapper.constraint.ConstraintRuleMapper;
 import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
 import com.smartlab.management.mapper.resource.device.DeviceModelsMapper;
 import com.smartlab.adapter.AdapterManifestService;
@@ -54,6 +58,12 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
     private final DataTemplateService dataTemplateService;
     private final AdapterIndexService adapterIndexService;
     private ApplicationEventPublisher eventPublisher;
+
+    @Autowired(required = false)
+    FlowNodeMapper flowNodeMapper;
+
+    @Autowired(required = false)
+    ConstraintRuleMapper constraintRuleMapper;
 
     public DeviceModelService(DeviceModelsMapper mapper,
             DeviceInstancesMapper deviceInstancesMapper,
@@ -635,13 +645,49 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
     public void delete(Serializable id) {
         Long modelId = parseId(String.valueOf(id));
         lockExistingModel(modelId);
+
+        // 1. 检查是否有设备实例（无论在役或已注销）
         Long count = deviceInstancesMapper.selectCount(
                 Wrappers.<DeviceInstances>lambdaQuery().eq(DeviceInstances::getDeviceModelId, modelId));
         if (count != null && count > 0) {
-            throw new IllegalStateException("该模型下仍有 " + count + " 台设备实例，无法删除");
+            throw new IllegalStateException("该模型下仍有 " + count + " 台设备实例（包含在役或已注销），无法删除；请先彻底删除相关实例后再试");
         }
+
+        // 2. 检查是否有工作流节点引用
+        if (flowNodeMapper != null) {
+            Long flowNodeCount = flowNodeMapper.selectCount(
+                    Wrappers.<FlowNode>lambdaQuery().eq(FlowNode::getDeviceModelId, modelId));
+            if (flowNodeCount != null && flowNodeCount > 0) {
+                throw new IllegalStateException("该模型已被工作流画布节点引用（共 " + flowNodeCount + " 处），无法删除；请先修改或删除相关工作流");
+            }
+        }
+
+        // 3. 检查是否有约束规则引用
+        if (constraintRuleMapper != null) {
+            List<ConstraintRule> rules = constraintRuleMapper.selectList(Wrappers.emptyWrapper());
+            for (ConstraintRule rule : rules) {
+                if (hasModelBinding(rule.getBindings(), modelId)) {
+                    String ruleName = rule.getRuleName() != null ? rule.getRuleName() : String.valueOf(rule.getId());
+                    throw new IllegalStateException("该模型已被约束规则【" + ruleName + "】引用，无法删除；请先修改或删除相关约束规则");
+                }
+            }
+        }
+
         dataTemplateService.deleteByModelIdForModelRemoval(modelId);
         mapper.deleteById(modelId);
+    }
+
+    private boolean hasModelBinding(JsonNode bindings, Long modelId) {
+        if (bindings == null || !bindings.isObject() || modelId == null) return false;
+        var fields = bindings.fields();
+        while (fields.hasNext()) {
+            JsonNode binding = fields.next().getValue();
+            JsonNode source = binding.path("source");
+            if (source.hasNonNull("deviceModelId") && source.path("deviceModelId").asLong(0) == modelId) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private void validateFinalDeviceModel(DeviceModels model) {

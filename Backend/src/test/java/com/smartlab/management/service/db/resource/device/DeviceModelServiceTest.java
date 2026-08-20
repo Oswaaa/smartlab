@@ -110,6 +110,35 @@ class DeviceModelServiceTest {
                 order.verify(dataTemplateService).deleteByModelIdForModelRemoval(7L);
                 order.verify(modelMapper).deleteById(7L);
         }
+
+        @Test
+        void deleteRejectsWhenFlowNodeReferenced() {
+                DeviceModels lockedModel = completeModel();
+                when(modelMapper.selectByIdForUpdate(7L)).thenReturn(lockedModel);
+                when(deviceInstancesMapper.selectCount(any())).thenReturn(0L);
+                service.flowNodeMapper = mock(com.smartlab.management.mapper.workflow.FlowNodeMapper.class);
+                when(service.flowNodeMapper.selectCount(any())).thenReturn(2L);
+
+                assertThrows(IllegalStateException.class, () -> service.delete((Serializable) "7"));
+                verify(modelMapper, never()).deleteById(any(Serializable.class));
+        }
+
+        @Test
+        void deleteRejectsWhenConstraintRuleReferenced() {
+                DeviceModels lockedModel = completeModel();
+                when(modelMapper.selectByIdForUpdate(7L)).thenReturn(lockedModel);
+                when(deviceInstancesMapper.selectCount(any())).thenReturn(0L);
+                service.constraintRuleMapper = mock(com.smartlab.management.mapper.constraint.ConstraintRuleMapper.class);
+                com.smartlab.management.entity.constraint.ConstraintRule rule = new com.smartlab.management.entity.constraint.ConstraintRule();
+                rule.setRuleName("TemperatureSafety");
+                com.fasterxml.jackson.databind.node.ObjectNode bindings = com.smartlab.global.util.JsonNodeSupport.objectNode();
+                bindings.putObject("source").putObject("source").put("deviceModelId", 7L);
+                rule.setBindings(bindings);
+                when(service.constraintRuleMapper.selectList(any())).thenReturn(List.of(rule));
+
+                assertThrows(IllegalStateException.class, () -> service.delete((Serializable) "7"));
+                verify(modelMapper, never()).deleteById(any(Serializable.class));
+        }
         @Test
         void updateLocksModelRowBeforeReferenceCheckAndWrite() {
                 DeviceModelSaveDTO payload = completePayload();

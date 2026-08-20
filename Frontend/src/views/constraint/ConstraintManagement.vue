@@ -1,140 +1,146 @@
 <template>
   <div class="security-page">
-    <!-- 顶部标题栏 -->
-    <header class="page-heading">
-      <div>
-        <h1>全局约束规则管理</h1>
-        <p>管理实验过程中长期生效的安全联锁与设备工艺边界规则；违规时自动执行硬件安全能力与任务级熔断调度</p>
+    <div class="constraint-workbench-canvas">
+      <!-- 工作台头部 -->
+      <div class="workbench-header">
+        <div class="header-left">
+          <h2 class="header-title">全局约束规则管理</h2>
+          <span class="header-subtitle">安全联锁与设备工艺边界规则；违规时自动执行硬件安全能力与任务级熔断调度</span>
+        </div>
+        <div class="header-actions">
+          <el-input
+            v-model="query.keyword"
+            class="search-input"
+            size="small"
+            clearable
+            placeholder="搜索规则名称或说明..."
+            @keyup.enter="load"
+            @clear="load"
+          />
+          <div class="filter-group">
+            <button
+              v-for="item in sourceFilterOptions"
+              :key="item.key"
+              type="button"
+              class="filter-tab-btn"
+              :class="{ active: currentSourceFilter === item.key }"
+              @click="setSourceFilter(item.key)"
+            >
+              {{ item.label }}
+            </button>
+          </div>
+          <button class="btn-aliyun" type="button" :disabled="exporting" @click="exportGlobalModel">
+            <el-icon><Download /></el-icon><span>导出约束模型</span>
+          </button>
+          <button class="btn-aliyun" type="button" @click="load">
+            <el-icon><Refresh /></el-icon><span>刷新</span>
+          </button>
+          <button v-if="canCreate" class="btn-aliyun-cta" type="button" @click="open()">
+            <el-icon><Plus /></el-icon><span>新建约束规则</span>
+          </button>
+        </div>
       </div>
-      <div class="header-actions">
-        <el-button class="btn-aliyun" :icon="Download" :loading="exporting" @click="exportGlobalModel">导出约束模型</el-button>
-        <el-button class="btn-aliyun" :icon="Refresh" @click="load">刷新</el-button>
-        <el-button v-if="canCreate" class="btn-aliyun-cta" :icon="Plus" @click="open()">新建约束规则</el-button>
-      </div>
-    </header>
 
-    <!-- 过滤工具栏 -->
-    <div class="toolbar-box">
-      <el-input
-        v-model="query.keyword"
-        clearable
-        placeholder="搜索规则名称或说明..."
-        class="search-input"
-        @keyup.enter="load"
-        @clear="load"
-      />
+      <!-- 规则主列表 (唯一局部滚动区) -->
+      <div class="table-scroll-container">
+        <div class="table-card" v-loading="loading">
+          <el-table
+            :data="filteredItems"
+            size="small"
+            class="master-table"
+            height="100%"
+            @row-click="openDetail"
+          >
+            <!-- 序号列 (低调中性) -->
+            <el-table-column label="序号" width="60" align="center">
+              <template #default="{ $index }">
+                <span class="index-num">{{ formatIndex($index) }}</span>
+              </template>
+            </el-table-column>
 
-      <div class="filter-group">
-        <button
-          v-for="item in sourceFilterOptions"
-          :key="item.key"
-          type="button"
-          class="filter-tab-btn"
-          :class="{ active: currentSourceFilter === item.key }"
-          @click="setSourceFilter(item.key)"
-        >
-          {{ item.label }}
-        </button>
-      </div>
-    </div>
+            <!-- 规则名称 -->
+            <el-table-column prop="ruleName" label="规则名称" width="190">
+              <template #default="{ row }">
+                <strong class="rule-name-text">{{ row.ruleName }}</strong>
+              </template>
+            </el-table-column>
 
-    <!-- 规则主列表 (Master Table) -->
-    <div class="table-card">
-      <el-table
-        :data="filteredItems"
-        v-loading="loading"
-        size="default"
-        class="master-table"
-        @row-click="openDetail"
-      >
-        <!-- 序号列 (低调中性) -->
-        <el-table-column label="序号" width="60" align="center">
-          <template #default="{ $index }">
-            <span class="index-num">{{ formatIndex($index) }}</span>
-          </template>
-        </el-table-column>
+            <!-- 业务判定逻辑 (自然语言结构化标签流) -->
+            <el-table-column label="业务判定逻辑" min-width="440">
+              <template #default="{ row }">
+                <div class="sentence-stream">
+                  <span class="sentence-static">当</span>
+                  <span class="sentence-chip emphasis">{{ getSentenceTokens(row).conditionExpr }}</span>
+                  <span class="sentence-static">持续</span>
+                  <span class="sentence-chip">{{ getSentenceTokens(row).windowText }}</span>
+                  <span class="sentence-arrow">➔</span>
+                  <span class="sentence-static">执行</span>
+                  <span v-for="(act, idx) in getSentenceTokens(row).actionLabels" :key="idx" class="sentence-chip action">
+                    {{ act }}
+                  </span>
+                </div>
+              </template>
+            </el-table-column>
 
-        <!-- 规则名称 -->
-        <el-table-column prop="ruleName" label="规则名称" width="190">
-          <template #default="{ row }">
-            <strong class="rule-name-text">{{ row.ruleName }}</strong>
-          </template>
-        </el-table-column>
+            <!-- 观测空间来源 -->
+            <el-table-column label="观测空间来源" width="140">
+              <template #default="{ row }">
+                <span class="source-label">{{ getRuleSourceLabel(row) }}</span>
+              </template>
+            </el-table-column>
 
-        <!-- 业务判定逻辑 (自然语言结构化标签流) -->
-        <el-table-column label="业务判定逻辑" min-width="440">
-          <template #default="{ row }">
-            <div class="sentence-stream">
-              <span class="sentence-static">当</span>
-              <span class="sentence-chip emphasis">{{ getSentenceTokens(row).conditionExpr }}</span>
-              <span class="sentence-static">持续</span>
-              <span class="sentence-chip">{{ getSentenceTokens(row).windowText }}</span>
-              <span class="sentence-arrow">➔</span>
-              <span class="sentence-static">执行</span>
-              <span v-for="(act, idx) in getSentenceTokens(row).actionLabels" :key="idx" class="sentence-chip action">
-                {{ act }}
-              </span>
-            </div>
-          </template>
-        </el-table-column>
+            <!-- 判定窗口 -->
+            <el-table-column label="判定窗口" width="95">
+              <template #default="{ row }">
+                <span class="window-label">{{ row.windowSeconds && row.windowSeconds > 0 ? row.windowSeconds + ' 秒' : '瞬时' }}</span>
+              </template>
+            </el-table-column>
 
+            <!-- 状态开关 (同一层级唯一状态控制) -->
+            <el-table-column label="状态" width="80" align="center">
+              <template #default="{ row }">
+                <div @click.stop>
+                  <el-switch
+                    v-model="row.isEnabled"
+                    :disabled="!canEdit"
+                    size="small"
+                    @change="value => setEnabled(row, Boolean(value))"
+                  />
+                </div>
+              </template>
+            </el-table-column>
 
-        <!-- 观测空间来源 -->
-        <el-table-column label="观测空间来源" width="140">
-          <template #default="{ row }">
-            <span class="source-label">{{ getRuleSourceLabel(row) }}</span>
-          </template>
-        </el-table-column>
+            <!-- 操作列 (统一行内链接按键) -->
+            <el-table-column label="操作" width="140" align="center" fixed="right">
+              <template #default="{ row }">
+                <div class="row-actions" @click.stop>
+                  <button class="btn-link" type="button" @click="openDetail(row)">详情</button>
+                  <button v-if="canEdit" class="btn-link" type="button" @click="open(row)">编辑</button>
+                  <el-popconfirm v-if="canDelete" title="确认删除该约束规则？" @confirm="remove(row)">
+                    <template #reference>
+                      <button class="btn-link danger" type="button">删除</button>
+                    </template>
+                  </el-popconfirm>
+                </div>
+              </template>
+            </el-table-column>
+          </el-table>
 
-        <!-- 判定窗口 -->
-        <el-table-column label="判定窗口" width="95">
-          <template #default="{ row }">
-            <span class="window-label">{{ row.windowSeconds && row.windowSeconds > 0 ? row.windowSeconds + ' 秒' : '瞬时' }}</span>
-          </template>
-        </el-table-column>
-
-        <!-- 状态开关 (同一层级唯一状态控制) -->
-        <el-table-column label="状态" width="80" align="center">
-          <template #default="{ row }">
-            <div @click.stop>
-              <el-switch
-                v-model="row.isEnabled"
-                :disabled="!canEdit"
-                size="small"
-                @change="value => setEnabled(row, Boolean(value))"
-              />
-            </div>
-          </template>
-        </el-table-column>
-
-        <!-- 操作列 (使用与数据中心一致的链接按键) -->
-        <el-table-column label="操作" width="140" align="right" fixed="right">
-          <template #default="{ row }">
-            <div class="row-actions" @click.stop>
-              <el-button link class="btn-aliyun-link" size="small" @click="openDetail(row)">详情</el-button>
-              <el-button v-if="canEdit" link class="btn-aliyun-link" size="small" @click="open(row)">编辑</el-button>
-              <el-popconfirm v-if="canDelete" title="确认删除该约束规则？" @confirm="remove(row)">
-                <template #reference>
-                  <el-button link class="btn-aliyun-danger-link" size="small">删除</el-button>
-                </template>
-              </el-popconfirm>
-            </div>
-          </template>
-        </el-table-column>
-      </el-table>
-
-
-      <!-- 分页栏 -->
-      <div class="pager-bar">
-        <el-pagination
-          v-model:current-page="query.pageNo"
-          v-model:page-size="query.pageSize"
-          :total="total"
-          :page-sizes="[10, 20, 50]"
-          layout="total, sizes, prev, pager, next"
-          @current-change="load"
-          @size-change="load"
-        />
+          <!-- 分页栏 -->
+          <div class="pager-wrap">
+            <el-pagination
+              v-model:current-page="query.pageNo"
+              v-model:page-size="query.pageSize"
+              :total="total"
+              :page-sizes="[10, 20, 50]"
+              layout="total, sizes, prev, pager, next"
+              background
+              size="small"
+              @current-change="load"
+              @size-change="load"
+            />
+          </div>
+        </div>
       </div>
     </div>
 
@@ -142,9 +148,9 @@
     <el-drawer
       v-model="detailVisible"
       title="约束规则详情与监控"
-      size="780px"
+      size="80%"
       destroy-on-close
-      class="detail-drawer"
+      class="detail-drawer unified-workflow-drawer"
       @closed="stopTelemetryTimer"
     >
       <template #header>
@@ -158,8 +164,8 @@
         <el-tabs v-model="detailActiveTab">
           <!-- 标签 1: 实时监测 (完全聚焦运行态现场与真实安全波形) -->
           <el-tab-pane label="实时监测" name="observe">
-            <!-- 实时指标横幅 -->
-            <div class="metric-ribbon-card">
+            <!-- 实时指标横幅 (35px 规范锁定) -->
+            <div class="metric-ribbon">
               <div class="metric-block">
                 <span class="m-label">监测对象</span>
                 <strong class="m-val" :title="getSentenceTokens(currentDetailRule).mainSource">
@@ -193,48 +199,82 @@
                 <span>时序走势图</span>
               </div>
 
-              <div class="chart-wrapper">
-                <svg v-if="chartPoints.length > 1" viewBox="0 0 680 160" class="chart-svg">
-                  <!-- 网格基准线 -->
-                  <line x1="40" y1="20" x2="660" y2="20" stroke="#f1f5f9" stroke-width="1" />
-                  <line x1="40" y1="70" x2="660" y2="70" stroke="#f1f5f9" stroke-width="1" />
-                  <line x1="40" y1="120" x2="660" y2="120" stroke="#f1f5f9" stroke-width="1" />
+              <div ref="chartHost" class="chart-wrapper">
+                <svg
+                  v-if="chartPoints.length > 1"
+                  :viewBox="`0 0 ${CHART_W} ${CHART_H}`"
+                  :width="CHART_W"
+                  :height="CHART_H"
+                  class="chart-svg"
+                  preserveAspectRatio="xMinYMin meet"
+                  @mousemove="onChartHover"
+                  @mouseleave="hoverIndex = null"
+                >
+                  <defs>
+                    <linearGradient id="tsAreaFill" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stop-color="#2563eb" stop-opacity="0.14" />
+                      <stop offset="100%" stop-color="#2563eb" stop-opacity="0" />
+                    </linearGradient>
+                  </defs>
 
-                  <!-- 红色警戒阈值线 -->
+                  <!-- Y 轴网格线与刻度标签 -->
+                  <g v-for="tick in yTicks" :key="tick.value">
+                    <line :x1="PAD_L" :x2="CHART_W - PAD_R" :y1="tick.y" :y2="tick.y" class="chart-grid-line" shape-rendering="crispEdges" />
+                    <text :x="PAD_L - 6" :y="tick.y + 4" class="chart-axis-label" text-anchor="end">{{ tick.label }}</text>
+                  </g>
+                  <line :x1="PAD_L" :x2="CHART_W - PAD_R" :y1="PLOT_BOTTOM" :y2="PLOT_BOTTOM" class="chart-axis-line" shape-rendering="crispEdges" />
+
+                  <!-- 违规区域 (阈值之上或之下的浅红填充, Datadog marker 风格) -->
+                  <rect
+                    v-if="violationRegion"
+                    :x="PAD_L"
+                    :y="violationRegion.y"
+                    :width="CHART_W - PAD_L - PAD_R"
+                    :height="violationRegion.h"
+                    class="chart-violation-region"
+                  />
+
+                  <!-- 警戒阈值线与标签 -->
                   <template v-if="ruleThresholdValue !== null">
-                    <line
-                      x1="40"
-                      :y1="thresholdY"
-                      x2="660"
-                      :y2="thresholdY"
-                      stroke="#ef4444"
-                      stroke-dasharray="4,4"
-                      stroke-width="1.5"
-                    />
-                    <text x="560" :y="thresholdY - 5" fill="#ef4444" font-size="11" font-weight="600">
-                      警戒红线: {{ ruleThresholdValue }}
-                    </text>
+                    <line :x1="PAD_L" :x2="CHART_W - PAD_R" :y1="thresholdY" :y2="thresholdY" class="chart-threshold-line" />
+                    <text :x="CHART_W - PAD_R - 4" :y="thresholdLabelY" class="chart-threshold-label" text-anchor="end">阈值 {{ ruleThresholdValue }}</text>
                   </template>
 
-                  <!-- 真实采样时序曲线 -->
-                  <path :d="svgPathD" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" />
+                  <!-- 渐变面积与平滑曲线 -->
+                  <path :d="svgAreaD" fill="url(#tsAreaFill)" />
+                  <path :d="svgPathD" class="chart-ts-line" />
 
-                  <!-- 曲线下渐变填充区域 (微光) -->
-                  <path :d="svgAreaD" fill="rgba(37, 99, 235, 0.05)" />
+                  <!-- X 轴时间刻度 -->
+                  <text
+                    v-for="tick in xTicks"
+                    :key="tick.x"
+                    :x="tick.x"
+                    :y="CHART_H - 5"
+                    class="chart-axis-label"
+                    :text-anchor="tick.anchor"
+                  >{{ tick.label }}</text>
 
-                  <!-- 当前最新采样高亮点 -->
-                  <circle :cx="latestPointX" :cy="latestPointY" r="4" fill="#2563eb" stroke="#ffffff" stroke-width="2" />
-                  <circle :cx="latestPointX" :cy="latestPointY" r="7" fill="none" stroke="#2563eb" stroke-opacity="0.4" />
+                  <!-- 悬浮十字准线与命中点 -->
+                  <g v-if="hoverPoint">
+                    <line :x1="hoverPoint.x" :x2="hoverPoint.x" :y1="PAD_T" :y2="PLOT_BOTTOM" class="chart-crosshair" />
+                    <circle :cx="hoverPoint.x" :cy="hoverPoint.y" r="3.5" class="chart-hover-dot" :class="{ violated: hoverPoint.violated }" />
+                  </g>
 
-                  <!-- X轴时间标尺 -->
-                  <text x="40" y="145" fill="#94a3b8" font-size="10">-60s</text>
-                  <text x="195" y="145" fill="#94a3b8" font-size="10">-45s</text>
-                  <text x="350" y="145" fill="#94a3b8" font-size="10">-30s</text>
-                  <text x="505" y="145" fill="#94a3b8" font-size="10">-15s</text>
-                  <text x="640" y="145" fill="#2563eb" font-size="10" font-weight="600">当前</text>
+                  <!-- 最新采样点与末端数值标签 -->
+                  <template v-else>
+                    <circle :cx="latestPoint.x" :cy="latestPoint.y" r="7" class="chart-latest-halo" />
+                    <circle :cx="latestPoint.x" :cy="latestPoint.y" r="3" class="chart-latest-dot" />
+                    <text :x="latestPoint.x - 8" :y="latestPoint.y - 9" class="chart-latest-label" text-anchor="end">{{ formatChartValue(latestPoint.value) }}</text>
+                  </template>
                 </svg>
 
-                <div v-else class="chart-empty-state">
+                <!-- 悬浮读数气泡 -->
+                <div v-if="hoverPoint" class="chart-tooltip" :style="tooltipStyle">
+                  <span class="tip-time">{{ hoverPoint.timeLabel }}</span>
+                  <span class="tip-value" :class="{ violated: hoverPoint.violated }">{{ formatChartValue(hoverPoint.value) }}</span>
+                </div>
+
+                <div v-if="chartPoints.length <= 1" class="chart-empty-state">
                   <span>{{ isAttributeRule(currentDetailRule) ? '正在等待设备高频遥测上报数据...' : '当前规则监测非数值型状态，状态机正常活动中' }}</span>
                 </div>
               </div>
@@ -281,7 +321,7 @@
 
             <!-- 变量绑定清单表格 (全面使用 displayName) -->
             <div class="detail-section" style="margin-top: 16px;">
-              <div class="section-heading">变量标识符绑定清单 (Bindings)</div>
+              <div class="section-heading">变量标识符绑定清单</div>
               <table class="grid-table">
                 <thead>
                   <tr>
@@ -304,7 +344,7 @@
 
             <!-- 处置动作清单表格 (全面使用 displayName) -->
             <div class="detail-section" style="margin-top: 16px;">
-              <div class="section-heading">违规处置动作清单 (Actions)</div>
+              <div class="section-heading">违规处置动作清单</div>
               <table class="grid-table">
                 <thead>
                   <tr>
@@ -331,7 +371,7 @@
             <div class="detail-section">
               <div class="section-heading">
                 <span>历史违规与联锁记录</span>
-                <el-button link class="btn-aliyun-link" size="small" @click="loadViolationLogs">刷新日志</el-button>
+                <button class="btn-link" type="button" @click="loadViolationLogs">刷新日志</button>
               </div>
 
               <el-table :data="violationLogs" v-loading="violationLoading" size="small" border stripe>
@@ -367,7 +407,7 @@
     <el-dialog
       v-model="editorVisible"
       :title="editingId ? '编辑约束规则' : '新建约束规则'"
-      width="980px"
+      width="1080px"
       top="4vh"
       destroy-on-close
       class="constraint-editor-dialog"
@@ -387,8 +427,10 @@
       </div>
       <template #footer>
         <div class="dialog-custom-footer">
-          <el-button class="btn-aliyun" @click="editorVisible = false">取消</el-button>
-          <el-button class="btn-aliyun-cta" :loading="saving" @click="save">保存规则</el-button>
+          <button class="btn-aliyun" type="button" @click="editorVisible = false">取消</button>
+          <button class="btn-primary-blue" type="button" :disabled="saving" @click="save">
+            <span>{{ saving ? '保存中...' : '保存规则' }}</span>
+          </button>
         </div>
       </template>
     </el-dialog>
@@ -397,7 +439,7 @@
 
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { Download, Plus, Refresh } from '@element-plus/icons-vue'
@@ -446,8 +488,8 @@ const currentSourceFilter = ref('ALL')
 const sourceFilterOptions = [
   { key: 'ALL', label: '全部规则' },
   { key: 'DEVICE_ATTRIBUTE', label: '设备属性' },
-  { key: 'DEVICE_OPERATION_STATE', label: '设备OP状态' },
-  { key: 'DEVICE_COMMAND_LIFECYCLE', label: '设备CMD状态' },
+  { key: 'DEVICE_OPERATION_STATE', label: '设备功能状态' },
+  { key: 'DEVICE_COMMAND_LIFECYCLE', label: '设备指令状态' },
   { key: 'TASK_LIFECYCLE_STATE', label: '任务实例状态' }
 ]
 
@@ -680,9 +722,40 @@ const datacenterRedirectUrl = computed(() => {
 
 
 
-// 计算图表 Y 轴映射边界与坐标
+/* 时序走势图几何体系：viewBox 宽度跟随容器像素，避免等比留白与文字缩放发虚 */
+const chartHost = ref<HTMLElement | null>(null)
+const chartWidth = ref(720)
+const CHART_W = computed(() => Math.max(520, chartWidth.value))
+const CHART_H = 200
+const PAD_L = 56
+const PAD_R = 16
+const PAD_T = 14
+const PAD_B = 26
+const PLOT_BOTTOM = CHART_H - PAD_B
+const hoverIndex = ref<number | null>(null)
+let chartRo: ResizeObserver | null = null
+
+function bindChartResize() {
+  chartRo?.disconnect()
+  if (!chartHost.value) return
+  chartRo = new ResizeObserver(entries => {
+    const w = Math.floor(entries[0]?.contentRect?.width || 0)
+    if (w > 0 && w !== chartWidth.value) chartWidth.value = w
+  })
+  chartRo.observe(chartHost.value)
+}
+
+watch(detailVisible, vis => {
+  if (vis) nextTick(bindChartResize)
+  else {
+    chartRo?.disconnect()
+    chartRo = null
+    hoverIndex.value = null
+  }
+})
+
 const yBounds = computed(() => {
-  const values = chartPoints.value.map(p => p.value).filter(v => typeof v === 'number' && !isNaN(v))
+  const values = chartPoints.value.map(p => p.value).filter(v => Number.isFinite(v))
   if (ruleThresholdValue.value !== null) values.push(ruleThresholdValue.value)
   if (!values.length) return { min: 0, max: 100 }
   let min = Math.min(...values)
@@ -700,59 +773,164 @@ const yBounds = computed(() => {
 
 function mapCoordY(val: number): number {
   const { min, max } = yBounds.value
-  if (max === min) return 70
-  // SVG 高度 160，有效绘图 Y 范围 20 ~ 130
+  if (max === min) return (PAD_T + PLOT_BOTTOM) / 2
   const ratio = (val - min) / (max - min)
-  return 130 - ratio * 110
+  return PLOT_BOTTOM - ratio * (PLOT_BOTTOM - PAD_T)
 }
 
 function mapCoordX(idx: number, total: number): number {
-  if (total <= 1) return 350
-  // 有效绘图 X 范围 40 ~ 660
-  return 40 + (idx / (total - 1)) * 620
+  const width = CHART_W.value
+  if (total <= 1) return (PAD_L + width - PAD_R) / 2
+  return PAD_L + (idx / (total - 1)) * (width - PAD_L - PAD_R)
 }
 
-const thresholdY = computed(() => {
-  if (ruleThresholdValue.value === null) return 30
-  return mapCoordY(ruleThresholdValue.value)
-})
+const plotPoints = computed(() =>
+  chartPoints.value.map((p, i) => ({
+    x: mapCoordX(i, chartPoints.value.length),
+    y: mapCoordY(p.value),
+    value: p.value,
+    time: p.time
+  }))
+)
 
-const svgPathD = computed(() => {
-  const total = chartPoints.value.length
-  if (total < 2) return ''
-  return chartPoints.value
-    .map((p, i) => {
-      const x = mapCoordX(i, total).toFixed(1)
-      const y = mapCoordY(p.value).toFixed(1)
-      return `${i === 0 ? 'M' : 'L'} ${x},${y}`
-    })
-    .join(' ')
-})
+function smoothPath(points: { x: number; y: number }[]): string {
+  if (points.length < 2) return ''
+  let d = `M ${points[0].x.toFixed(1)},${points[0].y.toFixed(1)}`
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[Math.max(0, i - 1)]
+    const p1 = points[i]
+    const p2 = points[i + 1]
+    const p3 = points[Math.min(points.length - 1, i + 2)]
+    const c1x = p1.x + (p2.x - p0.x) / 6
+    const c1y = p1.y + (p2.y - p0.y) / 6
+    const c2x = p2.x - (p3.x - p1.x) / 6
+    const c2y = p2.y - (p3.y - p1.y) / 6
+    d += ` C ${c1x.toFixed(1)},${c1y.toFixed(1)} ${c2x.toFixed(1)},${c2y.toFixed(1)} ${p2.x.toFixed(1)},${p2.y.toFixed(1)}`
+  }
+  return d
+}
+
+const svgPathD = computed(() => smoothPath(plotPoints.value))
 
 const svgAreaD = computed(() => {
-  const total = chartPoints.value.length
-  if (total < 2) return ''
-  const line = chartPoints.value
-    .map((p, i) => {
-      const x = mapCoordX(i, total).toFixed(1)
-      const y = mapCoordY(p.value).toFixed(1)
-      return `${i === 0 ? 'M' : 'L'} ${x},${y}`
-    })
-    .join(' ')
-  const xFirst = mapCoordX(0, total).toFixed(1)
-  const xLast = mapCoordX(total - 1, total).toFixed(1)
-  return `${line} L ${xLast},140 L ${xFirst},140 Z`
+  const pts = plotPoints.value
+  const line = svgPathD.value
+  if (pts.length < 2 || !line) return ''
+  return `${line} L ${pts[pts.length - 1].x.toFixed(1)},${PLOT_BOTTOM} L ${pts[0].x.toFixed(1)},${PLOT_BOTTOM} Z`
 })
 
-const latestPointX = computed(() => mapCoordX(Math.max(0, chartPoints.value.length - 1), chartPoints.value.length))
-const latestPointY = computed(() => {
-  if (!chartPoints.value.length) return 70
-  return mapCoordY(chartPoints.value[chartPoints.value.length - 1].value)
+const thresholdY = computed(() => {
+  if (ruleThresholdValue.value === null) return PAD_T
+  return Math.max(PAD_T, Math.min(PLOT_BOTTOM, mapCoordY(ruleThresholdValue.value)))
 })
+
+const violationAbove = computed<boolean | null>(() => {
+  const expr = String(currentDetailRule.value?.expression || '')
+  if (expr.includes('>')) return true
+  if (expr.includes('<')) return false
+  return null
+})
+
+const violationRegion = computed(() => {
+  if (ruleThresholdValue.value === null || violationAbove.value === null) return null
+  const y = thresholdY.value
+  return violationAbove.value
+    ? { y: PAD_T, h: Math.max(0, y - PAD_T) }
+    : { y, h: Math.max(0, PLOT_BOTTOM - y) }
+})
+
+const thresholdLabelY = computed(() => {
+  const y = thresholdY.value
+  return violationAbove.value === true
+    ? Math.min(y + 13, PLOT_BOTTOM - 2)
+    : Math.max(y - 5, PAD_T + 9)
+})
+
+function formatChartValue(v: number): string {
+  if (!Number.isFinite(v)) return '-'
+  if (Math.abs(v) >= 1000) return v.toLocaleString('en-US', { maximumFractionDigits: 0 })
+  return Number.isInteger(v) ? String(v) : v.toFixed(1)
+}
+
+const yTicks = computed(() => {
+  const { min, max } = yBounds.value
+  if (max === min) return []
+  const ticks: { value: number; y: number; label: string }[] = []
+  for (let i = 1; i <= 3; i++) {
+    const value = min + ((max - min) * i) / 4
+    ticks.push({ value, y: mapCoordY(value), label: formatChartValue(value) })
+  }
+  return ticks
+})
+
+const xTicks = computed(() => {
+  const pts = chartPoints.value
+  const total = pts.length
+  if (total < 2) return []
+  const lastTime = new Date(pts[total - 1].time).getTime()
+  const fractions = [0, 0.25, 0.5, 0.75, 1]
+  return fractions.map((f, i) => {
+    const idx = Math.round(f * (total - 1))
+    const diffSec = Math.max(0, Math.round((lastTime - new Date(pts[idx].time).getTime()) / 1000))
+    return {
+      x: mapCoordX(idx, total),
+      label: i === fractions.length - 1 ? '当前' : `-${diffSec}s`,
+      anchor: i === 0 ? 'start' : i === fractions.length - 1 ? 'end' : 'middle'
+    }
+  })
+})
+
+const latestPoint = computed(() => {
+  const pts = plotPoints.value
+  return pts.length ? pts[pts.length - 1] : { x: 0, y: 0, value: 0, time: '' }
+})
+
+const hoverPoint = computed(() => {
+  if (hoverIndex.value === null) return null
+  const p = plotPoints.value[hoverIndex.value]
+  if (!p) return null
+  const t = new Date(p.time)
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const violated = ruleThresholdValue.value !== null && violationAbove.value !== null
+    ? (violationAbove.value ? p.value > ruleThresholdValue.value : p.value < ruleThresholdValue.value)
+    : false
+  return { ...p, timeLabel: `${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}`, violated }
+})
+
+const tooltipStyle = computed(() => {
+  const p = hoverPoint.value
+  if (!p) return {}
+  const leftPct = (p.x / CHART_W.value) * 100
+  return {
+    left: `${leftPct}%`,
+    top: `${(p.y / CHART_H) * 100}%`,
+    transform: leftPct > 70 ? 'translate(calc(-100% - 10px), -110%)' : 'translate(10px, -110%)'
+  }
+})
+
+function onChartHover(e: MouseEvent) {
+  const el = e.currentTarget as SVGSVGElement
+  const rect = el.getBoundingClientRect()
+  if (!rect.width) return
+  const fx = ((e.clientX - rect.left) / rect.width) * CHART_W.value
+  const pts = plotPoints.value
+  if (pts.length < 2) return
+  let best = 0
+  let bestDist = Infinity
+  pts.forEach((p, i) => {
+    const d = Math.abs(p.x - fx)
+    if (d < bestDist) {
+      bestDist = d
+      best = i
+    }
+  })
+  hoverIndex.value = best
+}
 
 /* 详情抽屉 */
 async function openDetail(row: any) {
   stopTelemetryTimer()
+  hoverIndex.value = null
   currentDetailRule.value = row
   detailActiveTab.value = 'observe'
   detailVisible.value = true
@@ -790,11 +968,12 @@ async function fetchLiveTwinState(rule: any) {
       params: { instanceId: boundInstanceId, targetName: boundTargetName, seconds: 60 }
     })
     if (histRes.data?.success && Array.isArray(histRes.data.data) && histRes.data.data.length > 0) {
-      chartPoints.value = histRes.data.data.map((item: any) => ({
-        time: item.observedAt,
-        value: Number(item.value)
-      }))
-      liveTelemetryValue.value = chartPoints.value[chartPoints.value.length - 1].value
+      chartPoints.value = histRes.data.data
+        .map((item: any) => ({ time: item.observedAt, value: Number(item.value) }))
+        .filter((p: any) => Number.isFinite(p.value))
+      if (chartPoints.value.length) {
+        liveTelemetryValue.value = chartPoints.value[chartPoints.value.length - 1].value
+      }
     }
   } catch {
     // 忽略历史拉取异常
@@ -803,11 +982,11 @@ async function fetchLiveTwinState(rule: any) {
   // 2. 如果历史为空，拉取单点孪生最新快照建立初始点
   try {
     const twinRes = await axios.get('/api/device/twin-state/by-instance/' + boundInstanceId)
-    if (twinRes.data?.success && twinRes.data.data?.attributes) {
-      const val = twinRes.data.data.attributes[boundTargetName]
+    if (twinRes.data?.success && twinRes.data.data?.currentAttr) {
+      const val = twinRes.data.data.currentAttr[boundTargetName]
       if (val !== undefined && val !== null) {
         liveTelemetryValue.value = val
-        if (!chartPoints.value.length) {
+        if (!chartPoints.value.length && Number.isFinite(Number(val))) {
           chartPoints.value = [{ time: new Date().toISOString(), value: Number(val) }]
         }
       }
@@ -821,9 +1000,9 @@ async function fetchLiveTwinState(rule: any) {
     if (!detailVisible.value || !boundInstanceId) return
     try {
       const res = await axios.get('/api/device/twin-state/by-instance/' + boundInstanceId)
-      if (res.data?.success && res.data.data?.attributes) {
-        const val = res.data.data.attributes[boundTargetName]
-        if (val !== undefined && val !== null) {
+      if (res.data?.success && res.data.data?.currentAttr) {
+        const val = res.data.data.currentAttr[boundTargetName]
+        if (val !== undefined && val !== null && Number.isFinite(Number(val))) {
           liveTelemetryValue.value = val
           chartPoints.value.push({ time: new Date().toISOString(), value: Number(val) })
           if (chartPoints.value.length > 60) chartPoints.value.shift()
@@ -875,13 +1054,19 @@ function resolveBindingDataType(b: any): string {
   return map[b.source?.dataType] || b.source?.dataType || '-'
 }
 
+function resolveActionModel(act: any) {
+  const inst = instances.value.find(i => Number(i.id) === Number(act.deviceInstanceId))
+  const modelId = act.deviceModelId || inst?.deviceModelId
+  const mdl = models.value.find(m => Number(m.id || m.modelId) === Number(modelId))
+  return { inst, mdl }
+}
+
 function resolveActionContent(act: any): string {
   if (act.actionType === 'SYSTEM') {
-    const map: any = { ABORT: '终止当前任务 (ABORT)', PAUSE: '暂停当前任务 (PAUSE)', ALERT: '发布系统告警 (ALERT)' }
+    const map: any = { ABORT: '终止当前任务', PAUSE: '暂停当前任务', ALERT: '发布系统告警' }
     return map[act.action] || act.action || '系统动作'
   }
-  const inst = instances.value.find(i => Number(i.id) === Number(act.deviceInstanceId))
-  const mdl = models.value.find(m => Number(m.id || m.modelId) === Number(inst?.deviceModelId))
+  const { inst, mdl } = resolveActionModel(act)
   const cap = (mdl?.capabilities || []).find((c: any) => c.capabilityName === act.capabilityName)
   const dev = inst?.instanceName || (act.deviceInstanceId ? `设备${act.deviceInstanceId}` : '设备')
   return `${dev} · ${cap?.displayName || act.capabilityName}`
@@ -889,20 +1074,14 @@ function resolveActionContent(act: any): string {
 
 function resolveActionParams(act: any): string {
   if (act.actionType === 'SYSTEM') return act.targetTaskId ? `目标任务 #${act.targetTaskId}` : '作用于当前任务'
-  const inst = instances.value.find(i => Number(i.id) === Number(act.deviceInstanceId))
-  const mdl = models.value.find(m => Number(m.id || m.modelId) === Number(inst?.deviceModelId))
+  const { mdl } = resolveActionModel(act)
   const cap = (mdl?.capabilities || []).find((c: any) => c.capabilityName === act.capabilityName)
-  const params = act.parameters || {}
-  const entries = Object.entries(params)
+  const entries = Object.entries(act.parameters || {})
   if (!entries.length) return '无额外参数'
-  const rawParams = cap?.capabilityParameters || cap?.parameters || []
+  const paramDefs = Array.isArray(cap?.parameters) ? cap.parameters : []
   return entries.map(([k, v]) => {
-    let paramLabel = k
-    if (Array.isArray(rawParams)) {
-      const pDef = rawParams.find((p: any) => (p.parameterName || p.name) === k)
-      if (pDef?.displayName) paramLabel = pDef.displayName
-    }
-    return `${paramLabel}=${v}`
+    const pDef = paramDefs.find((p: any) => p.name === k)
+    return `${pDef?.displayName || k}=${v}`
   }).join(', ')
 }
 
@@ -926,173 +1105,126 @@ onMounted(() => {
   load()
   refs().catch((e: any) => ElMessage.error(e.message || '加载约束配置资源失败'))
 })
+
+onUnmounted(() => {
+  chartRo?.disconnect()
+  stopTelemetryTimer()
+})
 </script>
 
 <style scoped>
-/* 阿里云工业白底按键标准 (与数据中心和设备模型统一) */
-.btn-aliyun {
-  background: #ffffff !important;
-  border: 1px solid #d9d9d9 !important;
-  color: rgba(0, 0, 0, 0.88) !important;
-  font-weight: 400 !important;
-  transition: all 0.15s ease;
-}
-.btn-aliyun:hover:not(:disabled):not(.is-disabled) {
-  background: #ffffff !important;
-  border-color: #4096ff !important;
-  color: #1677ff !important;
-}
-
-.btn-aliyun-cta {
-  background: #ffffff !important;
-  border: 1px solid #1677ff !important;
-  color: #1677ff !important;
-  font-weight: 500 !important;
-  transition: all 0.15s ease;
-}
-.btn-aliyun-cta:hover:not(:disabled):not(.is-disabled) {
-  background: #1677ff !important;
-  border-color: #1677ff !important;
-  color: #ffffff !important;
-}
-
-.btn-aliyun:disabled,
-.btn-aliyun.is-disabled,
-.btn-aliyun-cta:disabled,
-.btn-aliyun-cta.is-disabled {
-  background: #f5f5f5 !important;
-  border-color: #d9d9d9 !important;
-  color: rgba(0, 0, 0, 0.25) !important;
-  cursor: not-allowed !important;
-}
-
-.btn-aliyun-link {
-  background: transparent !important;
-  border: none !important;
-  color: #1677ff !important;
-  padding: 0 4px !important;
-  font-weight: 400 !important;
-}
-.btn-aliyun-link:hover {
-  color: #4096ff !important;
-  text-decoration: underline !important;
-  background: transparent !important;
-}
-
-.btn-aliyun-danger-link {
-  background: transparent !important;
-  border: none !important;
-  color: #ff4d4f !important;
-  padding: 0 4px !important;
-  font-weight: 400 !important;
-}
-.btn-aliyun-danger-link:hover {
-  color: #ff7875 !important;
-  text-decoration: underline !important;
-  background: transparent !important;
-}
-
+/* 视口绝对锁屏 (对齐设备模型/实例/Adapter/数据中心) */
 .security-page {
-  padding: 24px 32px 60px;
-  background: #f8fafc;
-  min-height: calc(100vh - 60px);
+  height: calc(100vh - 50px);
+  padding: 10px 14px 14px;
+  background-color: var(--sl-bg-page);
+  box-sizing: border-box;
+  overflow: hidden;
+  display: flex;
 }
 
-.page-heading {
+.constraint-workbench-canvas {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--sl-bg-surface);
+  border: 1px solid var(--sl-border-base);
+  border-radius: var(--sl-radius-lg);
+  box-shadow: var(--sl-shadow-container);
+  overflow: hidden;
+  min-height: 0;
+  height: 100%;
+}
+
+/* 工作台头部工具栏 (对齐 workbench-header) */
+.workbench-header {
+  padding: 10px 16px;
+  background: #ffffff;
+  border-bottom: 1px solid var(--sl-border-base);
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 20px;
-}
-.page-heading h1 {
-  margin: 0;
-  font-size: 18px;
-  font-weight: 600;
-  color: #0f172a;
-}
-.page-heading p {
-  margin: 4px 0 0;
-  color: #64748b;
-  font-size: 13px;
-}
-.header-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.toolbar-box {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-  gap: 16px;
+  flex-shrink: 0;
+  gap: 12px;
   flex-wrap: wrap;
 }
-.search-input {
-  width: 280px;
-}
+.header-left { display: flex; flex-direction: column; gap: 2px; }
+.header-title { margin: 0; font-size: 15px; font-weight: 700; color: var(--sl-text-heading); }
+.header-subtitle { font-size: 11.5px; color: var(--sl-text-secondary); }
+.header-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
+.search-input { width: 240px; }
 
+/* 来源过滤分段控件 */
 .filter-group {
   display: flex;
   background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 4px;
+  border: 1px solid var(--sl-border-base);
+  border-radius: var(--sl-radius-sm);
   overflow: hidden;
+  flex-shrink: 0;
 }
 .filter-tab-btn {
-  padding: 6px 14px;
+  height: 26px;
+  padding: 0 12px;
   border: none;
   background: transparent;
-  color: #64748b;
-  font-size: 12.5px;
+  color: var(--sl-text-secondary);
+  font-size: 12px;
   cursor: pointer;
-  border-right: 1px solid #e2e8f0;
-  transition: all 0.12s ease;
+  border-right: 1px solid var(--sl-border-base);
+  transition: var(--sl-ease-smooth);
+  display: inline-flex;
+  align-items: center;
 }
-.filter-tab-btn:last-child {
-  border-right: none;
-}
-.filter-tab-btn:hover {
-  color: #0f172a;
-}
+.filter-tab-btn:last-child { border-right: none; }
+.filter-tab-btn:hover { color: var(--sl-text-heading); }
 .filter-tab-btn.active {
-  background: #f1f5f9;
-  color: #0f172a;
+  background: var(--sl-primary-light);
+  color: var(--sl-primary);
   font-weight: 600;
 }
 
-.table-card {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 4px;
+/* 唯一局部滚动区 (表头吸顶) */
+.table-scroll-container {
+  flex: 1;
+  min-height: 0;
+  padding: 6px 12px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
+  background: #ffffff;
 }
-
-.master-table {
-  width: 100%;
+.table-card {
+  flex: 1;
+  min-height: 0;
+  border: 1px solid var(--sl-border-base);
+  border-radius: var(--sl-radius-sm);
+  overflow: hidden;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
 }
-.master-table :deep(tr) {
-  cursor: pointer;
-}
+.master-table { width: 100%; flex: 1; }
+.master-table :deep(tr) { cursor: pointer; }
 .master-table :deep(th.el-table__cell) {
   background: #f8fafc;
-  color: #64748b;
+  color: var(--sl-text-secondary);
   font-size: 12px;
   font-weight: 600;
-  padding: 10px 0;
+  padding: 8px 0;
 }
-.master-table :deep(td.el-table__cell) {
-  padding: 14px 0;
-}
+.master-table :deep(td.el-table__cell) { padding: 10px 0; }
 
 .index-num {
-  font-family: ui-monospace, monospace;
-  color: #94a3b8;
-  font-size: 12.5px;
+  font-family: var(--sl-font-mono);
+  color: var(--sl-text-disabled);
+  font-size: 12px;
 }
 .rule-name-text {
-  font-size: 13.5px;
-  color: #0f172a;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sl-text-heading);
 }
 
 .sentence-stream {
@@ -1103,75 +1235,71 @@ onMounted(() => {
   font-size: 12.5px;
   line-height: 1.6;
 }
-.sentence-static {
-  color: #64748b;
-}
+.sentence-static { color: var(--sl-text-secondary); }
 .sentence-chip {
   padding: 1px 6px;
-  border-radius: 3px;
-  background: #f1f5f9;
-  border: 1px solid #cbd5e1;
-  color: #1e293b;
+  border-radius: var(--sl-radius-sm);
+  background: var(--sl-bg-page);
+  border: 1px solid var(--sl-border-input);
+  color: var(--sl-text-body);
   font-size: 12px;
   font-weight: 500;
 }
-.sentence-chip.emphasis {
-  font-weight: 600;
-}
+.sentence-chip.emphasis { font-weight: 600; }
 .sentence-chip.action {
-  background: #fef2f2;
-  border-color: #fecaca;
-  color: #dc2626;
+  background: var(--sl-danger-light);
+  border-color: var(--sl-danger-border);
+  color: var(--sl-danger);
 }
-.sentence-arrow {
-  color: #94a3b8;
-  margin: 0 2px;
-}
+.sentence-arrow { color: var(--sl-text-disabled); margin: 0 2px; }
 
 .source-label,
 .window-label {
   font-size: 12.5px;
-  color: #64748b;
+  color: var(--sl-text-secondary);
 }
 
 .row-actions {
   display: flex;
-  justify-content: flex-end;
-  gap: 4px;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
-.pager-bar {
+.pager-wrap {
+  flex-shrink: 0;
+  padding: 6px 12px;
+  border-top: 1px solid var(--sl-border-base);
   display: flex;
   justify-content: flex-end;
-  padding: 12px 16px;
-  border-top: 1px solid #e2e8f0;
   background: #ffffff;
 }
 
-/* 详情抽屉 */
+/* 详情抽屉 (统一 80% 规范；全局 el-drawer__body 无内边距，由内容容器承载) */
+.drawer-content { padding: 16px 20px; }
 .drawer-custom-header h2 {
   margin: 0;
-  font-size: 16px;
-  font-weight: 600;
-  color: #0f172a;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--sl-text-heading);
 }
 .drawer-custom-header span {
-  font-size: 12px;
-  color: #64748b;
+  font-size: 11.5px;
+  color: var(--sl-text-secondary);
   margin-top: 2px;
   display: block;
 }
 
 .detail-section {
   background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 4px;
-  padding: 16px;
+  border: 1px solid var(--sl-border-base);
+  border-radius: var(--sl-radius-sm);
+  padding: 14px 16px;
 }
 .section-heading {
   font-size: 13px;
-  font-weight: 600;
-  color: #0f172a;
+  font-weight: 700;
+  color: var(--sl-text-heading);
   margin-bottom: 12px;
   display: flex;
   justify-content: space-between;
@@ -1179,38 +1307,38 @@ onMounted(() => {
 }
 .meta-formula-text {
   font-size: 12px;
-  color: #64748b;
+  color: var(--sl-text-secondary);
   margin-top: 8px;
 }
 .meta-formula-text code {
-  color: #2563eb;
-  font-family: ui-monospace, monospace;
+  color: var(--sl-primary);
+  font-family: var(--sl-font-mono);
 }
 
 .live-status-pill {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-size: 12px;
+  font-size: 11.5px;
   line-height: 1;
-  padding: 4px 10px;
+  padding: 3px 9px;
   border-radius: 12px;
   font-weight: 500;
 }
 .live-status-pill.normal {
-  color: #16a34a;
-  background: #f0fdf4;
-  border: 1px solid #bbf7d0;
+  color: var(--sl-success);
+  background: var(--sl-success-light);
+  border: 1px solid var(--sl-success-border);
 }
 .live-status-pill.violated {
-  color: #dc2626;
-  background: #fef2f2;
-  border: 1px solid #fecaca;
+  color: var(--sl-danger);
+  background: var(--sl-danger-light);
+  border: 1px solid var(--sl-danger-border);
 }
 .live-status-pill.disabled {
-  color: #64748b;
-  background: #f1f5f9;
-  border: 1px solid #e2e8f0;
+  color: var(--sl-text-secondary);
+  background: var(--sl-bg-page);
+  border: 1px solid var(--sl-border-base);
 }
 .status-dot {
   width: 6px;
@@ -1218,31 +1346,26 @@ onMounted(() => {
   border-radius: 50%;
   flex-shrink: 0;
 }
-.status-dot.normal {
-  background: #16a34a;
-}
-.status-dot.violated {
-  background: #dc2626;
-}
-.status-dot.disabled {
-  background: #94a3b8;
-}
+.status-dot.normal { background: var(--sl-success); }
+.status-dot.violated { background: var(--sl-danger); }
+.status-dot.disabled { background: var(--sl-text-disabled); }
 
-/* 实时监测指标横幅与时序图表样式 */
-.metric-ribbon-card {
+/* 实时监测指标横幅 (对齐 35px Metric Ribbon 规范) */
+.metric-ribbon {
   display: grid;
   grid-template-columns: 1.5fr 1fr 1fr 1fr;
-  gap: 12px;
+  gap: 16px;
   background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 4px;
-  padding: 14px 18px;
+  border: 1px solid var(--sl-border-base);
+  border-radius: var(--sl-radius-sm);
+  padding: 8px 16px;
   align-items: center;
 }
 .metric-block {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 3px;
+  min-width: 0;
 }
 .metric-block.status-cell {
   align-items: flex-end;
@@ -1254,54 +1377,120 @@ onMounted(() => {
   margin-top: 2px;
 }
 .m-label {
-  font-size: 12px;
-  color: #64748b;
+  font-size: 11px;
+  color: var(--sl-text-secondary);
+  line-height: 1.2;
 }
 .m-val {
-  font-size: 14px;
-  color: #0f172a;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sl-text-heading);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: 1.3;
 }
 .m-val.live-val {
-  font-size: 18px;
-  color: #2563eb;
-  font-family: ui-monospace, monospace;
+  font-size: 16px;
+  color: var(--sl-primary);
+  font-family: var(--sl-font-mono);
 }
 .m-val.threshold-val {
-  font-size: 18px;
-  color: #ef4444;
-  font-family: ui-monospace, monospace;
+  font-size: 16px;
+  color: var(--sl-danger);
+  font-family: var(--sl-font-mono);
 }
 
 .chart-wrapper {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 4px;
-  padding: 12px;
-  min-height: 160px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  position: relative;
+  width: 100%;
+  background: #ffffff;
+  border: 1px solid var(--sl-border-base);
+  border-radius: var(--sl-radius-sm);
+  padding: 8px 8px 2px;
+  box-sizing: border-box;
 }
 .chart-svg {
+  display: block;
   width: 100%;
-  height: 160px;
+  height: 200px;
+  cursor: crosshair;
 }
+.chart-grid-line { stroke: var(--sl-border-subtle); stroke-width: 1; }
+.chart-axis-line { stroke: var(--sl-border-base); stroke-width: 1; }
+.chart-axis-label {
+  fill: var(--sl-text-disabled);
+  font-size: 12px;
+  font-family: var(--sl-font-mono);
+  font-weight: 400;
+  text-rendering: geometricPrecision;
+}
+.chart-violation-region { fill: rgba(220, 38, 38, 0.05); }
+.chart-threshold-line { stroke: var(--sl-danger); stroke-width: 1; stroke-dasharray: 5 4; }
+.chart-threshold-label {
+  fill: var(--sl-danger);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--sl-font-mono);
+  text-rendering: geometricPrecision;
+}
+.chart-ts-line {
+  fill: none;
+  stroke: var(--sl-primary);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.chart-crosshair { stroke: var(--sl-text-disabled); stroke-width: 1; stroke-dasharray: 3 3; }
+.chart-hover-dot { fill: var(--sl-primary); stroke: #ffffff; stroke-width: 1.5; }
+.chart-hover-dot.violated { fill: var(--sl-danger); }
+.chart-latest-halo { fill: none; stroke: var(--sl-primary); stroke-opacity: 0.35; }
+.chart-latest-dot { fill: var(--sl-primary); stroke: #ffffff; stroke-width: 1.5; }
+.chart-latest-label {
+  fill: var(--sl-primary);
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--sl-font-mono);
+  text-rendering: geometricPrecision;
+}
+.chart-tooltip {
+  position: absolute;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 9px;
+  background: #0f172a;
+  border-radius: var(--sl-radius-sm);
+  pointer-events: none;
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.18);
+  white-space: nowrap;
+}
+.chart-tooltip .tip-time {
+  font-size: 11px;
+  color: #94a3b8;
+  font-family: var(--sl-font-mono);
+}
+.chart-tooltip .tip-value {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ffffff;
+  font-family: var(--sl-font-mono);
+}
+.chart-tooltip .tip-value.violated { color: #fca5a5; }
 .chart-empty-state {
   font-size: 12.5px;
-  color: #94a3b8;
+  color: var(--sl-text-disabled);
   text-align: center;
   padding: 30px 0;
 }
 
 .live-trigger-bar {
   margin-top: 14px;
-  padding: 11px 14px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 4px;
+  padding: 10px 14px;
+  background: var(--sl-bg-hover);
+  border: 1px solid var(--sl-border-base);
+  border-radius: var(--sl-radius-sm);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1314,50 +1503,29 @@ onMounted(() => {
   gap: 8px;
   font-size: 12.5px;
 }
-.trigger-label {
-  color: #64748b;
-}
+.trigger-label { color: var(--sl-text-secondary); }
 .trigger-expr {
-  color: #2563eb;
-  background: #eff6ff;
-  border: 1px solid #dbeafe;
+  color: var(--sl-primary);
+  background: var(--sl-primary-light);
+  border: 1px solid var(--sl-primary-border);
   padding: 2px 8px;
-  border-radius: 3px;
-  font-family: ui-monospace, monospace;
+  border-radius: var(--sl-radius-sm);
+  font-family: var(--sl-font-mono);
   font-size: 12.5px;
 }
-.trigger-window {
-  color: #64748b;
-  font-size: 12px;
-}
+.trigger-window { color: var(--sl-text-secondary); font-size: 12px; }
 .meta-desc-text {
   font-size: 12px;
-  color: #64748b;
+  color: var(--sl-text-secondary);
   margin-top: 6px;
 }
 
-
-.datacenter-redirect-hint {
-
-  margin-top: 12px;
-  padding: 10px 14px;
-  background: #f8fafc;
-  border: 1px dashed #cbd5e1;
-  border-radius: 4px;
-  font-size: 12px;
-  color: #64748b;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
 .datacenter-link {
-  color: #2563eb;
+  color: var(--sl-primary);
   text-decoration: none;
   font-weight: 500;
 }
-.datacenter-link:hover {
-  text-decoration: underline;
-}
+.datacenter-link:hover { text-decoration: underline; }
 
 .grid-table {
   width: 100%;
@@ -1367,19 +1535,20 @@ onMounted(() => {
 .grid-table th,
 .grid-table td {
   padding: 8px 10px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--sl-border-base);
   text-align: left;
+  color: var(--sl-text-body);
 }
 .grid-table th {
   background: #f8fafc;
-  color: #64748b;
+  color: var(--sl-text-secondary);
   font-weight: 600;
 }
 
 .empty-log-hint {
   text-align: center;
   font-size: 12.5px;
-  color: #94a3b8;
+  color: var(--sl-text-disabled);
   padding: 24px 0;
 }
 
@@ -1389,23 +1558,23 @@ onMounted(() => {
   flex-direction: column;
   max-height: 90vh;
   margin-top: 5vh !important;
-  border-radius: 6px;
+  border-radius: var(--sl-radius-md);
   overflow: hidden;
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
 }
 
 :deep(.constraint-editor-dialog .el-dialog__header) {
-  padding: 16px 20px;
+  padding: 14px 20px;
   margin-right: 0;
-  border-bottom: 1px solid #e2e8f0;
+  border-bottom: 1px solid var(--sl-border-base);
   background: #ffffff;
   flex-shrink: 0;
 }
 
 :deep(.constraint-editor-dialog .el-dialog__title) {
-  font-size: 16px;
-  font-weight: 600;
-  color: #0f172a;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--sl-text-heading);
 }
 
 :deep(.constraint-editor-dialog .el-dialog__body) {
@@ -1416,31 +1585,31 @@ onMounted(() => {
 }
 
 .editor-scroll-container {
-  padding: 20px;
+  padding: 16px 20px;
   max-height: calc(90vh - 128px);
   overflow-y: auto;
   overflow-x: hidden;
   box-sizing: border-box;
 }
 
-/* 统一精致细滚动条 */
+/* 统一精致细滚动条 (6px) */
 .editor-scroll-container::-webkit-scrollbar {
   width: 6px;
 }
 .editor-scroll-container::-webkit-scrollbar-track {
-  background: #f8fafc;
+  background: var(--sl-bg-hover);
 }
 .editor-scroll-container::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: var(--sl-border-input);
   border-radius: 3px;
 }
 .editor-scroll-container::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: var(--sl-text-disabled);
 }
 
 :deep(.constraint-editor-dialog .el-dialog__footer) {
-  padding: 12px 20px;
-  border-top: 1px solid #e2e8f0;
+  padding: 10px 16px;
+  border-top: 1px solid var(--sl-border-base);
   background: #ffffff;
   flex-shrink: 0;
 }

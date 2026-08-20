@@ -488,14 +488,21 @@ async function deleteModel(id) {
   try {
     const res = await deleteDeviceModel(id)
     if (!res.success) {
-      ElMessage.error(res.message || '删除失败')
+      ElMessageBox.alert(res.message || '删除失败', '无法删除设备模型', {
+        type: 'error',
+        confirmButtonText: '我知道了'
+      })
       return
     }
     ElMessage.success('删除成功')
     selectedModelId.value = ''
     await loadData()
   } catch (err) {
-    ElMessage.error(err.response?.data?.message || '删除失败')
+    const errorMsg = err.response?.data?.message || err.message || '删除失败'
+    ElMessageBox.alert(errorMsg, '无法删除设备模型', {
+      type: 'error',
+      confirmButtonText: '我知道了'
+    })
   }
 }
 

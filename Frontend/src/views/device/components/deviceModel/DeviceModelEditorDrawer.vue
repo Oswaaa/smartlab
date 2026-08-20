@@ -606,44 +606,48 @@
                       <div v-for="(row, $index) in operationTransitionRows" :key="row._key || $index" class="trans-rule-item-card">
                         <!-- 第一行：序号、说明、所属分区、状态流转、删除 -->
                         <div class="trans-card-row-top">
-                          <span style="font-size: 11px; font-weight: 700; color: var(--sl-text-secondary);">#{{ $index + 1 }}</span>
-                          <div class="field-with-warning" style="flex: 1;">
-                            <span class="warning-slot"><el-tooltip v-if="transitionWarning(row)" :content="transitionWarning(row)" placement="top"><el-icon class="inline-warning-icon"><Warning /></el-icon></el-tooltip></span>
-                            <el-input v-model="row.description" size="small" placeholder="规则说明，例如：启动完成进入运行态" />
+                          <span class="trans-index-badge">#{{ $index + 1 }}</span>
+                          <div class="trans-desc-wrapper">
+                            <el-tooltip v-if="transitionWarning(row)" :content="transitionWarning(row)" placement="top">
+                              <el-icon class="inline-warning-icon"><Warning /></el-icon>
+                            </el-tooltip>
+                            <el-input v-model="row.description" size="small" placeholder="规则说明，例如：启动完成进入运行态" class="trans-desc-input" />
                           </div>
 
-                          <span style="font-size: 11px; color: #64748b;">所属分区:</span>
-                          <el-select v-model="row.regionName" size="small" style="width: 120px;">
-                            <el-option v-for="region in functionalOpRegions" :key="region._key" :label="region.regionName" :value="region.regionName" />
-                          </el-select>
-
-                          <span style="font-size: 11px; color: #64748b;">状态转移:</span>
-                          <div class="transition-state-pair">
-                            <state-select v-model="row.fromStateName" :options="getRegionStateOptionsByName(row.regionName)" placeholder="原状态" style="width: 100px;" />
-                            <span style="color: #94a3b8; font-weight: 700; margin: 0 2px;">→</span>
-                            <state-select v-model="row.toStateName" :options="getRegionStateOptionsByName(row.regionName)" placeholder="目标状态" style="width: 100px;" />
+                          <div class="trans-field-group">
+                            <span class="field-mini-label">所属分区:</span>
+                            <el-select v-model="row.regionName" size="small" class="region-select">
+                              <el-option v-for="region in functionalOpRegions" :key="region._key" :label="region.regionName" :value="region.regionName" />
+                            </el-select>
                           </div>
 
-                          <button class="btn-link danger" type="button" style="font-size: 11.5px; margin-left: auto;" @click="removeObjectRow(draft.stateTransitions, row)">
+                          <div class="trans-field-group">
+                            <span class="field-mini-label">状态流转:</span>
+                            <div class="transition-state-pair">
+                              <state-select v-model="row.fromStateName" :options="getRegionStateOptionsByName(row.regionName)" placeholder="原状态" class="state-select-item" />
+                              <span class="state-arrow">→</span>
+                              <state-select v-model="row.toStateName" :options="getRegionStateOptionsByName(row.regionName)" placeholder="目标状态" class="state-select-item" />
+                            </div>
+                          </div>
+
+                          <button class="btn-link danger trans-del-btn" type="button" @click="removeObjectRow(draft.stateTransitions, row)">
                             <el-icon><Delete /></el-icon><span>删除</span>
                           </button>
                         </div>
 
                         <!-- 第二行：触发条件、转移动作 -->
                         <div class="trans-card-row-bottom">
-                          <div style="display: flex; align-items: center; gap: 8px;">
-                            <span style="font-size: 11px; color: #64748b; flex-shrink: 0;">触发接口信号:</span>
-                            <div style="display: flex; flex-direction: column; gap: 2px;">
-                              <span class="mono-text" style="font-size: 11px; color: #64748b; line-height: 1.2;">{{ adapterInterfaceName() || 'Interface_adapter_in' }}</span>
-                              <state-select v-model="row.trigger.signalName" :options="adapterOpEventOptions" placeholder="选择或输入触发事件" style="width: 220px;" />
-                            </div>
+                          <div class="trans-trigger-group">
+                            <span class="field-mini-label">触发条件:</span>
+                            <span class="interface-tag">{{ adapterInterfaceName() || 'Interface_adapter_in' }}</span>
+                            <state-select v-model="row.trigger.signalName" :options="adapterOpEventOptions" placeholder="选择或输入触发事件" class="trigger-select-item" />
                           </div>
 
-                          <div style="display: flex; align-items: center; gap: 6px; margin-left: auto;">
-                            <span style="font-size: 11px; color: #64748b;">转移动作:</span>
+                          <div class="trans-action-group">
+                            <span class="field-mini-label">转移动作:</span>
                             <div v-if="row.actions?.length" class="transition-action-horizontal-list">
                               <div v-for="(act, aIdx) in row.actions" :key="aIdx" class="transition-action-chip">
-                                <span class="action-badge-verb" style="font-size: 10px;">SEND</span>
+                                <span class="action-badge-verb">SEND</span>
                                 <el-select v-model="act.payload.signalName" size="small" filterable clearable allow-create placeholder="选择/输入信号" style="width: 130px;">
                                   <el-option v-for="sig in getAvailableActionSignals(act.payload?.interfaceName)" :key="sig" :label="sig" :value="sig" />
                                 </el-select>
@@ -652,8 +656,8 @@
                                 <button class="btn-chip-del" type="button" @click="row.actions.splice(aIdx, 1)">✕</button>
                               </div>
                             </div>
-                            <span v-else style="font-size: 11px; color: #94a3b8;">暂无额外过程动作</span>
-                            <button class="btn-aliyun" type="button" style="padding: 1px 6px; font-size: 11px;" @click="ensureTransitionAction(row)">
+                            <span v-else class="empty-action-text">暂无额外过程动作</span>
+                            <button class="btn-aliyun" type="button" style="padding: 1px 8px; font-size: 11px; height: 26px;" @click="ensureTransitionAction(row)">
                               <el-icon><Plus /></el-icon><span>添加动作</span>
                             </button>
                           </div>
@@ -2808,76 +2812,135 @@ function summaryText(model) {
   font-family: var(--sl-font-mono);
 }
 
-/* ── 功能状态转移规则双行紧凑卡片排布 ── */
+/* ── 功能状态转移规则双行紧凑卡片排布 (7. 2-Row State Transition Rule Card) ── */
 .trans-rule-card-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
 }
 .trans-rule-item-card {
-  border: 1px solid var(--sl-border-base);
-  border-radius: 6px;
-  background: #ffffff;
-  padding: 10px 12px;
+  border: 1px solid var(--sl-border-base, #e2e8f0);
+  border-radius: var(--sl-radius-sm, 6px);
+  background: #fafbfc;
+  padding: 8px 12px;
   display: flex;
   flex-direction: column;
   gap: 8px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+  box-sizing: border-box;
   transition: all 0.15s ease;
 }
 .trans-rule-item-card:hover {
+  background: #ffffff;
   border-color: #cbd5e1;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
 }
 .trans-card-row-top {
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
+  box-sizing: border-box;
+}
+.trans-index-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--sl-text-secondary, #64748b);
+  min-width: 20px;
+  flex-shrink: 0;
+}
+.trans-desc-wrapper {
+  flex: 1;
+  min-width: 160px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.trans-desc-input {
+  width: 100%;
+}
+.trans-field-group {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.field-mini-label {
+  font-size: 11.5px;
+  color: var(--sl-text-secondary, #64748b);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.region-select {
+  width: 110px !important;
+  flex-shrink: 0;
+}
+.transition-state-pair {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+.state-select-item {
+  width: 95px !important;
+  flex-shrink: 0;
+}
+.state-arrow {
+  color: #94a3b8;
+  font-weight: 700;
+  font-size: 12px;
+  user-select: none;
+}
+.trans-del-btn {
+  font-size: 11.5px;
+  margin-left: auto;
+  flex-shrink: 0;
 }
 .trans-card-row-bottom {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 12px;
   width: 100%;
-  padding-top: 6px;
-  border-top: 1px dashed #f1f5f9;
+  padding-top: 8px;
+  border-top: 1px dashed var(--sl-border-base, #e2e8f0);
+  box-sizing: border-box;
 }
-.trans-field-cell {
+.trans-trigger-group {
   display: flex;
   align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-.trans-field-cell.desc-cell {
-  flex: 1;
-}
-.trans-field-cell.region-cell {
+  gap: 8px;
   flex-shrink: 0;
 }
-.trans-field-cell.flow-cell {
-  flex: 1;
-  min-width: 240px;
-}
-.trans-field-cell.trigger-cell {
-  flex: 1;
-  max-width: 380px;
-}
-.trans-field-cell.action-cell {
-  flex: 2;
-}
-.field-mini-label {
+.interface-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  background: #f1f5f9;
+  border: 1px solid var(--sl-border-base, #e2e8f0);
+  border-radius: 4px;
+  font-family: var(--sl-font-mono, monospace);
   font-size: 11px;
-  font-weight: 600;
-  color: var(--sl-text-secondary);
+  color: #475569;
   white-space: nowrap;
   flex-shrink: 0;
 }
-.trans-del-btn {
-  font-size: 12px;
+.trigger-select-item {
+  width: 240px !important;
+  flex-shrink: 0;
+}
+.trans-action-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   margin-left: auto;
   flex-shrink: 0;
 }
+.empty-action-text {
+  font-size: 11px;
+  color: var(--sl-text-disabled, #94a3b8);
+  white-space: nowrap;
+}
+
 .transition-action-horizontal-list {
   display: flex;
   align-items: center;

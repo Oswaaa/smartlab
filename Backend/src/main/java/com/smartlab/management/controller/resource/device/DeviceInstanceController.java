@@ -102,6 +102,16 @@ public class DeviceInstanceController {
         }
     }
 
+    @DeleteMapping("/delete/{id}")
+    public ApiResponse<String> delete(@PathVariable String id) {
+        try {
+            deviceInstanceService.delete(id);
+            return ApiResponse.ok("删除成功");
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
     @GetMapping("/snapshots")
     public ApiResponse<List<DeviceTwinStates>> listSnapshots() {
         return ApiResponse.ok(deviceInstanceService.listSnapshots());
@@ -111,6 +121,14 @@ public class DeviceInstanceController {
     public ApiResponse<DeviceTwinStates> getSnapshot(@PathVariable String id) {
         DeviceTwinStates snapshot = deviceInstanceService.getSnapshot(id);
         return snapshot == null ? ApiResponse.fail("设备状态机监控记录不存在") : ApiResponse.ok(snapshot);
+    }
+
+    @GetMapping(value = "/console/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+    public SseEmitter streamGlobalConsole() {
+        if (deviceConsoleSseHub == null) {
+            throw new IllegalStateException("SSE 模块未就绪");
+        }
+        return deviceConsoleSseHub.registerGlobal();
     }
 
     @GetMapping(value = "/console/stream/{id}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)

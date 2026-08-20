@@ -1,4 +1,3 @@
-const BUILT_INS = new Set(['true', 'false', 'delta', 'avg', 'rate'])
 const IDENTIFIER_START = /[A-Za-z_]/
 const IDENTIFIER_PART = /[A-Za-z0-9_]/
 
@@ -12,46 +11,233 @@ export function extractExpressionVariables(expression) {
 export function toBackendExpression(expression) {
   return String(expression || '').replace(/@([A-Za-z_][A-Za-z0-9_]*)/g, '$1').trim()
 }
+const TEMPORAL_FUNCTIONS = new Set(['delta', 'avg', 'rate'])
+const TWO_CHAR_OPS = ['||', '&&', '==', '!=', '>=', '<=']
+
 export function validateDisplayExpressionSyntax(expression) {
   const source = String(expression || '')
+  if (!source.trim()) return
+  parseConstraintPredicate(source)
+}
+
+function tokenizeDisplay(source) {
+  const tokens = []
   let index = 0
   while (index < source.length) {
     const character = source[index]
+    if (/\s/.test(character)) {
+      index++
+      continue
+    }
+    const two = source.slice(index, index + 2)
+    if (TWO_CHAR_OPS.includes(two)) {
+      tokens.push({ type: 'OP', text: two, pos: index })
+      index += 2
+      continue
+    }
+    if ('><+-*/!(),'.includes(character)) {
+      tokens.push({ type: 'OP', text: character, pos: index })
+      index++
+      continue
+    }
     if (character === "'" || character === '"') {
       const quote = character
-      index++
+      const start = index++
+      let text = ''
       while (index < source.length && source[index] !== quote) {
-        if (source[index] === '\\' && index + 1 < source.length) index += 2
-        else index++
+        if (source[index] === '\\' && index + 1 < source.length) {
+          text += source[index + 1]
+          index += 2
+        } else {
+          text += source[index++]
+        }
       }
       if (index >= source.length) throw new Error('表达式字符串缺少结束引号')
       index++
+      tokens.push({ type: 'STRING', text, pos: start })
       continue
     }
     if (character === '@') {
       if (!IDENTIFIER_START.test(source[index + 1] || '')) throw new Error('@后必须填写合法变量名')
-      index += 2
+      const start = index++
       while (index < source.length && IDENTIFIER_PART.test(source[index])) index++
+      tokens.push({ type: 'VAR', text: source.slice(start, index), pos: start })
+      continue
+    }
+    if (character === '.' && /\d/.test(source[index + 1] || '')) {
+      const start = index++
+      while (index < source.length && /\d/.test(source[index])) index++
+      tokens.push({ type: 'NUMBER', text: source.slice(start, index), pos: start })
+      continue
+    }
+    if (/\d/.test(character)) {
+      const start = index++
+      while (index < source.length && (/\d/.test(source[index]) || source[index] === '.')) index++
+      tokens.push({ type: 'NUMBER', text: source.slice(start, index), pos: start })
       continue
     }
     if (IDENTIFIER_START.test(character)) {
       const start = index++
       while (index < source.length && IDENTIFIER_PART.test(source[index])) index++
-      const identifier = source.slice(start, index)
-      if (!BUILT_INS.has(identifier.toLowerCase())) {
-        throw new Error(`标识符${identifier}不是@变量；变量必须使用@引用，字符串常量必须使用引号`)
-      }
+      tokens.push({ type: 'IDENT', text: source.slice(start, index), pos: start })
       continue
     }
-    index++
+    throw new Error(`无法识别的表达式字符: ${character}`)
   }
+  tokens.push({ type: 'EOF', text: '', pos: source.length })
+  return tokens
+}
+
+function parseConstraintPredicate(source) {
+  const tokens = tokenizeDisplay(source)
+  let index = 0
+  const peek = () => tokens[index]
+  const take = () => tokens[index++]
+  const matchOp = text => {
+    if (peek().type === 'OP' && peek().text === text) {
+      take()
+      return true
+    }
+    return false
+  }
+  const expectOp = text => {
+    if (!matchOp(text)) throw new Error(`表达式缺少 ${text}`)
+  }
+
+  const parseOr = () => {
+    let left = parseAnd()
+    while (matchOp('||')) {
+      requireBoolish(left, '||')
+      requireBoolish(parseAnd(), '||')
+      left = { type: 'bool' }
+    }
+    return left
+  }
+  const parseAnd = () => {
+    let left = parseEquality()
+    while (matchOp('&&')) {
+      requireBoolish(left, '&&')
+      requireBoolish(parseEquality(), '&&')
+      left = { type: 'bool' }
+    }
+    return left
+  }
+  const parseEquality = () => {
+    let left = parseComparison()
+    while (peek().text === '==' || peek().text === '!=') {
+      take()
+      parseComparison()
+      left = { type: 'bool' }
+    }
+    return left
+  }
+  const parseComparison = () => {
+    let left = parseAddition()
+    while (['>', '<', '>=', '<='].includes(peek().text)) {
+      take()
+      parseAddition()
+      left = { type: 'bool' }
+    }
+    return left
+  }
+  const parseAddition = () => {
+    let left = parseMultiplication()
+    while (peek().text === '+' || peek().text === '-') {
+      const operator = take().text
+      const right = parseMultiplication()
+      left = { type: operator === '+' && (left.type === 'string' || right.type === 'string') ? 'string' : 'number' }
+    }
+    return left
+  }
+  const parseMultiplication = () => {
+    let left = parseUnary()
+    while (peek().text === '*' || peek().text === '/') {
+      take()
+      parseUnary()
+      left = { type: 'number' }
+    }
+    return left
+  }
+  const parseUnary = () => {
+    if (matchOp('!')) {
+      requireBoolish(parseUnary(), '!')
+      return { type: 'bool' }
+    }
+    if (matchOp('-')) {
+      parseUnary()
+      return { type: 'number' }
+    }
+    return parsePrimary()
+  }
+  const parsePrimary = () => {
+    const token = peek()
+    if (token.type === 'NUMBER') {
+      take()
+      return { type: 'number' }
+    }
+    if (token.type === 'STRING') {
+      take()
+      return { type: 'string' }
+    }
+    if (matchOp('(')) {
+      const inner = parseOr()
+      expectOp(')')
+      return inner
+    }
+    if (token.type === 'VAR') {
+      take()
+      return { type: 'value' }
+    }
+    if (token.type === 'IDENT') {
+      take()
+      const name = token.text
+      if (matchOp('(')) return parseFunction(name)
+      if (name.toLowerCase() === 'true' || name.toLowerCase() === 'false') return { type: 'bool' }
+      throw new Error(`标识符${name}不是@变量；变量必须使用@引用，字符串常量必须使用引号`)
+    }
+    throw new Error('表达式需要值')
+  }
+  const parseFunction = name => {
+    const fn = name.toLowerCase()
+    if (!TEMPORAL_FUNCTIONS.has(fn)) throw new Error(`不支持的约束内置函数: ${name}`)
+    const first = peek()
+    if (first.type !== 'VAR') throw new Error(`${fn}() 第一个参数必须是 @变量`)
+    take()
+    if (!matchOp(',')) throw new Error(`${fn}() 需要两个参数：@变量 和时间窗口秒数，例如 ${fn}(@value, 10)`)
+    if (peek().type === 'NUMBER' && !(Number(peek().text) > 0)) {
+      throw new Error(`${fn}() 的时间窗口必须大于 0 秒`)
+    }
+    const windowNode = parseOr()
+    if (windowNode.type === 'bool' || windowNode.type === 'string') {
+      throw new Error(`${fn}() 的时间窗口必须是大于 0 的秒数`)
+    }
+    expectOp(')')
+    return { type: 'number', fn }
+  }
+
+  const result = parseOr()
+  if (peek().type !== 'EOF') {
+    throw new Error('表达式存在无法解析的内容。相邻两项之间必须使用比较或逻辑运算符，例如 delta(@value, 10) > @limit')
+  }
+  if (result.type === 'number') {
+    const hint = result.fn ? `${result.fn}() 只返回数值` : '当前公式只计算出数值'
+    throw new Error(`判定表达式必须返回 true/false。${hint}，需要与阈值比较，例如 ${result.fn || 'rate'}(@value, 10) > @limit`)
+  }
+  if (result.type === 'string') {
+    throw new Error('判定表达式必须返回 true/false，不能只写字符串')
+  }
+}
+
+function requireBoolish(node, operator) {
+  if (node.type === 'bool' || node.type === 'value') return
+  throw new Error(`${operator} 两侧必须是布尔判定。delta/avg/rate 只返回数值，请先比较，例如 avg(@value, 60) > @limit`)
 }
 
 export function sourceCategoryLabel(sourceType) {
   const map = {
     DEVICE_ATTRIBUTE: '设备属性',
-    DEVICE_OPERATION_STATE: '设备OP状态',
-    DEVICE_COMMAND_LIFECYCLE: '设备CMD状态',
+    DEVICE_OPERATION_STATE: '设备功能状态',
+    DEVICE_COMMAND_LIFECYCLE: '设备指令状态',
     NODE_LIFECYCLE_STATE: '节点生命周期',
     NODE_INTERNAL_VARIABLE: '节点内部变量',
     TASK_LIFECYCLE_STATE: '任务实例状态'

@@ -20,196 +20,237 @@
 
     <!-- 1. 规则基本信息 -->
     <div class="editor-section">
-      <el-row :gutter="16">
-        <el-col :span="18">
-          <el-form-item label="规则名称" required>
-            <el-input v-model="form.ruleName" placeholder="例如：反应釜超温防爆保护" />
-          </el-form-item>
-        </el-col>
-        <el-col :span="6">
-          <el-form-item label="启用状态">
-            <el-switch v-model="form.isEnabled" active-text="启用" inactive-text="停用" />
-          </el-form-item>
-        </el-col>
-      </el-row>
-      <el-form-item label="规则说明" style="margin-bottom: 0;">
+      <div class="rule-info-head">
+        <el-form-item label="规则名称" required class="rule-name-item">
+          <el-input v-model="form.ruleName" placeholder="例如：反应釜超温防爆保护" />
+        </el-form-item>
+        <div class="enable-inline">
+          <span class="enable-label">启用</span>
+          <el-switch v-model="form.isEnabled" />
+        </div>
+      </div>
+      <el-form-item label="规则说明" class="rule-desc-item">
         <el-input v-model="form.description" type="textarea" :rows="2" placeholder="简要说明该约束规则的工艺或安全防护目的（选填）" />
       </el-form-item>
     </div>
 
-    <!-- 2. 违规判定公式与工具栏 (对齐功能节点 Expression Editor 体系) -->
+    <!-- 2. 判定公式 = 变量绑定 + 表达式点选 (对齐功能节点 Expression Editor) -->
     <div class="editor-section">
       <div class="section-title">
-        <span>违规判定公式</span>
-        <span class="section-hint">公式中使用 @变量 声明占位标识符，下方将自动生成对应的数据绑定槽位</span>
+        <span>判定公式</span>
+        <span class="section-hint">先绑定观测变量与阈值，再点选变量与操作符组成判定式</span>
       </div>
 
-      <!-- 工具栏 -->
+      <div class="binding-toolbar">
+        <span class="binding-toolbar-label">变量声明</span>
+        <button class="btn-aliyun" type="button" @click="addObservable">+ 观测变量</button>
+        <button class="btn-aliyun" type="button" @click="addLiteral">+ 固定阈值</button>
+      </div>
+
+      <div v-if="!form.bindings.length" class="binding-guide">
+        <span class="guide-step">1</span>
+        <span>点击下方公式模板，或手动添加观测变量 / 固定阈值</span>
+        <span class="guide-step">2</span>
+        <span>绑定数据源后，点选已声明变量组成判定式</span>
+      </div>
+
+      <div v-for="item in form.bindings" :key="item._key" class="binding-card" :class="{ unused: !isVarUsed(item.name) }">
+        <div class="binding-card-head">
+          <div class="identifier-pill">
+            <span class="at-prefix">@</span>
+            <el-input
+              :key="item._key + '-' + (item._nameRev || 0)"
+              :model-value="item.name"
+              size="small"
+              class="var-name-input"
+              placeholder="变量名"
+              @change="(val) => renameBinding(item, val)"
+            />
+            <span class="identifier-type-desc">{{ item.bindingType === 'OBSERVABLE' ? '观测数据' : '固定阈值' }}</span>
+            <span v-if="!isVarUsed(item.name)" class="unused-hint">未写入公式</span>
+          </div>
+          <div class="binding-head-actions">
+            <el-radio-group v-model="item.bindingType" size="small" @change="onBindingTypeChange(item)">
+              <el-radio-button value="OBSERVABLE">观测数据</el-radio-button>
+              <el-radio-button value="LITERAL">固定值</el-radio-button>
+            </el-radio-group>
+            <button class="btn-link danger" type="button" @click="removeBinding(item.name)">删除</button>
+          </div>
+        </div>
+
+        <div v-if="item.bindingType === 'LITERAL'" class="binding-literal-row">
+          <div class="field field-type">
+            <span class="field-label">数据类型</span>
+            <el-select v-model="item.dataType" size="small">
+              <el-option v-for="t in scalarTypes" :key="t" :label="dataTypeLabel(t)" :value="t" />
+            </el-select>
+          </div>
+          <div class="field field-value">
+            <span class="field-label">固定值</span>
+            <el-select v-if="item.dataType === 'BOOLEAN'" v-model="item.value" size="small">
+              <el-option label="true" :value="true" />
+              <el-option label="false" :value="false" />
+            </el-select>
+            <el-input-number v-else-if="isNumeric(item.dataType)" v-model="item.value" size="small" :controls="false" placeholder="请输入数值" />
+            <el-input v-else v-model="item.value" size="small" placeholder="请输入常量" />
+          </div>
+        </div>
+
+        <div v-else class="binding-observable">
+          <div class="obs-row">
+            <div class="field field-source">
+              <span class="field-label">观测来源</span>
+              <el-select v-model="item.sourceType" size="small" @change="resetSource(item)">
+                <el-option v-for="type in availableSourceTypes" :key="type" :label="sourceLabel(type)" :value="type" />
+              </el-select>
+            </div>
+
+            <template v-if="isDeviceSource(item.sourceType)">
+              <template v-if="taskMode">
+                <div class="field field-grow">
+                  <span class="field-label">任务设备</span>
+                  <el-select v-model="item.resourceKey" size="small" @change="selectTaskResource(item)">
+                    <el-option v-for="res in taskResources" :key="res.bindingKey" :label="resourceLabel(res)" :value="res.bindingKey" />
+                  </el-select>
+                </div>
+              </template>
+              <template v-else>
+                <div class="field field-grow">
+                  <span class="field-label">设备模型</span>
+                  <el-select v-model="item.deviceModelId" size="small" filterable placeholder="选择设备模型" @change="resetDevice(item)">
+                    <el-option v-for="m in models" :key="m.id" :label="m.modelName" :value="m.id" />
+                  </el-select>
+                </div>
+                <div class="field field-grow">
+                  <span class="field-label">设备实例</span>
+                  <el-select v-model="item.deviceInstanceId" size="small" clearable placeholder="全模型实例">
+                    <el-option v-for="inst in instancesFor(item.deviceModelId)" :key="inst.id" :label="inst.instanceName || ('实例' + inst.id)" :value="inst.id" />
+                  </el-select>
+                </div>
+              </template>
+            </template>
+
+            <template v-else-if="item.sourceType === 'TASK_LIFECYCLE_STATE'">
+              <div v-if="taskMode" class="task-mode-hint">自动绑定当前执行任务的状态</div>
+              <div v-else class="field field-grow">
+                <span class="field-label">目标任务</span>
+                <el-select v-model="item.taskId" size="small" filterable placeholder="选择目标任务">
+                  <el-option v-for="task in tasks" :key="task.id" :label="(task.taskName || '任务') + ' #' + task.id" :value="task.id" />
+                </el-select>
+              </div>
+            </template>
+
+            <template v-else-if="isNodeSource(item.sourceType)">
+              <div class="field field-grow">
+                <span class="field-label">工作流</span>
+                <el-select v-model="item.workflowTemplateId" size="small" @change="item.nodeName='';item.variableName=''">
+                  <el-option v-for="flow in availableWorkflows" :key="flow.id" :label="flow.flowName" :value="flow.id" />
+                </el-select>
+              </div>
+              <div class="field field-grow">
+                <span class="field-label">节点</span>
+                <el-select v-model="item.nodeName" size="small" filterable @change="item.variableName=''">
+                  <el-option v-for="node in nodesFor(item.workflowTemplateId)" :key="node.name" :label="node.name" :value="node.name" />
+                </el-select>
+              </div>
+            </template>
+            <div v-if="!needsSecondObsRow(item)" class="field field-type">
+              <span class="field-label">数据类型</span>
+              <div class="resolved-type-value">{{ dataTypeLabel(observableDataType(item)) }}</div>
+            </div>
+          </div>
+
+          <div v-if="needsSecondObsRow(item)" class="obs-row">
+            <div v-if="item.sourceType === 'DEVICE_ATTRIBUTE'" class="field field-attr">
+              <span class="field-label">监测属性</span>
+              <el-select v-model="item.targetName" size="small" filterable placeholder="选择监测物理属性">
+                <el-option v-for="attr in attributesFor(item.deviceModelId)" :key="attr.attributeName" :label="attr.displayName || attr.attributeName" :value="attr.attributeName" />
+              </el-select>
+            </div>
+            <div v-else-if="item.sourceType === 'DEVICE_OPERATION_STATE'" class="field field-grow">
+              <span class="field-label">状态分区</span>
+              <el-select v-model="item.regionName" size="small" placeholder="选择功能状态分区">
+                <el-option v-for="region in operationRegions(item.deviceModelId)" :key="region.regionName" :label="region.regionName" :value="region.regionName" />
+              </el-select>
+            </div>
+            <div v-else-if="item.sourceType === 'NODE_INTERNAL_VARIABLE'" class="field field-grow">
+              <span class="field-label">内部变量</span>
+              <el-select v-model="item.variableName" size="small" filterable>
+                <el-option v-for="v in internalVariablesFor(item)" :key="v.name" :label="v.name + ' (' + v.dataType + ')'" :value="v.name" />
+              </el-select>
+            </div>
+            <div class="field field-type">
+              <span class="field-label">数据类型</span>
+              <div class="resolved-type-value">{{ dataTypeLabel(observableDataType(item)) }}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <div class="expression-toolbar">
         <div class="toolbar-row">
-          <span class="toolbar-label">通用模板</span>
-          <button v-for="tpl in universalTemplates" :key="tpl.name" type="button" class="tool-btn tpl" @click="applyTemplate(tpl.expression)">
+          <span class="toolbar-label">公式模板</span>
+          <button v-for="tpl in formulaTemplates" :key="tpl.name" type="button" class="tool-btn tpl" @click="applyTemplate(tpl)">
             {{ tpl.name }}
           </button>
         </div>
-
         <div class="toolbar-row">
           <span class="toolbar-label">时序函数</span>
           <el-tooltip v-for="fn in temporalFunctions" :key="fn.key" placement="top" :show-after="200">
             <template #content>
-              <div style="max-width:260px; line-height:1.5;">
-                <strong>{{ fn.name }}</strong><br>
-                <span style="font-size:12px; color:#cbd5e1;">{{ fn.description }}</span><br>
-                <code style="font-size:11.5px; color:#38bdf8;">{{ fn.example }}</code>
+              <div class="fn-tooltip">
+                <strong>{{ fn.name }}</strong>
+                <span>{{ fn.description }}</span>
+                <code>{{ fn.example }}</code>
               </div>
             </template>
-            <button type="button" class="tool-btn fn" @click="insertToken(fn.insert)">{{ fn.name }}</button>
+            <button type="button" class="tool-btn fn" @click="insertFunction(fn)">{{ fn.name }}</button>
           </el-tooltip>
+          <span class="picker-empty">返回数值，需再比较；窗口秒数插入后可改</span>
         </div>
-
         <div class="toolbar-row">
           <span class="toolbar-label">操作符</span>
-          <button v-for="op in operatorTokens" :key="op" type="button" class="tool-btn op" @click="insertToken(op)">
+          <button v-for="op in operatorTokens" :key="op" type="button" class="tool-btn op" @click="insertText(op)">
             {{ op.trim() }}
           </button>
         </div>
-      </div>
-
-      <!-- 表达式输入框 -->
-      <el-input
-        ref="formulaInputRef"
-        v-model="form.displayExpression"
-        type="textarea"
-        :rows="2"
-        class="formula-input"
-        placeholder="例如：@observedValue > @threshold || delta(@observedValue, 10) > 15.0"
-        spellcheck="false"
-        clearable
-      />
-
-      <div class="formula-meta-bar">
-        <span>后端执行表达式预览：<code>{{ backendExpression || '等待输入' }}</code></span>
-        <span v-if="syntaxError" class="syntax-error">● {{ syntaxError }}</span>
-        <span v-else-if="backendExpression" class="syntax-valid">● 表达式语法校验通过</span>
-      </div>
-    </div>
-
-    <!-- 3. 变量标识符绑定区 (自动提取 @变量) -->
-    <div class="editor-section">
-      <div class="section-title">
-        <span>变量标识符绑定 (Bindings)</span>
-        <span class="section-hint">根据表达式中的 @ 标识符自动生成，逐一绑定实际可观测数据源或固定常量</span>
-      </div>
-
-      <el-empty v-if="!form.bindings.length" description="请选择上方公式模板或在表达式中输入 @变量 标识符" :image-size="44" />
-
-      <div v-for="item in form.bindings" :key="item.name" class="binding-card">
-        <div class="binding-card-head">
-          <div class="identifier-pill">
-            <code>@{{ item.name }}</code>
-            <span class="identifier-type-desc">{{ item.bindingType === 'OBSERVABLE' ? '观测数据源' : '固定常量值' }}</span>
-          </div>
-          <el-radio-group v-model="item.bindingType" size="small" @change="onBindingTypeChange(item)">
-            <el-radio-button value="OBSERVABLE">观测数据</el-radio-button>
-            <el-radio-button value="LITERAL">固定值</el-radio-button>
-          </el-radio-group>
+        <div class="toolbar-row">
+          <span class="toolbar-label">已绑定</span>
+          <button
+            v-for="item in form.bindings"
+            :key="'chip-' + item.name"
+            type="button"
+            class="tool-btn var"
+            @click="insertText('@' + item.name + ' ')"
+          >@{{ item.name }}</button>
+          <span v-if="!form.bindings.length" class="picker-empty">请先绑定变量</span>
         </div>
+      </div>
 
-        <!-- 固定值配置 -->
-        <div v-if="item.bindingType === 'LITERAL'" class="binding-inputs-row">
-          <el-form-item label="数据类型" style="width: 180px; margin-bottom: 0;">
-            <el-select v-model="item.dataType" size="small">
-              <el-option v-for="t in scalarTypes" :key="t" :label="dataTypeLabel(t)" :value="t" />
-            </el-select>
-          </el-form-item>
-          <el-form-item label="固定值" style="flex: 1; margin-bottom: 0;">
-            <el-select v-if="item.dataType === 'BOOLEAN'" v-model="item.value" size="small" style="width: 120px;">
-              <el-option label="true (真)" :value="true" />
-              <el-option label="false (假)" :value="false" />
-            </el-select>
-            <el-input-number v-else-if="isNumeric(item.dataType)" v-model="item.value" size="small" :controls="false" placeholder="请输入数值" style="width: 100%;" />
-            <el-input v-else v-model="item.value" size="small" placeholder="请输入固定字符或常量" />
-          </el-form-item>
-        </div>
-
-        <!-- 观测数据源配置 -->
-        <div v-else class="binding-observable-grid">
-          <el-form-item label="观测来源" style="margin-bottom: 0;">
-            <el-select v-model="item.sourceType" size="small" @change="resetSource(item)">
-              <el-option v-for="type in availableSourceTypes" :key="type" :label="sourceLabel(type)" :value="type" />
-            </el-select>
-          </el-form-item>
-
-          <!-- 设备相关来源 (DEVICE_ATTRIBUTE / DEVICE_OPERATION_STATE / DEVICE_COMMAND_LIFECYCLE) -->
-          <template v-if="isDeviceSource(item.sourceType)">
-            <template v-if="taskMode">
-              <el-form-item label="任务设备" style="margin-bottom: 0;">
-                <el-select v-model="item.resourceKey" size="small" @change="selectTaskResource(item)">
-                  <el-option v-for="res in taskResources" :key="res.bindingKey" :label="resourceLabel(res)" :value="res.bindingKey" />
-                </el-select>
-              </el-form-item>
-            </template>
-            <template v-else>
-              <el-form-item label="设备模型" style="margin-bottom: 0;">
-                <el-select v-model="item.deviceModelId" size="small" filterable placeholder="选择设备模型" @change="resetDevice(item)">
-                  <el-option v-for="m in models" :key="m.id" :label="m.modelName" :value="m.id" />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="设备实例" style="margin-bottom: 0;">
-                <el-select v-model="item.deviceInstanceId" size="small" clearable placeholder="全模型实例">
-                  <el-option v-for="inst in instancesFor(item.deviceModelId)" :key="inst.id" :label="inst.instanceName || ('实例' + inst.id)" :value="inst.id" />
-                </el-select>
-              </el-form-item>
-            </template>
-
-            <!-- 属性名 -->
-            <el-form-item v-if="item.sourceType === 'DEVICE_ATTRIBUTE'" label="监测属性" style="margin-bottom: 0;">
-              <el-select v-model="item.targetName" size="small" filterable placeholder="选择监测物理属性">
-                <el-option v-for="attr in attributesFor(item.deviceModelId)" :key="attr.attributeName" :label="attr.displayName || attr.attributeName" :value="attr.attributeName" />
-              </el-select>
-            </el-form-item>
-
-            <!-- OP 状态空间 -->
-            <el-form-item v-if="item.sourceType === 'DEVICE_OPERATION_STATE'" label="状态分区" style="margin-bottom: 0;">
-              <el-select v-model="item.regionName" size="small" placeholder="选择OP状态分区">
-                <el-option v-for="region in operationRegions(item.deviceModelId)" :key="region.regionName" :label="region.regionName" :value="region.regionName" />
-              </el-select>
-            </el-form-item>
-          </template>
-
-          <!-- 任务状态 -->
-          <template v-else-if="item.sourceType === 'TASK_LIFECYCLE_STATE'">
-            <div v-if="taskMode" class="task-mode-hint">自动绑定当前执行任务的状态</div>
-            <el-form-item v-else label="目标任务" style="margin-bottom: 0;">
-              <el-select v-model="item.taskId" size="small" filterable placeholder="选择目标任务">
-                <el-option v-for="task in tasks" :key="task.id" :label="(task.taskName || '任务') + ' #' + task.id" :value="task.id" />
-              </el-select>
-            </el-form-item>
-          </template>
-
-          <!-- 节点相关来源 (仅任务模式可用) -->
-          <template v-else-if="isNodeSource(item.sourceType)">
-            <el-form-item label="工作流" style="margin-bottom: 0;">
-              <el-select v-model="item.workflowTemplateId" size="small" @change="item.nodeName='';item.variableName=''">
-                <el-option v-for="flow in availableWorkflows" :key="flow.id" :label="flow.flowName" :value="flow.id" />
-              </el-select>
-            </el-form-item>
-            <el-form-item label="节点" style="margin-bottom: 0;">
-              <el-select v-model="item.nodeName" size="small" filterable @change="item.variableName=''">
-                <el-option v-for="node in nodesFor(item.workflowTemplateId)" :key="node.name" :label="node.name" :value="node.name" />
-              </el-select>
-            </el-form-item>
-            <el-form-item v-if="item.sourceType === 'NODE_INTERNAL_VARIABLE'" label="内部变量" style="margin-bottom: 0;">
-              <el-select v-model="item.variableName" size="small" filterable>
-                <el-option v-for="v in internalVariablesFor(item)" :key="v.name" :label="v.name + ' (' + v.dataType + ')'" :value="v.name" />
-              </el-select>
-            </el-form-item>
-          </template>
-
-          <div class="resolved-type-tag">
-            <span>数据类型:</span>
-            <strong>{{ dataTypeLabel(observableDataType(item)) }}</strong>
+      <div class="formula-composer">
+        <div class="formula-input-shell">
+          <div class="formula-input-highlight" aria-hidden="true">
+            <div class="formula-input-highlight-content" :style="{ marginLeft: `-${inputScrollLeft}px` }">
+              <template v-for="(token, index) in inputTokens" :key="index + '-' + token.value">
+                <span :class="{ 'formula-input-token': token.kind === 'bound', 'formula-input-unbound': token.kind === 'unbound' }">{{ token.value }}</span>
+              </template>
+            </div>
           </div>
+          <input
+            ref="formulaInputRef"
+            class="formula-plain-input"
+            :value="form.displayExpression"
+            placeholder="例如：@value > @limit"
+            spellcheck="false"
+            @input="onFormulaInput"
+            @scroll="syncHighlightScroll"
+          />
+        </div>
+        <div class="formula-meta-bar">
+          <span>执行表达式：<code>{{ backendExpression || '等待输入' }}</code></span>
+          <span v-if="undeclaredVars.length" class="syntax-error">● 暂无引用绑定关系：{{ undeclaredVars.map(n => '@' + n).join(' ') }}</span>
+          <span v-else-if="syntaxError" class="syntax-error">● {{ syntaxError }}</span>
+          <span v-else-if="backendExpression" class="syntax-valid">● 语法校验通过</span>
         </div>
       </div>
     </div>
@@ -230,8 +271,8 @@
 
       <div style="margin-top: 14px;">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-          <span style="font-size: 13px; font-weight: 600; color: #1e293b;">违规处置动作列表</span>
-          <el-button size="small" class="btn-aliyun" @click="addAction">+ 添加处置动作</el-button>
+          <span style="font-size: 13px; font-weight: 600; color: var(--sl-text-heading);">违规处置动作列表</span>
+          <button class="btn-aliyun" type="button" @click="addAction">+ 添加处置动作</button>
         </div>
 
         <div v-for="(act, index) in form.actions" :key="act.key" class="action-card">
@@ -242,7 +283,7 @@
                 <el-radio-button value="DEVICE_CAPABILITY">设备能力</el-radio-button>
                 <el-radio-button value="SYSTEM">系统动作</el-radio-button>
               </el-radio-group>
-              <el-button v-if="canRemoveAction" link class="btn-aliyun-danger-link" size="small" @click="form.actions.splice(index, 1)">删除</el-button>
+              <button v-if="canRemoveAction" class="btn-link danger" type="button" @click="form.actions.splice(index, 1)">删除</button>
             </div>
           </div>
 
@@ -277,7 +318,7 @@
 
             <!-- 动态参数列表 -->
             <template v-if="parameterDefinitions(act).length">
-              <el-form-item v-for="param in parameterDefinitions(act)" :key="param.name" :label="param.name" style="margin-bottom: 0;">
+              <el-form-item v-for="param in parameterDefinitions(act)" :key="param.name" :label="param.displayName" style="margin-bottom: 0;">
                 <el-select v-if="param.dataType === 'BOOLEAN'" v-model="act.parameters[param.name]" size="small">
                   <el-option label="true" :value="true" />
                   <el-option label="false" :value="false" />
@@ -292,9 +333,9 @@
           <div v-else class="action-inputs-grid" style="grid-template-columns: 180px 1fr;">
             <el-form-item label="系统处置" style="margin-bottom: 0;">
               <el-select v-model="act.action" size="small">
-                <el-option label="终止当前任务 (ABORT)" value="ABORT" />
-                <el-option label="暂停当前任务 (PAUSE)" value="PAUSE" />
-                <el-option label="发布系统告警 (ALERT)" value="ALERT" />
+                <el-option label="终止当前任务" value="ABORT" />
+                <el-option label="暂停当前任务" value="PAUSE" />
+                <el-option label="发布系统告警" value="ALERT" />
               </el-select>
             </el-form-item>
             <el-form-item v-if="!taskMode && act.action !== 'ALERT'" label="目标任务" style="margin-bottom: 0;">
@@ -311,7 +352,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, nextTick, reactive, ref, watch } from 'vue'
 import {
   extractExpressionVariables,
   toBackendExpression,
@@ -341,28 +382,31 @@ const props = withDefaults(
 )
 
 let serial = 0
-const formulaInputRef = ref<any>()
+const formulaInputRef = ref<HTMLInputElement | null>(null)
 const syntaxError = ref('')
+const inputScrollLeft = ref(0)
 
-const universalTemplates = [
-  { name: '单向阈值比较', expression: '@observedValue > @threshold' },
-  { name: '允许区间越界', expression: '@value < @minimum || @value > @maximum' },
-  { name: '时序突变量', expression: 'delta(@observedValue, 10) > @threshold' },
-  { name: '滑动均值', expression: 'avg(@observedValue, 60) > @threshold' },
-  { name: '不等判断', expression: '@actual != @expected' },
-  { name: '布尔条件', expression: '@flag == true' }
+const formulaTemplates = [
+  { name: '上限越界', expression: '@value > @limit', bindings: [{ name: 'value', bindingType: 'OBSERVABLE' }, { name: 'limit', bindingType: 'LITERAL', dataType: 'DOUBLE', value: 0 }] },
+  { name: '下限越界', expression: '@value < @limit', bindings: [{ name: 'value', bindingType: 'OBSERVABLE' }, { name: 'limit', bindingType: 'LITERAL', dataType: 'DOUBLE', value: 0 }] },
+  { name: '区间越界', expression: '@value < @min || @value > @max', bindings: [{ name: 'value', bindingType: 'OBSERVABLE' }, { name: 'min', bindingType: 'LITERAL', dataType: 'DOUBLE', value: 0 }, { name: 'max', bindingType: 'LITERAL', dataType: 'DOUBLE', value: 0 }] },
+  { name: '突变超限', expression: 'delta(@value, 10) > @limit', bindings: [{ name: 'value', bindingType: 'OBSERVABLE' }, { name: 'limit', bindingType: 'LITERAL', dataType: 'DOUBLE', value: 0 }] },
+  { name: '均值超限', expression: 'avg(@value, 60) > @limit', bindings: [{ name: 'value', bindingType: 'OBSERVABLE' }, { name: 'limit', bindingType: 'LITERAL', dataType: 'DOUBLE', value: 0 }] },
+  { name: '速率超限', expression: 'rate(@value, 10) > @limit', bindings: [{ name: 'value', bindingType: 'OBSERVABLE' }, { name: 'limit', bindingType: 'LITERAL', dataType: 'DOUBLE', value: 0 }] },
+  { name: '状态不等', expression: '@actual != @expected', bindings: [{ name: 'actual', bindingType: 'OBSERVABLE' }, { name: 'expected', bindingType: 'LITERAL', dataType: 'STRING', value: '' }] }
 ]
 
 const temporalFunctions = [
-  { name: 'delta(var, s)', insert: 'delta(@var, 10)', description: 'N秒时间窗口内的变化量', example: 'delta(@temp, 10) > 5' },
-  { name: 'avg(var, s)', insert: 'avg(@var, 60)', description: 'N秒时间窗口内的滚动均值', example: 'avg(@temp, 60) > 80' },
-  { name: 'rate(var)', insert: 'rate(@var)', description: '每秒变化速率（单位/秒）', example: 'rate(@temp) > 2' }
+  { key: 'delta', name: '变化量', insert: 'delta', window: 10, description: '窗口内末值减首值，单位与测点相同。第二个参数是窗口秒数，插入后可直接改。', example: 'delta(@value, 10) > @limit' },
+  { key: 'avg', name: '窗口均值', insert: 'avg', window: 60, description: '窗口内全部样本的算术平均。第二个参数是窗口秒数，插入后可直接改。', example: 'avg(@value, 60) > @limit' },
+  { key: 'rate', name: '变化速率', insert: 'rate', window: 10, description: '窗口内 (末值-首值)/实际间隔，单位是每秒。第二个参数是窗口秒数，插入后可直接改。', example: 'rate(@value, 10) > @limit' }
 ]
 
 const operatorTokens = [' > ', ' < ', ' >= ', ' <= ', ' == ', ' != ', ' && ', ' || ', '!', '+', '-', '*', '/', '(', ')']
 const scalarTypes = ['DOUBLE', 'INTEGER', 'STRING', 'BOOLEAN']
 
 const newBinding = (name: string) => ({
+  _key: ++serial,
   name,
   bindingType: /threshold|minimum|maximum|expected|limit/i.test(name) ? 'LITERAL' : 'OBSERVABLE',
   dataType: 'DOUBLE',
@@ -395,7 +439,7 @@ const form = reactive<any>({
   ruleName: '',
   description: '',
   isEnabled: true,
-  displayExpression: '@observedValue > @threshold',
+  displayExpression: '',
   bindings: [],
   actions: [newAction()],
   windowSeconds: null
@@ -426,7 +470,6 @@ watch(
     } catch (e: any) {
       syntaxError.value = e.message
     }
-    syncBindings()
   },
   { immediate: true }
 )
@@ -435,18 +478,131 @@ function variableNames() {
   return extractExpressionVariables(form.displayExpression)
 }
 
-function syncBindings() {
-  const existing = new Map(form.bindings.map((x: any) => [x.name, x]))
-  form.bindings = variableNames().map(name => existing.get(name) || newBinding(name))
+function isVarUsed(name: string) {
+  return variableNames().includes(name)
 }
 
-function applyTemplate(expr: string) {
-  form.displayExpression = expr
+const undeclaredVars = computed(() =>
+  variableNames().filter(name => !form.bindings.some((b: any) => b.name === name))
+)
+
+function applyTemplate(tpl: any) {
+  const specs = tpl.bindings || []
+  const existing = new Map(form.bindings.map((b: any) => [b.name, b]))
+  form.bindings = specs.map((spec: any) => {
+    const prev = existing.get(spec.name)
+    if (prev) {
+      return {
+        ...prev,
+        bindingType: spec.bindingType || prev.bindingType,
+        dataType: spec.dataType || prev.dataType,
+        value: spec.bindingType === 'LITERAL' && (prev.value === null || prev.value === undefined || prev.value === '')
+          ? (spec.value ?? 0)
+          : prev.value
+      }
+    }
+    return { ...newBinding(spec.name), ...spec }
+  })
+  form.displayExpression = tpl.expression
+  nextTick(() => formulaInputRef.value?.focus())
 }
 
-function insertToken(token: string) {
-  form.displayExpression = (form.displayExpression || '') + token
+function nextBindingName(base: string) {
+  const used = new Set(form.bindings.map((b: any) => b.name))
+  if (!used.has(base)) return base
+  let n = 2
+  while (used.has(base + n)) n++
+  return base + n
 }
+
+function addObservable() {
+  form.bindings.push(newBinding(nextBindingName('value')))
+}
+
+function addLiteral() {
+  const item = newBinding(nextBindingName('limit'))
+  item.bindingType = 'LITERAL'
+  item.dataType = 'DOUBLE'
+  item.value = 0
+  form.bindings.push(item)
+}
+
+function removeBinding(name: string) {
+  form.bindings = form.bindings.filter((b: any) => b.name !== name)
+}
+
+function renameBinding(item: any, nextName: string) {
+  const name = String(nextName || '').trim()
+  if (!name || name === item.name) return
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name) || form.bindings.some((b: any) => b !== item && b.name === name)) {
+    item._nameRev = (item._nameRev || 0) + 1
+    return
+  }
+  const old = item.name
+  item.name = name
+  form.displayExpression = String(form.displayExpression || '').replace(
+    new RegExp(`@${escapeRegExp(old)}\\b`, 'g'),
+    `@${name}`
+  )
+}
+
+function needsSecondObsRow(item: any) {
+  return item.sourceType === 'DEVICE_ATTRIBUTE'
+    || item.sourceType === 'DEVICE_OPERATION_STATE'
+    || item.sourceType === 'NODE_INTERNAL_VARIABLE'
+}
+
+function insertText(value: string, select?: { start: number; end: number }) {
+  const input = formulaInputRef.value
+  const src = form.displayExpression || ''
+  const focused = !!input && document.activeElement === input
+  const start = focused ? (input?.selectionStart ?? src.length) : src.length
+  const end = focused ? (input?.selectionEnd ?? start) : start
+  form.displayExpression = src.slice(0, start) + value + src.slice(end)
+  nextTick(() => {
+    input?.focus()
+    if (select) input?.setSelectionRange(start + select.start, start + select.end)
+    else input?.setSelectionRange(start + value.length, start + value.length)
+  })
+}
+
+function insertFunction(fn: any) {
+  const firstObs = form.bindings.find((b: any) => b.bindingType === 'OBSERVABLE')
+  const inner = firstObs ? `@${firstObs.name}` : '@value'
+  const windowSeconds = Number(fn.window) > 0 ? Number(fn.window) : 10
+  const prefix = `${fn.insert}(${inner}, `
+  const token = `${prefix}${windowSeconds})`
+  insertText(token, { start: prefix.length, end: prefix.length + String(windowSeconds).length })
+}
+
+function onFormulaInput(event: Event) {
+  form.displayExpression = (event.target as HTMLInputElement).value
+}
+
+function syncHighlightScroll(event: Event) {
+  inputScrollLeft.value = (event.target as HTMLInputElement).scrollLeft
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+}
+
+const inputTokens = computed(() => {
+  const source = String(form.displayExpression || '')
+  const declared = new Set(form.bindings.map((b: any) => b.name))
+  if (!source) return []
+  const re = /@([A-Za-z_][A-Za-z0-9_]*)/g
+  const tokens: { value: string; kind: 'text' | 'bound' | 'unbound' }[] = []
+  let last = 0
+  let match: RegExpExecArray | null
+  while ((match = re.exec(source))) {
+    if (match.index > last) tokens.push({ value: source.slice(last, match.index), kind: 'text' })
+    tokens.push({ value: match[0], kind: declared.has(match[1]) ? 'bound' : 'unbound' })
+    last = match.index + match[0].length
+  }
+  if (last < source.length) tokens.push({ value: source.slice(last), kind: 'text' })
+  return tokens
+})
 
 function onBindingTypeChange(item: any) {
   if (item.bindingType === 'LITERAL') {
@@ -547,16 +703,15 @@ function selectActionResource(act: any) {
 
 function parameterDefinitions(act: any) {
   const cap = capabilitiesFor(act.deviceModelId).find((x: any) => x.capabilityName === act.capabilityName)
-  const raw = cap?.capabilityParameters || cap?.parameters
-  if (Array.isArray(raw)) return raw.map((x: any) => ({ name: x.parameterName || x.name, dataType: x.dataType || 'STRING' }))
-  if (raw && typeof raw === 'object') return Object.entries(raw).map(([name, val]: any) => ({ name, dataType: val?.dataType || 'STRING' }))
+  const raw = cap?.parameters
+  if (Array.isArray(raw)) return raw.map((x: any) => ({ name: x.name, displayName: x.displayName || x.name, dataType: x.dataType || 'STRING' }))
   return []
 }
 
 function initParameters(act: any) {
   act.parameters = {}
   parameterDefinitions(act).forEach((param: any) => {
-    act.parameters[param.name] = param.dataType === 'BOOLEAN' ? false : ''
+    act.parameters[param.name] = param.dataType === 'BOOLEAN' ? false : (isNumeric(param.dataType) ? null : '')
   })
 }
 
@@ -687,6 +842,9 @@ function validateAndBuild() {
   validateDisplayExpressionSyntax(form.displayExpression)
   if (!backendExpression.value) throw Error('请输入违规判定表达式')
   if (!variableNames().length) throw Error('表达式中至少需要包含一个 @变量 标识符')
+  if (undeclaredVars.value.length) {
+    throw Error(`表达式引用了未声明变量：${undeclaredVars.value.map(n => '@' + n).join('、')}`)
+  }
 
   const bindings: any = {}
   for (const item of form.bindings) {
@@ -719,7 +877,7 @@ function loadRule(rule?: any) {
     ruleName: rule?.ruleName || '',
     description: rule?.description || '',
     isEnabled: rule?.isEnabled !== false,
-    displayExpression: rule ? displayExpression(rule) : '@observedValue > @threshold',
+    displayExpression: rule ? displayExpression(rule) : '',
     bindings: [],
     actions: [newAction()],
     windowSeconds: rule?.windowSeconds ?? null
@@ -766,8 +924,6 @@ function loadRule(rule?: any) {
       }
     })
   }
-
-  syncBindings()
 }
 
 loadRule()
@@ -775,33 +931,6 @@ defineExpose({ validateAndBuild, loadRule })
 </script>
 
 <style scoped>
-/* 阿里云工业白底按键标准 (与数据中心和设备模型统一) */
-.btn-aliyun {
-  background: #ffffff !important;
-  border: 1px solid #d9d9d9 !important;
-  color: rgba(0, 0, 0, 0.88) !important;
-  font-weight: 400 !important;
-  transition: all 0.15s ease;
-}
-.btn-aliyun:hover:not(:disabled):not(.is-disabled) {
-  background: #ffffff !important;
-  border-color: #4096ff !important;
-  color: #1677ff !important;
-}
-
-.btn-aliyun-danger-link {
-  background: transparent !important;
-  border: none !important;
-  color: #ff4d4f !important;
-  padding: 0 4px !important;
-  font-weight: 400 !important;
-}
-.btn-aliyun-danger-link:hover {
-  color: #ff7875 !important;
-  text-decoration: underline !important;
-  background: transparent !important;
-}
-
 .constraint-editor {
   display: flex;
   flex-direction: column;
@@ -809,16 +938,16 @@ defineExpose({ validateAndBuild, loadRule })
 }
 
 .preview-banner {
-  background: #f8fafc;
-  border: 1px solid #dbeafe;
-  border-left: 3px solid #2563eb;
-  border-radius: 4px;
+  background: var(--sl-primary-light);
+  border: 1px solid var(--sl-primary-border);
+  border-left: 3px solid var(--sl-primary);
+  border-radius: var(--sl-radius-sm);
   padding: 12px 16px;
 }
 .preview-banner-title {
   font-size: 12px;
   font-weight: 600;
-  color: #2563eb;
+  color: var(--sl-primary);
   margin-bottom: 6px;
 }
 .preview-sentence {
@@ -829,58 +958,204 @@ defineExpose({ validateAndBuild, loadRule })
   font-size: 13px;
   line-height: 1.6;
 }
-.preview-static {
-  color: #64748b;
-}
+.preview-static { color: var(--sl-text-secondary); }
 .preview-chip {
   padding: 2px 7px;
-  border-radius: 3px;
+  border-radius: var(--sl-radius-sm);
   background: #ffffff;
-  border: 1px solid #cbd5e1;
-  color: #1e293b;
+  border: 1px solid var(--sl-border-input);
+  color: var(--sl-text-heading);
   font-size: 12.5px;
   font-weight: 500;
 }
-.preview-chip.emphasis {
-  font-weight: 600;
-}
+.preview-chip.emphasis { font-weight: 600; }
 .preview-chip.action {
-  background: #fef2f2;
-  border-color: #fecaca;
-  color: #dc2626;
+  background: var(--sl-danger-light);
+  border-color: var(--sl-danger-border);
+  color: var(--sl-danger);
 }
-.preview-arrow {
-  color: #94a3b8;
-  margin: 0 2px;
-}
+.preview-arrow { color: var(--sl-text-disabled); margin: 0 2px; }
 
 .editor-section {
   background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 4px;
+  border: 1px solid var(--sl-border-base);
+  border-radius: var(--sl-radius-sm);
   padding: 16px;
 }
 .section-title {
   font-size: 13.5px;
   font-weight: 600;
-  color: #0f172a;
+  color: var(--sl-text-heading);
   margin-bottom: 12px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px;
 }
 .section-hint {
   font-size: 12px;
-  font-weight: normal;
-  color: #64748b;
+  font-weight: 400;
+  color: var(--sl-text-secondary);
 }
 
-/* 表达式工具栏 */
+.rule-info-head {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  margin-bottom: 10px;
+}
+.rule-name-item {
+  flex: 1;
+  min-width: 0;
+  margin-bottom: 0;
+}
+.rule-desc-item { margin-bottom: 0; }
+.enable-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 4px;
+  flex-shrink: 0;
+}
+.enable-label {
+  font-size: 13px;
+  color: var(--sl-text-body);
+}
+
+.binding-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+.binding-toolbar-label {
+  font-size: 12px;
+  color: var(--sl-text-secondary);
+  margin-right: 4px;
+}
+.binding-guide {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  margin-bottom: 12px;
+  padding: 8px 12px;
+  background: var(--sl-primary-light);
+  border: 1px dashed var(--sl-primary-border);
+  border-radius: var(--sl-radius-sm);
+  font-size: 12.5px;
+  color: var(--sl-text-body);
+  line-height: 1.4;
+}
+.guide-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--sl-primary);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.binding-card {
+  background: var(--sl-bg-hover);
+  border: 1px solid var(--sl-border-base);
+  border-radius: var(--sl-radius-sm);
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+.binding-card.unused { border-style: dashed; }
+.binding-card:last-of-type { margin-bottom: 12px; }
+.binding-card-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+.identifier-pill {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.at-prefix {
+  font-family: var(--sl-font-mono);
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--sl-primary);
+}
+.var-name-input {
+  width: 120px;
+}
+.var-name-input :deep(.el-input__wrapper) {
+  padding: 0 8px;
+  font-family: var(--sl-font-mono);
+  font-weight: 600;
+}
+.identifier-type-desc { font-size: 12px; color: var(--sl-text-secondary); }
+.unused-hint { font-size: 11px; color: var(--sl-text-disabled); }
+.binding-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.field-label {
+  font-size: 12px;
+  color: var(--sl-text-secondary);
+  line-height: 16px;
+}
+.field :deep(.el-select),
+.field :deep(.el-input),
+.field :deep(.el-input-number) {
+  width: 100%;
+}
+.field-type { width: 140px; flex-shrink: 0; }
+.field-value { width: 200px; }
+.field-source { min-width: 200px; flex: 1.1; }
+.field-grow { flex: 1; min-width: 160px; }
+.field-attr { width: 220px; flex: 0 0 220px; }
+
+.binding-literal-row,
+.obs-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.obs-row + .obs-row { margin-top: 10px; }
+
+.resolved-type-value {
+  height: 24px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid var(--sl-border-base);
+  border-radius: var(--sl-radius-sm);
+  background: #ffffff;
+  color: var(--sl-text-heading);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 24px;
+  white-space: nowrap;
+}
+
 .expression-toolbar {
-  border: 1px solid #e2e8f0;
+  border: 1px solid var(--sl-border-base);
   border-bottom: none;
-  border-radius: 4px 4px 0 0;
-  background: #f8fafc;
+  border-radius: var(--sl-radius-sm) var(--sl-radius-sm) 0 0;
+  background: var(--sl-bg-hover);
   padding: 8px 12px;
   display: flex;
   flex-direction: column;
@@ -894,132 +1169,134 @@ defineExpose({ validateAndBuild, loadRule })
 }
 .toolbar-label {
   font-size: 11.5px;
-  color: #64748b;
+  color: var(--sl-text-secondary);
   width: 54px;
   flex-shrink: 0;
 }
 .tool-btn {
-  padding: 2px 8px;
-  border-radius: 3px;
-  border: 1px solid #cbd5e1;
+  height: 24px;
+  padding: 0 8px;
+  border-radius: var(--sl-radius-sm);
+  border: 1px solid var(--sl-border-input);
   background: #ffffff;
-  color: #334155;
+  color: var(--sl-text-body);
   font-size: 12px;
   cursor: pointer;
-  transition: all 0.12s ease;
+  transition: var(--sl-ease-smooth);
 }
 .tool-btn:hover {
-  border-color: #2563eb;
-  color: #2563eb;
+  border-color: var(--sl-primary);
+  color: var(--sl-primary);
 }
 .tool-btn.fn {
-  color: #2563eb;
-  background: #eff6ff;
-  border-color: #bfdbfe;
-  font-family: ui-monospace, monospace;
+  color: var(--sl-primary);
+  background: var(--sl-primary-light);
+  border-color: var(--sl-primary-border);
+  font-family: var(--sl-font-mono);
 }
 .tool-btn.op {
-  font-family: ui-monospace, monospace;
+  font-family: var(--sl-font-mono);
+  font-weight: 600;
+  min-width: 28px;
+}
+.tool-btn.var {
+  border-color: var(--sl-primary-border);
+  background: var(--sl-primary-light);
+  color: var(--sl-primary);
+  font-family: var(--sl-font-mono);
+}
+.picker-empty { font-size: 11.5px; color: var(--sl-text-disabled); }
+.fn-tooltip { display: grid; gap: 4px; max-width: 260px; }
+.fn-tooltip strong { font-size: 12px; }
+.fn-tooltip span { font-size: 11.5px; line-height: 1.5; }
+.fn-tooltip code { font-family: var(--sl-font-mono); font-size: 11px; color: #93c5fd; }
+
+.formula-composer { display: flex; flex-direction: column; gap: 6px; }
+.formula-input-shell {
+  position: relative;
+  height: 36px;
+  border: 1px solid var(--sl-border-input);
+  border-radius: 0 0 var(--sl-radius-sm) var(--sl-radius-sm);
+  background: #ffffff;
+}
+.formula-input-highlight {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  overflow: hidden;
+  pointer-events: none;
+}
+.formula-input-highlight-content {
+  width: max-content;
+  min-width: 100%;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  color: var(--sl-text-heading);
+  font-family: var(--sl-font-mono);
+  font-size: 13px;
+  line-height: 20px;
+  white-space: pre;
+  text-rendering: geometricPrecision;
+}
+.formula-input-token {
+  border-radius: 3px;
+  background: var(--sl-primary-light);
+  box-shadow: 0 0 0 2px var(--sl-primary-light);
+  color: var(--sl-primary);
   font-weight: 600;
 }
-
-.formula-input :deep(.el-textarea__inner) {
-  border-radius: 0 0 4px 4px;
-  font-family: ui-monospace, monospace;
+.formula-input-unbound {
+  border-radius: 3px;
+  background: var(--sl-danger-light);
+  box-shadow: 0 0 0 2px var(--sl-danger-light);
+  color: var(--sl-danger);
+  font-weight: 600;
+}
+.formula-plain-input {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  height: 34px;
+  box-sizing: border-box;
+  padding: 7px 10px;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  caret-color: var(--sl-text-heading);
+  font-family: var(--sl-font-mono);
   font-size: 13px;
-  color: #1e293b;
-  background: #ffffff;
+  line-height: 20px;
+  outline: 0;
+}
+.formula-plain-input::placeholder {
+  color: var(--sl-text-disabled);
+  -webkit-text-fill-color: var(--sl-text-disabled);
+}
+.formula-input-shell:focus-within {
+  border-color: var(--sl-primary);
+  box-shadow: 0 0 0 1px var(--sl-primary);
 }
 
 .formula-meta-bar {
-  margin-top: 6px;
   font-size: 12px;
-  color: #64748b;
+  color: var(--sl-text-secondary);
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
-.formula-meta-bar code {
-  color: #2563eb;
-}
-.syntax-valid {
-  color: #16a34a;
-  font-size: 12px;
-}
-.syntax-error {
-  color: #dc2626;
-  font-size: 12px;
-}
+.formula-meta-bar code { color: var(--sl-primary); font-family: var(--sl-font-mono); }
+.syntax-valid { color: var(--sl-success); font-size: 12px; }
+.syntax-error { color: var(--sl-danger); font-size: 12px; }
 
-/* 变量卡片 */
-.binding-card {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 4px;
-  padding: 12px 14px;
-  margin-bottom: 10px;
-}
-.binding-card:last-child {
-  margin-bottom: 0;
-}
-.binding-card-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 10px;
-}
-.identifier-pill {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.identifier-pill code {
-  font-family: ui-monospace, monospace;
-  font-weight: 700;
-  font-size: 13px;
-  background: #e2e8f0;
-  padding: 2px 6px;
-  border-radius: 3px;
-  color: #0f172a;
-}
-.identifier-type-desc {
-  font-size: 12px;
-  color: #64748b;
-}
-
-.binding-inputs-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-.binding-observable-grid {
-  display: grid;
-  grid-template-columns: 140px 1fr 1fr 1fr auto;
-  gap: 10px;
-  align-items: center;
-}
-.resolved-type-tag {
-  font-size: 12px;
-  color: #64748b;
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-}
-.resolved-type-tag strong {
-  color: #0f172a;
-}
-
-/* 动作卡片 */
 .action-card {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 4px;
+  background: var(--sl-bg-hover);
+  border: 1px solid var(--sl-border-base);
+  border-radius: var(--sl-radius-sm);
   padding: 12px 14px;
   margin-bottom: 10px;
 }
-.action-card:last-child {
-  margin-bottom: 0;
-}
+.action-card:last-child { margin-bottom: 0; }
 .action-card-head {
   display: flex;
   justify-content: space-between;
@@ -1028,17 +1305,17 @@ defineExpose({ validateAndBuild, loadRule })
 }
 .action-inputs-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   gap: 10px;
   align-items: center;
 }
 
 .task-mode-hint {
   font-size: 12px;
-  color: #64748b;
-  padding: 4px 8px;
+  color: var(--sl-text-secondary);
+  padding: 6px 8px;
   background: #ffffff;
-  border: 1px solid #e2e8f0;
-  border-radius: 3px;
+  border: 1px solid var(--sl-border-base);
+  border-radius: var(--sl-radius-sm);
 }
 </style>

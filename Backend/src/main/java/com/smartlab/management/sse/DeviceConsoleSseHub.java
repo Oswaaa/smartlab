@@ -26,6 +26,7 @@ public class DeviceConsoleSseHub {
     private static final Logger log = LoggerFactory.getLogger(DeviceConsoleSseHub.class);
 
     private final Map<Long, List<SseEmitter>> emittersByInstanceId = new ConcurrentHashMap<>();
+    private final List<SseEmitter> globalEmitters = new CopyOnWriteArrayList<>();
 
     /**
      * 为指定设备实例注册新的 SSE 终端连接（抽屉打开时建立）。
@@ -69,6 +70,30 @@ public class DeviceConsoleSseHub {
     }
 
     /**
+     * 注册全局 SSE 终端连接（全系统只需 1 条连接，接收所有设备的状态机信号）。
+     */
+    public SseEmitter registerGlobal() {
+        // 30 分钟保活超时
+        SseEmitter emitter = new SseEmitter(30 * 60 * 1000L);
+        globalEmitters.add(emitter);
+
+        Runnable cleanup = () -> globalEmitters.remove(emitter);
+        emitter.onCompletion(cleanup);
+        emitter.onTimeout(cleanup);
+        emitter.onError(e -> cleanup.run());
+
+        try {
+            emitter.send(SseEmitter.event()
+                    .name("connected")
+                    .data(Map.of("status", "CONNECTED", "timestamp", System.currentTimeMillis())));
+        } catch (IOException e) {
+            cleanup.run();
+        }
+
+        return emitter;
+    }
+
+    /**
      * 监听状态机底层信号事件，实时推送到前端控制台终端。
      */
     @EventListener
@@ -76,7 +101,9 @@ public class DeviceConsoleSseHub {
         if (event == null || event.instanceId() == null) return;
         Long instanceId = event.instanceId();
         List<SseEmitter> list = emittersByInstanceId.get(instanceId);
-        if (list == null || list.isEmpty()) return;
+        boolean hasInstanceEmitters = list != null && !list.isEmpty();
+        boolean hasGlobalEmitters = !globalEmitters.isEmpty();
+        if (!hasInstanceEmitters && !hasGlobalEmitters) return;
 
         ObjectNode signal = event.signal();
         String signalName = signal != null ? signal.path("signalName").asText("") : "";
@@ -84,6 +111,7 @@ public class DeviceConsoleSseHub {
         Map<String, Object> execCtx = event.executionContext() == null ? Map.of() : event.executionContext();
 
         Map<String, Object> data = new LinkedHashMap<>();
+        data.put("instanceId", instanceId);
         String stateName = payload != null && payload.has("stateName") ? payload.path("stateName").asText() : String.valueOf(execCtx.getOrDefault("stateName", ""));
         data.put("stateName", stateName);
         data.put("capabilityName", execCtx.getOrDefault("capabilityName", ""));
@@ -97,11 +125,23 @@ public class DeviceConsoleSseHub {
             data.put("regionState", payload.path("state"));
         }
 
-        for (SseEmitter emitter : list) {
-            try {
-                emitter.send(SseEmitter.event().name("signal").data(data));
-            } catch (Exception e) {
-                list.remove(emitter);
+        if (hasInstanceEmitters) {
+            for (SseEmitter emitter : list) {
+                try {
+                    emitter.send(SseEmitter.event().name("signal").data(data));
+                } catch (Exception e) {
+                    list.remove(emitter);
+                }
+            }
+        }
+
+        if (hasGlobalEmitters) {
+            for (SseEmitter emitter : globalEmitters) {
+                try {
+                    emitter.send(SseEmitter.event().name("signal").data(data));
+                } catch (Exception e) {
+                    globalEmitters.remove(emitter);
+                }
             }
         }
     }

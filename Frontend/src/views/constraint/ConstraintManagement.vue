@@ -455,6 +455,7 @@ import { ElMessage } from 'element-plus'
 import { Download, Plus, Refresh } from '@element-plus/icons-vue'
 import { useAuthStore } from '../../stores/authStore'
 import ConstraintRuleEditor from '../../components/constraint/ConstraintRuleEditor.vue'
+import { toDesignerWorkflow } from '../../utils/workflowAuthoring.js'
 import { formatRuleSentenceTokens, sourceCategoryLabel, instantiateExpression, explainConstraintExpression, describeBindingTarget, formatViolationActionTaken, formatDeviceActionLabel, modelCapabilities } from '../../utils/constraintExpression.js'
 
 const auth = useAuthStore()
@@ -574,7 +575,9 @@ async function refs() {
       summaries.map(async (flow: any) => {
         try {
           const detail = await axios.get('/api/workflow/detail/' + flow.id)
-          return detail.data?.success ? { ...flow, ...detail.data.data } : flow
+          if (!detail.data?.success) return flow
+          const designer = toDesignerWorkflow(detail.data.data)
+          return { ...flow, ...designer, flowModelName: designer.name, flowName: designer.name }
         } catch {
           return flow
         }

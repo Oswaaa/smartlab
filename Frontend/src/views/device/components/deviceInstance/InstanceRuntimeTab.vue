@@ -120,7 +120,7 @@ const props = defineProps<{
   clearingException: string
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   'clear-exception': [state: string]
 }>()
 

@@ -20,6 +20,7 @@ import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
 import com.smartlab.management.service.db.resource.device.DeviceModelService;
 import com.smartlab.management.service.db.resource.device.DeviceTwinStateService;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.context.ApplicationEventPublisher;
 
 import java.lang.reflect.Modifier;
@@ -40,6 +41,29 @@ class StateMachineEngineTest {
         assertEquals("SENT", fixture.twinState().getCurrentCmdState());
         assertEquals("A-1", state(emitted, "SENT", "A-1").path("payload").path("messageId").asText());
         verify(fixture.twins()).patchRuntimeState(fixture.twinState(), true, List.of());
+    }
+
+    @Test
+    void workflowTaskIdsAreNotCopiedIntoCommandStateBroadcast() {
+        Fixture fixture = fixture();
+        fixture.engine().dispatchSignal(7L, "Interface_workflow_in", "WF_EXECUTE_START",
+                Map.of("messageId", "A-1", "capabilityName", "heat", "parameters", Map.of("temperature", 80),
+                        "taskId", 9L, "taskStepId", 12L));
+
+        ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        verify(fixture.publisher(), atLeastOnce()).publishEvent(captor.capture());
+        List<StateMachineInterfaceSignalEvent> cmdStates = captor.getAllValues().stream()
+                .filter(StateMachineInterfaceSignalEvent.class::isInstance)
+                .map(StateMachineInterfaceSignalEvent.class::cast)
+                .filter(event -> "CMD_STATE".equals(event.signal().path("signalName").asText()))
+                .toList();
+        assertFalse(cmdStates.isEmpty());
+        assertTrue(cmdStates.stream().allMatch(event ->
+                event.executionContext() == null
+                        || (!event.executionContext().containsKey("taskId")
+                        && !event.executionContext().containsKey("taskStepId"))));
+        assertTrue(cmdStates.stream().allMatch(event ->
+                "A-1".equals(event.signal().path("payload").path("messageId").asText())));
     }
     @Test
     void dispatchDoesNotUseAGlobalSynchronizedMonitor() throws Exception {
@@ -119,6 +143,10 @@ class StateMachineEngineTest {
         assertNotEquals("A-1", abortMessageId);
         assertEquals("ABORTING", fixture.twinState().getCurrentCmdState());
         assertEquals("CMD_ABORT", signal(started, "CMD_ABORT").path("signalName").asText());
+
+        List<ObjectNode> second = fixture.engine().dispatchSignal(7L, "Interface_workflow_in", "WF_EXECUTE_ABORT", Map.of());
+        assertEquals(List.of(), second);
+        assertEquals("ABORTING", fixture.twinState().getCurrentCmdState());
 
         List<ObjectNode> completed = fixture.engine().dispatchAdapterEvent(7L, "STOP_DONE",
                 JsonNodeSupport.objectNode().put("messageId", abortMessageId));

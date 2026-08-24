@@ -16,9 +16,14 @@ test('rejects deprecated mnemonic constraint operators', () => {
   assert.throws(() => normalizeOperator('LE'), /不支持的约束操作符/)
 })
 
-test('keeps canonical protocol operators unchanged', () => {
+test('keeps canonical comparison operators unchanged', () => {
   assert.equal(normalizeOperator('>'), '>')
-  assert.equal(normalizeOperator('IN'), 'IN')
+  assert.equal(normalizeOperator('!='), '!=')
+})
+
+test('filters BETWEEN and IN out of the device constraint operator set', () => {
+  assert.throws(() => normalizeOperator('IN'), /不支持的约束操作符/)
+  assert.throws(() => normalizeOperator('BETWEEN'), /不支持的约束操作符/)
 })
 
 test('rejects operators outside the canonical and persisted sets', () => {

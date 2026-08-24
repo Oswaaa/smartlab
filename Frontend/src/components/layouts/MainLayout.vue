@@ -12,7 +12,19 @@
 </template>
 
 <script setup>
+import { onMounted, onUnmounted } from 'vue'
 import AppTopNav from '../layout/AppTopNav.vue'
+import { useConsoleStore } from '../../stores/consoleStore'
+
+const consoleStore = useConsoleStore()
+
+onMounted(() => {
+  consoleStore.initGlobalStream()
+})
+
+onUnmounted(() => {
+  consoleStore.closeGlobalStream()
+})
 </script>
 
 <style scoped>

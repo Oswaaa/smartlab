@@ -18,6 +18,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -48,6 +49,7 @@ class WorkflowEngineSchedulingTest {
             started.countDown();
             await(release);
             active.decrementAndGet();
+            return false;
         });
 
         try {
@@ -67,7 +69,7 @@ class WorkflowEngineSchedulingTest {
         when(runtime.runningTasks()).thenReturn(List.of(task));
         when(runtime.task(1L)).thenReturn(task);
         QueueingExecutor workers = new QueueingExecutor();
-        WorkflowEngine engine = engine(workers, ignored -> { });
+        WorkflowEngine engine = engine(workers, ignored -> false);
 
         engine.driveWorkflows();
         engine.driveWorkflows();
@@ -89,7 +91,7 @@ class WorkflowEngineSchedulingTest {
             if (rejectFirst.getAndSet(false)) throw new RejectedExecutionException("full");
             accepted.execute(command);
         };
-        WorkflowEngine engine = engine(workers, ignored -> { });
+        WorkflowEngine engine = engine(workers, ignored -> false);
 
         engine.driveWorkflows();
         engine.driveWorkflows();
@@ -108,6 +110,7 @@ class WorkflowEngineSchedulingTest {
         WorkflowEngine engine = engine(Runnable::run, task -> {
             if (task.getId() == 1L) throw new IllegalStateException("boom");
             completed.incrementAndGet();
+            return false;
         });
 
         engine.driveWorkflows();
@@ -121,8 +124,8 @@ class WorkflowEngineSchedulingTest {
                 new WorkflowConditionEvaluator(), new ConstraintExpressionEvaluator(),
                 mock(WorkflowActionRegistry.class), operations, executor) {
             @Override
-            void processTask(Task task) {
-                taskPoll.run(task);
+            boolean processTask(Task task) {
+                return taskPoll.run(task);
             }
         };
     }
@@ -142,9 +145,57 @@ class WorkflowEngineSchedulingTest {
         }
     }
 
+    @Test
+    void dirtyRoundImmediatelyRunsAnotherPollWithoutWaitingForNextScan() {
+        Task task = task(1L);
+        when(runtime.runningTasks()).thenReturn(List.of(task));
+        when(runtime.task(1L)).thenReturn(task);
+        AtomicInteger polls = new AtomicInteger();
+        WorkflowEngine engine = engine(Runnable::run, ignored -> polls.incrementAndGet() == 1);
+
+        engine.driveWorkflows();
+
+        assertThat(polls.get()).isEqualTo(2);
+    }
+
+    @Test
+    void requestPollDuringAnInFlightRoundRunsAgainAfterThatRound() {
+        Task task = task(1L);
+        when(runtime.runningTasks()).thenReturn(List.of(task));
+        when(runtime.task(1L)).thenReturn(task);
+        AtomicInteger polls = new AtomicInteger();
+        AtomicReference<WorkflowEngine> scheduled = new AtomicReference<>();
+        scheduled.set(engine(Runnable::run, ignored -> {
+            if (polls.incrementAndGet() == 1) scheduled.get().requestPoll(1L);
+            return false;
+        }));
+
+        scheduled.get().driveWorkflows();
+
+        assertThat(polls.get()).isEqualTo(2);
+    }
+
+    @Test
+    void consecutiveDirtyRoundsYieldToThePeriodicScan() {
+        Task task = task(1L);
+        when(runtime.runningTasks()).thenReturn(List.of(task));
+        when(runtime.task(1L)).thenReturn(task);
+        AtomicInteger polls = new AtomicInteger();
+        WorkflowEngine engine = engine(Runnable::run, ignored -> {
+            polls.incrementAndGet();
+            return true;
+        });
+
+        engine.driveWorkflows();
+        assertThat(polls.get()).isEqualTo(64);
+
+        engine.driveWorkflows();
+        assertThat(polls.get()).isEqualTo(128);
+    }
+
     @FunctionalInterface
     private interface TaskPoll {
-        void run(Task task);
+        boolean run(Task task);
     }
 
     private static final class QueueingExecutor implements Executor {

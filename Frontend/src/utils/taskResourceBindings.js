@@ -13,7 +13,7 @@ function orderedNodes(definition) {
     String(item?.nodeName || ''),
     Number(item?.nodeIdRef)
   ]))
-  return (definition?.nodesDef || []).map((node, index) => ({
+  return (definition?.nodesDef || definition?.nodes || []).map((node, index) => ({
     node: {
       ...node,
       nodeIdRef: Number(node?.nodeIdRef ?? refsByName.get(String(node?.name || '')) ?? node?.id ?? index + 1)
@@ -51,7 +51,7 @@ export async function expandWorkflowDefinition(rootFlowModelId, loadDefinition) 
     }
     const definition = await loadDefinition(flowModelId)
     if (!definition) throw new Error(`流程模型${flowModelId}不存在`)
-    const flowName = definition.flowName || definition.name || `流程#${flowModelId}`
+    const flowName = definition.metadata?.flowModelName || definition.flowModelName || definition.flowName || definition.name || `流程#${flowModelId}`
     const groupBreadcrumb = breadcrumbNames.length ? breadcrumbNames : [flowName]
     const groupKey = slotSegments.length ? slotSegments.join('/') : 'root'
     const interfaceConnections = (definition.interfaceConnections || [])
@@ -162,7 +162,7 @@ export function groupRequirementsByOccurrencePath(requirements) {
     const segments = String(requirement?.occurrencePath || '').split(/\s+\/\s+/).filter(Boolean)
     const path = segments.length > 1
       ? segments.slice(0, -1).join(' / ')
-      : String(requirement?.flowName || '主流程')
+      : String(requirement?.flowModelName || requirement?.flowName || '主流程')
     if (!groups.has(path)) groups.set(path, { path, requirements: [] })
     groups.get(path).requirements.push(requirement)
   }
@@ -211,7 +211,7 @@ export function groupRequirementsByFlow(requirements) {
     if (!groups.has(key)) {
       groups.set(key, {
         flowModelId: req.flowModelId,
-        flowName: req.flowName || ('流程#' + key),
+        flowName: req.flowModelName || req.flowName || ('流程#' + key),
         count: 0,
         slots: []
       })

@@ -1023,7 +1023,8 @@ onMounted(loadData)
 }
 
 .model-tree-pane {
-  border-right: 1px solid var(--sl-border-base);
+  min-width: 0;
+  height: 100%;
 }
 
 .model-main-canvas {

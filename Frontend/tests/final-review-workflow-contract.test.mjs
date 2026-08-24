@@ -110,7 +110,11 @@ test('markerless workflow round trip restores system markers and preserves custo
   assert.deepEqual(restored.internalVariables, node.internalVariables)
   assert.deepEqual(restored.ports, node.ports)
   assert.deepEqual(restored.actions, ['UPDATE', 'EMIT'])
-  assert.deepEqual(restored.interfaces[1].bindingTriggers[0], node.interfaces[1].bindingTriggers[0])
+  const customTrigger = node.interfaces[1].bindingTriggers[0]
+  assert.deepEqual(restored.interfaces[1].bindingTriggers[0], {
+    ...customTrigger,
+    actions: [customTrigger.action],
+  })
   assert.deepEqual(validateNodeDefinition(restored), [])
 })
 
@@ -133,6 +137,8 @@ test('designer adopts prepared definitions and restores fixed capabilities for p
   const designer = readFileSync(fileURLToPath(new URL('../src/views/task/WorkflowDesigner/WorkflowDesigner.vue', import.meta.url)), 'utf8')
 
   assert.match(designer, /workflowApi\.saveDraft/)
+  assert.match(designer, /workflowApi\.saveAsNew/)
+  assert.match(designer, /workflowApi\.validate/)
   assert.match(designer, /workflowApi\.publish/)
   assert.match(designer, /adoptPreparedWorkflow/)
   assert.match(designer, /indexWorkflowIssues/)

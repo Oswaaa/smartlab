@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>接口连线绕线方案对比</title>
+  <style>
+    :root {
+      --bg: #f1f5f9;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --heading: #0f172a;
+      --body: #334155;
+      --muted: #64748b;
+      --primary: #2563eb;
+      --exec: #60a5fa;
+      --exec-hot: #2563eb;
+      --port: #a78bfa;
+      --device: #2563eb;
+      --branch: #d97706;
+      --end: #64748b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--body);
+      background: var(--bg);
+      font: 13px/1.55 "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 8;
+      padding: 16px 24px 14px;
+      border-bottom: 1px solid var(--border);
+      background: #fff;
+    }
+    header h1 {
+      margin: 0 0 4px;
+      color: var(--heading);
+      font-size: 18px;
+      font-weight: 700;
+    }
+    header p { margin: 0; max-width: 920px; color: var(--muted); }
+    header strong { color: var(--exec-hot); font-weight: 600; }
+    .page { padding: 20px 24px 48px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(720px, 1fr));
+      gap: 16px;
+    }
+    .option {
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+    }
+    .option.current { border-color: #cbd5e1; }
+    .option.pick { border-color: #93c5fd; box-shadow: 0 0 0 3px #dbeafe; }
+    .meta {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .meta h2 {
+      margin: 0 0 4px;
+      color: var(--heading);
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .meta p { margin: 0; color: var(--muted); font-size: 12px; }
+    .tag {
+      flex: none;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #eff6ff;
+      color: var(--primary);
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .tag.warn { background: #fff7ed; color: #c2410c; }
+    .stage {
+      position: relative;
+      height: 380px;
+      background:
+        radial-gradient(circle, #dbe3ec 1px, transparent 1.2px) 0 0 / 20px 20px,
+        #f8fafc;
+    }
+    .wires { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .node {
+      position: absolute;
+      width: 220px;
+      height: 108px;
+      display: flex;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, .06);
+    }
+    .node::before {
+      content: "";
+      position: absolute;
+      top: 8px;
+      bottom: 8px;
+      left: -1px;
+      width: 3px;
+      border-radius: 0 2px 2px 0;
+    }
+    .n-d1 { left: 40px; top: 48px; }
+    .n-d2 { left: 400px; top: 48px; }
+    .n-b1 { left: 40px; top: 220px; }
+    .n-e1 { left: 400px; top: 220px; }
+    .n-d1::before, .n-d2::before { background: var(--device); }
+    .n-b1::before { background: var(--branch); }
+    .n-e1::before { background: var(--end); }
+    .node-main { display: flex; flex: 1; flex-direction: column; justify-content: center; min-width: 0; padding: 10px 14px; }
+    .topline { display: flex; align-items: center; gap: 6px; }
+    .dot { width: 6px; height: 6px; border-radius: 50%; }
+    .n-d1 .dot, .n-d2 .dot { background: var(--device); }
+    .n-b1 .dot { background: var(--branch); }
+    .n-e1 .dot { background: var(--end); }
+    .kind { color: var(--muted); font-size: 11px; }
+    .name { color: var(--heading); font-size: 12px; font-weight: 600; }
+    .op { margin-top: 6px; color: var(--heading); font-size: 13px; font-weight: 700; }
+    .params { color: var(--muted); font-size: 11px; }
+    .iface {
+      position: absolute;
+      z-index: 3;
+      width: 10px;
+      height: 10px;
+      border: 2px solid #fff;
+      border-radius: 50%;
+      background: var(--primary);
+      box-shadow: 0 0 0 1px var(--primary);
+    }
+    .port {
+      position: absolute;
+      z-index: 3;
+      width: 10px;
+      height: 10px;
+      border: 2px solid #fff;
+      border-radius: 2px;
+      background: #7c3aed;
+      box-shadow: 0 0 0 1px #7c3aed;
+    }
+    .exec { fill: none; stroke: var(--exec); stroke-width: 1.7; }
+    .exec-hot { fill: none; stroke: var(--exec-hot); stroke-width: 2.2; }
+    .data { fill: none; stroke: var(--port); stroke-width: 1.4; stroke-dasharray: 6 5; opacity: .55; }
+    .fwd { fill: none; stroke: #93c5fd; stroke-width: 1.5; }
+    .note { font-size: 11px; font-weight: 700; fill: var(--exec-hot); }
+    .warn-note { font-size: 11px; font-weight: 700; fill: #c2410c; }
+    .hint { font-size: 10px; fill: var(--muted); }
+    .arrow { fill: var(--exec-hot); }
+    .arrow.warn { fill: #c2410c; }
+    footer {
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>接口连线绕线方案</h1>
+    <p>
+      对照截图：<strong>device2 → end1</strong>、<strong>device1 → branch1</strong> 都从右边输出先向外再绕回节点上方。
+      下面「现状」复原这个往后绕；A–D 都改成<strong>先朝输入所在的节点走，再绕到左侧输入口</strong>。浅蓝细线是正常向前的执行流，不改。
+    </p>
+  </header>
+  <main class="page">
+    <div class="grid">
+
+      <article class="option current">
+        <div class="meta">
+          <div>
+            <h2>现状 · 从输出往后绕过源节点</h2>
+            <p>右口先再往右探一截，发现进不去就翻到节点顶上，整段横穿回去，最后才落到目标左侧。源节点被线包了一圈。</p>
+          </div>
+          <span class="tag warn">当前实现</span>
+        </div>
+        <div class="stage" data-scene="current"></div>
+      </article>
+
+      <article class="option">
+        <div class="meta">
+          <div>
+            <h2>方案 A · 先走到两节点缝隙，再从目标左侧进入</h2>
+            <p>右口只出很短一截，马上向下走进 device 和 end 之间的空隙，横穿到目标左边，再落到输入口。不绕源节点顶。</p>
+          </div>
+          <span class="tag">A</span>
+        </div>
+        <div class="stage" data-scene="a"></div>
+      </article>
+
+      <article class="option">
+        <div class="meta">
+          <div>
+            <h2>方案 B · 贴墙走：源右墙下降，目标左墙上升</h2>
+            <p>和 A 同一条思路，但更贴节点。出口/入口各约 8px，竖段几乎挨着卡片外沿，缝隙里的横段也更靠近下节点顶边。</p>
+          </div>
+          <span class="tag">B</span>
+        </div>
+        <div class="stage" data-scene="b"></div>
+      </article>
+
+      <article class="option">
+        <div class="meta">
+          <div>
+            <h2>方案 C · 先到达目标节点，再绕过目标外侧进入</h2>
+            <p>线先下到 end1 所在这一层（到达输入节点），再从 end1 底边绕到左侧，向上送进输入口。绕的是目标，不是源。</p>
+          </div>
+          <span class="tag">C</span>
+        </div>
+        <div class="stage" data-scene="c"></div>
+      </article>
+
+      <article class="option">
+        <div class="meta">
+          <div>
+            <h2>方案 D · 输出立刻折向目标，不额外外探</h2>
+            <p>右口不再先往右走。第一段就贴着源节点右缘向下（朝目标），再进缝隙、转到目标左缘。路径最短，折点最少。</p>
+          </div>
+          <span class="tag">D</span>
+        </div>
+        <div class="stage" data-scene="d"></div>
+      </article>
+
+    </div>
+    <footer>
+      深蓝粗线 = 有问题的那两根接口连线。点一张图可选中，回复 A / B / C / D 即可。正向、间距足够的接口线（branch1 → device2）各方案都保持简单折线。
+    </footer>
+  </main>
+  <script>
+    const nodes = {
+      d1: { x: 40, y: 48, w: 220, h: 108, kind: "设备能力", name: "device1", op: "加热", params: "目标温度、加热时间", cls: "n-d1" },
+      d2: { x: 400, y: 48, w: 220, h: 108, kind: "设备能力", name: "device2", op: "加热", params: "目标温度、加热时间", cls: "n-d2" },
+      b1: { x: 40, y: 220, w: 220, h: 108, kind: "分支节点", name: "branch1", op: "按控制接口判断下游路径", cls: "n-b1" },
+      e1: { x: 400, y: 220, w: 220, h: 108, kind: "结束节点", name: "end1", op: "结束流程执行", cls: "n-e1" },
+    }
+
+    const scenes = {
+      current: {
+        hot: [
+          "M 260 102 H 280 V 28 H 20 V 274 H 40",
+          "M 620 102 H 640 V 28 H 380 V 274 H 400",
+        ],
+        labels: [
+          { cls: "warn-note", x: 292, y: 22, text: "往后绕过源节点顶" },
+          { cls: "warn-note", x: 430, y: 22, text: "同样从右口翻回去" },
+        ],
+        arrows: [
+          { cls: "warn", points: "250,28 270,22 270,34" },
+          { cls: "warn", points: "610,28 630,22 630,34" },
+        ],
+      },
+      a: {
+        hot: [
+          "M 260 102 H 276 V 188 H 24 V 274 H 40",
+          "M 620 102 H 636 V 188 H 384 V 274 H 400",
+        ],
+        labels: [
+          { cls: "note", x: 268, y: 182, text: "先走进缝隙" },
+          { cls: "note", x: 628, y: 182, text: "先朝 end1 走" },
+          { cls: "note", x: 330, y: 268, text: "再绕到左侧输入" },
+        ],
+      },
+      b: {
+        hot: [
+          "M 260 102 H 268 V 176 H 32 V 274 H 40",
+          "M 620 102 H 628 V 176 H 392 V 274 H 400",
+        ],
+        labels: [
+          { cls: "note", x: 270, y: 170, text: "贴源右墙下降" },
+          { cls: "note", x: 430, y: 170, text: "横段贴着下节点顶" },
+          { cls: "note", x: 318, y: 268, text: "贴目标左墙进入" },
+        ],
+      },
+      c: {
+        hot: [
+          "M 260 102 H 276 V 348 H 24 V 274 H 40",
+          "M 620 102 H 636 V 348 H 384 V 274 H 400",
+        ],
+        labels: [
+          { cls: "note", x: 268, y: 338, text: "先到达 branch1 这一层" },
+          { cls: "note", x: 430, y: 338, text: "先到达 end1，再绕其底边" },
+          { cls: "note", x: 318, y: 268, text: "从目标外侧送入" },
+        ],
+      },
+      d: {
+        hot: [
+          "M 260 102 V 188 H 24 V 274 H 40",
+          "M 620 102 V 188 H 384 V 274 H 400",
+        ],
+        labels: [
+          { cls: "note", x: 268, y: 118, text: "出口立刻向下" },
+          { cls: "note", x: 628, y: 118, text: "不往右外探" },
+          { cls: "note", x: 300, y: 182, text: "再进缝隙接到输入节点" },
+        ],
+      },
+    }
+
+    const sharedFwd = "M 260 269 H 330 V 102 H 400"
+    const sharedData = [
+      "M 108 156 V 220",
+      "M 182 156 V 188 H 148 V 220",
+    ]
+
+    document.querySelectorAll(".stage").forEach(stage => {
+      const scene = scenes[stage.dataset.scene]
+      stage.innerHTML = `
+        <svg class="wires" viewBox="0 0 720 380">
+          <path class="fwd" d="${sharedFwd}" />
+          ${sharedData.map(d => `<path class="data" d="${d}" />`).join("")}
+          ${scene.hot.map(d => `<path class="exec-hot" d="${d}" />`).join("")}
+          ${(scene.arrows || []).map(a => `<polygon class="arrow ${a.cls || ""}" points="${a.points}" />`).join("")}
+          ${scene.labels.map(l => `<text class="${l.cls}" x="${l.x}" y="${l.y}">${l.text}</text>`).join("")}
+          <text class="hint" x="268" y="96">branch1 → device2 保持简单折线</text>
+        </svg>
+      `
+      Object.values(nodes).forEach(node => {
+        const el = document.createElement("div")
+        el.className = `node ${node.cls}`
+        el.innerHTML = `<div class="node-main"><div class="topline"><span class="dot"></span><span class="kind">${node.kind}</span><span class="name">${node.name}</span></div><div class="op">${node.op}</div>${node.params ? `<div class="params">${node.params}</div>` : ""}</div>`
+        add(el, "iface", { left: "-5px", top: "49px" })
+        add(el, "iface", { right: "-5px", top: "49px" })
+        if (node.cls === "n-b1") add(el, "iface", { right: "-5px", top: "72px" })
+        if (node.cls === "n-d1" || node.cls === "n-d2") {
+          add(el, "port", { left: "68px", bottom: "-5px" })
+          add(el, "port", { left: "142px", bottom: "-5px" })
+        }
+        if (node.cls === "n-b1") {
+          add(el, "port", { left: "68px", top: "-5px" })
+          add(el, "port", { left: "142px", top: "-5px" })
+        }
+        stage.appendChild(el)
+      })
+    })
+
+    function add(node, cls, style) {
+      const el = document.createElement("span")
+      el.className = cls
+      Object.assign(el.style, style)
+      node.appendChild(el)
+    }
+
+    document.querySelectorAll(".option").forEach(option => {
+      option.addEventListener("click", () => {
+        document.querySelectorAll(".option").forEach(item => item.classList.remove("pick"))
+        if (!option.classList.contains("current")) option.classList.add("pick")
+      })
+    })
+  </script>
+</body>
+</html>

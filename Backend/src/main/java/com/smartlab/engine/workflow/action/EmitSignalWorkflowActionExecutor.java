@@ -19,17 +19,8 @@ public class EmitSignalWorkflowActionExecutor implements WorkflowActionExecutor 
         if (!allows(target, signalName)) {
             throw new IllegalArgumentException("EMIT信号不在目标接口allowedSignals中: " + targetInterface + "." + signalName);
         }
-        if ("STATE".equals(target.path("interfaceType").asText())) {
-            long instanceId = context.operations().resolveDeviceInstance(context.task(), context.step(), context.node());
-            String capabilityName = context.node().getCapability().path("capabilityName").asText("");
-            String messageId = context.operations().ensureMessageId(context.step(), instanceId, capabilityName);
-            var dispatchResult = context.operations().dispatchDeviceSignal(context.task(), context.step(), context.node(), instanceId,
-                    messageId, targetInterface, signalName, context.node().getCapability().path("capabilityParameters"));
-            return dispatchResult == com.smartlab.engine.workflow.WorkflowExecutionOperations.DeviceDispatchResult.DEVICE_BUSY
-                    ? WorkflowActionResult.waitDeviceIdle(messageId)
-                    : WorkflowActionResult.awaitExternalSignal(messageId);
-        }
-        if ("WORKFLOW".equals(target.path("interfaceType").asText())) {
+        if ("STATE".equals(target.path("interfaceType").asText())
+                || "WORKFLOW".equals(target.path("interfaceType").asText())) {
             return WorkflowActionResult.emitWorkflowSignal(targetInterface, signalName);
         }
         throw new IllegalArgumentException("EMIT不支持的接口类型: " + target.path("interfaceType").asText());

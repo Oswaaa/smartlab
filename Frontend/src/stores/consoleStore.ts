@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import axios from 'axios'
+import { formatLogClock } from '../utils/formatLogTime.js'
 import { useAuthStore } from './authStore'
 
 export type ConsoleLogTag = '已投递' | '执行中' | '完成' | '失败' | '中止' | '系统' | '下发' | '成功'
@@ -59,7 +61,7 @@ export const useConsoleStore = defineStore('console', () => {
   let lastSignalKey = ''
 
   /**
-   * 注册实体元数据（主设备与组件），方便后台静默流精准翻译中文名与参数
+   * 注册实体元数据（实例与组件），方便后台静默流翻译中文名与参数
    */
   const registerEntityMeta = (
     instanceId: string | number,
@@ -96,7 +98,8 @@ export const useConsoleStore = defineStore('console', () => {
     tag: ConsoleLogTag,
     type: ConsoleLogType,
     text: string,
-    forwardParentId?: string | number
+    forwardParentId?: string | number,
+    occurredAt?: string | number | Date
   ) => {
     if (!instanceId) return
     const idKey = String(instanceId)
@@ -104,7 +107,8 @@ export const useConsoleStore = defineStore('console', () => {
       logsByInstance.value[idKey] = loadPersistedLogs(idKey)
     }
 
-    const time = new Date().toLocaleTimeString('zh-CN', { hour12: false })
+    const parsed = occurredAt == null || occurredAt === '' ? new Date() : new Date(occurredAt)
+    const time = formatLogClock(Number.isNaN(parsed.getTime()) ? new Date() : parsed)
     const entry: ConsoleLogEntry = { time, tag, type, text }
     logsByInstance.value[idKey].push(entry)
     savePersistedLogs(idKey, logsByInstance.value[idKey])
@@ -177,26 +181,75 @@ export const useConsoleStore = defineStore('console', () => {
     const parentId = meta?.parentInstanceId
 
     if (s === 'SENT') {
-      // 下发指令时前端已输出完整下发日志，此处忽略 SENT 初始冗余提示
+      const paramStr = formatParams(idKey, capabilityName, parameters)
+      appendLog(
+        idKey,
+        '下发',
+        'send',
+        `向【${targetName}】下发【${capLabel}】指令${paramStr ? '，参数: ' + paramStr : ''}，等待设备响应...`,
+        parentId,
+        data.timestamp
+      )
     } else if (s === 'RECEIVED') {
-      appendLog(idKey, '执行中', 'running', `Adapter 已确认接收【${targetName} · ${capLabel}】指令...`, parentId)
+      appendLog(idKey, '执行中', 'running', `Adapter 已确认接收【${targetName} · ${capLabel}】指令...`, parentId, data.timestamp)
     } else if (s === 'RUNNING' || s === 'EXECUTING') {
       const paramStr = formatParams(idKey, capabilityName, parameters)
-      appendLog(idKey, '执行中', 'running', `设备已确认并开始执行【${capLabel}】操作${paramStr ? '，参数: ' + paramStr : ''}...`, parentId)
+      appendLog(idKey, '执行中', 'running', `设备已确认并开始执行【${capLabel}】操作${paramStr ? '，参数: ' + paramStr : ''}...`, parentId, data.timestamp)
     } else if (s === 'COMPLETED' || s === 'SUCCESS') {
-      appendLog(idKey, '完成', 'success', `设备操作【${capLabel}】执行成功`, parentId)
+      appendLog(idKey, '完成', 'success', `设备操作【${capLabel}】执行成功`, parentId, data.timestamp)
     } else if (s === 'FAILED') {
-      appendLog(idKey, '失败', 'fail', `指令【${capLabel}】响应超时或执行失败，状态机已复位`, parentId)
+      appendLog(idKey, '失败', 'fail', `指令【${capLabel}】响应超时或执行失败，状态机已复位`, parentId, data.timestamp)
     } else if (s === 'ABORTED') {
-      appendLog(idKey, '中止', 'fail', `指令【${capLabel}】已被安全机制或人工中止`, parentId)
+      appendLog(idKey, '中止', 'fail', `指令【${capLabel}】已被安全机制或人工中止`, parentId, data.timestamp)
+    }
+  }
+
+  const capabilitiesOf = (model: any): any[] => {
+    if (!model) return []
+    if (Array.isArray(model.capabilities)) return model.capabilities
+    if (Array.isArray(model.capabilitySpec?.capabilities)) return model.capabilitySpec.capabilities
+    return []
+  }
+
+  /**
+   * 登录后预加载实例中文名与能力，避免必须打开抽屉才 registerEntityMeta。
+   */
+  const hydrateEntityMeta = async () => {
+    try {
+      const [instanceRes, modelRes] = await Promise.all([
+        axios.get('/api/device/instance/list', { params: { lifecycleStatus: 'IN_USE' } }),
+        axios.get('/api/device/model/list')
+      ])
+      const instances = instanceRes.data?.success ? (instanceRes.data.data || []) : []
+      const models = modelRes.data?.success ? (modelRes.data.data || []) : []
+      const modelById: Record<string, any> = {}
+      models.forEach((model: any) => {
+        const id = String(model.id || model.modelId || '')
+        if (id) modelById[id] = model
+      })
+      instances.forEach((instance: any) => {
+        const instanceId = instance.instanceId || instance.id
+        if (!instanceId) return
+        const model = modelById[String(instance.modelId || instance.deviceModelId || '')]
+        registerEntityMeta(
+          instanceId,
+          instance.instanceName || instance.name || '设备',
+          capabilitiesOf(model)
+        )
+      })
+    } catch {
+      // 无设备权限或接口失败时保留协议名，不阻断 SSE
     }
   }
 
   /**
-   * 启动全局单通道 SSE 长连接（全系统只存在 1 条）
+   * 启动全局单通道 SSE 长连接（登录后全系统只存在 1 条）
    */
   const initGlobalStream = () => {
     if (globalEventSource && globalEventSource.readyState !== EventSource.CLOSED) {
+      if (Object.keys(entityMetaMap.value).length === 0) {
+        void hydrateEntityMeta()
+      }
       return
     }
     try {
@@ -204,7 +257,7 @@ export const useConsoleStore = defineStore('console', () => {
       const url = token
         ? `/api/device/instance/console/stream?token=${encodeURIComponent(token)}`
         : `/api/device/instance/console/stream`
-      
+
       globalEventSource = new EventSource(url)
       globalEventSource.addEventListener('connected', () => {
         // SSE connection ready
@@ -220,6 +273,7 @@ export const useConsoleStore = defineStore('console', () => {
       globalEventSource.onerror = () => {
         // EventSource 具备浏览器原生断线指数避让重连机制
       }
+      void hydrateEntityMeta()
     } catch (e) {
       console.error('Global console SSE stream initialization failed:', e)
     }

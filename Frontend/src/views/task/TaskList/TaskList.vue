@@ -20,7 +20,7 @@
             <el-option
               v-for="wf in executableProcessTemplates"
               :key="wf.id"
-              :label="wf.flowName"
+              :label="workflowModelName(wf)"
               :value="wf.id"
             />
           </el-select>
@@ -57,6 +57,8 @@
           </button>
         </div>
       </div>
+
+      <TaskSummaryStrip :summary="taskSummary" :active-status="taskStatusFilter" @select-status="setTaskStatus" />
 
       <!-- 任务列表微边距表格卡片 -->
       <div class="table-scroll-container">
@@ -129,12 +131,12 @@
                 <span v-else class="text-disabled">无</span>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="180" fixed="right" align="center">
+            <el-table-column label="操作" width="168" fixed="right" align="center">
               <template #default="{ row }">
                 <div class="action-buttons" @click.stop>
+                  <button class="btn-link" type="button" @click="openTaskDetail(row)">详情</button>
                   <button v-if="row.taskStatus === 'PENDING'" class="btn-link" type="button" @click="startTask(row.id)">启动</button>
                   <button v-if="['RUNNING', 'PAUSED'].includes(row.taskStatus)" class="btn-link danger" type="button" @click="abortTask(row.id)">终止</button>
-                  <button class="btn-link" type="button" @click="openTaskDetail(row)">详情</button>
                   <button class="btn-link danger" type="button" @click="confirmDeleteTask(row.id)">删除</button>
                 </div>
               </template>
@@ -181,6 +183,7 @@ import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import ConstraintRuleEditor from '../../../components/constraint/ConstraintRuleEditor.vue'
 import TaskCreateDrawer from './components/TaskCreateDrawer.vue'
 import TaskExecutionDrawer from './components/TaskExecutionDrawer.vue'
+import TaskSummaryStrip from './components/TaskSummaryStrip.vue'
 import {
   buildBindingWorkflowView,
   buildDeviceBindings,
@@ -190,8 +193,10 @@ import {
 import { filterExecutableWorkflows, isExecutableWorkflow } from '../../../utils/workflowExecution.js'
 import { taskApi } from '../../../services/taskApi.js'
 import { workflowApi } from '../../../services/workflowApi.js'
+import { workflowModelName } from '../../../utils/workflowAuthoring.js'
 import { reviewTaskConstraintsAfterBindingChange } from './taskConstraintReview.js'
 import { useAuthStore } from '../../../stores/authStore.js'
+import { formatLogDateTime } from '../../../utils/formatLogTime.js'
 
 const authStore = useAuthStore()
 
@@ -255,7 +260,8 @@ interface StepLog {
 
 interface WorkflowTemplate {
   id: number
-  flowName: string
+  flowModelName?: string
+  flowName?: string
   status?: string
 }
 
@@ -570,7 +576,7 @@ const getBoundDevicesText = (row: any) => {
 
 const getWorkflowName = (flowModelId: number) => {
   const match = processTemplates.value.find(workflow => workflow.id === Number(flowModelId))
-  return match ? match.flowName : String(flowModelId || '-')
+  return match ? workflowModelName(match) : String(flowModelId || '-')
 }
 
 // Status Badges helpers
@@ -590,7 +596,7 @@ const getStatusLabel = (status: string) => {
   switch (status) {
     case 'PENDING': return '排队中'
     case 'RUNNING': return '运行中'
-    case 'SUCCEEDED': return '成功'
+    case 'SUCCEEDED': return '已完成'
     case 'FAILED': return '失败'
     case 'PAUSED': return '已暂停'
     case 'TERMINATING': return '终止中'
@@ -917,11 +923,7 @@ watch([monitorDrawerVisible, () => activeTask.value?.taskStatus], syncRuntimeRef
 
 // Format time utility
 
-const formatTime = (timeStr: string) => {
-  if (!timeStr) return '-'
-  const date = new Date(timeStr)
-  return date.toLocaleString()
-}
+const formatTime = (timeStr: string) => formatLogDateTime(timeStr)
 const startMainListPolling = () => {
   if (mainListPollIntervalId) return
   mainListPollIntervalId = setInterval(() => {

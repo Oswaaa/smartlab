@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>节点 UI 概念设计 · 克制灰 + 状态色</title>
+  <style>
+    :root {
+      --bg: #f6f7f9;
+      --card: #fff;
+      --line: #e4e7ed;
+      --hair: #f0f1f4;
+      --ink: #1f2329;
+      --body: #4e5969;
+      --muted: #8f959e;
+      --faint: #a9aeb8;
+      --blue: #2563eb;
+      --blue-soft: #edf3fe;
+      --green: #1e9e62;
+      --green-soft: #eaf7f0;
+      --amber: #c77414;
+      --amber-soft: #fdf4e3;
+      --red: #d93f35;
+      --red-soft: #fdecea;
+      --gray-type: #6b7280;
+      --gray-soft: #f1f2f4;
+      --port: #9aa5b1;
+      --port-fill: #7c8aa0;
+      --edge: #a6aebb;
+      --sh-sm: 0 1px 2px rgba(16, 24, 40, .05);
+      --sh: 0 1px 2px rgba(16, 24, 40, .05), 0 6px 16px -6px rgba(16, 24, 40, .08);
+      --sh-lg: 0 2px 4px rgba(16, 24, 40, .06), 0 12px 28px -8px rgba(16, 24, 40, .14);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--body);
+      background: var(--bg);
+      font: 13px/1.55 "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    header.top {
+      position: sticky;
+      top: 0;
+      z-index: 8;
+      padding: 16px 28px 14px;
+      border-bottom: 1px solid var(--line);
+      background: #fff;
+    }
+    header.top h1 { margin: 0 0 6px; color: var(--ink); font-size: 18px; font-weight: 700; }
+    header.top p { margin: 0; max-width: 1080px; color: var(--muted); }
+    header.top strong { color: var(--blue); }
+    .principles { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .principle {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fafbfc;
+      color: var(--body);
+      font-size: 11.5px;
+    }
+    .principle b {
+      display: grid;
+      place-items: center;
+      width: 15px;
+      height: 15px;
+      border-radius: 50%;
+      background: var(--blue-soft);
+      color: var(--blue);
+      font-size: 10px;
+    }
+    .page { padding: 22px 28px 64px; }
+    h2.section { margin: 10px 0 4px; color: var(--ink); font-size: 15px; }
+    p.section-sub { margin: 0 0 14px; color: var(--muted); font-size: 12px; }
+
+    /* ---------- 画布场景 ---------- */
+    .canvas-card {
+      overflow-x: auto;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+      box-shadow: var(--sh-sm);
+    }
+    .stage {
+      position: relative;
+      width: 1000px;
+      height: 470px;
+      margin: 0 auto;
+      background:
+        radial-gradient(circle, #dde1e8 1px, transparent 1.2px) 0 0 / 22px 22px,
+        #f9fafc;
+    }
+    .wires { position: absolute; inset: 0; pointer-events: none; }
+    .scene-note {
+      padding: 10px 16px;
+      border-top: 1px solid var(--hair);
+      color: var(--muted);
+      font-size: 11.5px;
+    }
+    .scene-note b { color: var(--body); }
+    .edge-label {
+      position: absolute;
+      z-index: 2;
+      padding: 2px 8px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #fff;
+      color: var(--body);
+      font-size: 10.5px;
+      box-shadow: var(--sh-sm);
+      white-space: nowrap;
+    }
+    .edge-label.mono { font-family: Consolas, "JetBrains Mono", monospace; color: var(--muted); }
+
+    /* ---------- 节点 ---------- */
+    .node {
+      position: absolute;
+      width: 220px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: #fff;
+      box-shadow: var(--sh);
+      transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+    }
+    .stage .node:hover { border-color: #c4cad3; box-shadow: var(--sh-lg); transform: translateY(-1px); }
+    .node > header {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px 8px;
+    }
+    .chip {
+      flex: none;
+      display: grid;
+      place-items: center;
+      width: 26px;
+      height: 26px;
+      border-radius: 7px;
+    }
+    .chip svg { width: 14px; height: 14px; }
+    .title { min-width: 0; flex: 1; }
+    .title strong { display: block; color: var(--ink); font-size: 13px; font-weight: 600; line-height: 1.25; }
+    .title small { display: block; color: var(--muted); font-size: 10.5px; }
+    .node .body { padding: 8px 12px 10px; border-top: 1px solid var(--hair); }
+    .op { display: flex; align-items: baseline; gap: 8px; }
+    .op label { flex: none; color: var(--faint); font-size: 10px; }
+    .op span { color: var(--ink); font-size: 12.5px; font-weight: 650; }
+    .params { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
+    .kv {
+      padding: 2px 6px;
+      border: 1px solid #e9ebef;
+      border-radius: 4px;
+      background: #f5f6f8;
+      color: #5b6470;
+      font-size: 10.5px;
+      white-space: nowrap;
+    }
+    .expr {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 5px;
+      background: var(--amber-soft);
+      color: #b45309;
+      font: 11px Consolas, "JetBrains Mono", monospace;
+    }
+    .error-text { margin-top: 6px; color: var(--red); font-size: 10.5px; }
+
+    /* 紧凑节点（开始 / 结束） */
+    .node.compact { width: 140px; }
+    .node.compact > header { padding: 9px 12px; }
+    .node.compact .chip { width: 22px; height: 22px; border-radius: 6px; }
+    .node.compact .title strong { font-size: 12.5px; }
+
+    /* 类型色：只给图标芯片 */
+    .t-start .chip { background: var(--green-soft); color: var(--green); }
+    .t-device .chip { background: var(--blue-soft); color: var(--blue); }
+    .t-branch .chip { background: var(--amber-soft); color: var(--amber); }
+    .t-end .chip { background: var(--gray-soft); color: var(--gray-type); }
+
+    /* 端口：形状分流派，填充表连接 */
+    .port { position: absolute; z-index: 3; background: #fff; border: 2px solid var(--port); }
+    .port.exec { width: 10px; height: 10px; margin: -5px 0 0 -5px; border-radius: 50%; }
+    .port.data { width: 9px; height: 9px; margin: -5px 0 0 -5px; border-radius: 2.5px; }
+    .port.connected { background: var(--port-fill); border-color: var(--port-fill); }
+    .node.is-selected .port.connected { background: var(--blue); border-color: var(--blue); }
+    .plab { position: absolute; right: 9px; color: var(--faint); font-size: 9.5px; line-height: 1; }
+
+    /* 状态：颜色只在这里出现 */
+    .node.is-selected { border-color: var(--blue); box-shadow: 0 0 0 3px rgba(37, 99, 235, .14), var(--sh); }
+    .stage .node.is-selected:hover { border-color: var(--blue); }
+    .node.is-hover { border-color: #c4cad3; box-shadow: var(--sh-lg); transform: translateY(-1px); }
+    .node.is-running, .node.is-success, .node.is-failed { padding-left: 0; }
+    .node.is-running::before, .node.is-success::before, .node.is-failed::before {
+      content: "";
+      position: absolute;
+      left: -1px;
+      top: 10px;
+      bottom: 10px;
+      width: 3px;
+      border-radius: 2px;
+    }
+    .node.is-running::before { background: var(--blue); }
+    .node.is-running { box-shadow: var(--sh), 0 6px 18px -6px rgba(37, 99, 235, .28); }
+    .node.is-success::before { background: var(--green); }
+    .node.is-failed { border-color: #f0d5d1; background: #fffdfd; }
+    .node.is-failed::before { background: var(--red); }
+    .st {
+      flex: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 600;
+    }
+    .st i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
+    .st-run { background: var(--blue-soft); color: var(--blue); }
+    .st-run i { animation: pulse 1.2s ease-in-out infinite; }
+    .st-ok { background: var(--green-soft); color: var(--green); }
+    .st-bad { background: var(--red-soft); color: var(--red); }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+
+    /* ---------- 状态矩阵 ---------- */
+    .matrix {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+      gap: 14px;
+    }
+    .cell {
+      margin: 0;
+      padding: 20px 16px 12px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+      box-shadow: var(--sh-sm);
+    }
+    .cell .node { position: relative; left: auto; top: auto; margin: 0 auto; }
+    .cell figcaption { margin-top: 14px; text-align: center; color: var(--muted); font-size: 11.5px; }
+    .cell figcaption b { display: block; color: var(--ink); font-size: 12px; }
+
+    /* ---------- 图例 ---------- */
+    .legend-card {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 28px;
+      padding: 16px 20px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+      box-shadow: var(--sh-sm);
+    }
+    .legend-group h4 { margin: 0 0 8px; color: var(--ink); font-size: 12px; }
+    .legend-group ul { display: flex; flex-direction: column; gap: 7px; margin: 0; padding: 0; list-style: none; color: var(--body); font-size: 11.5px; }
+    .legend-group li { display: flex; align-items: center; gap: 8px; }
+    .demo-port { width: 10px; height: 10px; border: 2px solid var(--port); background: #fff; }
+    .demo-port.round { border-radius: 50%; }
+    .demo-port.square { width: 9px; height: 9px; border-radius: 2.5px; }
+    .demo-port.filled { background: var(--port-fill); border-color: var(--port-fill); }
+    .demo-line { width: 34px; height: 0; border-top: 2px solid var(--edge); }
+    .demo-line.dashed { border-top-style: dashed; }
+    .demo-line.blue { border-top-color: var(--blue); }
+    .demo-sw { width: 12px; height: 12px; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <header class="top">
+    <h1>节点 UI 概念设计</h1>
+    <p>我的设计主张：<strong>形状区分流派，颜色只表达状态</strong>。整张画布默认全是中性灰，只有需要注意力的地方（选中、运行、成功、失败）才出现颜色——这是 AntD / Dify / n8n 共同的做法。</p>
+    <div class="principles">
+      <span class="principle"><b>1</b>圆形 = 控制口 · 实线 = 执行流；方形 = 数据口 · 虚线 = 数据流</span>
+      <span class="principle"><b>2</b>信息三层：类型图标 + 名称 → 操作 → 参数芯片</span>
+      <span class="principle"><b>3</b>类型色只给 26px 图标芯片，不上墙、不染线</span>
+      <span class="principle"><b>4</b>状态 = 左侧 3px 色条 + 右上角状态丸，不改结构</span>
+    </div>
+  </header>
+
+  <main class="page">
+    <h2 class="section">1. 完整画布</h2>
+    <p class="section-sub">一条真实流程：采集温度 → 判断 → 加热 / 结束。device1 为选中态，device2 为运行中，虚线为数据流。</p>
+    <div class="canvas-card">
+      <div class="stage">
+        <svg class="wires" viewBox="0 0 1000 470" width="1000" height="470">
+          <path d="M 164 190 C 189 190 189 163 214 163" fill="none" stroke="#a6aebb" stroke-width="1.8" stroke-linecap="round" />
+          <path d="M 434 163 C 464 163 464 173 494 173" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" />
+          <path d="M 684 209 C 734 209 734 180 784 180" fill="none" stroke="#a6aebb" stroke-width="1.8" stroke-linecap="round" />
+          <path d="M 684 173 C 729 173 709 343 754 343" fill="none" stroke="#a6aebb" stroke-width="1.8" stroke-linecap="round" />
+          <path d="M 324 258 C 324 296 864 282 864 320" fill="none" stroke="#a6aebb" stroke-width="1.6" stroke-linecap="round" stroke-dasharray="6 5" />
+        </svg>
+
+        <span class="edge-label" style="left:648px;top:252px">温度 ≥ 80℃</span>
+        <span class="edge-label" style="left:712px;top:180px">否则</span>
+        <span class="edge-label mono" style="left:552px;top:283px">temperature</span>
+
+        <!-- start1 -->
+        <div class="node compact t-start" style="left:24px;top:170px">
+          <span class="port exec connected" style="left:100%;top:20px"></span>
+          <header>
+            <span class="chip"><svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg></span>
+            <div class="title"><strong>start1</strong></div>
+          </header>
+        </div>
+
+        <!-- device1 · 选中 -->
+        <div class="node t-device is-selected" style="left:214px;top:140px">
+          <span class="port exec connected" style="left:0;top:23px"></span>
+          <span class="port exec connected" style="left:100%;top:23px"></span>
+          <span class="port data" style="left:50%;top:0"></span>
+          <span class="port data connected" style="left:50%;top:100%"></span>
+          <header>
+            <span class="chip"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="10" y="10" width="4" height="4" fill="currentColor"/></svg></span>
+            <div class="title"><strong>device1</strong><small>设备能力</small></div>
+          </header>
+          <div class="body">
+            <div class="op"><label>操作</label><span>温度采集</span></div>
+            <div class="params"><span class="kv">接口 TempSensor</span><span class="kv">周期 1s</span></div>
+          </div>
+        </div>
+
+        <!-- branch1 -->
+        <div class="node t-branch" style="left:494px;top:150px;width:190px">
+          <span class="port exec connected" style="left:0;top:23px"></span>
+          <span class="port exec connected" style="left:100%;top:23px"></span>
+          <span class="port exec connected" style="left:100%;top:59px"></span>
+          <span class="plab" style="top:19px">是</span>
+          <span class="plab" style="top:55px">否</span>
+          <header>
+            <span class="chip"><svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5" transform="rotate(45 12 12)" fill="none" stroke="currentColor" stroke-width="1.8"/></svg></span>
+            <div class="title"><strong>branch1</strong><small>分支节点</small></div>
+          </header>
+          <div class="body">
+            <span class="expr">temperature ≥ 80℃</span>
+          </div>
+        </div>
+
+        <!-- end1 -->
+        <div class="node compact t-end" style="left:784px;top:160px;width:130px">
+          <span class="port exec connected" style="left:0;top:20px"></span>
+          <header>
+            <span class="chip"><svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"/></svg></span>
+            <div class="title"><strong>end1</strong></div>
+          </header>
+        </div>
+
+        <!-- device2 · 运行中 -->
+        <div class="node t-device is-running" style="left:754px;top:320px">
+          <span class="port exec connected" style="left:0;top:23px"></span>
+          <span class="port exec" style="left:100%;top:23px"></span>
+          <span class="port data connected" style="left:50%;top:0"></span>
+          <span class="port data" style="left:50%;top:100%"></span>
+          <header>
+            <span class="chip"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="10" y="10" width="4" height="4" fill="currentColor"/></svg></span>
+            <div class="title"><strong>device2</strong><small>设备能力</small></div>
+            <span class="st st-run"><i></i>运行中</span>
+          </header>
+          <div class="body">
+            <div class="op"><label>操作</label><span>加热</span></div>
+            <div class="params"><span class="kv">目标温度 ← temperature</span><span class="kv">时长 30min</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="scene-note">
+        图中：<b>device1</b> 为选中态（蓝环 + 端口变蓝），<b>device2</b> 为运行中（左蓝条 + 脉冲丸），虚线为数据流（把 device1 的 <b>temperature</b> 喂给 device2 的目标温度），其余连线全部是默认中性灰。
+      </div>
+    </div>
+
+    <h2 class="section" style="margin-top:28px">2. 状态矩阵</h2>
+    <p class="section-sub">同一个设备节点的六种状态。结构完全不变，状态只通过左色条、状态丸、边框表达。</p>
+    <div class="matrix">
+      <figure class="cell">
+        <div class="node t-device">
+          <span class="port exec" style="left:0;top:23px"></span>
+          <span class="port exec" style="left:100%;top:23px"></span>
+          <span class="port data" style="left:50%;top:0"></span>
+          <span class="port data" style="left:50%;top:100%"></span>
+          <header>
+            <span class="chip"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="10" y="10" width="4" height="4" fill="currentColor"/></svg></span>
+            <div class="title"><strong>device1</strong><small>设备能力</small></div>
+          </header>
+          <div class="body">
+            <div class="op"><label>操作</label><span>加热</span></div>
+            <div class="params"><span class="kv">目标温度 80℃</span><span class="kv">时长 30min</span></div>
+          </div>
+        </div>
+        <figcaption><b>默认</b>白底 + 灰边 + 轻阴影</figcaption>
+      </figure>
+
+      <figure class="cell">
+        <div class="node t-device is-hover">
+          <span class="port exec" style="left:0;top:23px"></span>
+          <span class="port exec" style="left:100%;top:23px"></span>
+          <span class="port data" style="left:50%;top:0"></span>
+          <span class="port data" style="left:50%;top:100%"></span>
+          <header>
+            <span class="chip"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="10" y="10" width="4" height="4" fill="currentColor"/></svg></span>
+            <div class="title"><strong>device1</strong><small>设备能力</small></div>
+          </header>
+          <div class="body">
+            <div class="op"><label>操作</label><span>加热</span></div>
+            <div class="params"><span class="kv">目标温度 80℃</span><span class="kv">时长 30min</span></div>
+          </div>
+        </div>
+        <figcaption><b>悬停</b>边框加深 + 浮起，无颜色</figcaption>
+      </figure>
+
+      <figure class="cell">
+        <div class="node t-device is-selected">
+          <span class="port exec connected" style="left:0;top:23px"></span>
+          <span class="port exec connected" style="left:100%;top:23px"></span>
+          <span class="port data" style="left:50%;top:0"></span>
+          <span class="port data" style="left:50%;top:100%"></span>
+          <header>
+            <span class="chip"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="10" y="10" width="4" height="4" fill="currentColor"/></svg></span>
+            <div class="title"><strong>device1</strong><small>设备能力</small></div>
+          </header>
+          <div class="body">
+            <div class="op"><label>操作</label><span>加热</span></div>
+            <div class="params"><span class="kv">目标温度 80℃</span><span class="kv">时长 30min</span></div>
+          </div>
+        </div>
+        <figcaption><b>选中</b>蓝边 + 3px 蓝环，端口变蓝</figcaption>
+      </figure>
+
+      <figure class="cell">
+        <div class="node t-device is-running">
+          <span class="port exec connected" style="left:0;top:23px"></span>
+          <span class="port exec" style="left:100%;top:23px"></span>
+          <span class="port data connected" style="left:50%;top:0"></span>
+          <span class="port data" style="left:50%;top:100%"></span>
+          <header>
+            <span class="chip"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="10" y="10" width="4" height="4" fill="currentColor"/></svg></span>
+            <div class="title"><strong>device1</strong><small>设备能力</small></div>
+            <span class="st st-run"><i></i>运行中</span>
+          </header>
+          <div class="body">
+            <div class="op"><label>操作</label><span>加热</span></div>
+            <div class="params"><span class="kv">目标温度 80℃</span><span class="kv">时长 30min</span></div>
+          </div>
+        </div>
+        <figcaption><b>运行中</b>左蓝条 + 脉冲丸 + 淡蓝投影</figcaption>
+      </figure>
+
+      <figure class="cell">
+        <div class="node t-device is-success">
+          <span class="port exec connected" style="left:0;top:23px"></span>
+          <span class="port exec connected" style="left:100%;top:23px"></span>
+          <span class="port data" style="left:50%;top:0"></span>
+          <span class="port data" style="left:50%;top:100%"></span>
+          <header>
+            <span class="chip"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="10" y="10" width="4" height="4" fill="currentColor"/></svg></span>
+            <div class="title"><strong>device1</strong><small>设备能力</small></div>
+            <span class="st st-ok">✓ 成功</span>
+          </header>
+          <div class="body">
+            <div class="op"><label>操作</label><span>加热</span></div>
+            <div class="params"><span class="kv">目标温度 80℃</span><span class="kv">时长 30min</span></div>
+          </div>
+        </div>
+        <figcaption><b>成功</b>左绿条 + 成功丸</figcaption>
+      </figure>
+
+      <figure class="cell">
+        <div class="node t-device is-failed">
+          <span class="port exec connected" style="left:0;top:23px"></span>
+          <span class="port exec" style="left:100%;top:23px"></span>
+          <span class="port data" style="left:50%;top:0"></span>
+          <span class="port data" style="left:50%;top:100%"></span>
+          <header>
+            <span class="chip"><svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="10" y="10" width="4" height="4" fill="currentColor"/></svg></span>
+            <div class="title"><strong>device1</strong><small>设备能力</small></div>
+            <span class="st st-bad">✕ 失败</span>
+          </header>
+          <div class="body">
+            <div class="op"><label>操作</label><span>加热</span></div>
+            <div class="error-text">设备超时未响应（ETIMEDOUT）</div>
+          </div>
+        </div>
+        <figcaption><b>失败</b>左红条 + 失败丸 + 错误摘要</figcaption>
+      </figure>
+    </div>
+
+    <h2 class="section" style="margin-top:28px">3. 图例</h2>
+    <div class="legend-card">
+      <div class="legend-group">
+        <h4>端口</h4>
+        <ul>
+          <li><span class="demo-port round"></span>控制口 · 左入右出</li>
+          <li><span class="demo-port square"></span>数据口 · 上入下出</li>
+          <li><span class="demo-port round filled"></span>已连接（填充）</li>
+        </ul>
+      </div>
+      <div class="legend-group">
+        <h4>连线</h4>
+        <ul>
+          <li><span class="demo-line"></span>执行流 · 实线</li>
+          <li><span class="demo-line dashed"></span>数据流 · 虚线</li>
+          <li><span class="demo-line blue"></span>选中 / 悬停</li>
+        </ul>
+      </div>
+      <div class="legend-group">
+        <h4>状态色</h4>
+        <ul>
+          <li><span class="demo-sw" style="background:var(--blue)"></span>选中 / 运行 · #2563eb</li>
+          <li><span class="demo-sw" style="background:var(--green)"></span>成功 · #1e9e62</li>
+          <li><span class="demo-sw" style="background:var(--red)"></span>失败 · #d93f35</li>
+        </ul>
+      </div>
+      <div class="legend-group">
+        <h4>类型色（仅图标芯片）</h4>
+        <ul>
+          <li><span class="demo-sw" style="background:var(--green-soft);border:1px solid #d3ecdf"></span>开始</li>
+          <li><span class="demo-sw" style="background:var(--blue-soft);border:1px solid #d4e2fb"></span>设备能力</li>
+          <li><span class="demo-sw" style="background:var(--amber-soft);border:1px solid #f3e3c3"></span>分支</li>
+          <li><span class="demo-sw" style="background:var(--gray-soft);border:1px solid #e2e4e8"></span>结束</li>
+        </ul>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

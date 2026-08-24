@@ -5,16 +5,14 @@
       :key="item.status"
       type="button"
       :class="{ active: activeStatus === item.status }"
+      :title="item.title"
       @click="emit('select-status', item.status)"
     >
-      <div class="summary-meta">
-        <span class="summary-label">
-          <i v-if="item.dot" :class="['summary-dot', item.dot]"></i>
-          {{ item.label }}
-        </span>
-        <small class="summary-note">{{ item.note }}</small>
-      </div>
-      <strong class="summary-val">{{ item.value }}</strong>
+      <span class="m-lbl">
+        <i v-if="item.dot" :class="['summary-dot', item.dot]"></i>
+        {{ item.label }}
+      </span>
+      <span :class="['m-val', item.tone]">{{ item.value }}</span>
     </button>
   </section>
 </template>
@@ -27,99 +25,70 @@ const props = defineProps<{ summary: Summary, activeStatus: string }>()
 const emit = defineEmits<{ 'select-status': [status: string] }>()
 
 const items = computed(() => [
-  { status: '', label: '全部任务', value: props.summary.total, note: '所有执行记录', dot: '' },
-  { status: 'PENDING', label: '排队中', value: props.summary.pending, note: '等待启动', dot: 'pending' },
-  { status: 'RUNNING', label: '运行中', value: props.summary.running, note: '正在执行', dot: 'running' },
-  { status: 'SUCCEEDED', label: '已完成', value: props.summary.succeeded, note: '执行成功', dot: 'success' },
-  { status: 'FAILED', label: '失败任务', value: props.summary.failed, note: `另 ${props.summary.terminated} 项已终止`, dot: 'danger' },
+  { status: '', label: '全部任务', value: props.summary.total, dot: '', tone: '', title: '' },
+  { status: 'PENDING', label: '排队中', value: props.summary.pending, dot: 'pending', tone: '', title: '' },
+  { status: 'RUNNING', label: '运行中', value: props.summary.running, dot: 'running', tone: 'primary', title: '' },
+  { status: 'SUCCEEDED', label: '已完成', value: props.summary.succeeded, dot: 'success', tone: '', title: '' },
+  { status: 'FAILED', label: '失败', value: props.summary.failed, dot: 'danger', tone: '', title: props.summary.terminated ? `另 ${props.summary.terminated} 项已终止` : '' },
 ])
 </script>
 
 <style scoped>
 .task-summary-strip {
+  height: 35px;
+  min-height: 35px;
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
+  padding: 0 16px;
+  gap: 16px;
   border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
-  background: var(--sl-bg-surface, #ffffff);
+  background: #fafbfc;
   flex-shrink: 0;
+  box-sizing: border-box;
 }
 
 .task-summary-strip > button {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
   min-width: 0;
-  height: 60px;
-  padding: 0 16px;
+  height: 100%;
+  padding: 0;
   border: none;
-  border-right: 1px solid var(--sl-border-base, #e2e8f0);
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
   color: inherit;
   text-align: left;
-  background: var(--sl-bg-surface, #ffffff);
+  background: transparent;
   cursor: pointer;
-  transition: background 0.15s ease;
-  user-select: none;
 }
 
-.task-summary-strip > button:last-child {
-  border-right: none;
-}
-
-.task-summary-strip > button:hover {
-  background: var(--sl-bg-hover, #f8fafc);
-}
-
-.task-summary-strip > button.active {
-  background: var(--sl-primary-light, #eff6ff);
-}
-
-.task-summary-strip > button.active::after {
-  content: '';
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: 2px;
-  background: var(--sl-primary, #2563eb);
-}
-
-.summary-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.summary-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: 500;
-  color: var(--sl-text-body, #334155);
-}
-
-.summary-note {
-  overflow: hidden;
-  color: var(--sl-text-secondary, #64748b);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.summary-val {
-  font-family: var(--sl-font-mono, monospace);
-  font-size: 20px;
-  font-weight: 700;
-  color: var(--sl-text-heading, #0f172a);
-  line-height: 1;
-  margin-left: 8px;
-}
-
-.task-summary-strip > button.active .summary-val {
+.task-summary-strip > button.active .m-val {
   color: var(--sl-primary, #2563eb);
 }
+
+.m-lbl {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  line-height: 1.2;
+  font-weight: 400;
+  color: var(--sl-text-secondary, #64748b);
+  flex-shrink: 0;
+}
+
+.m-val {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--sl-font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+  font-size: 14.5px;
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--sl-text-heading, #0f172a);
+}
+
+.m-val.primary { color: var(--sl-primary, #2563eb); }
 
 .summary-dot {
   width: 6px;
@@ -128,26 +97,17 @@ const items = computed(() => [
   background: var(--sl-text-disabled, #94a3b8);
 }
 
-.summary-dot.pending {
-  background: var(--sl-text-secondary, #64748b);
-}
-
+.summary-dot.pending { background: var(--sl-text-secondary, #64748b); }
 .summary-dot.running {
   background: var(--sl-primary, #2563eb);
   box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2);
 }
+.summary-dot.success { background: var(--sl-success, #16a34a); }
+.summary-dot.danger { background: var(--sl-danger, #dc2626); }
 
-.summary-dot.success {
-  background: var(--sl-success, #16a34a);
-}
-
-.summary-dot.danger {
-  background: var(--sl-danger, #dc2626);
-}
-
-@media (max-width: 1024px) {
+@media (max-width: 900px) {
   .task-summary-strip {
-    grid-template-columns: repeat(5, minmax(140px, 1fr));
+    grid-template-columns: repeat(5, minmax(120px, 1fr));
     overflow-x: auto;
   }
 }

@@ -27,7 +27,7 @@
         </div>
         <div class="interface-fields">
           <label><span>接口名称</span><el-input :model-value="selectedInterface.name" :disabled="!selectedEditable" @update:model-value="updateInterfaceField('name', $event)" /></label>
-          <label><span>方向</span><el-select :model-value="selectedInterface.direction" :disabled="!selectedEditable" @update:model-value="changeInterfaceDirection"><el-option label="OUT" value="OUT" /><el-option label="IN" value="IN" /></el-select></label>
+          <label><span>方向</span><el-select :model-value="selectedInterface.direction" :disabled="!selectedEditable" @update:model-value="changeInterfaceDirection"><el-option label="输出" value="OUT" /><el-option label="输入" value="IN" /></el-select></label>
           <label><span>接口类型</span><el-select :model-value="selectedInterface.interfaceType" :disabled="!selectedEditable" @update:model-value="updateInterfaceField('interfaceType', $event)"><el-option label="WORKFLOW" value="WORKFLOW" /><el-option label="STATE" value="STATE" /></el-select></label>
           <label class="signals"><span>允许信号</span><el-select :model-value="selectedInterface.allowedSignals || []" multiple collapse-tags :max-collapse-tags="3" :disabled="!selectedEditable || !signalCandidates.length" placeholder="选择允许信号" @update:model-value="updateAllowedSignals"><el-option v-for="signal in signalCandidates" :key="signal" :label="signal" :value="signal" /></el-select></label>
         </div>
@@ -54,6 +54,7 @@ import {
   isSystemItem,
   orderedControlInterfaces,
   removeInterface,
+  renameWorkflowInterface,
   customTriggerActionNames,
 } from '../../../../../utils/workflowNodeDefinition.js'
 
@@ -75,7 +76,7 @@ watch(interfaces, current => {
 
 function identity(item: Item) { return item?._systemKey || item?.name || '' }
 function actionLabel(name: string) { return name }
-function directionLabel(direction: string) { return direction }
+function directionLabel(direction: string) { return direction === 'IN' ? '输入' : direction === 'OUT' ? '输出' : direction }
 function publish(next: Item) { emit('update:node', next) }
 function uniqueName(direction: string) {
   const prefix = direction === 'IN' ? 'Interface_workflow_in_' : 'Interface_workflow_out_'
@@ -99,7 +100,16 @@ function replaceSelectedInterface(nextInterface: Item) {
   selectedIdentity.value = identity(nextInterface)
 }
 function updateInterfaceField(field: string, value: unknown) {
-  if (selectedInterface.value && selectedEditable.value) replaceSelectedInterface({ ...selectedInterface.value, [field]: value })
+  const current = selectedInterface.value
+  if (!current || !selectedEditable.value) return
+  if (field === 'name') {
+    const result = renameWorkflowInterface(props.node, current.name, String(value ?? ''), props.interfaceConnections)
+    publish(result.node)
+    emit('update:interfaceConnections', result.interfaceConnections)
+    selectedIdentity.value = identity(result.node.interfaces?.find((item: Item) => item.name === value) || { ...current, name: value })
+    return
+  }
+  replaceSelectedInterface({ ...current, [field]: value })
 }
 async function changeInterfaceDirection(direction: string) {
   const current = selectedInterface.value
@@ -135,5 +145,5 @@ function deleteSelectedInterface() {
 </script>
 
 <style scoped>
-.control-interfaces-panel{display:grid;gap:0;padding:0;background:#fff}.panel-heading{min-height:52px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 20px;border-bottom:1px solid #e5e5e5}.panel-heading>div,.detail-heading>div{display:grid;gap:2px}.panel-heading strong,.detail-heading strong{color:#262626;font-size:13px;font-weight:500}.panel-heading span,.detail-heading span{color:#8c8c8c;font-size:10px}.action-capabilities{display:flex;align-items:center;gap:7px;min-height:42px;padding:5px 20px;border:0;border-bottom:1px solid #e5e5e5;background:#fafafa}.action-capabilities>span{margin-right:5px;color:#595959;font-size:11px}.control-interfaces-panel>:deep(.el-alert){margin:10px 20px;border-radius:2px}.master-detail{display:grid;grid-template-columns:196px minmax(0,1fr);min-height:460px;border:0;border-top:1px solid #e5e5e5;background:#fff}.interface-list{display:flex;flex-direction:column;border-right:1px solid #e5e5e5;background:#fafafa}.interface-item{display:grid;grid-template-columns:38px minmax(0,1fr);gap:3px 7px;min-height:58px;padding:9px 11px;border:0;border-bottom:1px solid #f0f0f0;background:transparent;color:#262626;text-align:left;cursor:pointer;transition:background-color .15s ease}.interface-item:hover{background:#f0f7ff}.interface-item.active{background:#e6f4ff;box-shadow:inset 3px 0 #1677ff}.interface-item .direction{grid-row:1 / span 2;align-self:center;color:#1677ff;font-size:10px;font-weight:500}.interface-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;font-weight:500}.interface-item small{color:#8c8c8c;font-size:9px}.interface-item :deep(.el-tag){grid-column:2;justify-self:start}.interface-detail{display:grid;align-content:start;gap:0;min-width:0;padding:0;background:#fff}.detail-heading{height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;border-bottom:1px solid #e5e5e5}.interface-fields{display:grid;grid-template-columns:240px 110px 140px;align-items:end;justify-content:start;gap:12px;padding:14px}.interface-fields label{display:grid;gap:6px;min-width:0}.interface-fields label>span{color:#595959;font-size:11px;font-weight:500}.interface-fields .signals{grid-column:1 / -1;width:360px}.interface-fields :deep(.el-select){width:100%}@media(max-width:980px){.master-detail{grid-template-columns:176px minmax(0,1fr)}.interface-fields{grid-template-columns:minmax(180px,240px) 100px 128px}.interface-fields .signals{width:100%}}@media(max-width:720px){.master-detail{grid-template-columns:1fr}.interface-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-right:0;border-bottom:1px solid #e5e5e5}.interface-fields{grid-template-columns:1fr 1fr}.interface-fields .signals{grid-column:1 / -1}}
+.control-interfaces-panel{display:grid;gap:0;padding:0;background:#fff}.panel-heading{min-height:52px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 20px;border-bottom:1px solid var(--sl-border-base)}.panel-heading>div,.detail-heading>div{display:grid;gap:2px}.panel-heading strong,.detail-heading strong{color:var(--sl-text-heading);font-size:13px;font-weight:500}.panel-heading span,.detail-heading span{color:var(--sl-text-secondary);font-size:10px}.action-capabilities{display:flex;align-items:center;gap:7px;min-height:42px;padding:5px 20px;border:0;border-bottom:1px solid var(--sl-border-base);background:#fff}.action-capabilities>span{margin-right:5px;color:var(--sl-text-body);font-size:11px}.control-interfaces-panel>:deep(.el-alert){margin:10px 20px;border-radius:2px}.master-detail{display:grid;grid-template-columns:168px minmax(0,1fr);min-height:0;border:0;border-top:1px solid var(--sl-border-base);background:#fff}.interface-list{display:flex;flex-direction:column;border-right:1px solid var(--sl-border-base);background:#fff}.interface-item{display:grid;grid-template-columns:38px minmax(0,1fr);gap:3px 7px;min-height:58px;padding:9px 11px;border:0;border-bottom:1px solid var(--sl-border-subtle);background:transparent;color:var(--sl-text-heading);text-align:left;cursor:pointer;transition:background-color .15s ease}.interface-item:hover{background:#f0f7ff}.interface-item.active{background:var(--sl-primary-light);box-shadow:inset 3px 0 var(--sl-primary)}.interface-item .direction{grid-row:1 / span 2;align-self:center;color:var(--sl-primary);font-size:10px;font-weight:500}.interface-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;font-weight:500}.interface-item small{color:var(--sl-text-secondary);font-size:9px}.interface-item :deep(.el-tag){grid-column:2;justify-self:start}.interface-detail{display:grid;align-content:start;gap:0;min-width:0;padding:0;background:#fff}.detail-heading{height:52px;display:flex;align-items:center;justify-content:space-between;padding:0 14px;border-bottom:1px solid var(--sl-border-base)}.interface-fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(96px,110px) minmax(120px,140px);align-items:end;justify-content:start;gap:12px;padding:14px}.interface-fields label{display:grid;gap:6px;min-width:0}.interface-fields label>span{color:var(--sl-text-body);font-size:11px;font-weight:500}.interface-fields .signals{grid-column:1 / -1;width:100%}.interface-fields :deep(.el-select){width:100%}@media(max-width:980px){.master-detail{grid-template-columns:176px minmax(0,1fr)}.interface-fields{grid-template-columns:minmax(180px,240px) 100px 128px}.interface-fields .signals{width:100%}}@media(max-width:720px){.master-detail{grid-template-columns:1fr}.interface-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));border-right:0;border-bottom:1px solid var(--sl-border-base)}.interface-fields{grid-template-columns:1fr 1fr}.interface-fields .signals{grid-column:1 / -1}}
 </style>

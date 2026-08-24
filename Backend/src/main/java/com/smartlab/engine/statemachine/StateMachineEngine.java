@@ -451,7 +451,7 @@ public class StateMachineEngine implements StateMachineCommandPort {
         CapabilityCommand capability = prepareCapability(instance, model, signalName, original);
         recoverNormalExecution(runtime, instance, model, twinState);
         if (capability.isAbort()) {
-            if (runtime.terminationExecution() != null) return List.of();
+            if (alreadyAborting(runtime, twinState, model)) return List.of();
             return beginExecution(runtime, instance, model, twinState, interfaceName, signalName, capability,
                     DeviceStateMachineRuntime.ExecutionRole.TERMINATION, "CMD_START", affectedNormal(runtime, capability));
         }
@@ -465,6 +465,7 @@ public class StateMachineEngine implements StateMachineCommandPort {
                                                 DeviceModels model, DeviceTwinStates twinState, String interfaceName,
                                                 String signalName, Map<String, Object> original) {
         DeviceStateMachineRuntime.CommandExecution normal = recoverNormalExecution(runtime, instance, model, twinState);
+        if (alreadyAborting(runtime, twinState, model)) return List.of();
         if (normal == null || !isAbortable(normal.state()) || normal.attachedAbortExecution() != null) return List.of();
         String explicit = text(original.get("messageId"));
         if (!explicit.isBlank() && !explicit.equals(normal.messageId())) {
@@ -887,6 +888,14 @@ public class StateMachineEngine implements StateMachineCommandPort {
 
     private boolean isAbortable(String state) {
         return "SENT".equals(state) || "RUNNING".equals(state);
+    }
+
+    private boolean alreadyAborting(DeviceStateMachineRuntime runtime, DeviceTwinStates twinState, DeviceModels model) {
+        if (runtime.terminationExecution() != null) return true;
+        DeviceStateMachineRuntime.CommandExecution normal = runtime.normalExecution();
+        if (normal != null && normal.attachedAbortExecution() != null) return true;
+        String commandState = currentCommandState(twinState, model);
+        return "ABORTING".equals(commandState) || "ABORTED".equals(commandState);
     }
 
     private DeviceStateMachineRuntime.CommandExecution recoverNormalExecution(DeviceStateMachineRuntime runtime,

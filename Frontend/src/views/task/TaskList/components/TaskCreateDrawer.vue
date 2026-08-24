@@ -19,7 +19,7 @@
           </el-form-item>
           <el-form-item label="关联流程" prop="flowModelId">
             <el-select :model-value="form.flowModelId" placeholder="选择已发布、可执行流程" v-loading="loadingWorkflows" @update:model-value="emit('update:flowModelId', $event)">
-              <el-option v-for="workflow in workflows" :key="workflow.id" :label="workflow.flowName" :value="workflow.id" />
+              <el-option v-for="workflow in workflows" :key="workflow.id" :label="workflowModelName(workflow)" :value="workflow.id" />
             </el-select>
           </el-form-item>
         </section>
@@ -63,6 +63,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import type { FormInstance, FormRules } from 'element-plus'
+import { workflowModelName } from '../../../../utils/workflowAuthoring.js'
 import TaskConstraintPanel from './TaskConstraintPanel.vue'
 import TaskPreflightPanel from './TaskPreflightPanel.vue'
 import TaskResourceBindingCanvas from './TaskResourceBindingCanvas.vue'

@@ -44,7 +44,8 @@ test('task header refresh and workflow command buttons use the same visual langu
   const taskList = readFileSync(path.join(srcRoot, 'views/task/TaskList/TaskList.vue'), 'utf8')
   const designer = readFileSync(path.join(srcRoot, 'views/task/WorkflowDesigner/WorkflowDesigner.vue'), 'utf8')
 
-  assert.match(taskList, /<el-button class="btn-aliyun" :icon="Refresh"[^>]*>刷新<\/el-button>/)
+  assert.match(taskList, /<button class="btn-aliyun" type="button"[^>]*@click="refreshTaskList">/)
+  assert.match(taskList, /<el-icon><Refresh \/><\/el-icon><span>刷新<\/span>/)
   assert.doesNotMatch(taskList, /refresh-button|:icon="Refresh"[^>]*\bcircle\b/)
   assert.doesNotMatch(designer, /island-btn/)
   assert.match(designer, /class="btn-aliyun-cta"[^>]*@click="publishAndValidate"/)

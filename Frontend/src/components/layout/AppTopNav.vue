@@ -76,6 +76,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/authStore'
+import { useConsoleStore } from '../../stores/consoleStore'
 import {
   ArrowDown,
   Clock,
@@ -96,6 +97,7 @@ import {
 import { ElMessageBox } from 'element-plus'
 
 const authStore = useAuthStore()
+const consoleStore = useConsoleStore()
 const route = useRoute()
 const router = useRouter()
 const activePath = computed(() => route.path)
@@ -142,6 +144,7 @@ const handleDropdown = (command) => {
     cancelButtonText: '取消',
     type: 'warning'
   }).then(() => {
+    consoleStore.closeGlobalStream()
     authStore.clearAuth()
     router.push('/login')
   }).catch(() => {})

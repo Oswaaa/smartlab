@@ -8,7 +8,8 @@ import com.smartlab.engine.workflow.WorkflowDefinitionCompiler;
 import com.smartlab.global.contract.DataType;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.workflow.WorkflowDetailResponse;
-import com.smartlab.management.dto.workflow.WorkflowSaveRequest;
+import com.smartlab.management.dto.workflow.WorkflowModelDocument;
+import com.smartlab.management.dto.workflow.WorkflowModelDocuments;
 import com.smartlab.management.entity.workflow.FlowModels;
 import com.smartlab.management.entity.workflow.FlowNode;
 import com.smartlab.management.entity.workflow.Task;
@@ -18,15 +19,18 @@ import com.smartlab.management.mapper.workflow.FlowNodeMapper;
 import com.smartlab.management.mapper.workflow.TaskMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import com.smartlab.management.service.db.resource.device.DeviceModelService;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 /** Transactional aggregate service for FLOW_MODELS and its FLOW_NODE members. */
 @Service
@@ -37,6 +41,7 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
     private final TaskMapper taskMapper;
     private final WorkflowDefinitionCompiler compiler;
     private final DeviceModelService deviceModelService;
+    private final ConcurrentHashMap<Long, CachedDefinition> definitionCache = new ConcurrentHashMap<>();
 
     public WorkflowService(FlowModelsMapper modelMapper, FlowNodeMapper nodeMapper,
                            TaskMapper taskMapper, WorkflowDefinitionCompiler compiler,
@@ -55,23 +60,12 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
     }
 
     public WorkflowDetailResponse getDefinition(Long id) {
-        FlowModels model = modelMapper.selectById(id);
-        if (model == null) return null;
-        List<FlowNode> nodes = nodes(id);
-        WorkflowDetailResponse response = new WorkflowDetailResponse();
-        response.setId(model.getId());
-        response.setName(model.getFlowName());
-        response.setDescription(model.getDescription());
-        response.setVersion(model.getVersion());
-        response.setStatus(model.getStatus());
-        response.setPredecessorId(model.getPredecessorId());
-        response.setNodeIdRefs(model.getNodes());
-        response.setNodesDef(JsonNodeSupport.toNode(nodes.stream().map(node -> toDefinition(node, nodeNames(model.getNodes()).get(node.getNodeIdRef()))).toList()));
-        response.setInterfaceConnections(model.getInterfaceConnection());
-        response.setPortConnections(model.getPortConnection());
-        response.setCreatorId(model.getCreatorId());
-        response.setCreateTime(model.getCreateTime());
-        return response;
+        if (id == null) return null;
+        CachedDefinition cached = definitionCache.get(id);
+        if (cached != null) return cached.definition();
+        WorkflowDetailResponse loaded = loadDefinition(id);
+        if (loaded != null) definitionCache.putIfAbsent(id, new CachedDefinition(loaded, null));
+        return loaded;
     }
 
     public WorkflowDetailResponse getDefinition(String id) {
@@ -115,18 +109,24 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
     }
 
     public WorkflowDefinitionCompiler.CompiledWorkflow compileDefinition(Long id) {
-        WorkflowDetailResponse detail = getDefinition(id);
+        if (id == null) throw new IllegalArgumentException("流程模型不存在: " + id);
+        CachedDefinition cached = definitionCache.get(id);
+        if (cached != null && cached.compiled() != null) return cached.compiled();
+        WorkflowDetailResponse detail = cached != null ? cached.definition() : getDefinition(id);
         if (detail == null) throw new IllegalArgumentException("流程模型不存在: " + id);
-        WorkflowSaveRequest request = new WorkflowSaveRequest();
-        request.setId(detail.getId());
-        request.setName(detail.getName());
-        request.setDescription(detail.getDescription());
-        request.setVersion(detail.getVersion());
-        request.setStatus(detail.getStatus());
-        request.setNodesDef(detail.getNodesDef());
-        request.setInterfaceConnections(detail.getInterfaceConnections());
-        request.setPortConnections(detail.getPortConnections());
-        return compiler.compile(request);
+        WorkflowDefinitionCompiler.CompiledWorkflow compiled = compiler.compile(WorkflowModelDocuments.toDocument(detail));
+        definitionCache.put(id, new CachedDefinition(detail, compiled));
+        return compiled;
+    }
+
+    public String nodeName(Long flowModelId, Long nodeIdRef) {
+        if (nodeIdRef == null) return "?";
+        if (flowModelId == null) return "#" + nodeIdRef;
+        try {
+            return compileDefinition(flowModelId).nodeName(nodeIdRef);
+        } catch (RuntimeException ignored) {
+            return "#" + nodeIdRef;
+        }
     }
 
     public List<FlowNode> nodes(Long flowModelId) {
@@ -136,52 +136,117 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public com.smartlab.management.dto.workflow.WorkflowPreparationResponse saveDraft(WorkflowSaveRequest request) {
-        com.smartlab.engine.workflow.WorkflowPreparation prepared = compiler.prepare(request, com.smartlab.engine.workflow.WorkflowPreparation.Mode.DRAFT);
+    public com.smartlab.management.dto.workflow.WorkflowPreparationResponse saveDraft(WorkflowModelDocument document) {
+        WorkflowModelDocument sanitized = WorkflowModelDocuments.sanitizeDocument(document);
+        com.smartlab.engine.workflow.WorkflowPreparation prepared = compiler.prepare(sanitized, com.smartlab.engine.workflow.WorkflowPreparation.Mode.DRAFT);
         return persistPrepared(prepared, "DRAFT", false);
     }
 
     @Transactional(rollbackFor = Exception.class)
-    public com.smartlab.management.dto.workflow.WorkflowPreparationResponse publish(WorkflowSaveRequest request) {
-        FlowModels existing = request == null || request.getId() == null ? null : modelMapper.selectById(request.getId());
-        if (existing != null && "ACTIVE".equalsIgnoreCase(existing.getStatus())) return saveDraft(request);
-        com.smartlab.engine.workflow.WorkflowPreparation prepared = compiler.prepare(request, com.smartlab.engine.workflow.WorkflowPreparation.Mode.PUBLISH);
-        if (!prepared.executable()) return new com.smartlab.management.dto.workflow.WorkflowPreparationResponse(toDetailResponse(prepared.normalized()), prepared.issues(), false, false);
-        try {
-            validateDeviceConfiguration(prepared.normalized());
-            validateSubFlowReferences(prepared.normalized(), prepared.compiled());
-        } catch (IllegalArgumentException exception) {
-            java.util.List<com.smartlab.management.dto.workflow.WorkflowIssue> issues = new java.util.ArrayList<>(prepared.issues());
-            issues.add(new com.smartlab.management.dto.workflow.WorkflowIssue("WORKFLOW_PUBLISH_VALIDATION_FAILED", "PUBLISH", "", "workflow", "", true,
-                    exception.getMessage(), "请修正发布阻断问题后重试"));
-            return new com.smartlab.management.dto.workflow.WorkflowPreparationResponse(toDetailResponse(prepared.normalized()), List.copyOf(issues), false, false);
-        }
-        return persistPrepared(prepared, "ACTIVE", true);
+    public com.smartlab.management.dto.workflow.WorkflowPreparationResponse saveAsNew(WorkflowModelDocument document) {
+        WorkflowModelDocument copy = WorkflowModelDocuments.asNewDraft(document);
+        com.smartlab.engine.workflow.WorkflowPreparation prepared = compiler.prepare(copy, com.smartlab.engine.workflow.WorkflowPreparation.Mode.DRAFT);
+        prepared.normalized().flowModelId(null);
+        return persistPrepared(prepared, "DRAFT", false);
     }
+
+    public com.smartlab.management.dto.workflow.WorkflowPreparationResponse validate(WorkflowModelDocument document) {
+        PublishEvaluation evaluation = evaluateForPublish(document);
+        return new com.smartlab.management.dto.workflow.WorkflowPreparationResponse(
+                toDetailResponse(evaluation.prepared().normalized()),
+                evaluation.prepared().issues(),
+                evaluation.executable(),
+                false);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public com.smartlab.management.dto.workflow.WorkflowPreparationResponse publish(WorkflowModelDocument document) {
+        PublishEvaluation evaluation = evaluateForPublish(document);
+        if (evaluation.executable()) return persistPrepared(evaluation.prepared(), "ACTIVE", true);
+        if (evaluation.forkingActive()) return persistPrepared(evaluation.prepared(), "DRAFT", false);
+        return new com.smartlab.management.dto.workflow.WorkflowPreparationResponse(
+                toDetailResponse(evaluation.prepared().normalized()), evaluation.prepared().issues(), false, false);
+    }
+
+    private PublishEvaluation evaluateForPublish(WorkflowModelDocument document) {
+        WorkflowModelDocument sanitized = WorkflowModelDocuments.sanitizeDocument(document);
+        FlowModels existing = sanitized.flowModelId() == null ? null : modelMapper.selectById(sanitized.flowModelId());
+        boolean forkingActive = existing != null && "ACTIVE".equalsIgnoreCase(existing.getStatus());
+        com.smartlab.engine.workflow.WorkflowPreparation prepared = compiler.prepare(sanitized, com.smartlab.engine.workflow.WorkflowPreparation.Mode.PUBLISH);
+        List<com.smartlab.management.dto.workflow.WorkflowIssue> issues = new ArrayList<>(prepared.issues());
+        boolean executable = prepared.executable();
+        if (executable) {
+            try {
+                validateDeviceConfiguration(prepared.normalized());
+                validateSubFlowReferences(prepared.normalized(), prepared.compiled());
+            } catch (IllegalArgumentException exception) {
+                issues.add(new com.smartlab.management.dto.workflow.WorkflowIssue("WORKFLOW_PUBLISH_VALIDATION_FAILED", "PUBLISH", "", "workflow", "", true,
+                        exception.getMessage(), "请修正发布阻断问题后重试"));
+                executable = false;
+            }
+        }
+        return new PublishEvaluation(
+                new com.smartlab.engine.workflow.WorkflowPreparation(prepared.normalized(), List.copyOf(issues), prepared.compiled()),
+                forkingActive,
+                executable);
+    }
+
     private com.smartlab.management.dto.workflow.WorkflowPreparationResponse persistPrepared(com.smartlab.engine.workflow.WorkflowPreparation prepared, String status, boolean published) {
-        WorkflowSaveRequest normalized = prepared.normalized();
+        WorkflowModelDocument normalized = prepared.normalized();
         if (normalized == null) throw new IllegalArgumentException("工作流定义不能为空");
-        FlowModels existing = normalized.getId() == null ? null : modelMapper.selectById(normalized.getId());
-        if (normalized.getId() != null && existing == null) throw new IllegalArgumentException("流程模型不存在: " + normalized.getId());
+        Long documentId = normalized.flowModelId();
+        FlowModels existing = documentId == null ? null : modelMapper.selectById(documentId);
+        if (documentId != null && existing == null) throw new IllegalArgumentException("流程模型不存在: " + documentId);
         boolean successor = existing != null && "ACTIVE".equalsIgnoreCase(existing.getStatus());
+        if (successor) {
+            FlowModels existingSuccessor = successorOf(existing.getId());
+            if (existingSuccessor != null) throw new WorkflowSuccessorExistsException(existing, existingSuccessor);
+        }
         FlowModels model = successor || existing == null ? new FlowModels() : existing;
-        if (successor) { model.setPredecessorId(existing.getId()); model.setVersion((existing.getVersion() == null ? 0 : existing.getVersion()) + 1); }
-        model.setFlowName(normalized.getName() == null ? "" : normalized.getName().trim());
-        if (normalized.getDescription() != null || model.getId() == null) model.setDescription(normalized.getDescription());
-        if (!successor && normalized.getVersion() != null) model.setVersion(normalized.getVersion()); else if (model.getVersion() == null) model.setVersion(1);
+        if (successor) {
+            model.setPredecessorId(existing.getId());
+            model.setVersion((existing.getVersion() == null ? 0 : existing.getVersion()) + 1);
+        }
+        String flowModelName = normalized.flowModelName();
+        model.setFlowName(flowModelName == null ? "" : flowModelName.trim());
+        if (normalized.descriptionText() != null || model.getId() == null) model.setDescription(normalized.descriptionText());
+        if (model.getVersion() == null) model.setVersion(1);
         model.setStatus(status);
-        if (normalized.getCreatorId() != null || model.getId() == null) model.setCreatorId(normalized.getCreatorId());
         model.setInterfaceConnection(nonNullArray(normalized.getInterfaceConnections()));
         model.setPortConnection(nonNullArray(normalized.getPortConnections()));
-        ArrayNode definitions = nonNullArray(normalized.getNodesDef());
+        ArrayNode definitions = nonNullArray(normalized.getNodes());
         assignNodeRefs(definitions, existing);
         ArrayNode refs = JsonNodeSupport.arrayNode();
         for (JsonNode node : definitions) refs.addObject().put("nodeIdRef", node.path("nodeIdRef").asLong()).put("nodeName", node.path("name").asText());
         model.setNodes(refs);
-        if (model.getId() == null) { model.setCreateTime(OffsetDateTime.now()); modelMapper.insert(model); }
-        else { modelMapper.updateById(model); nodeMapper.delete(Wrappers.<FlowNode>lambdaQuery().eq(FlowNode::getFlowModelId, model.getId())); }
+        if (model.getId() == null) {
+            model.setCreateTime(OffsetDateTime.now());
+            try {
+                modelMapper.insert(model);
+            } catch (DataIntegrityViolationException exception) {
+                throw successorConflictOr(exception, existing, successor);
+            }
+        } else {
+            modelMapper.updateById(model);
+            nodeMapper.delete(Wrappers.<FlowNode>lambdaQuery().eq(FlowNode::getFlowModelId, model.getId()));
+        }
         for (JsonNode node : definitions) nodeMapper.insert(toEntity(model.getId(), node));
+        evictDefinition(model.getId());
+        if (successor && existing != null) evictDefinition(existing.getId());
         return new com.smartlab.management.dto.workflow.WorkflowPreparationResponse(getDefinition(model.getId()), prepared.issues(), prepared.executable(), published);
+    }
+
+    private FlowModels successorOf(Long predecessorId) {
+        if (predecessorId == null) return null;
+        return modelMapper.selectByPredecessorId(predecessorId);
+    }
+
+    private RuntimeException successorConflictOr(DataIntegrityViolationException exception, FlowModels parent, boolean forking) {
+        if (forking && parent != null) {
+            FlowModels successor = successorOf(parent.getId());
+            if (successor != null) return new WorkflowSuccessorExistsException(parent, successor);
+        }
+        return exception;
     }
 
     private void assignNodeRefs(ArrayNode definitions, FlowModels existing) {
@@ -198,45 +263,36 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
         }
     }
 
-    private WorkflowDetailResponse toDetailResponse(WorkflowSaveRequest request) {
-        WorkflowDetailResponse detail = new WorkflowDetailResponse();
-        if (request == null) return detail;
-        detail.setId(request.getId()); detail.setName(request.getName()); detail.setDescription(request.getDescription()); detail.setVersion(request.getVersion()); detail.setStatus(request.getStatus());
-        detail.setNodesDef(nonNullArray(request.getNodesDef())); detail.setInterfaceConnections(nonNullArray(request.getInterfaceConnections())); detail.setPortConnections(nonNullArray(request.getPortConnections())); detail.setCreatorId(request.getCreatorId());
-        return detail;
+    private WorkflowDetailResponse toDetailResponse(WorkflowModelDocument document) {
+        return WorkflowModelDocuments.toDetail(document);
     }
+
     @Transactional(rollbackFor = Exception.class)
-    public WorkflowDetailResponse saveDefinition(WorkflowSaveRequest request) {
-        if (request == null || request.getNodesDef() == null || !request.getNodesDef().isArray()) {
-            throw new IllegalArgumentException("nodesDef 必须是数组");
+    public WorkflowDetailResponse saveDefinition(WorkflowModelDocument document) {
+        WorkflowModelDocument sanitized = WorkflowModelDocuments.sanitizeDocument(document);
+        if (sanitized.getNodes() == null || !sanitized.getNodes().isArray()) {
+            throw new IllegalArgumentException("nodes 必须是数组");
         }
 
-        WorkflowDefinitionCompiler.CompiledWorkflow compiled = compiler.compile(request);
-        validateDeviceConfiguration(request);
-        validateSubFlowReferences(request, compiled);
-        FlowModels model = request.getId() == null ? new FlowModels() : modelMapper.selectById(request.getId());
-        if (request.getId() != null && model == null) {
-            throw new IllegalArgumentException("流程模型不存在: " + request.getId());
+        WorkflowDefinitionCompiler.CompiledWorkflow compiled = compiler.compile(sanitized);
+        validateDeviceConfiguration(sanitized);
+        validateSubFlowReferences(sanitized, compiled);
+        Long documentId = sanitized.flowModelId();
+        FlowModels model = documentId == null ? new FlowModels() : modelMapper.selectById(documentId);
+        if (documentId != null && model == null) {
+            throw new IllegalArgumentException("流程模型不存在: " + documentId);
         }
-        if (request.getId() != null && hasTaskSnapshotReference(request.getId())) {
+        if (documentId != null && hasTaskSnapshotReference(documentId)) {
             throw new IllegalStateException("流程或其上级流程已有任务实例，不能覆盖节点定义；请新建流程版本");
         }
         if (model == null) model = new FlowModels();
-        model.setFlowName(request.getName().trim());
-        if (request.getDescription() != null || model.getId() == null) model.setDescription(request.getDescription());
-        if (request.getVersion() != null) model.setVersion(request.getVersion());
-        else if (model.getVersion() == null) model.setVersion(1);
-        if (request.getStatus() != null && !request.getStatus().isBlank()) {
-            String requestedStatus = request.getStatus().trim().toUpperCase();
-            if (!Set.of("DRAFT", "ACTIVE").contains(requestedStatus)) {
-                throw new IllegalArgumentException("工作流状态只能是DRAFT或ACTIVE");
-            }
-            model.setStatus(requestedStatus);
-        }
-        else if (model.getStatus() == null) model.setStatus("DRAFT");
-        if (request.getCreatorId() != null || model.getId() == null) model.setCreatorId(request.getCreatorId());
-        model.setInterfaceConnection(nonNullArray(request.getInterfaceConnections()));
-        model.setPortConnection(nonNullArray(request.getPortConnections()));
+        String flowModelName = sanitized.flowModelName();
+        model.setFlowName(flowModelName == null ? "" : flowModelName.trim());
+        if (sanitized.descriptionText() != null || model.getId() == null) model.setDescription(sanitized.descriptionText());
+        if (model.getVersion() == null) model.setVersion(1);
+        if (model.getStatus() == null) model.setStatus("DRAFT");
+        model.setInterfaceConnection(nonNullArray(sanitized.getInterfaceConnections()));
+        model.setPortConnection(nonNullArray(sanitized.getPortConnections()));
         ArrayNode refs = JsonNodeSupport.arrayNode();
         compiled.nodes().forEach((ref, node) -> refs.addObject().put("nodeIdRef", ref).put("nodeName", node.path("name").asText()));
         model.setNodes(refs);
@@ -250,6 +306,7 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
         for (JsonNode definition : compiled.nodes().values()) {
             nodeMapper.insert(toEntity(model.getId(), definition));
         }
+        evictDefinition(model.getId());
         return getDefinition(model.getId());
     }
 
@@ -264,26 +321,27 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
         }
         nodeMapper.delete(Wrappers.<FlowNode>lambdaQuery().eq(FlowNode::getFlowModelId, id));
         modelMapper.deleteById(id);
+        evictDefinition(id);
     }
 
-    private void validateSubFlowReferences(WorkflowSaveRequest request,
+    private void validateSubFlowReferences(WorkflowModelDocument request,
                                            WorkflowDefinitionCompiler.CompiledWorkflow compiled) {
         for (JsonNode node : compiled.nodes().values()) {
             if (!"SUBFLOW_NODE".equals(node.path("nodeType").asText())) continue;
             long subFlowId = node.path("subFlowModelId").asLong();
             if (modelMapper.selectById(subFlowId) == null)
                 throw new IllegalArgumentException("子流程模型不存在: " + subFlowId);
-            if (request.getId() != null && (request.getId() == subFlowId
-                    || referencesFlow(subFlowId, request.getId(), new HashSet<>())))
-                throw new IllegalArgumentException("子流程引用形成递归环: " + request.getId() + " -> " + subFlowId);
+            if (request.flowModelId() != null && (request.flowModelId() == subFlowId
+                    || referencesFlow(subFlowId, request.flowModelId(), new HashSet<>())))
+                throw new IllegalArgumentException("子流程引用形成递归环: " + request.flowModelId() + " -> " + subFlowId);
         }
     }
 
-    public void validateDeviceConfiguration(WorkflowSaveRequest request) {
-        if (request == null || request.getNodesDef() == null || !request.getNodesDef().isArray()) {
-            throw new IllegalArgumentException("nodesDef 必须是数组");
+    public void validateDeviceConfiguration(WorkflowModelDocument request) {
+        if (request == null || request.getNodes() == null || !request.getNodes().isArray()) {
+            throw new IllegalArgumentException("nodes 必须是数组");
         }
-        for (JsonNode node : request.getNodesDef()) {
+        for (JsonNode node : request.getNodes()) {
             if (!"DEV_NODE".equals(node.path("nodeType").asText())) continue;
             String nodeName = node.path("name").asText("");
             long modelId = node.path("deviceModelId").asLong(0);
@@ -469,5 +527,38 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
 
     private JsonNode nonNullObject(JsonNode node) {
         return node != null && node.isObject() ? node.deepCopy() : JsonNodeSupport.objectNode();
+    }
+
+    private WorkflowDetailResponse loadDefinition(Long id) {
+        FlowModels model = modelMapper.selectById(id);
+        if (model == null) return null;
+        List<FlowNode> nodes = nodes(id);
+        WorkflowDetailResponse response = new WorkflowDetailResponse();
+        response.setId(model.getId());
+        response.setName(model.getFlowName());
+        response.setDescription(model.getDescription());
+        response.setVersion(model.getVersion());
+        response.setStatus(model.getStatus());
+        response.setPredecessorId(model.getPredecessorId());
+        response.setNodeIdRefs(model.getNodes());
+        response.setNodesDef(JsonNodeSupport.toNode(nodes.stream()
+                .map(node -> toDefinition(node, nodeNames(model.getNodes()).get(node.getNodeIdRef()))).toList()));
+        response.setInterfaceConnections(model.getInterfaceConnection());
+        response.setPortConnections(model.getPortConnection());
+        response.setCreatorId(model.getCreatorId());
+        response.setCreateTime(model.getCreateTime());
+        return response;
+    }
+
+    private void evictDefinition(Long id) {
+        if (id != null) definitionCache.remove(id);
+    }
+
+    private record CachedDefinition(WorkflowDetailResponse definition,
+            WorkflowDefinitionCompiler.CompiledWorkflow compiled) {
+    }
+
+    private record PublishEvaluation(com.smartlab.engine.workflow.WorkflowPreparation prepared,
+            boolean forkingActive, boolean executable) {
     }
 }

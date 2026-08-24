@@ -6,7 +6,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.global.contract.WorkflowNodeSystemContract;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.workflow.WorkflowIssue;
-import com.smartlab.management.dto.workflow.WorkflowSaveRequest;
+import com.smartlab.management.dto.workflow.WorkflowModelDocument;
+import com.smartlab.management.dto.workflow.WorkflowModelDocuments;
 
 import java.util.ArrayList;
 import java.util.HashSet;
@@ -19,14 +20,14 @@ import java.util.Set;
 /** Replaces system-owned workflow definitions with the backend contract. */
 public class WorkflowDefinitionCanonicalizer {
 
-    public CanonicalizationResult canonicalize(WorkflowSaveRequest input) {
-        WorkflowSaveRequest normalized = copy(input);
+    public CanonicalizationResult canonicalize(WorkflowModelDocument input) {
+        WorkflowModelDocument normalized = WorkflowModelDocuments.copy(input);
         List<WorkflowIssue> issues = new ArrayList<>();
-        if (normalized == null || normalized.getNodesDef() == null || !normalized.getNodesDef().isArray()) {
+        if (normalized == null || normalized.getNodes() == null || !normalized.getNodes().isArray()) {
             return new CanonicalizationResult(normalized, List.copyOf(issues));
         }
         int position = 0;
-        for (JsonNode item : normalized.getNodesDef()) {
+        for (JsonNode item : normalized.getNodes()) {
             if (item instanceof ObjectNode node) canonicalizeNode(node, "nodes[" + position + "]", issues);
             position++;
         }
@@ -81,6 +82,14 @@ public class WorkflowDefinitionCanonicalizer {
             if (!(interfaceNode instanceof ObjectNode objectInterface)) continue;
             for (JsonNode triggerNode : items(objectInterface.path("bindingTriggers"))) {
                 if (!(triggerNode instanceof ObjectNode trigger)) continue;
+                JsonNode rawActions = trigger.get("actions");
+                if (rawActions != null && rawActions.isArray() && !rawActions.isEmpty()) {
+                    ArrayNode canonicalActions = JsonNodeSupport.arrayNode();
+                    rawActions.forEach(item -> canonicalActions.add(canonicalAction(item)));
+                    trigger.set("actions", canonicalActions);
+                    trigger.set("action", canonicalActions.get(0).deepCopy());
+                    continue;
+                }
                 JsonNode rawAction = trigger.get("action");
                 ObjectNode canonical;
                 if (rawAction != null && rawAction.isTextual()) {
@@ -309,21 +318,6 @@ public class WorkflowDefinitionCanonicalizer {
                 "业务项使用了系统保留标识: " + elementId, "请为业务项使用非系统保留名称"));
     }
 
-    private WorkflowSaveRequest copy(WorkflowSaveRequest input) {
-        if (input == null) return null;
-        WorkflowSaveRequest copy = new WorkflowSaveRequest();
-        copy.setId(input.getId());
-        copy.setName(input.getName());
-        copy.setDescription(input.getDescription());
-        copy.setVersion(input.getVersion());
-        copy.setStatus(input.getStatus());
-        copy.setCreatorId(input.getCreatorId());
-        copy.setNodesDef(input.getNodesDef() == null ? null : input.getNodesDef().deepCopy());
-        copy.setInterfaceConnections(input.getInterfaceConnections() == null ? null : input.getInterfaceConnections().deepCopy());
-        copy.setPortConnections(input.getPortConnections() == null ? null : input.getPortConnections().deepCopy());
-        return copy;
-    }
-
     private String lifecycleSystemKey(String nodeType, String functionType) {
         if (!functionType.isBlank()) return functionType.toLowerCase() + ".lifecycle";
         if ("DEV_NODE".equals(nodeType)) return "device.lifecycle";
@@ -341,6 +335,6 @@ public class WorkflowDefinitionCanonicalizer {
         return node == null ? "" : node.path(field).asText("");
     }
 
-    public record CanonicalizationResult(WorkflowSaveRequest normalized, List<WorkflowIssue> issues) {
+    public record CanonicalizationResult(WorkflowModelDocument normalized, List<WorkflowIssue> issues) {
     }
 }

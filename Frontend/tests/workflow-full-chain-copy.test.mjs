@@ -64,9 +64,12 @@ describe('Task 9 — Full-Chain Copy Regression', () => {
 
   test('execution drawer exposes the confirmed runtime views', () => {
     const source = readSource('views/task/TaskList/components/TaskExecutionDrawer.vue')
-    for (const label of ['运行概览', '执行流程图', '步骤详情', '设备绑定', '任务约束', '业务事件']) {
+    for (const label of ['运行状态', '业务事件', '绑定与约束']) {
       assert.match(source, new RegExp(label))
     }
+    assert.match(source, /设备绑定/)
+    assert.match(source, /全局级约束/)
+    assert.match(source, /任务级约束/)
   })
 
   test('snapshot panel uses canonical fields and no routing envelope', () => {
@@ -85,9 +88,9 @@ describe('Task 9 — Full-Chain Copy Regression', () => {
     assert.match(source, /index%2/)
   })
 
-  test('task runtime refreshes only the opened running task at one second', () => {
+  test('task runtime refreshes the opened running task over the live stream', () => {
     const source = readSource('views/task/TaskList/TaskList.vue')
-    assert.match(source, /1000/)
+    assert.match(source, /EventSource/)
     assert.match(source, /monitorDrawerVisible/)
     assert.match(source, /RUNNING/)
     assert.match(source, /SUCCEEDED|FAILED|TERMINATED/)

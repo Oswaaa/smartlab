@@ -136,7 +136,7 @@
                 <div class="field field-grow">
                   <span class="field-label">工作流</span>
                   <el-select v-model="item.workflowTemplateId" size="small" filterable placeholder="选择工作流模板" @change="item.taskId = null">
-                    <el-option v-for="flow in availableWorkflows" :key="flow.id" :label="flow.flowName || ('流程' + flow.id)" :value="flow.id" />
+                    <el-option v-for="flow in availableWorkflows" :key="flow.id" :label="workflowModelName(flow) || ('流程' + flow.id)" :value="flow.id" />
                   </el-select>
                 </div>
                 <div class="field field-grow">
@@ -152,7 +152,7 @@
               <div class="field field-grow">
                 <span class="field-label">工作流</span>
                 <el-select v-model="item.workflowTemplateId" size="small" @change="item.nodeName='';item.variableName=''">
-                  <el-option v-for="flow in availableWorkflows" :key="flow.id" :label="flow.flowName" :value="flow.id" />
+                  <el-option v-for="flow in availableWorkflows" :key="flow.id" :label="workflowModelName(flow)" :value="flow.id" />
                 </el-select>
               </div>
               <div class="field field-grow">
@@ -383,6 +383,7 @@ import {
   modelCapabilities,
   bindingDeviceModelId
 } from '../../utils/constraintExpression.js'
+import { workflowModelName, workflowNodes } from '../../utils/workflowAuthoring.js'
 
 const props = withDefaults(
   defineProps<{
@@ -481,7 +482,7 @@ const availableSourceTypes = computed(() => {
 
 const availableWorkflows = computed(() =>
   props.taskMode
-    ? [...new Map(props.taskWorkflowNodes.map((x: any) => [Number(x.flowModelId), { id: Number(x.flowModelId), flowName: x.flowName || ('流程' + x.flowModelId) }])).values()]
+    ? [...new Map(props.taskWorkflowNodes.map((x: any) => [Number(x.flowModelId), { id: Number(x.flowModelId), flowName: x.flowModelName || x.flowName || ('流程' + x.flowModelId), flowModelName: x.flowModelName || x.flowName || ('流程' + x.flowModelId) }])).values()]
     : props.workflows
 )
 
@@ -703,13 +704,13 @@ function selectTaskResource(item: any) {
 }
 
 function resourceLabel(resource: any) {
-  return `${resource.flowName || resource.flowModelId} / ${resource.nodeName} → ${resource.instanceName || '实例' + (resource.deviceInstanceId || '待绑定')}`
+  return `${resource.flowModelName || resource.flowName || resource.flowModelId} / ${resource.nodeName} → ${resource.instanceName || '实例' + (resource.deviceInstanceId || '待绑定')}`
 }
 
 function nodesFor(flowId: any) {
   const nodes = props.taskMode
     ? props.taskWorkflowNodes.filter((x: any) => Number(x.flowModelId) === Number(flowId))
-    : props.workflows.find((x: any) => Number(x.id) === Number(flowId))?.nodesDef || []
+    : workflowNodes(props.workflows.find((x: any) => Number(x.id) === Number(flowId)))
   return [...new Map(nodes.map((node: any) => [node.name, node])).values()]
 }
 

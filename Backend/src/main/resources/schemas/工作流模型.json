@@ -189,10 +189,10 @@
               },
               "bindingTriggers": {
                 "type": "array",
-                "description": "绑定到此接口的触发器列表，各触发器独立求值，互不干扰",
+                "description": "绑定到此接口的触发器列表，各触发器独立求值，互不干扰；每个接口至少配置一个触发器，空列表在编译与前端检测中视为未完成配置。系统模板可先给出空数组，由建模者补全后再发布",
                 "items": {
                   "type": "object",
-                  "description": "引擎轮询评估condition；条件整体首次由false变为true时执行内联action",
+                  "description": "引擎轮询评估condition；条件整体首次由false变为true时按顺序执行actions[]，若未写actions则执行action。动作立即持久化，但UPDATE造成的生命周期与内部变量变化不写回本轮求值快照，其他触发器下一轮才观察；同一触发器的actions[]仍按数组顺序立刻执行",
                   "properties": {
                     "condition": {
                       "type": "object",
@@ -202,7 +202,7 @@
                           "type": "object",
                           "description": "单个判断条件",
                           "properties": {
-                            "object": { "type": "string", "description": "被观测目标的标识名，包括节点内部变量名、nodeLifecycleState、IN接口的signalName或系统预置触发器使用的payload.stateName" },
+                            "object": { "type": "string", "description": "被观测目标的标识名，包括节点内部变量名、nodeLifecycleState、taskLifecycleState、IN接口的signalName或系统预置触发器使用的payload.stateName" },
                             "operator": { "$ref": "系统执行规范.json#/definitions/ConstraintOperator" },
                             "threshold": {
                               "type": [ "number", "string", "boolean", "array" ],
@@ -221,7 +221,7 @@
                               "items": {
                                 "type": "object",
                                 "properties": {
-                                  "object": { "type": "string", "description": "被观测目标的标识名，包括节点内部变量名、nodeLifecycleState、IN接口的signalName或系统预置触发器使用的payload.stateName" },
+                                  "object": { "type": "string", "description": "被观测目标的标识名，包括节点内部变量名、nodeLifecycleState、taskLifecycleState、IN接口的signalName或系统预置触发器使用的payload.stateName" },
                                   "operator": { "$ref": "系统执行规范.json#/definitions/ConstraintOperator" },
                                   "threshold": {
                                     "type": [ "number", "string", "boolean", "array" ],
@@ -237,15 +237,25 @@
                       ]
                     },
                     "action": {
-                      "description": "触发器内联动作对象，格式遵循WorkflowNodeAction；其actionName必须包含在所属节点actions[]中，由后端编译阶段校验",
+                      "description": "兼容字段，等于actions[0]；格式遵循WorkflowNodeAction，actionName必须包含在所属节点actions[]中",
                       "allOf": [
                         {
                           "$ref": "#/definitions/WorkflowNodeAction"
                         }
                       ]
+                    },
+                    "actions": {
+                      "type": "array",
+                      "minItems": 1,
+                      "description": "同一上升沿按顺序执行的内联动作列表；存在非空actions时引擎忽略单独的action字段作为执行源，但仍可保留action=actions[0]以便兼容",
+                      "items": { "$ref": "#/definitions/WorkflowNodeAction" }
                     }
                   },
-                  "required": [ "condition", "action" ]
+                  "required": [ "condition" ],
+                  "anyOf": [
+                    { "required": [ "action" ] },
+                    { "required": [ "actions" ] }
+                  ]
                 }
               }
             },

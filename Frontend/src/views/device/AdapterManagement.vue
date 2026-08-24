@@ -3,34 +3,30 @@
     <div class="adapter-workbench-canvas">
 
       <!-- =========================================================================
-           第 1 栏：Adapter 驱动列表栏 (240px，对齐设备模型树)
+           第 1 栏：Adapter 驱动列表栏 (270px，对齐数据中心资产树)
            ========================================================================= -->
-      <aside class="adapter-sidebar">
-        <header class="tree-header">
-          <div class="tree-heading">
-            <div class="tree-title-with-status">
-              <span class="tree-heading-title">Adapter 驱动</span>
-              <span
-                class="broker-status-pill"
-                :class="mqttConnected ? 'online' : 'offline'"
-                :title="mqttConnected ? '系统 MQTT Broker 在线' : '系统 MQTT Broker 未连接，点击重连'"
-                @click="!mqttConnected && reconnectMqtt()"
-              >
-                <span class="dot"></span>
-                <span>{{ mqttConnected ? 'Broker 已连接' : 'Broker 离线' }}</span>
-              </span>
-            </div>
-            <span class="tree-heading-count">{{ filteredAdapters.length }} 个驱动</span>
+      <aside class="adapter-sidebar sl-asset-tree">
+        <div class="tree-header-bar">
+          <div class="tree-header-left">
+            <strong class="tree-header-title">Adapter 驱动</strong>
+            <span class="tree-header-count">{{ filteredAdapters.length }} 个驱动</span>
           </div>
-        </header>
+          <span
+            class="broker-status-pill"
+            :class="mqttConnected ? 'online' : 'offline'"
+            :title="mqttConnected ? '系统 MQTT Broker 在线' : '系统 MQTT Broker 未连接，点击重连'"
+            @click="!mqttConnected && reconnectMqtt()"
+          >
+            <span class="dot"></span>
+            <span>{{ mqttConnected ? 'Broker 已连接' : 'Broker 离线' }}</span>
+          </span>
+        </div>
 
-        <div class="tree-search-row">
-          <el-input
+        <div class="tree-search-bar">
+          <input
             v-model="keyword"
+            class="tree-search-input"
             placeholder="搜索 Adapter 名称..."
-            clearable
-            :prefix-icon="Search"
-            size="small"
           />
           <div class="status-radio-row">
             <el-radio-group v-model="statusFilter" size="small" class="status-filter-group">
@@ -41,12 +37,12 @@
           </div>
         </div>
 
-        <div class="tree-body adapter-list-body" v-loading="loading">
-          <el-empty v-if="filteredAdapters.length === 0" description="暂无匹配驱动" :image-size="60" />
+        <div class="tree-list-scroll" v-loading="loading">
+          <div v-if="filteredAdapters.length === 0" class="tree-empty">暂无匹配驱动</div>
           <div
             v-for="item in filteredAdapters"
             :key="adapterIdOf(item)"
-            class="t-row adapter-node-row"
+            class="t-row"
             :class="{ active: activeKey === adapterIdOf(item) }"
             @click="handleSelectAdapter(adapterIdOf(item))"
           >
@@ -54,10 +50,10 @@
               <span class="m-val status-val" :class="runtimeStatusClass(item)">
                 <span class="dot"></span>
               </span>
-              <span class="t-label mono-text" :title="item.adapterName">{{ item.adapterName || '未命名 Adapter' }}</span>
+              <span class="t-label" :title="item.adapterName">{{ item.adapterName || '未命名 Adapter' }}</span>
             </div>
             <div class="t-row-right">
-              <span class="t-badge">{{ categoryCount(item) }}类/{{ pointCount(item) }}点</span>
+              <span class="t-badge">{{ categoryCount(item) }}/{{ pointCount(item) }}</span>
             </div>
           </div>
         </div>
@@ -79,20 +75,20 @@
       <!-- =========================================================================
            第 2 栏：当前 Adapter 的设备类别导航栏 (统一为设备模型页面风格)
            ========================================================================= -->
-      <aside v-if="activeAdapter" class="category-nav-col">
-        <header class="tree-header">
-          <div class="tree-heading">
-            <span class="tree-heading-title">设备类别</span>
-            <span class="tree-heading-count">{{ activeCategories.length }} 个类别</span>
+      <aside v-if="activeAdapter" class="category-nav-col sl-asset-tree">
+        <div class="tree-header-bar">
+          <div class="tree-header-left">
+            <strong class="tree-header-title">设备类别</strong>
+            <span class="tree-header-count">{{ activeCategories.length }} 个类别</span>
           </div>
-        </header>
+        </div>
 
-        <div class="tree-body category-list-body">
-          <el-empty v-if="activeCategories.length === 0" description="该驱动无类别定义" :image-size="60" />
+        <div class="tree-list-scroll">
+          <div v-if="activeCategories.length === 0" class="tree-empty">该驱动无类别定义</div>
           <div
             v-for="(cat, idx) in activeCategories"
             :key="cat.categoryName || idx"
-            class="t-row category-node-row"
+            class="t-row node-type-category"
             :class="{ active: selectedCategoryIndex === idx }"
             @click="selectedCategoryIndex = idx"
           >
@@ -101,7 +97,7 @@
               <span class="t-label" :title="cat.categoryDescription || cat.categoryName">{{ cat.categoryName || '未命名类别' }}</span>
             </div>
             <div class="t-row-right">
-              <span class="t-badge">({{ asArray(cat.devicePoints).length }} 点位)</span>
+              <span class="t-badge">{{ asArray(cat.devicePoints).length }}</span>
             </div>
           </div>
         </div>
@@ -840,7 +836,6 @@ import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import {
   Plus,
-  Search,
   Upload,
   Connection,
   Document,
@@ -1369,30 +1364,7 @@ onUnmounted(() => {
   min-height: 0;
 }
 
-/* ── 通用统一的树状侧边栏头部与节点样式 (对齐 DeviceModelTree) ── */
-.tree-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 12px;
-  background: #ffffff;
-  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
-  flex-shrink: 0;
-  height: 40px;
-}
-.tree-heading {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-  width: 100%;
-}
-.tree-title-with-status {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 6px;
-}
+/* ── Adapter 侧边栏专用（行高/选中色见 asset-tree.css） ── */
 .broker-status-pill {
   display: inline-flex;
   align-items: center;
@@ -1402,6 +1374,7 @@ onUnmounted(() => {
   padding: 1px 6px;
   border-radius: 10px;
   line-height: 1.3;
+  flex-shrink: 0;
   transition: var(--sl-ease-smooth, all 0.18s ease);
 }
 .broker-status-pill .dot {
@@ -1427,21 +1400,8 @@ onUnmounted(() => {
 .broker-status-pill.offline .dot {
   background: var(--sl-danger, #dc2626);
 }
-.tree-heading-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--sl-text-heading, #0f172a);
-}
-.tree-heading-count {
-  font-size: 11px;
-  color: var(--sl-text-secondary, #64748b);
-}
 
-.tree-search-row {
-  padding: 6px 10px;
-  background: #ffffff;
-  border-bottom: 1px solid var(--sl-border-subtle, #f1f5f9);
-  flex-shrink: 0;
+.adapter-sidebar .tree-search-bar {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -1471,81 +1431,8 @@ onUnmounted(() => {
   border-bottom-right-radius: var(--sl-radius-sm, 6px);
 }
 
-.tree-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 4px 6px;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-/* 统一树状节点行样式 (.t-row) */
-.t-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  min-height: 28px;
-  padding: 4px 8px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: var(--sl-ease-smooth, all 0.18s ease);
-  user-select: none;
-}
-.t-row:hover {
-  background: var(--sl-bg-hover, #f8fafc);
-}
-.t-row.active {
-  background: var(--sl-primary-light, #eff6ff);
-  color: var(--sl-primary, #2563eb);
-}
-.t-row-left {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  flex: 1;
-}
-.t-icon {
-  font-size: 13px;
-  flex-shrink: 0;
-}
-.t-icon.category-icon {
-  color: var(--sl-primary, #2563eb);
-}
-.t-label {
-  font-size: 12.5px;
-  color: var(--sl-text-heading, #0f172a);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.t-row.active .t-label {
-  color: var(--sl-primary, #2563eb);
-  font-weight: 600;
-}
-.t-row-right {
-  display: flex;
-  align-items: center;
-  margin-left: 6px;
-  flex-shrink: 0;
-}
-.t-badge {
-  font-size: 11px;
-  color: var(--sl-text-secondary, #64748b);
-  font-family: var(--sl-font-mono, monospace);
-}
-
-/* ── 左一栏：Adapter 驱动列表栏 (240px) ── */
 .adapter-sidebar {
-  width: 240px;
-  border-right: 1px solid var(--sl-border-base, #e2e8f0);
-  background: #ffffff;
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-  overflow: hidden;
+  width: 270px;
 }
 .sidebar-foot {
   padding: 8px 10px;
@@ -1560,15 +1447,8 @@ onUnmounted(() => {
   margin-left: 2px;
 }
 
-/* ── 第 2 栏：设备类别导航栏 (230px) ── */
 .category-nav-col {
-  width: 230px;
-  border-right: 1px solid var(--sl-border-base, #e2e8f0);
-  background: #fcfdfe;
-  display: flex;
-  flex-direction: column;
-  flex-shrink: 0;
-  overflow: hidden;
+  width: 270px;
 }
 
 /* ── 第 3 栏：右侧工作台主画卷 ── */

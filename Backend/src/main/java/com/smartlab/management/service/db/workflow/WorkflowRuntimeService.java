@@ -6,14 +6,17 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.global.event.TaskLifecycleObservationEvent;
 import com.smartlab.global.event.WorkflowNodeObservationEvent;
 import com.smartlab.global.util.JsonNodeSupport;
+import com.smartlab.engine.workflow.WorkflowExecutionLogs;
 import com.smartlab.engine.workflow.WorkflowTriggerState;
 import com.smartlab.engine.workflow.WorkflowInterfaceSnapshots;
+import com.smartlab.engine.workflow.WorkflowPortSnapshots;
 import com.smartlab.management.entity.workflow.FlowNode;
 import com.smartlab.management.entity.workflow.Task;
 import com.smartlab.management.entity.workflow.TaskStep;
 import com.smartlab.management.mapper.workflow.FlowNodeMapper;
 import com.smartlab.management.mapper.workflow.TaskMapper;
 import com.smartlab.management.mapper.workflow.TaskStepMapper;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,20 +36,46 @@ public class WorkflowRuntimeService {
     private final FlowNodeMapper flowNodeMapper;
     private final ExecutionLogService logService;
     private final ApplicationEventPublisher eventPublisher;
+    private final WorkflowService workflowService;
 
     public WorkflowRuntimeService(TaskMapper taskMapper, TaskStepMapper stepMapper, FlowNodeMapper flowNodeMapper,
                                   ExecutionLogService logService, ApplicationEventPublisher eventPublisher) {
+        this(taskMapper, stepMapper, flowNodeMapper, logService, eventPublisher, null);
+    }
+
+    @Autowired
+    public WorkflowRuntimeService(TaskMapper taskMapper, TaskStepMapper stepMapper, FlowNodeMapper flowNodeMapper,
+                                  ExecutionLogService logService, ApplicationEventPublisher eventPublisher,
+                                  WorkflowService workflowService) {
         this.taskMapper = taskMapper;
         this.stepMapper = stepMapper;
         this.flowNodeMapper = flowNodeMapper;
         this.logService = logService;
         this.eventPublisher = eventPublisher;
+        this.workflowService = workflowService;
     }
 
     public List<Task> runningTasks() {
         return taskMapper.selectList(Wrappers.<Task>lambdaQuery()
-                .eq(Task::getTaskStatus, "RUNNING")
+                .in(Task::getTaskStatus, List.of("RUNNING", "TERMINATING"))
                 .orderByAsc(Task::getId));
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public Task completeTerminationIfSettled(Long taskId) {
+        Task task = taskMapper.selectById(taskId);
+        if (task == null || !"TERMINATING".equals(task.getTaskStatus())) return task;
+        Long activeCount = stepMapper.selectCount(Wrappers.<TaskStep>lambdaQuery()
+                .eq(TaskStep::getTaskId, taskId).in(TaskStep::getNodeStatus, ACTIVE_NODE_STATES));
+        if (activeCount != null && activeCount > 0) return task;
+        task.setTaskStatus("TERMINATED");
+        task.setEndTime(OffsetDateTime.now());
+        task.setCurrentFlowNodeId(null);
+        task.setCurrentNodeIdRef(null);
+        taskMapper.updateById(task);
+        logService.append("TASK", taskId, null, null, "WARN", "任务终止完成");
+        publishTask(task);
+        return task;
     }
 
     public Task task(Long id) {
@@ -92,6 +121,8 @@ public class WorkflowRuntimeService {
         }
         step.setInterfaceInSnapshot(inputSnapshot);
         step.setInterfaceOutSnapshot(WorkflowInterfaceSnapshots.initialize(node.getInterfaces(), "OUT"));
+        step.setPortInSnapshot(WorkflowPortSnapshots.initialize(node.getPorts(), "IN"));
+        step.setPortOutSnapshot(WorkflowPortSnapshots.initialize(node.getPorts(), "OUT"));
         ObjectNode variableSpace = task.getTaskVariables() != null && task.getTaskVariables().isObject()
                 ? (ObjectNode) task.getTaskVariables().deepCopy() : JsonNodeSupport.objectNode();
         if (node.getInVariables() != null && node.getInVariables().isArray()) {
@@ -104,7 +135,8 @@ public class WorkflowRuntimeService {
         }
         step.setVariableSpace(variableSpace);
         stepMapper.insert(step);
-        logService.append("TASK", task.getId(), step.getId(), null, "INFO", "节点已触发: " + node.getNodeIdRef());
+        logService.append("TASK", task.getId(), step.getId(), null, "INFO",
+                WorkflowExecutionLogs.nodeCreated(nodeName(node), node.getNodeIdRef()));
         publishNode(step);
         return step;
     }
@@ -124,7 +156,12 @@ public class WorkflowRuntimeService {
     }
 
     public List<TaskStep> pollableSteps(Long taskId) {
-        return steps(taskId).stream()
+        return pollableSteps(steps(taskId));
+    }
+
+    public List<TaskStep> pollableSteps(List<TaskStep> steps) {
+        if (steps == null || steps.isEmpty()) return List.of();
+        return steps.stream()
                 .filter(step -> ACTIVE_NODE_STATES.contains(step.getNodeStatus())
                         || (TERMINAL_NODE_STATES.contains(step.getNodeStatus())
                         && !terminalObservationSettled(step)))
@@ -149,6 +186,7 @@ public class WorkflowRuntimeService {
             throw new IllegalArgumentException("任务步骤与生命周期节点不匹配");
         }
         if (targetState.equals(target.getNodeStatus())) return;
+        String fromState = target.getNodeStatus();
         requireLifecycleTransition(target, node, targetState);
         OffsetDateTime now = OffsetDateTime.now();
         target.setNodeStatus(targetState);
@@ -168,7 +206,7 @@ public class WorkflowRuntimeService {
             taskMapper.updateById(task);
         }
         logService.append("TASK", task.getId(), target.getId(), null, "INFO",
-                "节点生命周期更新: " + target.getNodeStatus());
+                WorkflowExecutionLogs.lifecycleChanged(nodeName(node), node.getNodeIdRef(), fromState, target.getNodeStatus()));
         publishNode(target);
     }
 
@@ -182,17 +220,31 @@ public class WorkflowRuntimeService {
         stepMapper.updateById(step);
     }
 
+    public void updatePortInSnapshot(TaskStep step, JsonNode snapshot) {
+        step.setPortInSnapshot(snapshot);
+        stepMapper.updateById(step);
+    }
+
+    public void updatePortOutSnapshot(TaskStep step, JsonNode snapshot) {
+        step.setPortOutSnapshot(snapshot);
+        stepMapper.updateById(step);
+    }
+
     @Transactional(rollbackFor = Exception.class)
     public void mergeVariableSpace(TaskStep step, JsonNode values) {
         if (values == null || !values.isObject() || values.isEmpty()) return;
-        TaskStep current = stepMapper.selectById(step.getId());
-        if (current == null) throw new IllegalArgumentException("任务步骤不存在: " + step.getId());
+        TaskStep current = step.getId() == null ? null : stepMapper.selectById(step.getId());
+        if (current == null) current = step;
         ObjectNode merged = current.getVariableSpace() != null && current.getVariableSpace().isObject()
                 ? (ObjectNode) current.getVariableSpace().deepCopy() : JsonNodeSupport.objectNode();
+        if (alreadyContains(merged, values)) {
+            step.setVariableSpace(merged.deepCopy());
+            return;
+        }
         deepMerge(merged, values);
         current.setVariableSpace(merged);
         step.setVariableSpace(merged.deepCopy());
-        stepMapper.updateById(current);
+        if (current.getId() != null) stepMapper.updateById(current);
         publishNode(current);
     }
 
@@ -249,7 +301,7 @@ public class WorkflowRuntimeService {
     @Transactional(rollbackFor = Exception.class)
     public void failTask(Task task, String reason) {
         if (task == null || !("RUNNING".equals(task.getTaskStatus())
-                || "PAUSED".equals(task.getTaskStatus()) || "TERMINATING".equals(task.getTaskStatus()))) return;
+                || "PAUSED".equals(task.getTaskStatus()))) return;
         task.setTaskStatus("FAILED");
         task.setEndTime(OffsetDateTime.now());
         task.setCurrentFlowNodeId(null);
@@ -333,6 +385,39 @@ public class WorkflowRuntimeService {
         target.setEndTime(source.getEndTime());
         target.setDurationMs(source.getDurationMs());
         target.setInterfaceOutSnapshot(source.getInterfaceOutSnapshot());
+    }
+
+    private String nodeName(FlowNode node) {
+        if (node == null) return null;
+        if (workflowService != null && node.getFlowModelId() != null && node.getNodeIdRef() != null) {
+            try {
+                return workflowService.nodeName(node.getFlowModelId(), node.getNodeIdRef());
+            } catch (RuntimeException ignored) {
+                // Fall through to the capability / ref label.
+            }
+        }
+        JsonNode capability = node.getCapability();
+        if (capability != null && capability.path("nodeName").isTextual()) {
+            String name = capability.path("nodeName").asText("");
+            if (!name.isBlank()) return name;
+        }
+        return null;
+    }
+
+    private boolean alreadyContains(JsonNode existing, JsonNode values) {
+        if (existing == null || !existing.isObject() || values == null || !values.isObject()) return false;
+        var fields = values.fields();
+        while (fields.hasNext()) {
+            var entry = fields.next();
+            JsonNode current = existing.get(entry.getKey());
+            if (current == null) return false;
+            if (current.isObject() && entry.getValue().isObject()) {
+                if (!alreadyContains(current, entry.getValue())) return false;
+            } else if (!current.equals(entry.getValue())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private void publishNode(TaskStep step) {

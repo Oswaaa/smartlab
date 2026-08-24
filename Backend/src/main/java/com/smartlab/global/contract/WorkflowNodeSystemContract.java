@@ -53,12 +53,12 @@ public final class WorkflowNodeSystemContract {
     private static ObjectNode startTemplate() {
         ObjectNode template = baseTemplate();
         ArrayNode triggers = JsonNodeSupport.arrayNode();
+        addFunctionTerminationTriggers(triggers, "start");
         triggers.add(trigger("start.begin", "nodeLifecycleState", "=", "PENDING",
                 updateLifecycleAction("RUNNING")));
-        triggers.add(trigger("start.emitActive", "nodeLifecycleState", "=", "RUNNING",
-                emitAction("Interface_workflow_out", WorkflowNodeSignal.ACTIVE.name())));
         triggers.add(trigger("start.complete", "nodeLifecycleState", "=", "RUNNING",
-                updateLifecycleAction("SUCCEEDED")));
+                updateLifecycleAction("SUCCEEDED"),
+                emitAction("Interface_workflow_out", WorkflowNodeSignal.ACTIVE.name())));
         template.withArray("interfaces").add(workflowInterface(
                 "start.workflowOut", "Interface_workflow_out", "OUT", triggers));
         addActions(template, WorkflowNodeActionType.UPDATE, WorkflowNodeActionType.EMIT);
@@ -68,6 +68,7 @@ public final class WorkflowNodeSystemContract {
     private static ObjectNode endTemplate() {
         ObjectNode template = baseTemplate();
         ArrayNode triggers = JsonNodeSupport.arrayNode();
+        addFunctionTerminationTriggers(triggers, "end");
         triggers.add(trigger("end.activate", "signalName", "=", WorkflowNodeSignal.ACTIVE.name(),
                 updateLifecycleAction("RUNNING")));
         triggers.add(trigger("end.complete", "nodeLifecycleState", "=", "RUNNING",
@@ -80,7 +81,9 @@ public final class WorkflowNodeSystemContract {
 
     private static ObjectNode branchTemplate() {
         ObjectNode template = baseTemplate();
-        ArrayNode triggers = activationTriggers("branch");
+        ArrayNode triggers = JsonNodeSupport.arrayNode();
+        addFunctionTerminationTriggers(triggers, "branch");
+        activationTriggers("branch").forEach(triggers::add);
         template.withArray("interfaces").add(workflowInterface(
                 "branch.workflowIn", "Interface_workflow_in", "IN", triggers));
         addActions(template, WorkflowNodeActionType.UPDATE, WorkflowNodeActionType.EMIT);
@@ -94,6 +97,7 @@ public final class WorkflowNodeSystemContract {
                 .put("dataType", "INTEGER")
                 .put("initialValue", 0)));
         ArrayNode inputTriggers = JsonNodeSupport.arrayNode();
+        addFunctionTerminationTriggers(inputTriggers, "aggregate");
         inputTriggers.add(trigger("aggregate.countInput", "signalName", "=", WorkflowNodeSignal.ACTIVE.name(),
                 updateInternalVariableAction("aggregateCount", "aggregateCount + 1")));
         inputTriggers.add(andTrigger("aggregate.activate", updateLifecycleAction("RUNNING"),
@@ -110,9 +114,17 @@ public final class WorkflowNodeSystemContract {
     private static ObjectNode deviceTemplate() {
         ObjectNode template = baseTemplate();
         ArrayNode workflowTriggers = JsonNodeSupport.arrayNode();
+        workflowTriggers.add(andTrigger("device.pendingTerminate", updateLifecycleAction("TERMINATED"),
+                predicate("taskLifecycleState", "=", "TERMINATING"),
+                predicate("nodeLifecycleState", "=", "PENDING")));
+        workflowTriggers.add(andTrigger("device.runningTerminate", updateLifecycleAction("TERMINATING"),
+                predicate("taskLifecycleState", "=", "TERMINATING"),
+                predicate("nodeLifecycleState", "=", "RUNNING")));
         workflowTriggers.add(trigger("device.workflowStart", "signalName", "=",
                 WorkflowNodeSignal.ACTIVE.name(), updateLifecycleAction("RUNNING")));
         ArrayNode stateOutputTriggers = JsonNodeSupport.arrayNode();
+        stateOutputTriggers.add(trigger("device.abort", "nodeLifecycleState", "=", "TERMINATING",
+                emitAction("Interface_state_out", WorkflowControlSignal.WF_EXECUTE_ABORT.name())));
         stateOutputTriggers.add(trigger("device.execute", "nodeLifecycleState", "=", "RUNNING",
                 emitAction("Interface_state_out", WorkflowControlSignal.WF_EXECUTE_START.name())));
         ArrayNode stateTriggers = JsonNodeSupport.arrayNode();
@@ -120,12 +132,29 @@ public final class WorkflowNodeSystemContract {
                 predicate("nodeLifecycleState", "=", "RUNNING"),
                 predicate("signalName", "=", StatusSignal.CMD_STATE.name()),
                 predicate("payload.stateName", "=", "COMPLETED")));
+        stateTriggers.add(andTrigger("device.stateFailed", updateLifecycleAction("FAILED"),
+                predicate("nodeLifecycleState", "=", "RUNNING"),
+                predicate("signalName", "=", StatusSignal.CMD_STATE.name()),
+                predicate("payload.stateName", "=", "FAILED")));
+        stateTriggers.add(andTrigger("device.stateAborted", updateLifecycleAction("FAILED"),
+                predicate("nodeLifecycleState", "=", "RUNNING"),
+                predicate("signalName", "=", StatusSignal.CMD_STATE.name()),
+                predicate("payload.stateName", "=", "ABORTED")));
+        stateTriggers.add(andTrigger("device.stateAbortedTerminating", updateLifecycleAction("TERMINATED"),
+                predicate("nodeLifecycleState", "=", "TERMINATING"),
+                predicate("signalName", "=", StatusSignal.CMD_STATE.name()),
+                predicate("payload.stateName", "=", "ABORTED")));
+        stateTriggers.add(andTrigger("device.stateFailedTerminating", updateLifecycleAction("FAILED"),
+                predicate("nodeLifecycleState", "=", "TERMINATING"),
+                predicate("signalName", "=", StatusSignal.CMD_STATE.name()),
+                predicate("payload.stateName", "=", "FAILED")));
         ArrayNode workflowOutputTriggers = JsonNodeSupport.arrayNode();
         workflowOutputTriggers.add(trigger("device.completeNode", "nodeLifecycleState", "=", "SUCCEEDED",
                 emitAction("Interface_workflow_out", WorkflowNodeSignal.ACTIVE.name())));
         template.withArray("interfaces").add(workflowInterface("device.workflowIn", "Interface_workflow_in", "IN", workflowTriggers));
         template.withArray("interfaces").add(interfaceDefinition("device.stateOut", "Interface_state_out", "OUT", "STATE",
-                List.of(WorkflowControlSignal.WF_EXECUTE_START.name()), stateOutputTriggers));
+                List.of(WorkflowControlSignal.WF_EXECUTE_START.name(), WorkflowControlSignal.WF_EXECUTE_ABORT.name()),
+                stateOutputTriggers));
         template.withArray("interfaces").add(interfaceDefinition("device.stateIn", "Interface_state_in", "IN", "STATE",
                 List.of(StatusSignal.CMD_STATE.name()), stateTriggers));
         template.withArray("interfaces").add(workflowInterface(
@@ -137,6 +166,7 @@ public final class WorkflowNodeSystemContract {
     private static ObjectNode subflowTemplate() {
         ObjectNode template = baseTemplate();
         ArrayNode inputTriggers = JsonNodeSupport.arrayNode();
+        addFunctionTerminationTriggers(inputTriggers, "subflow");
         inputTriggers.add(trigger("subflow.activate", "signalName", "=", WorkflowNodeSignal.ACTIVE.name(),
                 updateLifecycleAction("RUNNING")));
         inputTriggers.add(trigger("subflow.childCompleted", "signalName", "=",
@@ -204,6 +234,17 @@ public final class WorkflowNodeSystemContract {
         return system(systemKey, definition);
     }
 
+    private static void addFunctionTerminationTriggers(ArrayNode triggers, String prefix) {
+        triggers.add(andTrigger(prefix + ".pendingTerminate", updateLifecycleAction("TERMINATED"),
+                predicate("taskLifecycleState", "=", "TERMINATING"),
+                predicate("nodeLifecycleState", "=", "PENDING")));
+        triggers.add(andTrigger(prefix + ".runningTerminate", updateLifecycleAction("TERMINATING"),
+                predicate("taskLifecycleState", "=", "TERMINATING"),
+                predicate("nodeLifecycleState", "=", "RUNNING")));
+        triggers.add(trigger(prefix + ".terminatingComplete", "nodeLifecycleState", "=", "TERMINATING",
+                updateLifecycleAction("TERMINATED")));
+    }
+
     private static ArrayNode activationTriggers(String prefix) {
         ArrayNode triggers = JsonNodeSupport.arrayNode();
         triggers.add(trigger(prefix + ".activate", "signalName", "=", WorkflowNodeSignal.ACTIVE.name(),
@@ -212,9 +253,9 @@ public final class WorkflowNodeSystemContract {
     }
 
     private static ObjectNode trigger(String systemKey, String object, String operator, Object threshold,
-                                      ObjectNode action) {
+                                      ObjectNode... actions) {
         ObjectNode definition = JsonNodeSupport.objectNode();
-        definition.set("action", action);
+        assignActions(definition, actions);
         ObjectNode condition = definition.putObject("condition");
         condition.put("object", object);
         condition.put("operator", operator);
@@ -225,12 +266,23 @@ public final class WorkflowNodeSystemContract {
 
     private static ObjectNode andTrigger(String systemKey, ObjectNode action, ObjectNode... predicates) {
         ObjectNode definition = JsonNodeSupport.objectNode();
-        definition.set("action", action);
+        assignActions(definition, action);
         ObjectNode condition = definition.putObject("condition");
         condition.put("logic", "AND");
         ArrayNode conditions = condition.putArray("conditions");
         for (ObjectNode predicate : predicates) conditions.add(predicate);
         return system(systemKey, definition);
+    }
+
+    private static void assignActions(ObjectNode definition, ObjectNode... actions) {
+        if (actions == null || actions.length == 0) {
+            throw new IllegalArgumentException("触发器至少需要一个动作");
+        }
+        definition.set("action", actions[0]);
+        if (actions.length > 1) {
+            ArrayNode list = definition.putArray("actions");
+            for (ObjectNode action : actions) list.add(action);
+        }
     }
 
     private static ObjectNode predicate(String object, String operator, Object threshold) {

@@ -16,12 +16,26 @@ const STATUS_LABELS = {
   TERMINATED: '已终止',
 }
 
+const NODE_STATUS_LABELS = {
+  WAITING: '等待创建',
+  PENDING: '待执行',
+  RUNNING: '运行中',
+  SUCCEEDED: '已完成',
+  FAILED: '失败',
+  TERMINATING: '终止中',
+  TERMINATED: '已终止',
+}
+
 export function statusType(status) {
   return STATUS_TYPES[status] || 'info'
 }
 
 export function statusLabel(status) {
   return STATUS_LABELS[status] || status
+}
+
+export function nodeStatusLabel(status) {
+  return NODE_STATUS_LABELS[status] || status
 }
 
 export function selectPreferredStepId(steps = [], preferredId = null) {

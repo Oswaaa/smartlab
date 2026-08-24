@@ -89,7 +89,6 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '../../stores/authStore'
-import { useConsoleStore } from '../../stores/consoleStore'
 import DeviceModelTree from './components/DeviceModelTree.vue'
 import { loadProtocolMetadata } from './components/deviceModel/deviceModelConstants'
 import InstanceListTable from './components/deviceInstance/InstanceListTable.vue'
@@ -100,7 +99,6 @@ import { normalizeInstance, normalizeModel } from './components/deviceInstance/n
 import type { AdapterOption, DeviceInstance, DeviceModel } from './components/deviceInstance/types'
 
 const authStore = useAuthStore()
-const consoleStore = useConsoleStore()
 
 const models = ref<DeviceModel[]>([])
 const modelOptions = ref<DeviceModel[]>([])
@@ -267,7 +265,6 @@ const confirmRetireInstance = async (row: DeviceInstance) => {
 }
 
 onMounted(() => {
-  consoleStore.initGlobalStream()
   loadProtocolMetadata().catch(() => {})
   loadData()
 })
@@ -298,8 +295,8 @@ onUnmounted(() => {
   min-height: 0;
 }
 .workbench-sidebar {
-  border-right: 1px solid var(--sl-border-base);
   height: 100%;
+  min-width: 0;
 }
 .workbench-main {
   flex: 1;

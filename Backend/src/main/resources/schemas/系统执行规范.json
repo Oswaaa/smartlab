@@ -33,6 +33,20 @@
       "type": "array",
       "description": "TASK_STEP输入或输出接口当前值数组，每个已声明接口在对应方向数组中恰有一项",
       "items": { "$ref": "#/definitions/WorkflowInterfaceSnapshotItem" }
+    },
+    "WorkflowPortSnapshotItem": {
+      "type": "object",
+      "description": "TASK_STEP端口当前值快照项；value为null表示该端口尚无当前值",
+      "properties": {
+        "portName": { "type": "string", "description": "节点ports[].name中声明的端口名" },
+        "value": { "description": "端口当前值；尚无值时为null" }
+      },
+      "required": [ "portName", "value" ]
+    },
+    "WorkflowPortSnapshot": {
+      "type": "array",
+      "description": "TASK_STEP输入或输出端口当前值数组，每个已声明端口在对应方向数组中恰有一项",
+      "items": { "$ref": "#/definitions/WorkflowPortSnapshotItem" }
     }
   },
   "stateMachineEngine": {
@@ -288,7 +302,7 @@
         "allowedSignalsRef": "协议规范.json#/definitions/WorkflowNodeSignal"
       },
       {
-        "comment": "设备能力节点的STATE输出接口EMIT动作通过此接口向设备状态机发送WF_EXECUTE_START或WF_EXECUTE_ABORT",
+        "comment": "设备能力节点的STATE输出接口：EMIT先把WF_EXECUTE_START或WF_EXECUTE_ABORT写入本节点OUT快照，再通知接口连接按NODE_TO_DEVICE活边转发到设备状态机",
         "nodeTypes": [ "DEV_NODE" ],
         "name": "Interface_state_out",
         "direction": "OUT",
@@ -316,31 +330,43 @@
     ],
     "nodeInterfaceTriggerExecutionRules": [
       {
-        "comment": "WORKFLOW输入处理：信号到达连接后，目标接口依据allowedSignals决定是否接收；允许的信号写入输入接口快照。下一轮任务轮询遍历该节点接口触发器，condition首次整体成立时执行内联EMIT或UPDATE动作",
+        "comment": "WORKFLOW输入处理：信号到达连接后，目标接口依据allowedSignals决定是否接收；允许的信号写入输入接口快照。下一轮任务轮询遍历该节点接口触发器，condition对照本轮开始时冻结的节点快照求值；首次整体成立时按顺序执行内联EMIT或UPDATE。动作立即持久化，但不把生命周期或内部变量写回本轮快照，其他触发器下一轮才观察。每个接口至少配置一个触发器，否则该接口在轮询中不会产生动作，编译与前端检测拒绝空列表",
         "nodeTypes": [ "DEV_NODE", "FUNC_NODE", "SUBFLOW_NODE" ],
         "inputInterfaceType": "WORKFLOW",
         "inputSignalRef": "协议规范.json#/definitions/WorkflowNodeSignal",
         "conditionSource": "node.interfaces[].bindingTriggers[].condition",
-        "actionSource": "node.interfaces[].bindingTriggers[].action；action.actionName须包含在node.actions[]中",
+        "actionSource": "node.interfaces[].bindingTriggers[].actions[]优先，否则action；各动作actionName须包含在node.actions[]中，同一上升沿按数组顺序执行",
         "allowedActions": [ "EMIT", "UPDATE" ]
       },
       {
-        "comment": "STATE输入处理：状态机广播到达DEV_NODE连接后，工作流引擎依据Interface_state_in.allowedSignals判断是否接收；仅CMD_STATE写入接口快照，OP_STATE正常跳过。下一轮任务轮询遍历该节点接口触发器，condition首次整体成立时执行内联EMIT或UPDATE动作；UPDATE节点生命周期时必须通过lifecycle.transitions合法转移校验",
+        "comment": "STATE输入处理：状态机在本实例接口上广播；接口连接按任务期DEVICE_TO_NODE活边（步骤+实例，可挂当前命令messageId）原路写入节点IN。工作流引擎不监听状态机事件。仅allowedSignals中的信号（通常CMD_STATE）写入接口快照，OP_STATE若未允许则跳过。下一轮任务轮询对照冻结快照遍历该节点接口触发器",
         "nodeTypes": [ "DEV_NODE" ],
         "inputInterfaceType": "STATE",
         "allowedSignals": [ "CMD_STATE" ],
         "conditionSource": "node.interfaces[].bindingTriggers[].condition",
-        "actionSource": "node.interfaces[].bindingTriggers[].action；action.actionName须包含在node.actions[]中",
+        "actionSource": "node.interfaces[].bindingTriggers[].actions[]优先，否则action；各动作actionName须包含在node.actions[]中，同一上升沿按数组顺序执行",
         "allowedActions": [ "EMIT", "UPDATE" ]
       }
     ],
     "expressionRule": { "comment": "FUNC_NODE.expression与约束表达式使用同一个后端表达式求值器，但不使用约束bindings功能节点只引用本节点internalVariables；约束模型需要跨设备、跨节点数据源，因此才使用bindings", "variableScope": "当前FUNC_NODE的internalVariables", "bindings": "不使用" },
+    "nodePortRefreshRules": [
+      {
+        "ruleName": "PORT_REFRESH_BEFORE_INTERFACE_TRIGGERS",
+        "comment": "同一任务100ms轮询周期内先按目标端口拉取活跃端口连接，再评接口触发器。端口边以下游步骤处于PENDING/RUNNING/TERMINATING为准；拉取只写入目标PORT_IN_SNAPSHOT与目标内部变量。源步骤若已SUCCEEDED则变量空间与PORT_OUT冻结，绑定声明仍用于从孪生取值。终态上游不进入接口触发器轮询。"
+      }
+    ],
+    "interfaceConnectionRuntimeRules": [
+      {
+        "ruleName": "INTERFACE_LIVE_EDGES_ALIGN_WITH_PORTS",
+        "comment": "FLOW_MODELS.interface_connection仍是模板。任务轮询时实例化为带taskId/stepId/deviceInstanceId的活边：NODE_TO_NODE以下游PENDING/RUNNING/TERMINATING为准；NODE_TO_DEVICE与DEVICE_TO_NODE随设备步骤RUNNING/TERMINATING。源口EMIT时工作流引擎先写OUT快照再通知connection；connection不轮询邮箱，按这次通知查活边转发。去程信号不含taskId，回程按占用中的DEVICE_TO_NODE原路写回。控制台与观测仍直接听状态机广播。"
+      }
+    ],
     "taskTerminationProcess": [
-      { "step": 1, "comment": "约束引擎或任务服务调用任务终止服务，任务服务校验目标任务处于RUNNING或PAUSED后将TASK_STATUS更新为TERMINATING" },
-      { "step": 2, "comment": "工作流引擎读取该任务内仍在运行的DEV_NODE，对每个节点执行已定义的终止逻辑并通过其STATE输出接口发送WF_EXECUTE_ABORT" },
-      { "step": 3, "comment": "目标设备实例状态机收到WF_EXECUTE_ABORT后，使当前普通指令A进入ABORTING，通过A.abortCapabilityName解析B，在A执行期间创建附属终止状态机，并构造CMD_ABORT发送B" },
+      { "step": 1, "comment": "约束SYSTEM:ABORT或任务服务调用任务终止入口，校验RUNNING或PAUSED后将TASK_STATUS更新为TERMINATING。控制服务不直接dispatchDeviceAbort，也不把功能节点从RUNNING改成TERMINATED" },
+      { "step": 2, "comment": "引擎继续轮询TERMINATING任务。节点按模板触发器收敛：PENDING且任务TERMINATING→TERMINATED；RUNNING且任务TERMINATING→TERMINATING。设备节点再由模型触发器EMIT WF_EXECUTE_ABORT。功能/子流程节点TERMINATING后直接TERMINATED，不等设备" },
+      { "step": 3, "comment": "目标设备实例状态机收到WF_EXECUTE_ABORT后，使当前普通指令A进入ABORTING，通过A.abortCapabilityName解析B，在A执行期间创建附属终止状态机，并构造CMD_ABORT发送B。约束设备终止能力走同一指令生命周期；若已在ABORTING/ABORTED或已有终止执行，状态机忽略重复中止" },
       { "step": 4, "comment": "Adapter明确上报A的终止事件时按该事件更新A；Adapter未上报A的明确终态时，B进入COMPLETED后依据B.scope将匹配的活动普通指令A默认转为ABORTED，并通过Interface_state_out广播CMD_STATE" },
-      { "step": 5, "comment": "工作流引擎收到相关CMD_STATE=ABORTED后完成节点终止收敛；全部需终止节点收敛后，任务服务将TASK_STATUS更新为TERMINATED" }
+      { "step": 5, "comment": "设备节点TERMINATING且CMD_STATE=ABORTED→节点TERMINATED；TERMINATING且FAILED→节点FAILED。任务仍为TERMINATING时节点FAILED不会把任务改成FAILED。无PENDING/RUNNING/TERMINATING步骤后任务TERMINATING→TERMINATED。仅设备终止且任务仍RUNNING时，节点FAILED才会把任务打成FAILED" }
     ]
   },
   "constraintEngine": {

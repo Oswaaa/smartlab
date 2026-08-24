@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>连线配色 · 两版对照</title>
+<style>
+  :root{
+    --ink:#1f2329; --ink-2:#4e5969; --ink-3:#8f959e; --ink-4:#a9aeb8;
+    --line:#e4e7ed; --line-soft:#f0f1f4; --bg:#f7f8fa;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:"PingFang SC","Microsoft YaHei",system-ui,sans-serif;background:var(--bg);color:var(--ink);padding:28px 32px 40px}
+  header.page{max-width:1240px;margin:0 auto 18px}
+  header.page h1{font-size:18px;font-weight:700}
+  header.page p{margin-top:4px;font-size:12.5px;color:var(--ink-3)}
+  .versions{display:grid;gap:22px;max-width:1240px;margin:0 auto}
+  .version{border:1px solid var(--line);border-radius:14px;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.04);overflow:hidden}
+  .version>header{display:flex;align-items:baseline;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line-soft)}
+  .version .tag{flex:none;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+  .version h2{font-size:14.5px;font-weight:650}
+  .version .desc{font-size:12px;color:var(--ink-3)}
+  .stage-wrap{padding:18px;background:var(--bg)}
+  .stage{position:relative;width:1160px;height:400px;margin:0 auto;border:1px solid var(--line);border-radius:10px;background:#fff;
+    background-image:linear-gradient(#eef1f5 1px,transparent 1px),linear-gradient(90deg,#eef1f5 1px,transparent 1px);
+    background-size:12px 12px}
+  .stage svg.edges{position:absolute;inset:0;width:100%;height:100%;overflow:visible}
+  .stage svg.edges path{fill:none;stroke-linecap:round;stroke-linejoin:round}
+
+  /* ---- 节点（沿用 v2 定稿样式，简化版） ---- */
+  .node{position:absolute;border:1px solid var(--line);border-radius:10px;background:#fff;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+  .node .hd{display:flex;align-items:center;gap:8px;padding:10px 12px}
+  .node.compact .hd{padding:9px 12px}
+  .chip{flex:none;display:grid;place-items:center;width:26px;height:26px;border-radius:7px}
+  .compact .chip{width:22px;height:22px;border-radius:6px}
+  .chip svg{width:14px;height:14px;display:block}
+  .node .tt b{display:block;font-size:13px;font-weight:600;line-height:1.25}
+  .compact .tt b{font-size:12.5px}
+  .node .tt small{display:block;font-size:10.5px;color:var(--ink-3)}
+  .node .bd{padding:8px 12px 10px;border-top:1px solid var(--line-soft)}
+  .node .op{display:flex;align-items:baseline;gap:8px}
+  .node .op label{font-size:10px;color:var(--ink-4)}
+  .node .op span{font-size:12.5px;font-weight:650}
+  .node .rows{padding:6px 0}
+  .node .out-row{display:flex;align-items:center;height:30px;padding:0 12px;font-size:11px;font-weight:600;color:var(--ink-2)}
+  .node .out-row+.out-row{border-top:1px solid var(--line-soft)}
+  .t-start .chip{background:#eaf7f0;color:#1e9e62}
+  .t-device .chip{background:#edf3fe;color:#2563eb}
+  .t-branch .chip{background:#fdf4e3;color:#c77414}
+  .t-end .chip{background:#f1f2f4;color:#6b7280}
+
+  /* ---- 端口 ---- */
+  .port{position:absolute;width:10px;height:10px;background:#fff;border:2px solid #9aa5b1;transform:translate(-50%,-50%)}
+  .port.exec{border-radius:50%}
+  .port.data{border-radius:2px}
+  .port-label{position:absolute;font-size:9px;font-family:Consolas,monospace;color:var(--ink-4);white-space:nowrap;transform:translateX(10px)}
+  .port-label.top{top:-15px}
+  .port-label.bottom{top:calc(100% + 4px)}
+
+  /* ---- 图例 ---- */
+  .legend{display:flex;gap:22px;padding:12px 18px 14px;border-top:1px solid var(--line-soft);font-size:11.5px;color:var(--ink-3)}
+  .legend .item{display:flex;align-items:center;gap:7px}
+  .legend svg{display:block}
+  .note{max-width:1240px;margin:18px auto 0;padding:12px 16px;border:1px solid #e8e2d4;border-radius:8px;background:#fdfaf3;font-size:12px;color:#7a6a4a;line-height:1.7}
+</style>
+</head>
+<body>
+<header class="page">
+  <h1>连线配色 · 两版对照（圆角折线不变，只改颜色策略）</h1>
+  <p>共同规则：默认状态用降饱和的分类色区分「执行流（实线）/ 数据流（虚线）」；悬停与选中时在该色系内加深、加粗到 2.2。两版差别只在色相选择。每条场景里都有一条「选中态」的执行边和一条「悬停态」的数据边做演示。</p>
+</header>
+<div class="versions" id="versions"></div>
+<div class="note">
+  建议：版本 A（雾蓝 × 灰紫）沿用旧版的蓝/紫分类记忆，老用户零学习成本；版本 B（雾蓝 × 青灰）更接近 Dify 一类新工具的冷色搭配，数据流更“安静”。两版的默认色饱和度都压到 40% 以下，与灰色网格、白卡片同屏不抢戏。
+</div>
+
+<script>
+const ICONS = {
+  start:'<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>',
+  end:'<svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"/></svg>',
+  branch:'<svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5" transform="rotate(45 12 12)" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>',
+  device:'<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="10" y="10" width="4" height="4" fill="currentColor"/></svg>',
+};
+
+const NODES = [
+  { id:'start',  type:'start',  x:40,  y:150, w:160, h:44,  name:'start',        kind:'开始节点', compact:true },
+  { id:'sensor', type:'device', x:260, y:128, w:220, h:88,  name:'温控采集',      kind:'设备能力', op:'读取温度', dataOut:['tempOut','humidityOut'] },
+  { id:'branch', type:'branch', x:540, y:96,  w:200, h:116, name:'温度路由',      kind:'分支节点', rows:['高温路径','常规路径'] },
+  { id:'heater', type:'device', x:800, y:40,  w:220, h:88,  name:'加热炉',        kind:'设备能力', op:'设定温度', dataIn:['targetTemp'] },
+  { id:'cooler', type:'device', x:800, y:220, w:220, h:88,  name:'风冷机组',      kind:'设备能力', op:'转速控制', dataIn:['speedRef'] },
+  { id:'end',    type:'end',    x:1060,y:150, w:150, h:44,  name:'end',          kind:'结束节点', compact:true },
+];
+
+// kind: exec=实线 data=虚线; state: '' | 'selected' | 'hover'
+const EDGES = [
+  { from:['start','right'],  to:['sensor','left'],  kind:'exec' },
+  { from:['sensor','right'], to:['branch','left'],  kind:'exec' },
+  { from:['branch','right',0], to:['heater','left'], kind:'exec', state:'selected' },
+  { from:['branch','right',1], to:['cooler','left'], kind:'exec' },
+  { from:['heater','right'], to:['end','left'],     kind:'exec' },
+  { from:['cooler','right'], to:['end','left'],     kind:'exec' },
+  { from:['sensor','bottom',0], to:['heater','top',0], kind:'data' },
+  { from:['sensor','bottom',1], to:['cooler','top',0], kind:'data', state:'hover' },
+];
+
+const VERSIONS = [
+  {
+    id:'A', tag:'版本 A · 已采纳', tagColor:'#2563eb', tagBg:'#edf3fe',
+    title:'雾蓝 × 灰紫',
+    desc:'沿用旧版蓝/紫分类记忆，整体降饱和：执行 #7c93b8、数据 #9a8ab5；选中/悬停在各自色系内加深。',
+    exec:'#7c93b8', execActive:'#3b6fd4',
+    data:'#9a8ab5', dataActive:'#7a5fc0',
+  },
+  {
+    id:'B', tag:'版本 B', tagColor:'#0f766e', tagBg:'#f0fdfa',
+    title:'雾蓝 × 青灰',
+    desc:'执行 #6f94bd、数据 #6aa795（青灰绿）。蓝/青搭配更接近 Dify 一类新工具，数据流更安静。',
+    exec:'#6f94bd', execActive:'#2f6fd0',
+    data:'#6aa795', dataActive:'#3d8a74',
+  },
+];
+
+function nodeById(id){ return NODES.find(n => n.id === id) }
+
+function portCoord(node, side, index = 0, total = 1){
+  if (side === 'right')  return [node.x + node.w, node.y + node.h / 2];
+  if (side === 'left')   return [node.x, node.y + node.h / 2];
+  if (side === 'bottom') return [node.x + node.w * (index + 1) / (total + 1), node.y + node.h];
+  return [node.x + node.w * (index + 1) / (total + 1), node.y];
+}
+
+function roundedPath(points, r = 10){
+  if (points.length < 3) return points.map((p,i) => `${i?'L':'M'} ${p[0]} ${p[1]}`).join(' ');
+  const parts = [`M ${points[0][0]} ${points[0][1]}`];
+  for (let i = 1; i < points.length - 1; i++){
+    const [px,py] = points[i-1], [cx,cy] = points[i], [nx,ny] = points[i+1];
+    const ix = Math.sign(cx-px), iy = Math.sign(cy-py), ox = Math.sign(nx-cx), oy = Math.sign(ny-cy);
+    const rr = Math.max(0, Math.min(r, (Math.abs(cx-px)+Math.abs(cy-py))/2, (Math.abs(nx-cx)+Math.abs(ny-cy))/2));
+    if (!rr){ parts.push(`L ${cx} ${cy}`); continue }
+    parts.push(`L ${cx-ix*rr} ${cy-iy*rr} Q ${cx} ${cy} ${cx+ox*rr} ${cy+oy*rr}`);
+  }
+  const last = points[points.length-1];
+  parts.push(`L ${last[0]} ${last[1]}`);
+  return parts.join(' ');
+}
+
+function pathFor(edge){
+  const s = nodeById(edge.from[0]), t = nodeById(edge.to[0]);
+  const sTotal = edge.from[1] === 'bottom' ? (s.dataOut?.length || 1) : 1;
+  const tTotal = edge.to[1] === 'top' ? (t.dataIn?.length || 1) : 1;
+  const [sx, sy] = portCoord(s, edge.from[1], edge.from[2] || 0, sTotal);
+  const [tx, ty] = portCoord(t, edge.to[1], edge.to[2] || 0, tTotal);
+  if (edge.from[1] === 'right' && edge.to[1] === 'left'){
+    const exitX = sx + 20, approachX = tx - 20;
+    if (approachX > exitX + 4){
+      const midX = (exitX + approachX) / 2;
+      return roundedPath([[sx,sy],[midX,sy],[midX,ty],[tx,ty]]);
+    }
+    const aroundY = ty > sy ? Math.max(s.y + s.h, t.y + t.h) + 26 : Math.min(s.y, t.y) - 26;
+    return roundedPath([[sx,sy],[exitX,sy],[exitX,aroundY],[approachX,aroundY],[approachX,ty],[tx,ty]]);
+  }
+  // bottom -> top
+  const midY = (sy + 20 + ty - 20) / 2;
+  return roundedPath([[sx,sy],[sx,midY],[tx,midY],[tx,ty]]);
+}
+
+function buildNode(n){
+  const el = document.createElement('div');
+  el.className = `node t-${n.type}${n.compact ? ' compact' : ''}`;
+  el.style.cssText = `left:${n.x}px;top:${n.y}px;width:${n.w}px;height:${n.h}px`;
+  const rows = n.rows ? `<div class="bd rows">${n.rows.map(r => `<div class="out-row"><b>${r}</b></div>`).join('')}</div>` : '';
+  const op = n.op ? `<div class="bd"><div class="op"><label>操作</label><span>${n.op}</span></div></div>` : '';
+  el.innerHTML = `
+    <div class="hd"><span class="chip">${ICONS[n.type]}</span>
+      <div class="tt"><b>${n.name}</b><small>${n.kind}</small></div>
+    </div>${rows}${op}`;
+  // 控制端口：左入右出（开始无入、结束无出）
+  if (n.type !== 'start'){
+    const p = document.createElement('span');
+    p.className = 'port exec'; p.style.left = '0px'; p.style.top = '50%';
+    el.appendChild(p);
+  }
+  if (n.type !== 'end'){
+    if (n.rows){
+      n.rows.forEach((_, i) => {
+        const p = document.createElement('span');
+        p.className = 'port exec'; p.style.left = `${n.w}px`;
+        p.style.top = `${44 + 6 + 15 + 30 * i}px`;
+        el.appendChild(p);
+      });
+    } else {
+      const p = document.createElement('span');
+      p.className = 'port exec'; p.style.left = `${n.w}px`; p.style.top = '50%';
+      el.appendChild(p);
+    }
+  }
+  (n.dataIn || []).forEach((name, i, arr) => {
+    const p = document.createElement('span');
+    p.className = 'port data';
+    p.style.left = `${(i + 1) * 100 / (arr.length + 1)}%`; p.style.top = '0px';
+    el.appendChild(p);
+    const label = document.createElement('span');
+    label.className = 'port-label top';
+    label.style.left = `${(i + 1) * 100 / (arr.length + 1)}%`;
+    label.textContent = name;
+    el.appendChild(label);
+  });
+  (n.dataOut || []).forEach((name, i, arr) => {
+    const p = document.createElement('span');
+    p.className = 'port data';
+    p.style.left = `${(i + 1) * 100 / (arr.length + 1)}%`; p.style.top = `${n.h}px`;
+    el.appendChild(p);
+    const label = document.createElement('span');
+    label.className = 'port-label bottom';
+    label.style.left = `${(i + 1) * 100 / (arr.length + 1)}%`;
+    label.textContent = name;
+    el.appendChild(label);
+  });
+  return el;
+}
+
+function legendSwatch(color, dashed, width = 1.8){
+  return `<svg width="26" height="6"><path d="M1 3 H 25" stroke="${color}" stroke-width="${width}" ${dashed ? 'stroke-dasharray="5 4"' : ''} stroke-linecap="round"/></svg>`;
+}
+
+function renderVersion(v){
+  const section = document.createElement('section');
+  section.className = 'version';
+  section.innerHTML = `
+    <header>
+      <span class="tag" style="color:${v.tagColor};background:${v.tagBg}">${v.tag}</span>
+      <h2>${v.title}</h2>
+      <span class="desc">${v.desc}</span>
+    </header>
+    <div class="stage-wrap"><div class="stage" id="stage-${v.id}"></div></div>
+    <div class="legend">
+      <span class="item">${legendSwatch(v.exec, false)} 执行流 · 默认 ${v.exec}</span>
+      <span class="item">${legendSwatch(v.data, true, 1.6)} 数据流 · 默认 ${v.data}（虚线）</span>
+      <span class="item">${legendSwatch(v.execActive, false, 2.2)} 执行 · 选中/悬停 ${v.execActive}</span>
+      <span class="item">${legendSwatch(v.dataActive, true, 2.2)} 数据 · 选中/悬停 ${v.dataActive}</span>
+    </div>`;
+  const stage = section.querySelector(`#stage-${v.id}`);
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('class', 'edges');
+  for (const edge of EDGES){
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    const active = edge.state === 'selected' || edge.state === 'hover';
+    const base = edge.kind === 'exec' ? v.exec : v.data;
+    const hi = edge.kind === 'exec' ? v.execActive : v.dataActive;
+    path.setAttribute('d', pathFor(edge));
+    path.setAttribute('stroke', active ? hi : base);
+    path.setAttribute('stroke-width', active ? 2.2 : (edge.kind === 'exec' ? 1.8 : 1.6));
+    if (edge.kind === 'data') path.setAttribute('stroke-dasharray', '6 5');
+    svg.appendChild(path);
+  }
+  stage.appendChild(svg);
+  for (const n of NODES) stage.appendChild(buildNode(n));
+  return section;
+}
+
+const container = document.getElementById('versions');
+for (const v of VERSIONS) container.appendChild(renderVersion(v));
+</script>
+</body>
+</html>

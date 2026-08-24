@@ -2,9 +2,9 @@ package com.smartlab.engine.workflow;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.smartlab.engine.connection.InterfaceConnectionForwarder;
 import com.smartlab.engine.statemachine.StateMachineCommandPort;
 import com.smartlab.global.util.JsonNodeSupport;
-import com.smartlab.management.dto.workflow.WorkflowDetailResponse;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
 import com.smartlab.management.entity.resource.device.DeviceTwinStates;
 import com.smartlab.management.entity.workflow.FlowNode;
@@ -14,31 +14,37 @@ import com.smartlab.management.service.db.resource.device.DeviceTwinStateService
 import com.smartlab.management.service.db.workflow.WorkflowRuntimeService;
 import com.smartlab.management.service.db.workflow.WorkflowService;
 import com.smartlab.management.service.db.workflow.WorkflowTaskResourceService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.UUID;
 import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 
 @Service
 public class DefaultWorkflowExecutionOperations implements WorkflowExecutionOperations {
     private final WorkflowRuntimeService runtime;
     private final WorkflowTaskResourceService taskResourceService;
-    private final StateMachineCommandPort stateMachineCommandPort;
-    private final WorkflowService workflowService;
     private final DeviceTwinStateService twinStateService;
+    private final InterfaceConnectionForwarder interfaceConnections;
 
     public DefaultWorkflowExecutionOperations(WorkflowRuntimeService runtime,
-                                              WorkflowTaskResourceService taskResourceService,
-                                              StateMachineCommandPort stateMachineCommandPort,
-                                              WorkflowService workflowService,
-                                              DeviceTwinStateService twinStateService) {
+            WorkflowTaskResourceService taskResourceService,
+            StateMachineCommandPort stateMachineCommandPort,
+            WorkflowService workflowService,
+            DeviceTwinStateService twinStateService) {
+        this(runtime, taskResourceService, twinStateService, null);
+    }
+
+    @Autowired
+    public DefaultWorkflowExecutionOperations(WorkflowRuntimeService runtime,
+            WorkflowTaskResourceService taskResourceService,
+            DeviceTwinStateService twinStateService,
+            @Lazy InterfaceConnectionForwarder interfaceConnections) {
         this.runtime = runtime;
         this.taskResourceService = taskResourceService;
-        this.stateMachineCommandPort = stateMachineCommandPort;
-        this.workflowService = workflowService;
         this.twinStateService = twinStateService;
+        this.interfaceConnections = interfaceConnections;
     }
 
     @Override
@@ -83,31 +89,20 @@ public class DefaultWorkflowExecutionOperations implements WorkflowExecutionOper
     @Override
     public DeviceDispatchResult dispatchDeviceSignal(Task task, TaskStep step, FlowNode node, long deviceInstanceId,
                                      String messageId, String nodeOutputInterfaceName, String signalName, JsonNode parameters) {
-        DeviceRoute route = deviceRoute(node);
-        if (!route.nodeOutputInterfaceName().equals(nodeOutputInterfaceName)) {
-            throw new IllegalArgumentException("STATE动作输出接口未连接到设备模型: " + nodeOutputInterfaceName);
-        }
-        Map<String, Object> context = new HashMap<>();
-        context.put("messageId", messageId);
-        context.put("capabilityName", node.getCapability().path("capabilityName").asText());
-        context.put("parameters", parameters != null && parameters.isObject()
-                ? JsonNodeSupport.MAPPER.convertValue(parameters, Map.class) : Map.of());
-        context.put("taskId", task.getId());
-        context.put("taskStepId", step.getId());
-        return stateMachineCommandPort.dispatchInputSignal(deviceInstanceId, route.deviceInputInterfaceName(), signalName, context).isEmpty()
-                ? DeviceDispatchResult.DEVICE_BUSY : DeviceDispatchResult.ACCEPTED;
+        return requireForwarder().forwardToDevice(task, step, node, deviceInstanceId, messageId,
+                nodeOutputInterfaceName, signalName, parameters);
     }
 
     @Override
     public void dispatchDeviceAbort(Task task, TaskStep step, FlowNode node, long deviceInstanceId, String messageId) {
-        DeviceRoute route = deviceRoute(node);
-        Map<String, Object> context = new HashMap<>();
-        context.put("messageId", messageId);
-        context.put("taskId", task.getId());
-        context.put("taskStepId", step.getId());
-        if (stateMachineCommandPort.dispatchInputSignal(deviceInstanceId, route.deviceInputInterfaceName(), "WF_EXECUTE_ABORT", context).isEmpty()) {
-            throw new IllegalStateException("设备状态机未接受WF_EXECUTE_ABORT");
+        requireForwarder().forwardAbort(task, step, node, deviceInstanceId, messageId);
+    }
+
+    private InterfaceConnectionForwarder requireForwarder() {
+        if (interfaceConnections == null) {
+            throw new IllegalStateException("接口连接转发器未初始化");
         }
+        return interfaceConnections;
     }
 
     private void requireCompatibleType(String variableName, String attributeName, String dataType, JsonNode value) {
@@ -123,35 +118,5 @@ public class DefaultWorkflowExecutionOperations implements WorkflowExecutionOper
             throw new IllegalArgumentException("变量" + variableName + "要求" + dataType
                     + "，设备属性" + attributeName + "的实际类型不一致");
         }
-    }
-
-    private DeviceRoute deviceRoute(FlowNode node) {
-        WorkflowDetailResponse definition = workflowService.getDefinition(node.getFlowModelId());
-        if (definition == null) throw new IllegalArgumentException("工作流模型不存在: " + node.getFlowModelId());
-        var compiled = workflowService.compileDefinition(node.getFlowModelId());
-        DeviceRoute result = null;
-        for (JsonNode connection : iterable(definition.getInterfaceConnections())) {
-            if (!"NODE_TO_DEVICE".equals(connection.path("connectionType").asText())) continue;
-            Long sourceRef = compiled.refsByNodeName().get(connection.path("source").path("nodeName").asText(""));
-            if (sourceRef == null || sourceRef.longValue() != node.getNodeIdRef()) continue;
-            long deviceModelId = connection.path("target").path("deviceModelId").asLong(0);
-            String sourceInterface = connection.path("source").path("interfaceName").asText("");
-            String targetInterface = connection.path("target").path("interfaceName").asText("");
-            if (deviceModelId <= 0 || !Long.valueOf(deviceModelId).equals(node.getDeviceModelId())
-                    || sourceInterface.isBlank() || targetInterface.isBlank()) {
-                throw new IllegalArgumentException("NODE_TO_DEVICE设备模型连接不完整或与DEV_NODE不一致: " + node.getNodeIdRef());
-            }
-            if (result != null) throw new IllegalStateException("DEV_NODE只能有一个NODE_TO_DEVICE连接: " + node.getNodeIdRef());
-            result = new DeviceRoute(sourceInterface, targetInterface);
-        }
-        if (result == null) throw new IllegalStateException("DEV_NODE缺少NODE_TO_DEVICE设备模型连接: " + node.getNodeIdRef());
-        return result;
-    }
-
-    private Iterable<JsonNode> iterable(JsonNode node) {
-        return node != null && node.isArray() ? node : java.util.List.of();
-    }
-
-    private record DeviceRoute(String nodeOutputInterfaceName, String deviceInputInterfaceName) {
     }
 }

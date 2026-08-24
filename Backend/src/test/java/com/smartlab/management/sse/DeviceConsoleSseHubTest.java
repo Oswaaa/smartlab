@@ -29,7 +29,10 @@ class DeviceConsoleSseHubTest {
         signal.set("payload", payload);
 
         StateMachineInterfaceSignalEvent event = new StateMachineInterfaceSignalEvent(
-                101L, "Interface_state_out", "STATE", signal, Map.of("capabilityName", "heat")
+                101L, "Interface_state_out", "STATE", signal, Map.of(
+                        "capabilityName", "heat",
+                        "parameters", Map.of("加热时间", 10)
+                )
         );
 
         SseEmitter globalEmitter = hub.registerGlobal();

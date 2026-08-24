@@ -16,6 +16,7 @@ import com.smartlab.global.contract.SystemExecutionContract;
 import com.smartlab.engine.statemachine.StateMachineEngine;
 import com.smartlab.management.sse.DeviceConsoleSseHub;
 import org.springframework.beans.factory.annotation.Autowired;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -124,7 +125,8 @@ public class DeviceInstanceController {
     }
 
     @GetMapping(value = "/console/stream", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter streamGlobalConsole() {
+    public SseEmitter streamGlobalConsole(HttpServletResponse response) {
+        prepareSseResponse(response);
         if (deviceConsoleSseHub == null) {
             throw new IllegalStateException("SSE 模块未就绪");
         }
@@ -132,11 +134,18 @@ public class DeviceInstanceController {
     }
 
     @GetMapping(value = "/console/stream/{id}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
-    public SseEmitter streamConsole(@PathVariable Long id) {
+    public SseEmitter streamConsole(@PathVariable Long id, HttpServletResponse response) {
+        prepareSseResponse(response);
         if (deviceConsoleSseHub == null) {
             throw new IllegalStateException("SSE 模块未就绪");
         }
         return deviceConsoleSseHub.register(id);
+    }
+
+    private void prepareSseResponse(HttpServletResponse response) {
+        response.setHeader("Cache-Control", "no-cache");
+        response.setHeader("X-Accel-Buffering", "no");
+        response.setHeader("Connection", "keep-alive");
     }
 
     @GetMapping("/adapter-routes")

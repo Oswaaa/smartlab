@@ -5,7 +5,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.global.contract.WorkflowNodeSystemContract;
 import com.smartlab.global.util.JsonNodeSupport;
-import com.smartlab.management.dto.workflow.WorkflowSaveRequest;
+import com.smartlab.management.dto.workflow.WorkflowModelDocument;
+import com.smartlab.management.dto.workflow.WorkflowModelDocuments;
 import com.smartlab.management.dto.workflow.WorkflowIssue;
 import org.junit.jupiter.api.Test;
 import java.util.List;
@@ -59,8 +60,8 @@ class WorkflowDefinitionCompilerTest {
 
     @Test
     void preservesUserDefinedNWayBranchOutputsWithoutRestoringTrueFalseInterfaces() throws Exception {
-        WorkflowSaveRequest request = validBranchDefinition();
-        ObjectNode branch = (ObjectNode) request.getNodesDef().get(1);
+        WorkflowModelDocument request = validBranchDefinition();
+        ObjectNode branch = (ObjectNode) request.getNodes().get(1);
         branch.put("expression", "result = temperature * 100");
         branch.putArray("actions").add("EMIT");
         ArrayNode interfaces = branch.putArray("interfaces");
@@ -94,12 +95,12 @@ class WorkflowDefinitionCompilerTest {
 
     @Test
     void rejectsPortConnectionWhenVariableTypesDiffer() throws Exception {
-        WorkflowSaveRequest request = validDefinition();
+        WorkflowModelDocument request = validDefinition();
         ObjectNode connection = ((ArrayNode) request.getPortConnections()).addObject();
         connection.putObject("source").put("nodeName", "source").put("portName", "valueOut");
         connection.putObject("target").put("nodeName", "target").put("portName", "valueIn");
-        ObjectNode sourceNode = (ObjectNode) request.getNodesDef().get(0);
-        ObjectNode targetNode = (ObjectNode) request.getNodesDef().get(1);
+        ObjectNode sourceNode = (ObjectNode) request.getNodes().get(0);
+        ObjectNode targetNode = (ObjectNode) request.getNodes().get(1);
         ((ObjectNode) sourceNode.withArray("internalVariables").get(0)).put("dataType", "DOUBLE");
         ((ObjectNode) targetNode.withArray("internalVariables").get(0)).put("dataType", "STRING");
 
@@ -107,6 +108,21 @@ class WorkflowDefinitionCompilerTest {
         assertEquals(
                 "portConnections[0]: 源目标内部变量数据类型不一致: DOUBLE -> STRING",
                 error.getMessage());
+    }
+
+    @Test
+    void rejectsDuplicateTargetInputPortConnections() throws Exception {
+        WorkflowModelDocument request = validDefinition();
+        ArrayNode connections = (ArrayNode) request.getPortConnections();
+        ObjectNode first = connections.addObject();
+        first.putObject("source").put("nodeName", "source").put("portName", "valueOut");
+        first.putObject("target").put("nodeName", "target").put("portName", "valueIn");
+        ObjectNode second = connections.addObject();
+        second.putObject("source").put("nodeName", "source").put("portName", "valueOut");
+        second.putObject("target").put("nodeName", "target").put("portName", "valueIn");
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> compiler.compile(request));
+        assertEquals("portConnections[1]: 输入端口已被占用: target.valueIn", error.getMessage());
     }
 
     @Test
@@ -166,8 +182,8 @@ class WorkflowDefinitionCompilerTest {
 
     @Test
     void rejectsEmitToInputInterface() throws Exception {
-        WorkflowSaveRequest request = validDefinition();
-        ObjectNode end = (ObjectNode) request.getNodesDef().get(1);
+        WorkflowModelDocument request = validDefinition();
+        ObjectNode end = (ObjectNode) request.getNodes().get(1);
         end.putArray("actions").add("EMIT");
         ObjectNode trigger = interfaceNamed(end, "Interface_workflow_in")
                 .withArray("bindingTriggers").addObject();
@@ -366,6 +382,22 @@ class WorkflowDefinitionCompilerTest {
     }
 
     @Test
+    void acceptsOrderedActionsArrayOnATrigger() {
+        ObjectNode aggregate = node(new NodeCase("FUNC_NODE", "AGGREGATE"));
+        ObjectNode output = interfaceNamed(aggregate, "Interface_workflow_out");
+        ObjectNode trigger = output.withArray("bindingTriggers").addObject();
+        trigger.putObject("condition").put("object", "nodeLifecycleState")
+                .put("operator", "=").put("threshold", "RUNNING");
+        ArrayNode actions = trigger.putArray("actions");
+        actions.addObject().put("actionName", "EMIT").putObject("payload")
+                .put("targetInterfaceName", "Interface_workflow_out").put("signalName", "ACTIVE");
+        actions.addObject().put("actionName", "UPDATE").putObject("payload")
+                .put("updateType", "NODE_LIFECYCLE").put("targetName", "SUCCEEDED");
+
+        assertDoesNotThrow(() -> compiler.compile(requestWith(aggregate)));
+    }
+
+    @Test
     void rejectsUnsupportedOrTriggerConditionGroup() {
         ObjectNode aggregate = node(new NodeCase("FUNC_NODE", "AGGREGATE"));
         ObjectNode trigger = interfaceNamed(aggregate, "Interface_workflow_out")
@@ -441,7 +473,7 @@ class WorkflowDefinitionCompilerTest {
     @Test
     void rejectsMultipleUpstreamConnectionsIntoTheSameWorkflowInput() {
         ObjectNode aggregate = node(new NodeCase("FUNC_NODE", "AGGREGATE"));
-        WorkflowSaveRequest request = requestWith(aggregate);
+        WorkflowModelDocument request = requestWith(aggregate);
         ((ObjectNode) request.getInterfaceConnections().get(2).path("target"))
                 .put("interfaceName", "Interface_workflow_in");
 
@@ -471,10 +503,28 @@ class WorkflowDefinitionCompilerTest {
     }
 
     @Test
+    void rejectsInterfaceWithoutBindingTriggers() {
+        ObjectNode aggregate = node(new NodeCase("FUNC_NODE", "AGGREGATE"));
+        WorkflowModelDocument request = requestWith(aggregate);
+        interfaceNamed(aggregate, "Interface_workflow_out").putArray("bindingTriggers");
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> compiler.compile(request));
+
+        assertTrue(error.getMessage().contains("必须配置触发器"), error.getMessage());
+        assertTrue(error.getMessage().contains("Interface_workflow_out"), error.getMessage());
+    }
+
+    @Test
     void rejectsAggregateInputWithoutCounterTrigger() {
         ObjectNode aggregate = node(new NodeCase("FUNC_NODE", "AGGREGATE"));
-        WorkflowSaveRequest request = requestWith(aggregate);
-        interfaceNamed(aggregate, "aggregate_in_2").putArray("bindingTriggers");
+        WorkflowModelDocument request = requestWith(aggregate);
+        ObjectNode trigger = interfaceNamed(aggregate, "aggregate_in_2").putArray("bindingTriggers").addObject();
+        trigger.putObject("condition").put("object", "signalName").put("operator", "=").put("threshold", "ACTIVE");
+        trigger.putObject("action").put("actionName", "UPDATE").putObject("payload")
+                .put("updateType", "INTERNAL_VARIABLE")
+                .put("targetName", "aggregateCount")
+                .put("value", 0);
 
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> compiler.compile(request));
@@ -497,11 +547,11 @@ class WorkflowDefinitionCompilerTest {
     private List<NodeCase> cases() { return List.of(new NodeCase("FUNC_NODE", "START"), new NodeCase("FUNC_NODE", "END"), new NodeCase("FUNC_NODE", "BRANCH"), new NodeCase("FUNC_NODE", "AGGREGATE"), new NodeCase("DEV_NODE", null), new NodeCase("SUBFLOW_NODE", null)); }
     @Test
     void draftPreparationRestoresSystemContractAndPreservesBusinessItems() {
-        WorkflowSaveRequest request = markerlessAggregateWithCustomUpdate();
+        WorkflowModelDocument request = markerlessAggregateWithCustomUpdate();
 
         WorkflowPreparation result = compiler.prepare(request, WorkflowPreparation.Mode.DRAFT);
 
-        JsonNode node = result.normalized().getNodesDef().get(1);
+        JsonNode node = result.normalized().getNodes().get(1);
         assertEquals("aggregate.lifecycle", node.path("lifecycle").path("_systemKey").asText());
         assertEquals(List.of("UPDATE", "EMIT"), JsonNodeSupport.MAPPER.convertValue(
                 node.path("actions"), List.class));
@@ -517,15 +567,15 @@ class WorkflowDefinitionCompilerTest {
 
     @Test
     void publishPreparationNormalizesLegacyActionNameToUpdateCapability() {
-        WorkflowSaveRequest request = definitionWithCustomActionNamed("emitActive");
+        WorkflowModelDocument request = definitionWithCustomActionNamed("emitActive");
 
         WorkflowPreparation result = compiler.prepare(request, WorkflowPreparation.Mode.PUBLISH);
 
         assertTrue(result.issues().stream().noneMatch(WorkflowIssue::blocking), result.issues().toString());
-        result.normalized().getNodesDef().get(1).path("actions")
+        result.normalized().getNodes().get(1).path("actions")
                 .forEach(action -> assertTrue(action.isTextual()));
         assertTrue(JsonNodeSupport.MAPPER.convertValue(
-                result.normalized().getNodesDef().get(1).path("actions"), List.class).contains("UPDATE"));
+                result.normalized().getNodes().get(1).path("actions"), List.class).contains("UPDATE"));
     }
 
     private ObjectNode node(NodeCase c) { ObjectNode n=WorkflowNodeSystemContract.template(c.type(),c.function()).deepCopy(); n.put("name","candidate"); n.put("nodeType",c.type()); n.putArray("ports"); if(c.function()!=null)n.put("functionType",c.function()); if("BRANCH".equals(c.function())){n.withArray("internalVariables").addObject().put("name","result").put("dataType","DOUBLE");n.put("expression","result = 1");} if("DEV_NODE".equals(c.type())){n.put("deviceModelId",1);n.putObject("capability").put("capabilityName","mix");} if("SUBFLOW_NODE".equals(c.type()))n.put("subFlowModelId",2); return n; }
@@ -538,7 +588,7 @@ class WorkflowDefinitionCompilerTest {
                 .put("targetInterfaceName", "branch_out").put("signalName", "ACTIVE");
         branch.withArray("interfaces").add(output);
     }
-    private WorkflowSaveRequest requestWith(NodeCase c) {
+    private WorkflowModelDocument requestWith(NodeCase c) {
         ObjectNode candidate = node(c);
         if ("BRANCH".equals(c.function())) {
             candidate.putArray("actions").add("EMIT");
@@ -551,14 +601,19 @@ class WorkflowDefinitionCompilerTest {
         }
         return requestWith(candidate);
     }
-    private WorkflowSaveRequest requestWith(ObjectNode n) { WorkflowSaveRequest r=new WorkflowSaveRequest(); r.setName("contract"); ObjectNode s=node(new NodeCase("FUNC_NODE","START")); s.put("name","start"); ObjectNode e=node(new NodeCase("FUNC_NODE","END")); e.put("name","end"); ArrayNode ns=JsonNodeSupport.arrayNode().add(s).add(n).add(e); ArrayNode cs=JsonNodeSupport.arrayNode(); if("START".equals(n.path("functionType").asText())||"END".equals(n.path("functionType").asText())){ns.remove(1); link(cs,"start","end");} else if ("AGGREGATE".equals(n.path("functionType").asText())) { n.withArray("interfaces").add(aggregateInput("aggregate_in_2")); ObjectNode relay=node(new NodeCase("SUBFLOW_NODE",null)); relay.put("name","relay"); ns.insert(1,relay); link(cs,"start","candidate"); link(cs,"start","relay"); linkNamed(cs,"relay","Interface_workflow_out","candidate","aggregate_in_2"); link(cs,"candidate","end"); } else {link(cs,"start","candidate"); if ("BRANCH".equals(n.path("functionType").asText())) linkNamed(cs,"candidate","branch_out","end"); else link(cs,"candidate","end");} if ("DEV_NODE".equals(n.path("nodeType").asText())) { ObjectNode x=cs.addObject(); x.put("connectionType","NODE_TO_DEVICE"); x.putObject("source").put("nodeName","candidate").put("interfaceName","Interface_state_out"); x.putObject("target").put("deviceModelId",1).put("interfaceName","Interface_workflow_in"); x=cs.addObject(); x.put("connectionType","DEVICE_TO_NODE"); x.putObject("source").put("deviceModelId",1).put("interfaceName","Interface_state_out"); x.putObject("target").put("nodeName","candidate").put("interfaceName","Interface_state_in"); } r.setNodesDef(ns);r.setInterfaceConnections(cs);r.setPortConnections(JsonNodeSupport.arrayNode());return r; }
+    private WorkflowModelDocument requestWith(ObjectNode n) {
+        if ("AGGREGATE".equals(n.path("functionType").asText())
+                && interfaceNamed(n, "Interface_workflow_out").path("bindingTriggers").size() == 0) {
+            addAggregateEmitThreshold(n, 2);
+        }
+        WorkflowModelDocument r=WorkflowModelDocuments.of("contract"); ObjectNode s=node(new NodeCase("FUNC_NODE","START")); s.put("name","start"); ObjectNode e=node(new NodeCase("FUNC_NODE","END")); e.put("name","end"); ArrayNode ns=JsonNodeSupport.arrayNode().add(s).add(n).add(e); ArrayNode cs=JsonNodeSupport.arrayNode(); if("START".equals(n.path("functionType").asText())||"END".equals(n.path("functionType").asText())){ns.remove(1); link(cs,"start","end");} else if ("AGGREGATE".equals(n.path("functionType").asText())) { n.withArray("interfaces").add(aggregateInput("aggregate_in_2")); ObjectNode relay=node(new NodeCase("SUBFLOW_NODE",null)); relay.put("name","relay"); ns.insert(1,relay); link(cs,"start","candidate"); link(cs,"start","relay"); linkNamed(cs,"relay","Interface_workflow_out","candidate","aggregate_in_2"); link(cs,"candidate","end"); } else {link(cs,"start","candidate"); if ("BRANCH".equals(n.path("functionType").asText())) linkNamed(cs,"candidate","branch_out","end"); else link(cs,"candidate","end");} if ("DEV_NODE".equals(n.path("nodeType").asText())) { ObjectNode x=cs.addObject(); x.put("connectionType","NODE_TO_DEVICE"); x.putObject("source").put("nodeName","candidate").put("interfaceName","Interface_state_out"); x.putObject("target").put("deviceModelId",1).put("interfaceName","Interface_workflow_in"); x=cs.addObject(); x.put("connectionType","DEVICE_TO_NODE"); x.putObject("source").put("deviceModelId",1).put("interfaceName","Interface_state_out"); x.putObject("target").put("nodeName","candidate").put("interfaceName","Interface_state_in"); } r.setNodes(ns);r.setInterfaceConnections(cs);r.setPortConnections(JsonNodeSupport.arrayNode());return r; }
     private void linkNamed(ArrayNode cs,String from,String sourceInterface,String to){ObjectNode c=cs.addObject();c.put("connectionType","NODE_TO_NODE");c.putObject("source").put("nodeName",from).put("interfaceName",sourceInterface);c.putObject("target").put("nodeName",to).put("interfaceName","Interface_workflow_in");}
     private void linkNamed(ArrayNode cs,String from,String sourceInterface,String to,String targetInterface){ObjectNode c=cs.addObject();c.put("connectionType","NODE_TO_NODE");c.putObject("source").put("nodeName",from).put("interfaceName",sourceInterface);c.putObject("target").put("nodeName",to).put("interfaceName",targetInterface);}
         private void link(ArrayNode cs,String from,String to){ObjectNode c=cs.addObject();c.put("connectionType","NODE_TO_NODE");c.putObject("source").put("nodeName",from).put("interfaceName","Interface_workflow_out");c.putObject("target").put("nodeName",to).put("interfaceName","Interface_workflow_in");}
     private record NodeCase(String type,String function) {}
 
 
-    private WorkflowSaveRequest markerlessAggregateWithCustomUpdate() {
+    private WorkflowModelDocument markerlessAggregateWithCustomUpdate() {
         ObjectNode aggregate = node(new NodeCase("FUNC_NODE", "AGGREGATE"));
         aggregate.withArray("internalVariables").addObject()
                 .put("name", "counter")
@@ -581,16 +636,16 @@ class WorkflowDefinitionCompilerTest {
         removeSystemMarkers(aggregate);
         ((ObjectNode) aggregate.path("lifecycle")).put("initialStateName", "BROKEN");
 
-        WorkflowSaveRequest request = requestWith(aggregate);
-        ArrayNode nodes = (ArrayNode) request.getNodesDef();
+        WorkflowModelDocument request = requestWith(aggregate);
+        ArrayNode nodes = (ArrayNode) request.getNodes();
         JsonNode relay = nodes.remove(1);
         nodes.insert(2, relay);
         return request;
     }
 
-    private WorkflowSaveRequest definitionWithCustomActionNamed(String actionName) {
-        WorkflowSaveRequest request = markerlessAggregateWithCustomUpdate();
-        ObjectNode aggregate = (ObjectNode) request.getNodesDef().get(1);
+    private WorkflowModelDocument definitionWithCustomActionNamed(String actionName) {
+        WorkflowModelDocument request = markerlessAggregateWithCustomUpdate();
+        ObjectNode aggregate = (ObjectNode) request.getNodes().get(1);
         ((ArrayNode) aggregate.path("actions")).removeAll();
         aggregate.withArray("actions").addObject()
                 .put("actionName", actionName)
@@ -625,9 +680,9 @@ class WorkflowDefinitionCompilerTest {
         }
         throw new AssertionError("missing UPDATE target=" + targetName);
     }
-    private WorkflowSaveRequest validDefinition() throws Exception {
-        WorkflowSaveRequest request = new WorkflowSaveRequest();
-        request.setName("port-workflow");
+    private WorkflowModelDocument validDefinition() throws Exception {
+        WorkflowModelDocument request = WorkflowModelDocuments.of("workflow");
+        request.flowModelName("port-workflow");
         ObjectNode source = node(new NodeCase("FUNC_NODE", "START"));
         source.put("name", "source");
         source.withArray("internalVariables").addObject()
@@ -646,7 +701,7 @@ class WorkflowDefinitionCompilerTest {
                 .put("name", "valueIn")
                 .put("direction", "IN")
                 .put("internalVariableName", "value");
-        request.setNodesDef(JsonNodeSupport.arrayNode().add(source).add(target));
+        request.setNodes(JsonNodeSupport.arrayNode().add(source).add(target));
         request.setInterfaceConnections(JsonNodeSupport.MAPPER.readTree("""
                 [{"connectionType":"NODE_TO_NODE","source":{"nodeName":"source","interfaceName":"Interface_workflow_out"},"target":{"nodeName":"target","interfaceName":"Interface_workflow_in"}}]
                 """));
@@ -654,7 +709,7 @@ class WorkflowDefinitionCompilerTest {
         return request;
     }
 
-    private WorkflowSaveRequest validBranchDefinition() throws Exception {
+    private WorkflowModelDocument validBranchDefinition() throws Exception {
         ObjectNode branch = node(new NodeCase("FUNC_NODE", "BRANCH"));
         branch.withArray("internalVariables").addObject()
                 .put("name", "temperature")
@@ -682,7 +737,7 @@ class WorkflowDefinitionCompilerTest {
                 .put("targetInterfaceName", "Interface_workflow_out").put("signalName", "ACTIVE");
     }
 
-    private void normalize(WorkflowSaveRequest request) { for (JsonNode n : request.getNodesDef()) { ObjectNode node=(ObjectNode)n; String type=node.path("nodeType").asText(); String function=node.path("functionType").isTextual()?node.path("functionType").asText():null; node.set("lifecycle", WorkflowNodeSystemContract.template(type,function).path("lifecycle")); } }
+    private void normalize(WorkflowModelDocument request) { for (JsonNode n : request.getNodes()) { ObjectNode node=(ObjectNode)n; String type=node.path("nodeType").asText(); String function=node.path("functionType").isTextual()?node.path("functionType").asText():null; node.set("lifecycle", WorkflowNodeSystemContract.template(type,function).path("lifecycle")); } }
 
     private void removeNamedItem(ArrayNode items, String name) {
         for (int index = 0; index < items.size(); index++) {

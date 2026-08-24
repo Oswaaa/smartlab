@@ -32,6 +32,20 @@ public final class WorkflowTriggerState {
         return interfaceName + "::" + fingerprint + "::" + duplicateOrdinal;
     }
 
+    public static List<JsonNode> actions(JsonNode trigger) {
+        if (trigger == null || !trigger.isObject()) return List.of();
+        JsonNode actions = trigger.path("actions");
+        if (actions.isArray() && !actions.isEmpty()) {
+            List<JsonNode> result = new ArrayList<>();
+            actions.forEach(item -> {
+                if (item != null && item.isObject()) result.add(item);
+            });
+            return List.copyOf(result);
+        }
+        JsonNode action = trigger.get("action");
+        return action != null && action.isObject() ? List.of(action) : List.of();
+    }
+
     private static JsonNode canonical(JsonNode source) {
         if (source == null || source.isNull() || source.isValueNode()) {
             return source == null ? JsonNodeSupport.MAPPER.nullNode() : source.deepCopy();

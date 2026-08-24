@@ -14,5 +14,5 @@ const emit = defineEmits<{ action: [] }>()
 </script>
 
 <style scoped>
-.configuration-empty{display:flex;min-height:148px;flex-direction:column;align-items:center;justify-content:center;box-sizing:border-box;padding:28px 24px;border:1px dashed #d9dce3;background:#fafbfc;text-align:center}.configuration-empty strong{color:#1f2329;font-size:14px;font-weight:500}.configuration-empty p{max-width:520px;margin:6px 0 14px;color:#8f959e;font-size:12px;line-height:20px}.configuration-empty :deep(.el-button){min-width:88px}
+.configuration-empty{display:flex;min-height:120px;flex-direction:column;align-items:center;justify-content:center;box-sizing:border-box;padding:24px 20px;border:1px dashed var(--sl-border-base,#e2e8f0);background:#fff;text-align:center}.configuration-empty strong{color:#1f2329;font-size:14px;font-weight:500}.configuration-empty p{max-width:520px;margin:6px 0 14px;color:#8f959e;font-size:12px;line-height:20px}.configuration-empty :deep(.el-button){min-width:88px}
 </style>

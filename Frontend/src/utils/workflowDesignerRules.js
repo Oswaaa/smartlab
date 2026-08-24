@@ -1,8 +1,48 @@
 export function workflowLibraryGroups(workflows = []) {
   return [
-    { key: 'active', label: '已启用流程', children: workflows.filter(item => item.status === 'ACTIVE') },
-    { key: 'draft', label: '草稿流程', children: workflows.filter(item => item.status !== 'ACTIVE') },
+    { key: 'active', label: '已启用流程', children: workflows.filter(item => isActiveWorkflow(item)) },
+    { key: 'draft', label: '草稿流程', children: workflows.filter(item => !isActiveWorkflow(item)) },
   ]
+}
+
+export function isActiveWorkflow(workflow) {
+  return String(workflow?.status || '').trim().toUpperCase() === 'ACTIVE'
+}
+
+export function workflowStatusLabel(status) {
+  return String(status || '').trim().toUpperCase() === 'ACTIVE' ? '已启用' : '草稿'
+}
+
+export function workflowVersionLabel(item) {
+  const version = Number(item?.version)
+  return Number.isInteger(version) && version > 0 ? `v${version}` : 'v1'
+}
+
+export function workflowCopyName(name = '') {
+  const trimmed = String(name ?? '').trim() || '未命名流程'
+  const match = trimmed.match(/^(.*)（副本(?: (\d+))?）$/)
+  if (!match) return withCopySuffix(trimmed, '（副本）')
+  const index = match[2] ? Number(match[2]) + 1 : 2
+  return withCopySuffix(match[1], `（副本 ${index}）`)
+}
+
+function withCopySuffix(base, suffix) {
+  const source = String(base ?? '')
+  if (source.length + suffix.length <= 80) return source + suffix
+  return source.slice(0, Math.max(0, 80 - suffix.length)) + suffix
+}
+
+export function workflowSuccessorConflict(body = {}) {
+  if (body?.success !== false) return null
+  const successorId = Number(body?.data?.successorId)
+  if (!Number.isInteger(successorId) || successorId <= 0) return null
+  return {
+    successorId,
+    version: body.data.version ?? null,
+    status: body.data.status || '',
+    flowModelName: body.data.flowModelName || '',
+    message: body.message || '',
+  }
 }
 
 export function canDragWorkflowResource(workflow, currentWorkflowId, editable) {
@@ -71,6 +111,34 @@ export function workflowNodeConnectionIssues(nodes = [], connections = []) {
     const reachesEnd = walkWorkflowGraph(ends[0].name, incoming)
     nodes.filter(node => (outgoing.get(node.name)?.length || 0) > 0 && !reachesEnd.has(node.name))
       .forEach(node => add(node, 'no-end', '无法到达结束节点', '请检查后续执行路径是否与流程出口连通。'))
+  }
+  return issues
+}
+
+export function workflowUnconnectedPortIssues(nodes = [], portConnections = []) {
+  const connected = new Set()
+  for (const connection of portConnections) {
+    if (connection.source?.nodeName && connection.source?.portName) {
+      connected.add(`${connection.source.nodeName}\u0000${connection.source.portName}`)
+    }
+    if (connection.target?.nodeName && connection.target?.portName) {
+      connected.add(`${connection.target.nodeName}\u0000${connection.target.portName}`)
+    }
+  }
+  const issues = []
+  for (const node of nodes) {
+    const names = (node.ports || [])
+      .map(port => port?.name)
+      .filter(Boolean)
+      .filter(name => !connected.has(`${node.name}\u0000${name}`))
+    if (!names.length) continue
+    issues.push({
+      code: `unconnected-ports-${node.name}`,
+      title: '有未连接端口',
+      detail: `数据端口 ${names.join('、')} 尚未连接，节点仍可使用内部变量运行。`,
+      nodeName: node.name,
+      path: 'ports',
+    })
   }
   return issues
 }

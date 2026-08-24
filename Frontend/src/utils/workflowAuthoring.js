@@ -1,11 +1,63 @@
 const editorOnlyKeys = new Set(['position', 'compiled', 'runtime'])
 
 export function toAuthoringPayload(workflow) {
-  return authoringValue(JSON.parse(JSON.stringify(workflow || {})))
+  return toWorkflowModelDocument(workflow)
+}
+
+export function toWorkflowModelDocument(workflow) {
+  const cleaned = authoringValue(JSON.parse(JSON.stringify(workflow || {})))
+  return {
+    metadata: {
+      flowModelId: cleaned.id ?? null,
+      flowModelName: cleaned.name || '',
+      description: cleaned.description || '',
+    },
+    nodes: cleaned.nodesDef || cleaned.nodes || [],
+    interfaceConnections: cleaned.interfaceConnections || [],
+    portConnections: cleaned.portConnections || [],
+  }
+}
+
+export function toDesignerWorkflow(view = {}) {
+  const metadata = view.metadata || {}
+  return {
+    id: metadata.flowModelId ?? view.id ?? null,
+    name: metadata.flowModelName || view.flowModelName || view.flowName || view.name || '',
+    description: metadata.description ?? view.description ?? '',
+    version: view.version ?? 1,
+    status: view.status || 'DRAFT',
+    predecessorId: view.predecessorId ?? null,
+    nodeIdRefs: view.nodeIdRefs,
+    nodesDef: view.nodesDef || view.nodes || [],
+    interfaceConnections: view.interfaceConnections || [],
+    portConnections: view.portConnections || [],
+    creatorId: view.creatorId,
+    createTime: view.createTime,
+  }
 }
 
 export function adoptPreparedWorkflow(prepared = {}) {
-  return JSON.parse(JSON.stringify(prepared.definition || {}))
+  const definition = prepared.definition || {}
+  return toDesignerWorkflow({
+    ...definition,
+    version: prepared.version ?? definition.version,
+    status: prepared.status || definition.status,
+    predecessorId: prepared.predecessorId ?? definition.predecessorId,
+  })
+}
+
+export function workflowModelName(item) {
+  if (!item) return ''
+  return item.metadata?.flowModelName || item.flowModelName || item.flowName || item.name || ''
+}
+
+export function workflowModelId(item) {
+  if (item == null || typeof item !== 'object') return null
+  return item.metadata?.flowModelId ?? item.flowModelId ?? item.id ?? null
+}
+
+export function workflowNodes(item) {
+  return item?.nodesDef || item?.nodes || []
 }
 
 export function indexWorkflowIssues(issues = []) {
@@ -28,25 +80,9 @@ function authoringValue(value) {
   if (Array.isArray(value)) return value.map(authoringValue)
   if (!value || typeof value !== 'object') return value
 
-  if (isSystemItem(value)) return systemMarker(value)
-
   return Object.entries(value).reduce((result, [key, child]) => {
     if (key.startsWith('_') || editorOnlyKeys.has(key)) return result
     result[key] = authoringValue(child)
     return result
   }, {})
-}
-
-function isSystemItem(value) {
-  return value._system === true || Boolean(value._systemKey)
-}
-
-function systemMarker(value) {
-  // Preserve all data fields PLUS system markers
-  const result = authoringValue(Object.fromEntries(
-    Object.entries(value).filter(([k]) => !k.startsWith('_'))
-  ))
-  if (value._system === true) result._system = true
-  if (value._systemKey) result._systemKey = value._systemKey
-  return result
 }

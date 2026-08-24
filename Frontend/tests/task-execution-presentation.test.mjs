@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import {
+  nodeStatusLabel,
   selectPreferredStepId,
   statusLabel,
   statusType,
@@ -42,7 +43,8 @@ test('uses the task status vocabulary and visual type shown in the drawer', () =
   assert.equal(statusLabel('TERMINATED'), '已终止')
   assert.equal(statusType('RUNNING'), 'primary')
   assert.equal(statusType('FAILED'), 'danger')
-  assert.equal(statusType('UNKNOWN'), 'info')
+  assert.equal(nodeStatusLabel('PENDING'), '待执行')
+  assert.equal(nodeStatusLabel('WAITING'), '等待创建')
 })
 
 test('opens task detail only from the explicit detail action', async () => {
@@ -50,7 +52,7 @@ test('opens task detail only from the explicit detail action', async () => {
   const template = source.slice(0, source.indexOf('<script setup'))
 
   assert.doesNotMatch(template, /@row-click=/)
-  assert.match(template, />详情<\/el-button>/)
+  assert.match(template, />详情<\/button>/)
   assert.match(template, /@click="openTaskDetail\(row\)"/)
 })
 

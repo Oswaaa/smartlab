@@ -9,14 +9,31 @@ import {
   interfaceHandleId,
   layoutKey,
   portHandleId,
+  polylineHitsNodeInteriors,
   removeCanvasEdge,
   renameNodeConnections,
   sanitizeWorkflowPayload,
   serializeLayout,
   workflowCanvasNodeSize,
+  workflowDeviceCapabilitySummary,
+  workflowOrthogonalPoints,
+  edgeLaneOffset,
   workflowInterfaceTooltip,
   workflowPortTooltip,
+  workflowPortEdgeTooltip,
+  workflowInterfaceEdgeTooltip,
+  unwrapStoredLayout,
+  wrapStoredLayout,
+  WORKFLOW_LAYOUT_VERSION,
+  formatWorkflowTriggerText,
+  workflowPortValueSummary,
+  workflowNodeSnapAnchor,
+  snapWorkflowNodePosition,
 } from '../src/utils/workflowCanvas.js'
+
+function handleY(node, layout) {
+  return layout[node.name].y + workflowNodeSnapAnchor(node)
+}
 
 const startNode = {
   name: 'start1',
@@ -50,7 +67,7 @@ const canvasNodes = [
   }
 ]
 
-test('连接点悬停信息包含方向、完整名称和数据类型', () => {
+test('连接点悬停信息包含方向、完整名称和内部变量名', () => {
   assert.equal(
     workflowInterfaceTooltip({ name: 'Interface_workflow_in', direction: 'IN' }),
     '控制输入 · Interface_workflow_in',
@@ -61,12 +78,51 @@ test('连接点悬停信息包含方向、完整名称和数据类型', () => {
   )
   assert.equal(
     workflowPortTooltip(canvasNodes[0].ports[0], canvasNodes[0]),
-    '数据输出 · valueOut · DOUBLE',
+    '数据输出 · valueOut · temperature',
+  )
+  assert.equal(
+    workflowPortEdgeTooltip(
+      { source: { nodeName: 'a', portName: 'valueOut' }, target: { nodeName: 'b', portName: 'valueIn' } },
+      canvasNodes,
+    ),
+    'temperature · 空',
+  )
+  assert.equal(
+    workflowPortEdgeTooltip(
+      { source: { nodeName: 'a', portName: 'valueOut' }, target: { nodeName: 'b', portName: 'valueIn' } },
+      canvasNodes,
+      36.5,
+    ),
+    'temperature · 36.5',
+  )
+  assert.equal(
+    workflowInterfaceEdgeTooltip({
+      source: { nodeName: 'device1', interfaceName: 'out' },
+      target: { nodeName: 'branch1', interfaceName: 'in' },
+    }),
+    'device1 → branch1',
   )
 })
 
+test('设备能力节点摘要使用 displayName 和具体参数名', () => {
+  assert.equal(workflowDeviceCapabilitySummary({}), '未选择能力')
+  assert.equal(workflowDeviceCapabilitySummary({
+    capability: { capabilityName: 'capability_1', capabilityParameters: { a: 1, b: 2 } },
+  }), 'capability_1 · a、b')
+  assert.equal(workflowDeviceCapabilitySummary({
+    capability: { capabilityName: 'capability_1' },
+  }, [{
+    capabilityName: 'capability_1',
+    displayName: '加热控制',
+    parameters: [
+      { name: 'targetTemp', displayName: '目标温度' },
+      { name: 'duration', displayName: '持续时间' },
+    ],
+  }]), '加热控制 · 目标温度、持续时间')
+})
+
 test('画布节点尺寸随WORKFLOW接口和数据端口数量增长', () => {
-  assert.deepEqual(workflowCanvasNodeSize(startNode), { width: 220, height: 92 })
+  assert.deepEqual(workflowCanvasNodeSize(startNode), { width: 220, height: 44 })
   assert.deepEqual(workflowCanvasNodeSize({
     name: 'many-interfaces',
     interfaces: Array.from({ length: 5 }, (_, index) => ({ name: `in${index}`, direction: 'IN', interfaceType: 'WORKFLOW' })),
@@ -76,37 +132,159 @@ test('画布节点尺寸随WORKFLOW接口和数据端口数量增长', () => {
     name: 'many-ports',
     interfaces: [],
     ports: Array.from({ length: 5 }, (_, index) => ({ name: `out${index}`, direction: 'OUT' })),
-  }), { width: 280, height: 92 })
+  }), { width: 280, height: 118 })
+  assert.deepEqual(workflowCanvasNodeSize({
+    name: 'branch',
+    functionType: 'BRANCH',
+    interfaces: [
+      { name: 'in', direction: 'IN', interfaceType: 'WORKFLOW' },
+      ...Array.from({ length: 4 }, (_, index) => ({ name: `out${index}`, direction: 'OUT', interfaceType: 'WORKFLOW' })),
+    ],
+    ports: [],
+  }), { width: 220, height: 176 })
 })
 
-test('自动布局按执行关系从左向右展开分支并在汇聚处收拢', () => {
-  const nodes = ['start', 'branch', 'left', 'right', 'aggregate', 'end'].map(name => ({
-    name,
-    interfaces: [],
-    ports: [],
-  }))
-  const connection = (source, target) => ({
+test('trigger text summarizes output-interface conditions for branch rows', () => {
+  assert.equal(formatWorkflowTriggerText({
+    bindingTriggers: [{
+      condition: { object: 'temperature', operator: '>', threshold: 80 },
+    }],
+  }), 'temperature > 80')
+  assert.equal(formatWorkflowTriggerText({
+    bindingTriggers: [{
+      condition: { logic: 'AND', conditions: [
+        { object: 'signalName', operator: '=', threshold: 'DONE' },
+        { object: 'retryCount', operator: '>=', threshold: 3 },
+      ] },
+    }],
+  }), '接收信号 = DONE 且 retryCount ≥ 3')
+})
+
+test('port value summary includes bound variable and initial value', () => {
+  assert.deepEqual(workflowPortValueSummary({
+    ports: [{ name: 'tempOut', internalVariableName: 'temperature' }],
+    internalVariables: [{ name: 'temperature', dataType: 'DOUBLE', initialValue: 36.5 }],
+  }, 'tempOut'), {
+    portName: 'tempOut',
+    variableName: 'temperature',
+    dataType: 'DOUBLE',
+    value: '36.5',
+  })
+})
+
+test('snapping places control handles on the grid so different-height nodes can share a horizontal line', () => {
+  const start = { functionType: 'START', interfaces: [{ name: 'out', direction: 'OUT', interfaceType: 'WORKFLOW' }] }
+  const device = { interfaces: [
+    { name: 'in', direction: 'IN', interfaceType: 'WORKFLOW' },
+    { name: 'out', direction: 'OUT', interfaceType: 'WORKFLOW' },
+  ] }
+  const startPos = snapWorkflowNodePosition(start, 80, 100)
+  const handleLine = startPos.y + workflowNodeSnapAnchor(start)
+  const devicePos = snapWorkflowNodePosition(device, 300, handleLine - workflowNodeSnapAnchor(device))
+  assert.equal(startPos.x % 12, 0)
+  assert.equal(handleLine % 12, 0)
+  assert.equal(devicePos.y + workflowNodeSnapAnchor(device), handleLine)
+})
+
+test('自动布局从开始节点向右横排，单输出保持一行', () => {
+  const nodes = [
+    { name: 'start', functionType: 'START', interfaces: [{ name: 'out', direction: 'OUT', interfaceType: 'WORKFLOW' }] },
+    { name: 'branch', functionType: 'BRANCH', interfaces: [{ name: 'only', direction: 'OUT', interfaceType: 'WORKFLOW' }] },
+    { name: 'end', functionType: 'END', interfaces: [{ name: 'in', direction: 'IN', interfaceType: 'WORKFLOW' }] },
+  ]
+  const connection = (source, target, interfaceName = 'out') => ({
     connectionType: 'NODE_TO_NODE',
-    source: { nodeName: source, interfaceName: 'out' },
+    source: { nodeName: source, interfaceName },
     target: { nodeName: target, interfaceName: 'in' },
   })
   const layout = buildWorkflowAutoLayout(nodes, [
-    connection('start', 'branch'),
-    connection('branch', 'left'),
-    connection('branch', 'right'),
-    connection('left', 'aggregate'),
-    connection('right', 'aggregate'),
-    connection('aggregate', 'end'),
+    connection('start', 'branch', 'out'),
+    connection('branch', 'end', 'only'),
+  ], [])
+
+  assert.ok(layout.start.x < layout.branch.x)
+  assert.ok(layout.branch.x < layout.end.x)
+  assert.equal(handleY(nodes[0], layout), handleY(nodes[1], layout))
+  assert.equal(handleY(nodes[1], layout), handleY(nodes[2], layout))
+})
+
+test('自动布局按分支输出接口数分层，两路上下展开并在汇聚处收回', () => {
+  const nodes = [
+    { name: 'start', functionType: 'START', interfaces: [{ name: 'out', direction: 'OUT', interfaceType: 'WORKFLOW' }] },
+    { name: 'branch', functionType: 'BRANCH', interfaces: [
+      { name: 'high', direction: 'OUT', interfaceType: 'WORKFLOW' },
+      { name: 'low', direction: 'OUT', interfaceType: 'WORKFLOW' },
+    ] },
+    { name: 'left', interfaces: [
+      { name: 'in', direction: 'IN', interfaceType: 'WORKFLOW' },
+      { name: 'out', direction: 'OUT', interfaceType: 'WORKFLOW' },
+    ] },
+    { name: 'right', interfaces: [
+      { name: 'in', direction: 'IN', interfaceType: 'WORKFLOW' },
+      { name: 'out', direction: 'OUT', interfaceType: 'WORKFLOW' },
+    ] },
+    { name: 'aggregate', functionType: 'AGGREGATE', interfaces: [
+      { name: 'in1', direction: 'IN', interfaceType: 'WORKFLOW' },
+      { name: 'in2', direction: 'IN', interfaceType: 'WORKFLOW' },
+      { name: 'out', direction: 'OUT', interfaceType: 'WORKFLOW' },
+    ] },
+    { name: 'end', functionType: 'END', interfaces: [{ name: 'in', direction: 'IN', interfaceType: 'WORKFLOW' }] },
+  ]
+  const connection = (source, target, sourceInterface, targetInterface = 'in') => ({
+    connectionType: 'NODE_TO_NODE',
+    source: { nodeName: source, interfaceName: sourceInterface },
+    target: { nodeName: target, interfaceName: targetInterface },
+  })
+  const layout = buildWorkflowAutoLayout(nodes, [
+    connection('start', 'branch', 'out'),
+    connection('branch', 'left', 'high'),
+    connection('branch', 'right', 'low'),
+    connection('left', 'aggregate', 'out', 'in1'),
+    connection('right', 'aggregate', 'out', 'in2'),
+    connection('aggregate', 'end', 'out'),
   ], [])
 
   assert.ok(layout.start.x < layout.branch.x)
   assert.ok(layout.branch.x < layout.left.x)
   assert.equal(layout.left.x, layout.right.x)
-  assert.notEqual(layout.left.y, layout.right.y)
-  assert.ok(layout.left.x < layout.aggregate.x)
-  assert.ok(layout.aggregate.x < layout.end.x)
-  assert.ok(layout.aggregate.y > Math.min(layout.left.y, layout.right.y))
-  assert.ok(layout.aggregate.y < Math.max(layout.left.y, layout.right.y))
+  assert.ok(layout.left.y < layout.right.y)
+  assert.ok(layout.branch.y > layout.left.y)
+  assert.ok(layout.branch.y < layout.right.y)
+  assert.ok(layout.aggregate.x > layout.left.x)
+  assert.ok(layout.aggregate.y > layout.left.y)
+  assert.ok(layout.aggregate.y < layout.right.y)
+  assert.ok(layout.end.x > layout.aggregate.x)
+  assert.equal(handleY(nodes[0], layout), handleY(nodes[5], layout))
+})
+
+test('三路分支自动布局分成三层', () => {
+  const nodes = [
+    { name: 'branch', functionType: 'BRANCH', interfaces: [
+      { name: 'a', direction: 'OUT', interfaceType: 'WORKFLOW' },
+      { name: 'b', direction: 'OUT', interfaceType: 'WORKFLOW' },
+      { name: 'c', direction: 'OUT', interfaceType: 'WORKFLOW' },
+    ] },
+    { name: 'one', interfaces: [{ name: 'in', direction: 'IN', interfaceType: 'WORKFLOW' }] },
+    { name: 'two', interfaces: [{ name: 'in', direction: 'IN', interfaceType: 'WORKFLOW' }] },
+    { name: 'three', interfaces: [{ name: 'in', direction: 'IN', interfaceType: 'WORKFLOW' }] },
+  ]
+  const connection = (target, sourceInterface) => ({
+    connectionType: 'NODE_TO_NODE',
+    source: { nodeName: 'branch', interfaceName: sourceInterface },
+    target: { nodeName: target, interfaceName: 'in' },
+  })
+  const layout = buildWorkflowAutoLayout(nodes, [
+    connection('one', 'a'),
+    connection('two', 'b'),
+    connection('three', 'c'),
+  ], [])
+  const ys = [layout.one.y, layout.two.y, layout.three.y]
+  assert.equal(new Set(ys).size, 3)
+  assert.ok(layout.one.y < layout.two.y)
+  assert.ok(layout.two.y < layout.three.y)
+  assert.equal(layout.one.x, layout.two.x)
+  assert.equal(layout.two.x, layout.three.x)
+  assert.ok(layout.branch.x < layout.one.x)
 })
 
 test('自动布局为断开节点和环路节点返回有限且互不重叠的位置', () => {
@@ -123,11 +301,46 @@ test('自动布局为断开节点和环路节点返回有限且互不重叠的�
   assert.equal(new Set(positions.map(position => `${position.x}:${position.y}`)).size, 3)
 })
 
+test('未接入执行流的结束节点与开始节点同一行', () => {
+  const nodes = [
+    { name: 'start', functionType: 'START', interfaces: [{ name: 'out', direction: 'OUT', interfaceType: 'WORKFLOW' }] },
+    { name: 'device', interfaces: [
+      { name: 'in', direction: 'IN', interfaceType: 'WORKFLOW' },
+      { name: 'out', direction: 'OUT', interfaceType: 'WORKFLOW' },
+    ] },
+    { name: 'end', functionType: 'END', interfaces: [{ name: 'in', direction: 'IN', interfaceType: 'WORKFLOW' }] },
+  ]
+  const layout = buildWorkflowAutoLayout(nodes, [{
+    connectionType: 'NODE_TO_NODE',
+    source: { nodeName: 'start', interfaceName: 'out' },
+    target: { nodeName: 'device', interfaceName: 'in' },
+  }], [])
+  assert.equal(handleY(nodes[0], layout), handleY(nodes[2], layout))
+  assert.equal(handleY(nodes[0], layout), handleY(nodes[1], layout))
+  assert.ok(layout.end.x > layout.device.x)
+})
+
 test('builds deterministic editor nodes and restores saved positions by node name', () => {
   const nodes = buildFlowNodes([startNode, deviceNode], { device1: { x: 640, y: 180 } })
   assert.equal(nodes[0].id, 'workflow-node:start1')
   assert.deepEqual(nodes[0].position, { x: 80, y: 120 })
   assert.deepEqual(nodes[1].position, { x: 640, y: 180 })
+})
+
+test('未保存布局时多个节点默认排在同一行', () => {
+  const nodes = buildFlowNodes(['a', 'b', 'c', 'd', 'e'].map(name => ({ name })))
+  assert.equal(new Set(nodes.map(node => node.position.y)).size, 1)
+  assert.ok(nodes[4].position.x > nodes[3].position.x)
+})
+
+test('stored layout version 2 round-trips and ignores legacy maps', () => {
+  const wrapped = wrapStoredLayout([
+    { position: { x: 10.2, y: 20.6 }, data: { nodeName: 'start1' } },
+  ])
+  assert.equal(wrapped.version, WORKFLOW_LAYOUT_VERSION)
+  assert.deepEqual(unwrapStoredLayout(wrapped), { start1: { x: 10, y: 21 } })
+  assert.deepEqual(unwrapStoredLayout({ start1: { x: 80, y: 400 } }), {})
+  assert.deepEqual(unwrapStoredLayout({ version: 1, nodes: { start1: { x: 80, y: 400 } } }), {})
 })
 
 test('serializes only node positions using business node names', () => {
@@ -161,9 +374,91 @@ test('renders only node-to-node interface connections as flow edges', () => {
   assert.equal(edges[0].target, 'workflow-node:device1')
   assert.equal(edges[0].sourceHandle, 'interface:Interface_workflow_out')
   assert.equal(edges[0].targetHandle, 'interface:Interface_workflow_in')
+  assert.equal(edges[0].data.tooltip, 'start1 → device1')
 })
 
-test('接口边为蓝灰色实线且保留具体接口Handle', () => {
+test('间距足够的接口连线仍走简单折线', () => {
+  const nodes = [
+    { id: 'workflow-node:a', x: 40, y: 48, width: 220, height: 108 },
+    { id: 'workflow-node:b', x: 400, y: 48, width: 220, height: 108 },
+  ]
+  const points = workflowOrthogonalPoints({
+    sourceX: 260, sourceY: 102, targetX: 400, targetY: 102,
+    sourcePosition: 'right', targetPosition: 'left',
+    obstacles: nodes, sourceId: nodes[0].id, targetId: nodes[1].id,
+  })
+  assert.ok(points.length <= 4)
+  assert.equal(new Set(points.map(point => point[1])).size, 1)
+  assert.equal(polylineHitsNodeInteriors(points, nodes), false)
+})
+
+test('接口连线先走进两节点缝隙再从目标左侧进入', () => {
+  const nodes = [
+    { id: 'workflow-node:device2', x: 400, y: 48, width: 220, height: 108 },
+    { id: 'workflow-node:end1', x: 400, y: 220, width: 220, height: 108 },
+  ]
+  const points = workflowOrthogonalPoints({
+    sourceX: 620, sourceY: 102, targetX: 400, targetY: 274,
+    sourcePosition: 'right', targetPosition: 'left',
+    obstacles: nodes, sourceId: nodes[0].id, targetId: nodes[1].id,
+  })
+  const stub = points[1]
+  assert.ok(stub[0] > 620)
+  assert.ok(stub[0] - 620 <= 20)
+  assert.equal(stub[1], 102)
+  assert.ok(Math.min(...points.map(point => point[1])) >= 48)
+  const gapY = points.find((point, index) => index > 0 && point[1] > 156 && point[1] < 220)?.[1]
+  assert.equal(typeof gapY, 'number')
+  assert.ok(points.some(point => point[1] === gapY && point[0] < 400))
+  const last = points[points.length - 1]
+  const prev = points[points.length - 2]
+  assert.deepEqual(last, [400, 274])
+  assert.ok(prev[0] < 400)
+  assert.equal(prev[1], 274)
+  assert.equal(polylineHitsNodeInteriors(points, nodes), false)
+})
+
+test('四节点叠放时接口线走缝隙且不穿过节点', () => {
+  const nodes = [
+    { id: 'workflow-node:device1', x: 40, y: 48, width: 220, height: 108 },
+    { id: 'workflow-node:device2', x: 400, y: 48, width: 220, height: 108 },
+    { id: 'workflow-node:branch1', x: 40, y: 220, width: 220, height: 108 },
+    { id: 'workflow-node:end1', x: 400, y: 220, width: 220, height: 108 },
+  ]
+  const d2ToEnd = workflowOrthogonalPoints({
+    sourceX: 620, sourceY: 102, targetX: 400, targetY: 274,
+    sourcePosition: 'right', targetPosition: 'left',
+    obstacles: nodes, sourceId: nodes[1].id, targetId: nodes[3].id,
+  })
+  const d1ToBranch = workflowOrthogonalPoints({
+    sourceX: 260, sourceY: 102, targetX: 40, targetY: 274,
+    sourcePosition: 'right', targetPosition: 'left',
+    obstacles: nodes, sourceId: nodes[0].id, targetId: nodes[2].id,
+  })
+  for (const points of [d2ToEnd, d1ToBranch]) {
+    assert.ok(Math.min(...points.map(point => point[1])) >= 48)
+    assert.ok(points.some(point => point[1] > 156 && point[1] < 220))
+    assert.equal(polylineHitsNodeInteriors(points, nodes), false)
+  }
+})
+
+test('目标在上方时接口连线同样先走缝隙再进入左侧输入', () => {
+  const nodes = [
+    { id: 'workflow-node:end1', x: 400, y: 48, width: 220, height: 108 },
+    { id: 'workflow-node:device2', x: 400, y: 220, width: 220, height: 108 },
+  ]
+  const points = workflowOrthogonalPoints({
+    sourceX: 620, sourceY: 274, targetX: 400, targetY: 102,
+    sourcePosition: 'right', targetPosition: 'left',
+    obstacles: nodes, sourceId: nodes[1].id, targetId: nodes[0].id,
+  })
+  const gapY = points.find((point, index) => index > 0 && point[1] > 156 && point[1] < 220)?.[1]
+  assert.equal(typeof gapY, 'number')
+  assert.ok(Math.max(...points.map(point => point[1])) <= 328)
+  assert.equal(polylineHitsNodeInteriors(points, nodes), false)
+})
+
+test('接口边为雾蓝实线且保留具体接口Handle', () => {
   const edges = buildFlowEdges([{
     connectionType: 'NODE_TO_NODE',
     source: { nodeName: 'branch', interfaceName: 'high' },
@@ -171,12 +466,13 @@ test('接口边为蓝灰色实线且保留具体接口Handle', () => {
   }], [])
   assert.equal(edges[0].data.connectionKind, 'INTERFACE')
   assert.equal(edges[0].sourceHandle, 'interface:high')
-  assert.equal(edges[0].style.stroke, '#7890ad')
+  assert.equal(edges[0].style.stroke, '#7c93b8')
   assert.equal(edges[0].style.strokeDasharray, undefined)
-  assert.deepEqual(edges[0].pathOptions, { offset: 24, borderRadius: 8 })
+  assert.equal(edges[0].type, 'workflow')
+  assert.equal(edges[0].data.laneOffset, 0)
 })
 
-test('端口边为紫色虚线', () => {
+test('端口边为灰紫虚线', () => {
   const edges = buildFlowEdges([], [{
     source: { nodeName: 'sensor', portName: 'temperatureOut' },
     target: { nodeName: 'heater', portName: 'targetIn' }
@@ -184,10 +480,84 @@ test('端口边为紫色虚线', () => {
   assert.equal(edges[0].data.connectionKind, 'PORT')
   assert.equal(edges[0].sourceHandle, 'port:temperatureOut')
   assert.equal(edges[0].targetHandle, 'port:targetIn')
-  assert.equal(edges[0].style.stroke, '#7569bd')
+  assert.equal(edges[0].style.stroke, '#9a8ab5')
   assert.equal(edges[0].style.strokeDasharray, '6 5')
-  assert.deepEqual(edges[0].pathOptions, { offset: 24, borderRadius: 8 })
+  assert.equal(edges[0].type, 'workflow')
+  assert.equal(edges[0].data.laneOffset, 0)
+  assert.equal(edges[0].data.tooltip, '未绑定变量 · 空')
 })
+
+test('同一来源的多条数据边右端口贴节点走内圈，竖段靠左，且进出下降高度一致', () => {
+  const sensor = {
+    name: 'sensor',
+    ports: [
+      { name: 'out1', direction: 'OUT' },
+      { name: 'out2', direction: 'OUT' },
+      { name: 'out3', direction: 'OUT' },
+    ],
+  }
+  const edges = buildFlowEdges([], [
+    { source: { nodeName: 'sensor', portName: 'out1' }, target: { nodeName: 'heater', portName: 'in1' } },
+    { source: { nodeName: 'sensor', portName: 'out2' }, target: { nodeName: 'heater', portName: 'in2' } },
+    { source: { nodeName: 'sensor', portName: 'out3' }, target: { nodeName: 'heater', portName: 'in3' } },
+  ], [sensor])
+  const ranks = edges.map(edge => edge.data.wrapRank)
+  assert.deepEqual(ranks, [2, 1, 0])
+  assert.equal(edges[2].data.wrapRank, 0)
+  const nodes = [
+    { id: 'workflow-node:sensor', x: 0, y: 80, width: 220, height: 108 },
+    { id: 'workflow-node:heater', x: 340, y: 80, width: 220, height: 108 },
+  ]
+  const left = workflowOrthogonalPoints({
+    sourceX: 55, sourceY: 188, targetX: 395, targetY: 80,
+    sourcePosition: 'bottom', targetPosition: 'top',
+    wrapRank: 2, wrapCount: 3,
+    obstacles: nodes, sourceId: nodes[0].id, targetId: nodes[1].id,
+  })
+  const right = workflowOrthogonalPoints({
+    sourceX: 165, sourceY: 188, targetX: 505, targetY: 80,
+    sourcePosition: 'bottom', targetPosition: 'top',
+    wrapRank: 0, wrapCount: 3,
+    obstacles: nodes, sourceId: nodes[0].id, targetId: nodes[1].id,
+  })
+  assert.ok(exitDrop(right, 188) < exitDrop(left, 188))
+  assert.ok(Math.min(...left.map(point => point[1])) < Math.min(...right.map(point => point[1])))
+  assert.equal(exitDrop(left, 188), entryDrop(left, 80))
+  assert.equal(exitDrop(right, 188), entryDrop(right, 80))
+  assert.ok(verticalChannelX(right) < verticalChannelX(left))
+  assert.ok(verticalChannelX(right) < 340)
+  assert.equal(polylineHitsNodeInteriors(left, nodes), false)
+  assert.equal(polylineHitsNodeInteriors(right, nodes), false)
+  assert.equal(edgeLaneOffset(0, 1), 0)
+})
+
+function exitDrop(points, startY) {
+  const turn = points.find((point, index) => index > 0 && point[0] === points[0][0])
+  return Math.abs((turn?.[1] ?? startY) - startY)
+}
+
+function entryDrop(points, endY) {
+  const last = points[points.length - 1]
+  let approach = points[points.length - 2]
+  for (let index = points.length - 2; index >= 0; index -= 1) {
+    if (points[index][0] !== last[0]) break
+    approach = points[index]
+  }
+  return Math.abs(endY - approach[1])
+}
+
+function verticalChannelX(points) {
+  let bestX = points[0][0]
+  let bestSpan = 0
+  for (let index = 0; index < points.length - 1; index += 1) {
+    if (Math.abs(points[index][0] - points[index + 1][0]) > 0.01) continue
+    const span = Math.abs(points[index][1] - points[index + 1][1])
+    if (span <= bestSpan) continue
+    bestSpan = span
+    bestX = points[index][0]
+  }
+  return bestX
+}
 
 test('状态控制接口与数据端口使用独立的Handle命名空间', () => {
   assert.equal(interfaceHandleId('Interface_state_out'), 'interface:Interface_state_out')

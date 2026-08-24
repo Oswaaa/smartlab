@@ -85,6 +85,20 @@ class SchemaContractConformanceTest {
                 snapshot.path("items").path("$ref").asText());
     }
 
+    @Test
+    void workflowPortSnapshotDefinitionsUseCanonicalCurrentValueShape() throws Exception {
+        JsonNode definitions = resource("系统执行规范.json").path("definitions");
+        JsonNode item = definitions.path("WorkflowPortSnapshotItem");
+        JsonNode snapshot = definitions.path("WorkflowPortSnapshot");
+
+        assertEquals("object", item.path("type").asText());
+        assertEquals(List.of("portName", "value"), textValues(item.path("required")));
+        assertEquals("string", item.path("properties").path("portName").path("type").asText());
+        assertEquals("array", snapshot.path("type").asText());
+        assertEquals("#/definitions/WorkflowPortSnapshotItem",
+                snapshot.path("items").path("$ref").asText());
+    }
+
     private JsonNode resource(String name) throws IOException {
         try (InputStream input = getClass().getResourceAsStream("/schemas/" + name)) {
             assertNotNull(input, "缺少Schema资源: " + name);

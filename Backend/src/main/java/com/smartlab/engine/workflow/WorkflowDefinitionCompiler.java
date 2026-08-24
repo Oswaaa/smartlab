@@ -10,7 +10,7 @@ import com.smartlab.global.contract.WorkflowNodeSystemContract;
 import com.smartlab.global.contract.WorkflowNodeType;
 import com.smartlab.global.contract.ProtocolContract;
 import com.smartlab.engine.constraint.ConstraintExpressionEvaluator;
-import com.smartlab.management.dto.workflow.WorkflowSaveRequest;
+import com.smartlab.management.dto.workflow.WorkflowModelDocument;
 import com.smartlab.management.dto.workflow.WorkflowIssue;
 import com.smartlab.global.util.JsonNodeSupport;
 import org.springframework.stereotype.Component;
@@ -36,11 +36,12 @@ public class WorkflowDefinitionCompiler {
 
     private final WorkflowDefinitionCanonicalizer canonicalizer = new WorkflowDefinitionCanonicalizer();
     private final ConstraintExpressionEvaluator expressionEvaluator = new ConstraintExpressionEvaluator();
-    private CompiledWorkflow compileStrict(WorkflowSaveRequest request) {
-        if (request == null || request.getName() == null || request.getName().isBlank()) {
+    private CompiledWorkflow compileStrict(WorkflowModelDocument request) {
+        String flowModelName = request == null ? null : request.flowModelName();
+        if (flowModelName == null || flowModelName.isBlank()) {
             throw new IllegalArgumentException("flowModelName不能为空");
         }
-        if (request.getNodesDef() == null || !request.getNodesDef().isArray() || request.getNodesDef().isEmpty()) {
+        if (request.getNodes() == null || !request.getNodes().isArray() || request.getNodes().isEmpty()) {
             throw new IllegalArgumentException("nodes必须是非空数组");
         }
         Map<String, Long> refsByName = new LinkedHashMap<>();
@@ -50,7 +51,7 @@ public class WorkflowDefinitionCompiler {
         long endRef = -1;
         long nextRef = 1;
         int nodePosition = 0;
-        for (JsonNode source : request.getNodesDef()) {
+        for (JsonNode source : request.getNodes()) {
             if (!source.isObject()) throw new IllegalArgumentException("nodes[" + nodePosition + "]: 节点必须是对象");
             ObjectNode node = source.deepCopy();
             node.put("nodeIdRef", nextRef);
@@ -82,13 +83,13 @@ public class WorkflowDefinitionCompiler {
         return new CompiledWorkflow(Map.copyOf(nodes), immutable(outgoing), immutable(incoming), Map.copyOf(refsByName), startRef, endRef);
     }
 
-    public CompiledWorkflow compile(WorkflowSaveRequest request) {
+    public CompiledWorkflow compile(WorkflowModelDocument request) {
         WorkflowPreparation prepared = prepare(request, WorkflowPreparation.Mode.PUBLISH);
         if (!prepared.executable()) throw new IllegalArgumentException(firstBlockingMessage(prepared.issues()));
         return prepared.compiled();
     }
 
-    public WorkflowPreparation prepare(WorkflowSaveRequest request, WorkflowPreparation.Mode mode) {
+    public WorkflowPreparation prepare(WorkflowModelDocument request, WorkflowPreparation.Mode mode) {
         WorkflowPreparation.Mode effectiveMode = mode == null ? WorkflowPreparation.Mode.PUBLISH : mode;
         WorkflowDefinitionCanonicalizer.CanonicalizationResult canonical = canonicalizer.canonicalize(request);
         List<WorkflowIssue> issues = new ArrayList<>();
@@ -220,17 +221,20 @@ public class WorkflowDefinitionCompiler {
             boolean hasCounter = false;
             for (JsonNode trigger : iterable(interfaceNode.path("bindingTriggers"))) {
                 JsonNode condition = trigger.path("condition");
-                JsonNode payload = trigger.path("action").path("payload");
-                if ("signalName".equals(condition.path("object").asText())
-                        && "=".equals(condition.path("operator").asText())
-                        && "ACTIVE".equals(condition.path("threshold").asText())
-                        && "UPDATE".equals(trigger.path("action").path("actionName").asText())
-                        && "INTERNAL_VARIABLE".equals(payload.path("updateType").asText())
-                        && "aggregateCount".equals(payload.path("targetName").asText())
-                        && "aggregateCount+1".equals(payload.path("valueExpression").asText().replaceAll("\\s+", ""))) {
-                    hasCounter = true;
-                    break;
+                for (JsonNode action : WorkflowTriggerState.actions(trigger)) {
+                    JsonNode payload = action.path("payload");
+                    if ("signalName".equals(condition.path("object").asText())
+                            && "=".equals(condition.path("operator").asText())
+                            && "ACTIVE".equals(condition.path("threshold").asText())
+                            && "UPDATE".equals(action.path("actionName").asText())
+                            && "INTERNAL_VARIABLE".equals(payload.path("updateType").asText())
+                            && "aggregateCount".equals(payload.path("targetName").asText())
+                            && "aggregateCount+1".equals(payload.path("valueExpression").asText().replaceAll("\\s+", ""))) {
+                        hasCounter = true;
+                        break;
+                    }
                 }
+                if (hasCounter) break;
             }
             if (!hasCounter) {
                 throw nodeError(index.nodeName(), "interfaces." + interfaceNode.path("name").asText()
@@ -269,13 +273,29 @@ public class WorkflowDefinitionCompiler {
         int interfacePosition = 0;
         for (JsonNode item : node.path("interfaces")) {
             JsonNode triggers = item.path("bindingTriggers");
+            if (!triggers.isArray() || triggers.isEmpty()) {
+                throw nodeError(index.nodeName(), "interfaces[" + interfacePosition + "].bindingTriggers",
+                        "接口" + item.path("name").asText() + "必须配置触发器");
+            }
             int triggerPosition = 0;
             for (JsonNode trigger : iterable(triggers)) {
                 String triggerPath = "interfaces[" + interfacePosition + "].bindingTriggers[" + triggerPosition + "]";
                 JsonNode condition = trigger.path("condition");
                 if (!condition.isObject()) throw nodeError(index.nodeName(), triggerPath + ".condition", "必须是对象");
                 validateTriggerCondition(index, condition, triggerPath + ".condition");
-                validateTriggerAction(index, node, item.path("name").asText(), trigger.path("action"), triggerPath + ".action");
+                java.util.List<JsonNode> actions = WorkflowTriggerState.actions(trigger);
+                if (actions.isEmpty()) {
+                    throw nodeError(index.nodeName(), triggerPath, "必须配置action或非空actions");
+                }
+                boolean namedActions = trigger.path("actions").isArray() && !trigger.path("actions").isEmpty();
+                int actionPosition = 0;
+                for (JsonNode action : actions) {
+                    String actionPath = namedActions
+                            ? triggerPath + ".actions[" + actionPosition + "]"
+                            : triggerPath + ".action";
+                    validateTriggerAction(index, node, item.path("name").asText(), action, actionPath);
+                    actionPosition++;
+                }
                 triggerPosition++;
             }
             interfacePosition++;
@@ -473,6 +493,7 @@ public class WorkflowDefinitionCompiler {
     private void validatePortConnections(JsonNode connections, Map<String, NodeIndex> nodes) {
         if (connections == null || !connections.isArray()) throw new IllegalArgumentException("portConnections必须是数组");
         int position = 0;
+        java.util.Set<String> occupiedTargets = new java.util.HashSet<>();
         for (JsonNode connection : connections) {
             String path = "portConnections[" + position + "]";
             JsonNode sourceEndpoint = connection.path("source");
@@ -481,6 +502,10 @@ public class WorkflowDefinitionCompiler {
             NodeIndex targetNode = referencedNode(targetEndpoint, nodes, path + ".target");
             JsonNode sourcePort = referencedPort(sourceEndpoint, sourceNode, "OUT", path + ".source");
             JsonNode targetPort = referencedPort(targetEndpoint, targetNode, "IN", path + ".target");
+            String occupancyKey = targetNode.nodeName() + "::" + targetPort.path("name").asText();
+            if (!occupiedTargets.add(occupancyKey)) {
+                throw new IllegalArgumentException(path + ": 输入端口已被占用: " + occupancyKey.replace("::", "."));
+            }
             JsonNode sourceVariable = sourceNode.variables().get(sourcePort.path("internalVariableName").asText());
             JsonNode targetVariable = targetNode.variables().get(targetPort.path("internalVariableName").asText());
             String sourceType = sourceVariable.path("dataType").asText();
@@ -661,8 +686,8 @@ public class WorkflowDefinitionCompiler {
 
     private boolean triggerBusinessEquals(JsonNode actual, JsonNode expected) {
         return actual != null && actual.isObject()
-                && expected.path("action").equals(actual.path("action"))
-                && expected.path("condition").equals(actual.path("condition"));
+                && expected.path("condition").equals(actual.path("condition"))
+                && WorkflowTriggerState.actions(expected).equals(WorkflowTriggerState.actions(actual));
     }
 
     private void validateSystemActions(NodeIndex index, JsonNode actualActions, JsonNode expectedActions) {
@@ -873,5 +898,14 @@ public class WorkflowDefinitionCompiler {
                                    long startNodeIdRef, long endNodeIdRef) {
         public List<Connection> outgoing(long nodeIdRef) { return outgoingConnections.getOrDefault(nodeIdRef, List.of()); }
         public List<Connection> incoming(long nodeIdRef) { return incomingConnections.getOrDefault(nodeIdRef, List.of()); }
+
+        public String nodeName(long nodeIdRef) {
+            if (refsByNodeName != null) {
+                for (Map.Entry<String, Long> entry : refsByNodeName.entrySet()) {
+                    if (entry.getValue() != null && entry.getValue() == nodeIdRef) return entry.getKey();
+                }
+            }
+            return "#" + nodeIdRef;
+        }
     }
 }

@@ -22,6 +22,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.nullable;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.times;
@@ -49,6 +52,37 @@ class WorkflowRuntimeServiceTest {
         assertEquals(1, created.getInterfaceOutSnapshot().size());
         assertEquals("workflow-out", created.getInterfaceOutSnapshot().get(0).path("interfaceName").asText());
         assertTrue(created.getInterfaceOutSnapshot().get(0).path("signalName").isNull());
+        assertTrue(created.getPortInSnapshot().isArray());
+        assertTrue(created.getPortOutSnapshot().isArray());
+        assertEquals(0, created.getPortInSnapshot().size());
+        assertEquals(0, created.getPortOutSnapshot().size());
+    }
+
+    @Test
+    void createStepInitializesCanonicalInputAndOutputPortArrays() {
+        TaskStepMapper steps = mock(TaskStepMapper.class);
+        WorkflowRuntimeService runtime = runtime(steps, mock(FlowNodeMapper.class));
+        Task task = new Task();
+        task.setId(5L);
+        task.setTaskVariables(JsonNodeSupport.objectNode());
+        FlowNode node = node(lifecycle("PENDING", "RUNNING", "RUNNING", "SUCCEEDED"));
+        node.setInterfaces(interfaces());
+        ArrayNode ports = JsonNodeSupport.arrayNode();
+        ports.addObject().put("name", "temperatureIn").put("direction", "IN")
+                .put("internalVariableName", "target");
+        ports.addObject().put("name", "temperatureOut").put("direction", "OUT")
+                .put("internalVariableName", "measured");
+        node.setPorts(ports);
+        when(steps.selectOne(any())).thenReturn(null);
+
+        TaskStep created = runtime.createStep(task, node, null, 0, null);
+
+        assertEquals(1, created.getPortInSnapshot().size());
+        assertEquals("temperatureIn", created.getPortInSnapshot().get(0).path("portName").asText());
+        assertTrue(created.getPortInSnapshot().get(0).path("value").isNull());
+        assertEquals(1, created.getPortOutSnapshot().size());
+        assertEquals("temperatureOut", created.getPortOutSnapshot().get(0).path("portName").asText());
+        assertTrue(created.getPortOutSnapshot().get(0).path("value").isNull());
     }
 
     @Test
@@ -132,6 +166,60 @@ class WorkflowRuntimeServiceTest {
     }
 
     @Test
+    void createStepLogsCanonicalNodeCreatedMessage() {
+        TaskStepMapper steps = mock(TaskStepMapper.class);
+        ExecutionLogService logs = mock(ExecutionLogService.class);
+        WorkflowService workflows = mock(WorkflowService.class);
+        WorkflowRuntimeService runtime = new WorkflowRuntimeService(mock(TaskMapper.class), steps,
+                mock(FlowNodeMapper.class), logs, mock(ApplicationEventPublisher.class), workflows);
+        Task task = new Task();
+        task.setId(5L);
+        task.setTaskVariables(JsonNodeSupport.objectNode());
+        FlowNode node = node(lifecycle("PENDING", "RUNNING", "RUNNING", "SUCCEEDED"));
+        node.setInterfaces(interfaces());
+        when(steps.selectOne(any())).thenReturn(null);
+        when(workflows.nodeName(3L, 1L)).thenReturn("start1");
+
+        runtime.createStep(task, node, null, 0, null);
+
+        verify(logs).append(eq("TASK"), eq(5L), nullable(Long.class), isNull(), eq("INFO"), eq("节点已创建: start1 (#1)"));
+    }
+
+    @Test
+    void lifecycleTransitionLogsCanonicalStateChange() {
+        TaskStepMapper steps = mock(TaskStepMapper.class);
+        ExecutionLogService logs = mock(ExecutionLogService.class);
+        WorkflowService workflows = mock(WorkflowService.class);
+        WorkflowRuntimeService runtime = new WorkflowRuntimeService(mock(TaskMapper.class), steps,
+                mock(FlowNodeMapper.class), logs, mock(ApplicationEventPublisher.class), workflows);
+        TaskStep step = step("PENDING");
+        FlowNode node = node(lifecycle("PENDING", "RUNNING", "RUNNING", "SUCCEEDED"));
+        Task task = new Task();
+        task.setId(5L);
+        task.setTaskStatus("RUNNING");
+        when(steps.selectById(11L)).thenReturn(step);
+        when(workflows.nodeName(3L, 1L)).thenReturn("start1");
+
+        runtime.transitionNodeLifecycle(task, step, node, "RUNNING");
+
+        verify(logs).append(eq("TASK"), eq(5L), eq(11L), isNull(), eq("INFO"),
+                eq("节点 start1 (#1) 生命周期 PENDING → RUNNING"));
+    }
+
+    @Test
+    void mergeVariableSpaceSkipsWriteWhenValuesAreAlreadyPresent() {
+        TaskStepMapper steps = mock(TaskStepMapper.class);
+        WorkflowRuntimeService runtime = runtime(steps, mock(FlowNodeMapper.class));
+        TaskStep step = step("RUNNING");
+        step.setVariableSpace(JsonNodeSupport.objectNode().put("temperature", 28));
+        when(steps.selectById(11L)).thenReturn(step);
+
+        runtime.mergeVariableSpace(step, JsonNodeSupport.objectNode().put("temperature", 28));
+
+        verify(steps, never()).updateById(step);
+    }
+
+    @Test
     void rejectsNodeStatusTransitionThatIsNotDeclaredByLifecycle() {
         TaskStepMapper steps = mock(TaskStepMapper.class);
         FlowNodeMapper nodes = mock(FlowNodeMapper.class);
@@ -142,6 +230,36 @@ class WorkflowRuntimeServiceTest {
 
         assertThrows(IllegalStateException.class, () -> runtime.completeStep(step, JsonNodeSupport.objectNode()));
         verify(steps, never()).updateById(step);
+    }
+
+    @Test
+    void failTaskDoesNotMoveTerminatingTaskToFailed() {
+        TaskMapper tasks = mock(TaskMapper.class);
+        WorkflowRuntimeService runtime = new WorkflowRuntimeService(tasks, mock(TaskStepMapper.class),
+                mock(FlowNodeMapper.class), mock(ExecutionLogService.class), mock(ApplicationEventPublisher.class));
+        Task task = new Task();
+        task.setId(5L);
+        task.setTaskStatus("TERMINATING");
+
+        runtime.failTask(task, "boom");
+
+        assertEquals("TERMINATING", task.getTaskStatus());
+        verify(tasks, never()).updateById(task);
+    }
+
+    @Test
+    void failTaskStillFailsRunningTask() {
+        TaskMapper tasks = mock(TaskMapper.class);
+        WorkflowRuntimeService runtime = new WorkflowRuntimeService(tasks, mock(TaskStepMapper.class),
+                mock(FlowNodeMapper.class), mock(ExecutionLogService.class), mock(ApplicationEventPublisher.class));
+        Task task = new Task();
+        task.setId(5L);
+        task.setTaskStatus("RUNNING");
+
+        runtime.failTask(task, "boom");
+
+        assertEquals("FAILED", task.getTaskStatus());
+        verify(tasks).updateById(task);
     }
 
     @Test

@@ -34,6 +34,7 @@ app.use(ElementPlus);// 让应用拥有Element Plus UI组件库的功能
 // 配置 Axios 全局拦截器以自动附加 JWT Token 并处理 401 认证失效
 import axios from 'axios'
 import { useAuthStore } from './stores/authStore'
+import { useConsoleStore } from './stores/consoleStore'
 
 axios.interceptors.request.use(config => {
   try {
@@ -52,9 +53,10 @@ axios.interceptors.request.use(config => {
 axios.interceptors.response.use(response => {
   return response
 }, error => {
-  if (error.response && error.response.status === 401) {
+  if (error.response && error.response.status === 401 && !error.config?.skipAuthRedirect) {
     try {
       const authStore = useAuthStore()
+      useConsoleStore().closeGlobalStream()
       authStore.clearAuth()
       router.push('/login')
     } catch (e) {

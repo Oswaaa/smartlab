@@ -37,39 +37,49 @@ class WorkflowNodeSystemContractTest {
                 .anyMatch(value -> value.equals("signalName")));
         assertTrue(templates.findValues("object").stream()
                 .map(JsonNode::asText)
-                .anyMatch(value -> value.equals("payload.stateName")));
+                .anyMatch(value -> value.equals("taskLifecycleState")));
     }
 
     @Test
     void startTemplateHasOnlyWorkflowOutputAndCanonicalActions() {
         JsonNode template = WorkflowNodeSystemContract.template("FUNC_NODE", "START");
+        JsonNode output = interfaceByName(template, "Interface_workflow_out");
         assertEquals(List.of("Interface_workflow_out"), names(template.path("interfaces")));
         assertEquals(List.of("UPDATE", "EMIT"), textValues(template.path("actions")));
-        assertEquals("OUT", interfaceByName(template, "Interface_workflow_out").path("direction").asText());
-        assertEquals(List.of("PENDING", "RUNNING", "RUNNING"), triggerThresholds(
-                interfaceByName(template, "Interface_workflow_out")));
-        assertEquals("ACTIVE", firstAction(template, "Interface_workflow_out", "EMIT")
-                .path("payload").path("signalName").asText());
-        assertEquals("start.workflowOut", interfaceByName(template, "Interface_workflow_out").path("_systemKey").asText());
+        assertEquals("OUT", output.path("direction").asText());
+        assertEquals(List.of("start.pendingTerminate", "start.runningTerminate", "start.terminatingComplete",
+                        "start.begin", "start.complete"),
+                triggerKeys(output));
+        JsonNode complete = triggerByKey(output, "start.complete");
+        assertEquals("SUCCEEDED", complete.path("action").path("payload").path("targetName").asText());
+        assertEquals(List.of("UPDATE", "EMIT"), actionNames(complete));
+        assertEquals("ACTIVE", complete.path("actions").get(1).path("payload").path("signalName").asText());
+        assertEquals("start.workflowOut", output.path("_systemKey").asText());
     }
 
     @Test
     void endTemplateHasOnlyWorkflowInputAndLifecycleUpdates() {
         JsonNode template = WorkflowNodeSystemContract.template("FUNC_NODE", "END");
+        JsonNode input = interfaceByName(template, "Interface_workflow_in");
         assertEquals(List.of("Interface_workflow_in"), names(template.path("interfaces")));
         assertEquals(List.of("UPDATE", "EMIT"), textValues(template.path("actions")));
-        assertEquals(List.of("ACTIVE", "RUNNING"), triggerThresholds(
-                interfaceByName(template, "Interface_workflow_in")));
-        assertEquals("IN", interfaceByName(template, "Interface_workflow_in").path("direction").asText());
-        assertEquals("end.workflowIn", interfaceByName(template, "Interface_workflow_in").path("_systemKey").asText());
+        assertEquals(List.of("end.pendingTerminate", "end.runningTerminate", "end.terminatingComplete",
+                        "end.activate", "end.complete"),
+                triggerKeys(input));
+        assertEquals("IN", input.path("direction").asText());
+        assertEquals("end.workflowIn", input.path("_systemKey").asText());
     }
 
     @Test
     void branchTemplateLeavesOutputInterfacesAndRoutingTriggersToTheUser() {
         JsonNode template = WorkflowNodeSystemContract.template("FUNC_NODE", "BRANCH");
+        JsonNode input = template.path("interfaces").get(0);
         assertEquals(List.of("Interface_workflow_in"), names(template.path("interfaces")));
-        assertEquals(List.of("ACTIVE"), triggerThresholds(template.path("interfaces").get(0)));
-        assertEquals(List.of("RUNNING"), inputTriggerTargets(template));
+        assertEquals(List.of("branch.pendingTerminate", "branch.runningTerminate", "branch.terminatingComplete",
+                        "branch.activate"),
+                triggerKeys(input));
+        assertEquals("RUNNING", triggerByKey(input, "branch.activate")
+                .path("action").path("payload").path("targetName").asText());
         assertEquals(List.of("UPDATE", "EMIT"), textValues(template.path("actions")));
         assertEquals(List.of("branch.workflowIn"), directSystemKeys(template.path("interfaces")));
     }
@@ -79,25 +89,25 @@ class WorkflowNodeSystemContractTest {
         JsonNode template = WorkflowNodeSystemContract.template("FUNC_NODE", "AGGREGATE");
         JsonNode input = interfaceByName(template, "Interface_workflow_in");
         JsonNode output = interfaceByName(template, "Interface_workflow_out");
+        JsonNode count = triggerByKey(input, "aggregate.countInput");
+        JsonNode activate = triggerByKey(input, "aggregate.activate");
         assertEquals(List.of("Interface_workflow_in", "Interface_workflow_out"), names(template.path("interfaces")));
         JsonNode aggregateCount = findBy(template.path("internalVariables"), "name", "aggregateCount");
         assertEquals("INTEGER", aggregateCount.path("dataType").asText());
         assertEquals(0, aggregateCount.path("initialValue").asInt());
         assertEquals("aggregate.count", aggregateCount.path("_systemKey").asText());
         assertEquals(List.of("ACTIVE"), textValues(input.path("allowedSignals")));
-        assertEquals("ACTIVE", input.path("bindingTriggers").get(0).path("condition").path("threshold").asText());
-        assertEquals("aggregateCount", input.path("bindingTriggers").get(0)
-                .path("action").path("payload").path("targetName").asText());
-        assertEquals("aggregateCount + 1", input.path("bindingTriggers").get(0)
-                .path("action").path("payload").path("valueExpression").asText());
-        assertEquals("AND", input.path("bindingTriggers").get(1).path("condition").path("logic").asText());
-        assertEquals(List.of("aggregateCount", "nodeLifecycleState"), input.path("bindingTriggers").get(1)
-                .path("condition").path("conditions").findValuesAsText("object"));
-        assertEquals(List.of("aggregateCount", "RUNNING"), inputTriggerTargets(template));
+        assertEquals("ACTIVE", count.path("condition").path("threshold").asText());
+        assertEquals("aggregateCount", count.path("action").path("payload").path("targetName").asText());
+        assertEquals("aggregateCount + 1", count.path("action").path("payload").path("valueExpression").asText());
+        assertEquals("AND", activate.path("condition").path("logic").asText());
+        assertEquals(List.of("aggregateCount", "nodeLifecycleState"),
+                activate.path("condition").path("conditions").findValuesAsText("object"));
+        assertEquals(List.of("aggregate.pendingTerminate", "aggregate.runningTerminate",
+                        "aggregate.terminatingComplete", "aggregate.countInput", "aggregate.activate"),
+                triggerKeys(input));
         assertEquals(List.of("ACTIVE"), textValues(output.path("allowedSignals")));
         assertTrue(output.path("bindingTriggers").isEmpty());
-        assertEquals("aggregate.countInput", input.path("bindingTriggers").get(0).path("_systemKey").asText());
-        assertEquals("aggregate.activate", input.path("bindingTriggers").get(1).path("_systemKey").asText());
     }
 
     @Test
@@ -106,14 +116,18 @@ class WorkflowNodeSystemContractTest {
         assertEquals(List.of("Interface_workflow_in", "Interface_state_out",
                         "Interface_state_in", "Interface_workflow_out"), names(template.path("interfaces")));
         assertEquals(List.of("UPDATE", "EMIT"), textValues(template.path("actions")));
-        assertEquals(List.of("WF_EXECUTE_START"),
+        assertEquals(List.of("WF_EXECUTE_START", "WF_EXECUTE_ABORT"),
                 textValues(interfaceByName(template, "Interface_state_out").path("allowedSignals")));
         assertEquals(List.of("CMD_STATE"),
                 textValues(interfaceByName(template, "Interface_state_in").path("allowedSignals")));
-        assertEquals("UPDATE", interfaceByName(template, "Interface_workflow_in")
-                .path("bindingTriggers").get(0).path("action").path("actionName").asText());
-        assertEquals("UPDATE", interfaceByName(template, "Interface_state_in")
-                .path("bindingTriggers").get(0).path("action").path("actionName").asText());
+        assertEquals(List.of("device.pendingTerminate", "device.runningTerminate", "device.workflowStart"),
+                triggerKeys(interfaceByName(template, "Interface_workflow_in")));
+        assertEquals(List.of("device.abort", "device.execute"),
+                triggerKeys(interfaceByName(template, "Interface_state_out")));
+        assertEquals("UPDATE", triggerByKey(interfaceByName(template, "Interface_workflow_in"), "device.pendingTerminate")
+                .path("action").path("actionName").asText());
+        assertEquals("UPDATE", triggerByKey(interfaceByName(template, "Interface_state_in"), "device.stateCompleted")
+                .path("action").path("actionName").asText());
         assertEquals(List.of("device.workflowIn", "device.stateOut", "device.stateIn", "device.workflowOut"),
                 directSystemKeys(template.path("interfaces")));
     }
@@ -123,25 +137,32 @@ class WorkflowNodeSystemContractTest {
         JsonNode template = WorkflowNodeSystemContract.template("DEV_NODE", null);
 
         assertEquals(List.of("UPDATE", "EMIT"), textValues(template.path("actions")));
-        assertEquals("UPDATE", firstTrigger(template, "Interface_workflow_in")
+        assertEquals("UPDATE", triggerByKey(interfaceByName(template, "Interface_workflow_in"), "device.runningTerminate")
                 .path("action").path("actionName").asText());
-        assertEquals("RUNNING", firstTrigger(template, "Interface_workflow_in")
+        assertEquals("TERMINATING", triggerByKey(interfaceByName(template, "Interface_workflow_in"), "device.runningTerminate")
                 .path("action").path("payload").path("targetName").asText());
-        assertEquals("EMIT", firstTrigger(template, "Interface_state_out")
+        assertEquals("UPDATE", triggerByKey(interfaceByName(template, "Interface_workflow_in"), "device.workflowStart")
                 .path("action").path("actionName").asText());
-        assertEquals("WF_EXECUTE_START", firstTrigger(template, "Interface_state_out")
+        assertEquals("RUNNING", triggerByKey(interfaceByName(template, "Interface_workflow_in"), "device.workflowStart")
+                .path("action").path("payload").path("targetName").asText());
+        assertEquals("EMIT", triggerByKey(interfaceByName(template, "Interface_state_out"), "device.execute")
+                .path("action").path("actionName").asText());
+        assertEquals("WF_EXECUTE_START", triggerByKey(interfaceByName(template, "Interface_state_out"), "device.execute")
                 .path("action").path("payload").path("signalName").asText());
-        assertEquals("UPDATE", firstTrigger(template, "Interface_state_in")
+        assertEquals("WF_EXECUTE_ABORT", triggerByKey(interfaceByName(template, "Interface_state_out"), "device.abort")
+                .path("action").path("payload").path("signalName").asText());
+        assertEquals("UPDATE", triggerByKey(interfaceByName(template, "Interface_state_in"), "device.stateCompleted")
                 .path("action").path("actionName").asText());
-        assertEquals("SUCCEEDED", firstTrigger(template, "Interface_state_in")
+        assertEquals("SUCCEEDED", triggerByKey(interfaceByName(template, "Interface_state_in"), "device.stateCompleted")
                 .path("action").path("payload").path("targetName").asText());
-        JsonNode completionCondition = firstTrigger(template, "Interface_state_in").path("condition");
+        JsonNode completionCondition = triggerByKey(interfaceByName(template, "Interface_state_in"), "device.stateCompleted")
+                .path("condition");
         assertEquals("AND", completionCondition.path("logic").asText());
         assertEquals(List.of("nodeLifecycleState", "signalName", "payload.stateName"),
                 completionCondition.path("conditions").findValuesAsText("object"));
         assertEquals(List.of("RUNNING", "CMD_STATE", "COMPLETED"),
                 completionCondition.path("conditions").findValuesAsText("threshold"));
-        assertEquals("EMIT", firstTrigger(template, "Interface_workflow_out")
+        assertEquals("EMIT", triggerByKey(interfaceByName(template, "Interface_workflow_out"), "device.completeNode")
                 .path("action").path("actionName").asText());
         assertTrue(template.findValues("actionType").isEmpty());
     }
@@ -153,9 +174,13 @@ class WorkflowNodeSystemContractTest {
         assertEquals(List.of("Interface_workflow_in", "Interface_workflow_out"), names(template.path("interfaces")));
         assertEquals(List.of("UPDATE", "EMIT"), textValues(template.path("actions")));
         assertEquals(List.of("ACTIVE", "SUBFLOW_COMPLETED"), textValues(input.path("allowedSignals")));
-        assertEquals(List.of("ACTIVE", "SUBFLOW_COMPLETED"), triggerThresholds(input));
-        assertEquals(List.of("RUNNING", "SUCCEEDED"), input.path("bindingTriggers").findValues("targetName")
-                .stream().map(JsonNode::asText).toList());
+        assertEquals(List.of("subflow.pendingTerminate", "subflow.runningTerminate", "subflow.terminatingComplete",
+                        "subflow.activate", "subflow.childCompleted"),
+                triggerKeys(input));
+        assertEquals("RUNNING", triggerByKey(input, "subflow.activate")
+                .path("action").path("payload").path("targetName").asText());
+        assertEquals("SUCCEEDED", triggerByKey(input, "subflow.childCompleted")
+                .path("action").path("payload").path("targetName").asText());
         assertEquals(List.of("subflow.workflowIn", "subflow.workflowOut"),
                 directSystemKeys(template.path("interfaces")));
     }
@@ -215,6 +240,30 @@ class WorkflowNodeSystemContractTest {
 
     private JsonNode firstTrigger(JsonNode template, String interfaceName) {
         return interfaceByName(template, interfaceName).path("bindingTriggers").get(0);
+    }
+
+    private JsonNode triggerByKey(JsonNode interfaceNode, String systemKey) {
+        for (JsonNode trigger : interfaceNode.path("bindingTriggers")) {
+            if (systemKey.equals(trigger.path("_systemKey").asText())) return trigger;
+        }
+        throw new AssertionError("missing trigger " + systemKey);
+    }
+
+    private List<String> triggerKeys(JsonNode interfaceNode) {
+        List<String> values = new ArrayList<>();
+        interfaceNode.path("bindingTriggers").forEach(trigger -> values.add(trigger.path("_systemKey").asText()));
+        return values;
+    }
+
+    private List<String> actionNames(JsonNode trigger) {
+        List<String> values = new ArrayList<>();
+        JsonNode actions = trigger.path("actions");
+        if (actions.isArray() && !actions.isEmpty()) {
+            actions.forEach(item -> values.add(item.path("actionName").asText()));
+            return values;
+        }
+        values.add(trigger.path("action").path("actionName").asText());
+        return values;
     }
 
     private JsonNode firstAction(JsonNode template, String interfaceName, String actionName) {

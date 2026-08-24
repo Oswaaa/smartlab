@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>数据端口连线方案对比</title>
+  <style>
+    :root {
+      --bg: #f1f5f9;
+      --card: #ffffff;
+      --border: #e2e8f0;
+      --heading: #0f172a;
+      --body: #334155;
+      --muted: #64748b;
+      --primary: #2563eb;
+      --port: #6d28d9;
+      --port-right: #7c3aed;
+      --branch: #d97706;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      color: var(--body);
+      background: var(--bg);
+      font: 13px/1.55 "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    }
+    header {
+      position: sticky;
+      top: 0;
+      z-index: 8;
+      padding: 16px 24px 14px;
+      border-bottom: 1px solid var(--border);
+      background: #fff;
+    }
+    header h1 {
+      margin: 0 0 4px;
+      color: var(--heading);
+      font-size: 18px;
+      font-weight: 700;
+    }
+    header p { margin: 0; color: var(--muted); }
+    header strong { color: var(--port); font-weight: 600; }
+    .page { padding: 20px 24px 48px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(640px, 1fr));
+      gap: 16px;
+    }
+    .option {
+      overflow: hidden;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+    }
+    .option.current { border-color: #cbd5e1; }
+    .meta {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+    .meta h2 {
+      margin: 0 0 4px;
+      color: var(--heading);
+      font-size: 14px;
+      font-weight: 700;
+    }
+    .meta p { margin: 0; color: var(--muted); font-size: 12px; }
+    .tag {
+      flex: none;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #eff6ff;
+      color: var(--primary);
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .tag.warn { background: #fff7ed; color: #c2410c; }
+    .stage {
+      position: relative;
+      height: 300px;
+      background:
+        radial-gradient(circle, #dbe3ec 1px, transparent 1.2px) 0 0 / 20px 20px,
+        #f8fafc;
+    }
+    .wires { position: absolute; inset: 0; width: 100%; height: 100%; }
+    .node {
+      position: absolute;
+      width: 220px;
+      height: 108px;
+      display: flex;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, .06);
+    }
+    .node::before {
+      content: "";
+      position: absolute;
+      top: 8px;
+      bottom: 8px;
+      left: -1px;
+      width: 3px;
+      border-radius: 0 2px 2px 0;
+    }
+    .node.device { left: 48px; top: 110px; }
+    .node.device::before { background: var(--primary); }
+    .node.branch { left: 368px; top: 110px; }
+    .node.branch::before { background: var(--branch); }
+    .node-main { display: flex; flex: 1; flex-direction: column; justify-content: center; min-width: 0; padding: 10px 14px; }
+    .topline { display: flex; align-items: center; gap: 6px; }
+    .dot { width: 6px; height: 6px; border-radius: 50%; }
+    .device .dot { background: var(--primary); }
+    .branch .dot { background: var(--branch); }
+    .kind { color: var(--muted); font-size: 11px; }
+    .name { color: var(--heading); font-size: 12px; font-weight: 600; }
+    .op { margin-top: 6px; color: var(--heading); font-size: 13px; font-weight: 700; }
+    .params { color: var(--muted); font-size: 11px; }
+    .port, .iface {
+      position: absolute;
+      z-index: 3;
+      border: 2px solid #fff;
+    }
+    .iface {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--primary);
+      box-shadow: 0 0 0 1px var(--primary);
+    }
+    .port {
+      width: 10px;
+      height: 10px;
+      border-radius: 2px;
+      background: var(--port);
+      box-shadow: 0 0 0 1px var(--port);
+    }
+    .exec { fill: none; stroke: var(--primary); stroke-width: 1.6; }
+    .data-left { fill: none; stroke: #a78bfa; stroke-width: 1.7; stroke-dasharray: 6 5; }
+    .data-right { fill: none; stroke: var(--port-right); stroke-width: 2; stroke-dasharray: 6 5; }
+    .note {
+      font-size: 10px;
+      font-weight: 600;
+      fill: var(--port-right);
+    }
+    .hint { font-size: 10px; fill: var(--muted); }
+    footer {
+      margin-top: 16px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>数据端口连线方案</h1>
+    <p>对照截图：请重点看<strong>右边紫色线</strong>。期望是出口更靠近节点、竖段靠左、入口也更靠近节点。下面「现状」复原当前画面，A–D 是可选绕线。</p>
+  </header>
+  <main class="page">
+    <div class="grid">
+
+      <article class="option current">
+        <div class="meta">
+          <div>
+            <h2>现状</h2>
+            <p>出口很短，竖段叠在缝隙中间，入口绕得很高，右边那根离节点最远。</p>
+          </div>
+          <span class="tag warn">当前实现</span>
+        </div>
+        <div class="stage">
+          <svg class="wires" viewBox="0 0 640 300">
+            <path class="exec" d="M 268 164 H 368" />
+            <path class="data-left" d="M 121 218 V 248 H 332 V 52 H 441 V 110" />
+            <path class="data-right" d="M 195 218 V 230 H 318 V 36 H 515 V 110" />
+            <text class="note" x="322" y="28">右线入口过远</text>
+            <text class="hint" x="300" y="268">竖段重叠</text>
+          </svg>
+          <div class="node device"><div class="node-main"><div class="topline"><span class="dot"></span><span class="kind">设备能力</span><span class="name">device1</span></div><div class="op">加热</div><div class="params">目标温度、加热时间</div></div></div>
+          <div class="node branch"><div class="node-main"><div class="topline"><span class="dot"></span><span class="kind">分支节点</span><span class="name">branch1</span></div><div class="op">按控制接口判断下游路径</div></div></div>
+        </div>
+      </article>
+
+      <article class="option">
+        <div class="meta">
+          <div>
+            <h2>方案 A · 右线内圈贴节点</h2>
+            <p>右边端口走最内圈：出口 14px、入口 14px。竖段在缝隙最左侧。左线外一圈，避免重合。</p>
+          </div>
+          <span class="tag">A</span>
+        </div>
+        <div class="stage">
+          <svg class="wires" viewBox="0 0 640 300">
+            <path class="exec" d="M 268 164 H 368" />
+            <path class="data-left" d="M 121 218 V 246 H 296 V 82 H 441 V 110" />
+            <path class="data-right" d="M 195 218 V 232 H 278 V 96 H 515 V 110" />
+            <text class="note" x="200" y="258">出口贴边</text>
+            <text class="note" x="250" y="78">竖段靠左</text>
+            <text class="note" x="470" y="88">入口贴边</text>
+          </svg>
+          <div class="node device"><div class="node-main"><div class="topline"><span class="dot"></span><span class="kind">设备能力</span><span class="name">device1</span></div><div class="op">加热</div><div class="params">目标温度、加热时间</div></div></div>
+          <div class="node branch"><div class="node-main"><div class="topline"><span class="dot"></span><span class="kind">分支节点</span><span class="name">branch1</span></div><div class="op">按控制接口判断下游路径</div></div></div>
+        </div>
+      </article>
+
+      <article class="option">
+        <div class="meta">
+          <div>
+            <h2>方案 B · 两线都贴节点，竖段并排靠左</h2>
+            <p>两根线出口/入口都只有约 16px。竖段并排挤在源节点右侧，右线仍在更左。两线高度只差 8px，用来分开虚线。</p>
+          </div>
+          <span class="tag">B</span>
+        </div>
+        <div class="stage">
+          <svg class="wires" viewBox="0 0 640 300">
+            <path class="exec" d="M 268 164 H 368" />
+            <path class="data-left" d="M 121 218 V 242 H 292 V 86 H 441 V 110" />
+            <path class="data-right" d="M 195 218 V 234 H 276 V 94 H 515 V 110" />
+            <text class="note" x="198" y="256">两线都近</text>
+            <text class="note" x="248" y="80">并排靠左</text>
+          </svg>
+          <div class="node device"><div class="node-main"><div class="topline"><span class="dot"></span><span class="kind">设备能力</span><span class="name">device1</span></div><div class="op">加热</div><div class="params">目标温度、加热时间</div></div></div>
+          <div class="node branch"><div class="node-main"><div class="topline"><span class="dot"></span><span class="kind">分支节点</span><span class="name">branch1</span></div><div class="op">按控制接口判断下游路径</div></div></div>
+        </div>
+      </article>
+
+      <article class="option">
+        <div class="meta">
+          <div>
+            <h2>方案 C · 竖线贴着源节点右墙</h2>
+            <p>竖段几乎挨着 device1 右边（执行线旁边）。右线出口/入口 12px，是四版里最贴节点的。</p>
+          </div>
+          <span class="tag">C</span>
+        </div>
+        <div class="stage">
+          <svg class="wires" viewBox="0 0 640 300">
+            <path class="exec" d="M 268 164 H 368" />
+            <path class="data-left" d="M 121 218 V 240 H 286 V 88 H 441 V 110" />
+            <path class="data-right" d="M 195 218 V 230 H 272 V 98 H 515 V 110" />
+            <text class="note" x="232" y="72">贴墙上升</text>
+            <text class="note" x="478" y="90">入口 12px</text>
+          </svg>
+          <div class="node device"><div class="node-main"><div class="topline"><span class="dot"></span><span class="kind">设备能力</span><span class="name">device1</span></div><div class="op">加热</div><div class="params">目标温度、加热时间</div></div></div>
+          <div class="node branch"><div class="node-main"><div class="topline"><span class="dot"></span><span class="kind">分支节点</span><span class="name">branch1</span></div><div class="op">按控制接口判断下游路径</div></div></div>
+        </div>
+      </article>
+
+      <article class="option">
+        <div class="meta">
+          <div>
+            <h2>方案 D · 先贴底边滑到右下角，再贴墙上升</h2>
+            <p>右端口先贴着节点底边走到右下角，再贴右墙竖上去，最后贴着目标顶边进入。路径更短，横折更少。</p>
+          </div>
+          <span class="tag">D</span>
+        </div>
+        <div class="stage">
+          <svg class="wires" viewBox="0 0 640 300">
+            <path class="exec" d="M 268 164 H 368" />
+            <path class="data-left" d="M 121 218 V 244 H 286 V 84 H 441 V 110" />
+            <path class="data-right" d="M 195 218 V 230 H 268 V 98 H 515 V 110" />
+            <text class="note" x="200" y="258">贴底滑出</text>
+            <text class="note" x="232" y="76">贴墙</text>
+            <text class="note" x="470" y="90">贴顶进入</text>
+          </svg>
+          <div class="node device"><div class="node-main"><div class="topline"><span class="dot"></span><span class="kind">设备能力</span><span class="name">device1</span></div><div class="op">加热</div><div class="params">目标温度、加热时间</div></div></div>
+          <div class="node branch"><div class="node-main"><div class="topline"><span class="dot"></span><span class="kind">分支节点</span><span class="name">branch1</span></div><div class="op">按控制接口判断下游路径</div></div></div>
+        </div>
+      </article>
+
+    </div>
+    <footer>
+      浅紫虚线 = 左端口；深紫虚线 = 右端口。请回复选用 A / B / C / D，我再改画布绕线。
+    </footer>
+  </main>
+  <script>
+    document.querySelectorAll(".node.device").forEach(node => {
+      addPort(node, "iface", { left: "-5px", top: "49px" });
+      addPort(node, "iface", { right: "-5px", top: "49px" });
+      addPort(node, "port", { left: "68px", bottom: "-5px" });
+      addPort(node, "port", { left: "142px", bottom: "-5px" });
+    });
+    document.querySelectorAll(".node.branch").forEach(node => {
+      addPort(node, "iface", { left: "-5px", top: "49px" });
+      addPort(node, "iface", { right: "-5px", top: "49px" });
+      addPort(node, "port", { left: "68px", top: "-5px" });
+      addPort(node, "port", { left: "142px", top: "-5px" });
+    });
+    function addPort(node, cls, style) {
+      const el = document.createElement("span");
+      el.className = cls;
+      Object.assign(el.style, style);
+      node.appendChild(el);
+    }
+  </script>
+</body>
+</html>

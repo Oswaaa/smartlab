@@ -1,27 +1,25 @@
 <template>
-  <aside class="device-model-tree">
-    <header class="tree-header">
-      <div class="tree-heading">
-        <span class="tree-heading-title">类别 / 模型</span>
-        <span class="tree-heading-count">{{ visibleModelCount }} 个模型</span>
+  <aside class="device-model-tree sl-asset-tree">
+    <div class="tree-header-bar">
+      <div class="tree-header-left">
+        <strong class="tree-header-title">类别 / 模型</strong>
+        <span class="tree-header-count">{{ visibleModelCount }} 个模型</span>
       </div>
       <button v-if="!readonly" class="btn-aliyun-cta" type="button" aria-label="新建根类别" @click="startCreateRoot">
         <el-icon><FolderAdd /></el-icon><span>新增类别</span>
       </button>
-    </header>
+    </div>
 
-    <div class="tree-search-row">
-      <el-input
-        :model-value="keyword"
+    <div class="tree-search-bar">
+      <input
+        :value="keyword"
+        class="tree-search-input"
         placeholder="搜索类别或模型..."
-        clearable
-        size="small"
-        :prefix-icon="Search"
-        @update:model-value="value => emit('update:keyword', value)"
+        @input="event => emit('update:keyword', event.target.value)"
       />
     </div>
 
-    <el-scrollbar class="tree-body" v-loading="loading">
+    <div class="tree-list-scroll" v-loading="loading">
       <el-tree
         v-if="treeData.length"
         ref="treeRef"
@@ -32,13 +30,12 @@
         :current-node-key="currentNodeKey"
         :default-expanded-keys="rootExpandedKeys"
         highlight-current
-        :indent="14"
+        :indent="16"
         class="category-model-tree"
         @node-click="handleNodeClick"
       >
-        <template #default="{ node, data }">
+        <template #default="{ data }">
           <form v-if="data.type === 'editor'" class="tree-inline-editor" @click.stop @submit.prevent="submitEditor">
-            <span class="tree-expander-placeholder"></span>
             <el-icon class="t-icon category-icon"><FolderAdd /></el-icon>
             <el-input v-model="editor.categoryName" size="small" class="inline-editor-input" placeholder="类别名称" autofocus />
             <div class="inline-editor-actions">
@@ -48,7 +45,6 @@
           </form>
 
           <form v-else-if="isRenamingCategory(data)" class="tree-inline-editor" @click.stop @submit.prevent="submitEditor">
-            <span class="tree-expander-placeholder"></span>
             <el-icon class="t-icon category-icon"><Folder /></el-icon>
             <el-input v-model="editor.categoryName" size="small" class="inline-editor-input" placeholder="类别名称" autofocus />
             <div class="inline-editor-actions">
@@ -57,30 +53,15 @@
             </div>
           </form>
 
-          <div v-else class="t-row" :class="[data.type, { active: isNodeActive(data) }]">
+          <div v-else class="t-row" :class="[`node-type-${data.type}`, { active: isNodeActive(data) }]">
             <div class="t-row-left">
-              <button
-                v-if="data.type === 'category' && hasVisibleChildren(data)"
-                class="tree-expander"
-                type="button"
-                :aria-label="node.expanded ? '收起' : '展开'"
-                @click.stop="toggleNode(node)"
-              >
-                <el-icon :class="{ expanded: node.expanded }"><CaretRight /></el-icon>
-              </button>
-              <span v-else class="tree-expander-placeholder"></span>
-
-              <el-icon v-if="data.type === 'category'" class="t-icon category-icon">
-                <FolderOpened v-if="node.expanded && hasVisibleChildren(data)" />
-                <Folder v-else />
-              </el-icon>
+              <el-icon v-if="data.type === 'category'" class="t-icon category-icon"><Folder /></el-icon>
               <el-icon v-else class="t-icon model-icon"><Document /></el-icon>
-
               <span class="t-label" :title="nodeTitle(data)">{{ data.label }}</span>
             </div>
 
             <div class="t-row-right">
-              <div v-if="data.type === 'category' && !data.readonly && !readonly" class="node-actions" @click.stop>
+              <div v-if="data.type === 'category' && !data.readonly && !readonly" class="node-actions is-hover" @click.stop>
                 <el-tooltip content="新增子类别" placement="top">
                   <button class="node-action" type="button" aria-label="新增子类别" @click.stop="startCreateChild(data)"><el-icon><FolderAdd /></el-icon></button>
                 </el-tooltip>
@@ -101,14 +82,14 @@
         </template>
       </el-tree>
       <div v-else class="tree-empty">暂无类别或模型</div>
-    </el-scrollbar>
+    </div>
   </aside>
 </template>
 
 <script setup>
 import { computed, nextTick, reactive, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { CaretRight, Check, Close, Delete, Document, DocumentAdd, EditPen, Folder, FolderAdd, FolderOpened, Search, List } from '@element-plus/icons-vue'
+import { Check, Close, Delete, Document, DocumentAdd, EditPen, Folder, FolderAdd } from '@element-plus/icons-vue'
 
 const props = defineProps({
   categories: { type: Array, default: () => [] },
@@ -269,11 +250,10 @@ function modelNode(model) {
   }
 }
 
-function handleNodeClick(data, node) {
+function handleNodeClick(data) {
   if (data.type === 'editor' || isRenamingCategory(data)) return
   if (data.type === 'category') {
     if (!data.readonly) emit('select-category', data)
-    toggleNode(node)
     return
   }
   emit('select-model', data.modelId)
@@ -283,11 +263,6 @@ function isNodeActive(data) {
   if (data.type === 'model') return String(data.modelId) === String(props.selectedModelId)
   if (data.type === 'category') return String(data.categoryId) === String(props.selectedCategoryId)
   return false
-}
-
-function toggleNode(node) {
-  if (!node || !hasVisibleChildren(node.data)) return
-  node.expanded = !node.expanded
 }
 
 function hasVisibleChildren(data) {
@@ -364,7 +339,7 @@ function submitEditor() {
 
 function categoryMeta(data) {
   const count = Number(data.totalModelCount || 0)
-  return count > 0 ? `(${count})` : ''
+  return count > 0 ? String(count) : ''
 }
 
 function nodeTitle(data) {
@@ -409,247 +384,10 @@ function asArray(value) {
 </script>
 
 <style scoped>
-.device-model-tree {
-  width: 270px;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  background: #ffffff;
-  border-right: 1px solid var(--sl-border-base);
-  box-sizing: border-box;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.tree-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 8px 12px;
-  background: #ffffff;
-  border-bottom: 1px solid var(--sl-border-base);
-  flex-shrink: 0;
-}
-
-.tree-heading {
-  display: flex;
-  flex-direction: column;
-  gap: 1px;
-}
-.tree-heading-title {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--sl-text-heading);
-}
-.tree-heading-count {
-  font-size: 11px;
-  color: var(--sl-text-secondary);
-}
-
-.tree-search-row {
-  padding: 6px 10px;
-  background: #ffffff;
-  border-bottom: 1px solid var(--sl-border-subtle);
-  flex-shrink: 0;
-}
-
-.tree-body {
-  flex: 1;
-  min-height: 0;
-  padding: 4px 6px;
-}
-
 .category-model-tree {
   background: transparent;
 }
 
-:deep(.el-tree-node__content) {
-  height: 27px;
-  padding-left: 0 !important;
-  border-radius: 4px;
-}
-:deep(.el-tree-node__expand-icon) {
-  display: none;
-}
-
-/* 树状层级细虚线引导系统 */
-:deep(.el-tree-node__children) {
-  position: relative;
-  margin-left: 10px;
-  padding-left: 2px;
-  border-left: 1px dashed #e2e8f0;
-}
-
-.t-row {
-  width: 100%;
-  height: 27px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 4px;
-  border-radius: 4px;
-  cursor: pointer;
-  margin: 0;
-  background: transparent;
-  transition: all 0.15s ease;
-  box-sizing: border-box;
-}
-.t-row:hover {
-  background: #f1f5f9;
-}
-
-.t-row-left {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  flex: 1;
-  min-width: 0;
-}
-
-.tree-expander {
-  display: inline-flex;
-  width: 16px;
-  height: 16px;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  color: #94a3b8;
-  cursor: pointer;
-  font-size: 10px;
-  flex-shrink: 0;
-}
-.tree-expander .el-icon {
-  transition: transform 0.14s ease;
-}
-.tree-expander .el-icon.expanded {
-  transform: rotate(90deg);
-}
-.tree-expander-placeholder {
-  width: 16px;
-  height: 16px;
-  flex-shrink: 0;
-}
-
-.t-icon {
-  font-size: 13.5px;
-  color: var(--sl-text-secondary);
-  flex-shrink: 0;
-}
-.category-icon { color: #64748b; }
-.model-icon { color: #2563eb; }
-
-.t-label {
-  font-size: 12.5px;
-  color: var(--sl-text-body);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.t-row.category .t-label {
-  font-weight: 600;
-  color: #1e293b;
-}
-.t-row.model .t-label {
-  font-weight: 500;
-  color: #334155;
-}
-
-.t-row-right {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-}
-
-.t-badge {
-  font-size: 10.5px;
-  padding: 0 5px;
-  border-radius: 8px;
-  background: #f1f5f9;
-  color: var(--sl-text-secondary);
-  font-family: var(--sl-font-mono);
-  font-weight: 400;
-}
-
-/* 激活高亮状态 (方案三：柔和微圆角浅蓝药丸高亮) */
-.t-row.active {
-  background: #eff6ff !important;
-  font-weight: 600;
-}
-.t-row.active .t-label {
-  color: #2563eb !important;
-}
-.t-row.active .t-icon {
-  color: #2563eb !important;
-}
-.t-row.active .t-badge {
-  background: #dbeafe;
-  color: #1d4ed8;
-}
-
-.node-actions {
-  display: none;
-  align-items: center;
-  gap: 2px;
-}
-.t-row:hover .node-actions {
-  display: inline-flex;
-}
-
-.node-action {
-  width: 18px;
-  height: 18px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--sl-border-input);
-  background: #ffffff;
-  border-radius: 3px;
-  cursor: pointer;
-  color: var(--sl-text-secondary);
-  font-size: 11px;
-  transition: var(--sl-ease-smooth);
-  padding: 0;
-}
-.node-action:hover {
-  border-color: var(--sl-primary);
-  color: var(--sl-primary);
-  background: #eff6ff;
-}
-.node-action.model-action {
-  color: var(--sl-success);
-}
-.node-action.model-action:hover {
-  border-color: var(--sl-success);
-  color: var(--sl-success);
-  background: var(--sl-success-light);
-}
-.node-action.danger:hover {
-  border-color: var(--sl-danger);
-  color: var(--sl-danger);
-  background: #fef2f2;
-}
-.node-action:disabled,
-.node-action[disabled] {
-  opacity: 0.35 !important;
-  cursor: not-allowed !important;
-  pointer-events: none !important;
-  border-color: #e2e8f0 !important;
-  color: #94a3b8 !important;
-  background: transparent !important;
-  transform: none !important;
-  transition: none !important;
-  box-shadow: none !important;
-  animation: none !important;
-}
-
-/* 内联编辑器 */
 .tree-inline-editor {
   display: flex;
   align-items: center;
@@ -682,12 +420,5 @@ function asArray(value) {
 }
 .inline-editor-action.confirm:hover {
   background: var(--sl-success-light);
-}
-
-.tree-empty {
-  padding: 24px;
-  text-align: center;
-  font-size: 12px;
-  color: var(--sl-text-disabled);
 }
 </style>

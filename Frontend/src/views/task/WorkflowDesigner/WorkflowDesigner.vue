@@ -1,55 +1,81 @@
 <template>
   <div class="workflow-page">
     <div class="designer-grid">
-      <aside class="resource-panel">
-        <div class="panel-titlebar resource-titlebar">
-          <div><strong>节点资源</strong><span>拖拽资源到画布中使用</span></div>
+      <aside class="resource-panel sl-asset-tree">
+        <div class="tree-header-bar">
+          <strong class="tree-header-title">节点资源</strong>
         </div>
         <el-tabs v-model="tab" class="resource-tabs" stretch>
           <el-tab-pane label="设备库" name="devices">
-            <div class="resource-search">
-              <el-input v-model="resourceKeyword" :prefix-icon="Search" clearable placeholder="搜索模型或实例..." />
+            <div class="tree-search-bar">
+              <input v-model="resourceKeyword" class="tree-search-input" placeholder="搜索类别、模型或实例..." />
             </div>
-            <div class="tab-scroll-body">
-              <el-tree v-if="filteredDeviceTree.length" :data="filteredDeviceTree" node-key="key" default-expand-all :expand-on-click-node="false" class="resource-tree">
+            <div class="tree-list-scroll">
+              <el-tree v-if="filteredDeviceTree.length" :data="filteredDeviceTree" node-key="key" default-expand-all :indent="16" :expand-on-click-node="false">
                 <template #default="{ data }">
                   <div
-                    class="resource-tree-node"
-                    :class="[data.kind, { draggable: data.kind==='instance' && canEdit }]"
-                    :draggable="data.kind==='instance' && canEdit"
-                    @dragstart="drag($event,data)"
-                    @dblclick="data.kind==='instance' && addResource({kind:'instance',instance:data.instance,model:data.model})"
-                    :title="data.kind==='instance' ? '按住拖拽至画布，或双击添加设备实例' : data.kind==='model' ? '设备模型' : '设备分类'"
+                    class="t-row"
+                    :class="[`node-type-${data.kind}`, { 'is-draggable': data.kind === 'instance' && canEdit }]"
+                    :draggable="data.kind === 'instance' && canEdit"
+                    @dragstart="drag($event, data)"
+                    @dblclick="data.kind === 'instance' && addResource({ kind:'instance', instance:data.instance, model:data.model })"
+                    :title="data.kind === 'instance' ? '按住拖拽至画布，或双击添加设备实例' : data.kind === 'model' ? '设备模型' : '设备分类'"
                   >
-                    <el-icon class="tree-resource-icon"><FolderOpened v-if="data.kind==='category'" /><Document v-else-if="data.kind==='model'" /><Monitor v-else /></el-icon>
-                    <span class="resource-node-text">
-                      <span class="resource-node-label">{{ data.label }}</span>
-                      <small class="resource-node-meta">{{ resourceNodeMeta(data) }}</small>
+                    <span class="t-row-left">
+                      <el-icon v-if="data.kind === 'category'" class="t-icon category-icon"><Folder /></el-icon>
+                      <el-icon v-else-if="data.kind === 'model'" class="t-icon model-icon"><Document /></el-icon>
+                      <el-icon v-else class="t-icon instance-icon"><Cpu /></el-icon>
+                      <span class="t-label">{{ data.label }}</span>
                     </span>
+                    <div class="t-row-right">
+                      <span v-if="data.count != null" class="t-badge">{{ data.count }}</span>
+                    </div>
                   </div>
                 </template>
               </el-tree>
-              <div v-else class="resource-tree-empty">没有匹配的设备资源</div>
+              <div v-else class="tree-empty">没有匹配的设备资源</div>
             </div>
           </el-tab-pane>
 
           <el-tab-pane label="流程库" name="workflows">
-            <div class="resource-search">
-              <el-input v-model="resourceKeyword" :prefix-icon="Search" clearable placeholder="搜索流程..." />
+            <div class="tree-search-bar">
+              <input v-model="resourceKeyword" class="tree-search-input" placeholder="搜索流程..." />
             </div>
-            <div class="tab-scroll-body">
-              <el-tree v-if="workflowTree.length" :data="workflowTree" node-key="key" default-expand-all :expand-on-click-node="false" class="resource-tree workflow-resource-tree">
+            <div class="tree-list-scroll">
+              <el-tree :data="workflowTree" node-key="key" default-expand-all :indent="16" :expand-on-click-node="false">
                 <template #default="{ data }">
-                  <div class="resource-tree-node workflow-tree-item" :class="[{ 'is-active-flow': data.workflow?.id === openedWorkflowId, draggable: data.workflow && canDragWorkflowResource(data.workflow, form.id, canEdit) }]" :draggable="data.workflow && canDragWorkflowResource(data.workflow, form.id, canEdit)" @dragstart.stop="drag($event,{ kind:'workflow', workflow:data.workflow })" @click="data.workflow && loadWorkflow(data.workflow.id)">
-                    <el-icon class="tree-resource-icon"><FolderOpened v-if="data.children" /><Document v-else /></el-icon>
-                    <span class="resource-node-text">
-                      <span class="resource-node-label">{{ data.label }}</span>
-                      <small class="resource-node-meta">{{ workflowNodeMeta(data) }}</small>
+                  <div
+                    class="t-row"
+                    :class="[
+                      `node-type-${data.type}`,
+                      {
+                        'group-header-row': data.type === 'group-header',
+                        active: data.workflow?.id === openedWorkflowId,
+                        'is-draggable': data.workflow && canDragWorkflowResource(data.workflow, form.id, canEdit)
+                      }
+                    ]"
+                    :draggable="data.workflow && canDragWorkflowResource(data.workflow, form.id, canEdit)"
+                    @dragstart.stop="data.workflow && drag($event, { kind:'workflow', workflow:data.workflow })"
+                    @click="data.workflow && loadWorkflow(data.workflow.id)"
+                  >
+                    <span class="t-row-left" :title="data.label">
+                      <span v-if="data.type === 'group-header'" class="t-group-label">{{ data.label }}</span>
+                      <span v-else-if="data.type === 'empty-hint'" class="t-empty-label">{{ data.label }}</span>
+                      <template v-else>
+                        <el-icon class="t-icon workflow-icon"><Document /></el-icon>
+                        <span class="t-label">{{ data.label }}</span>
+                      </template>
                     </span>
+                    <div v-if="data.type === 'workflow'" class="t-row-right">
+                      <span class="t-badge">{{ data.versionLabel }}</span>
+                      <span class="t-badge" :class="data.status === 'ACTIVE' ? 'is-active' : 'is-draft'">{{ data.statusLabel }}</span>
+                    </div>
+                    <div v-else-if="data.count != null" class="t-row-right">
+                      <span class="t-badge">{{ data.count }}</span>
+                    </div>
                   </div>
                 </template>
               </el-tree>
-              <div v-else class="resource-tree-empty">没有可引用的流程</div>
             </div>
           </el-tab-pane>
         </el-tabs>
@@ -61,7 +87,9 @@
           <div class="island-left">
             <div class="flow-title-row">
               <strong>{{ form.name || '未命名流程' }}</strong>
-              <span class="status-chip" :class="form.status.toLowerCase()">{{ form.status === 'ACTIVE' ? '已启用' : '草稿' }}</span>
+              <span class="status-chip" :class="form.status === 'ACTIVE' ? 'is-active' : 'is-draft'">
+                <i class="chip-dot"></i>{{ form.status === 'ACTIVE' ? '已启用' : '草稿' }}
+              </span>
               <span class="meta-chip">V{{ form.version }}</span>
               <span class="stats-chip">{{ form.nodesDef.length }} 节点 · {{ nodeConnections.length }} 连接</span>
               <span v-if="validationSummary.errors" class="error-badge">{{ validationSummary.errors }} 错误</span>
@@ -70,18 +98,23 @@
           </div>
 
           <div class="island-right">
-            <el-tooltip content="新建流程" placement="bottom">
-              <el-button :icon="Plus" class="btn-aliyun" @click="create">新建</el-button>
-            </el-tooltip>
-            <el-tooltip content="导出 JSON" placement="bottom">
-              <el-button :disabled="!form.name" class="btn-aliyun" @click="exportWorkflow">导出</el-button>
-            </el-tooltip>
-            <el-button v-if="form.id && !isEditing" class="btn-aliyun-cta" @click="startEditing">编辑</el-button>
-            <el-button v-if="form.id" class="btn-aliyun-danger-link" plain :loading="deleteLoading" :disabled="draftSaving || publishSaving" @click="deleteCurrentWorkflow">删除</el-button>
-            <el-button v-if="canEdit" class="btn-aliyun" :disabled="!form.nodesDef.length" @click="clearCanvas">清空</el-button>
-            <el-button class="btn-aliyun" @click="runValidation">校验</el-button>
-            <el-button class="btn-aliyun" :loading="draftSaving" :disabled="!canEdit" @click="saveDraft">保存草稿</el-button>
-            <el-button class="btn-aliyun-cta" :loading="publishSaving" :disabled="!canEdit" @click="publishAndValidate">发布启用</el-button>
+            <button type="button" class="btn-aliyun-cta" @click="create">
+              <el-icon><Plus /></el-icon><span>新建</span>
+            </button>
+            <button v-if="form.id && !isEditing" type="button" class="btn-aliyun" @click="startEditing">编辑</button>
+            <button v-if="canEdit" type="button" class="btn-aliyun" :disabled="!form.nodesDef.length" @click="clearCanvas">清空</button>
+            <button type="button" class="btn-aliyun" :disabled="validating || draftSaving || publishSaving || copySaving" @click="runValidation">{{ validating ? '校验中' : '校验' }}</button>
+            <button type="button" class="btn-aliyun" :disabled="!form.name" @click="exportWorkflow">导出</button>
+            <button type="button" class="btn-aliyun" :disabled="!canEdit || draftSaving || copySaving" @click="saveDraft">{{ draftSaving ? '保存中' : '保存草稿' }}</button>
+            <button type="button" class="btn-aliyun" :disabled="copySaving || draftSaving || publishSaving" @click="saveAsNew">{{ copySaving ? '保存中' : '保存为新流程' }}</button>
+            <button type="button" class="btn-aliyun-cta" :disabled="!canEdit || publishSaving || copySaving" @click="publishAndValidate">{{ publishSaving ? '发布中' : '发布启用' }}</button>
+            <button
+              v-if="form.id"
+              type="button"
+              class="btn-link danger"
+              :disabled="deleteLoading || draftSaving || publishSaving || copySaving"
+              @click="deleteCurrentWorkflow"
+            >删除</button>
           </div>
         </div>
 
@@ -90,15 +123,18 @@
             <span class="control-bar-label">功能节点</span>
             <div class="control-btn-group"><button v-for="item in palette" :key="item.type" class="flow-control-tool" :disabled="!canEdit" :draggable="canEdit" @dragstart="drag($event,{kind:'function',type:item.type})" @click="addResource({kind:'function',type:item.type})"><span class="tool-icon" :class="item.type.toLowerCase()">{{ item.glyph }}</span><span class="tool-name">{{ item.label }}</span></button></div>
           </div>
-          <VueFlow v-model:nodes="flowNodes" v-model:edges="flowEdges" class="workflow-flow" :nodes-draggable="canEdit" :nodes-connectable="canEdit" :min-zoom="0.35" :max-zoom="1.8" :default-edge-options="defaultEdgeOptions" :delete-key-code="null" :fit-view-on-init="true" @connect="connectNodes" @node-click="selectCanvasNode" @pane-click="clearSelection" @node-drag-stop="persistLayout" @edge-click="selectEdge" @edges-delete="removeDeletedEdges">
-            <Background pattern-color="#e2e7ee" :gap="20" :size="1" />
+          <VueFlow v-model:nodes="flowNodes" v-model:edges="flowEdges" class="workflow-flow" :nodes-draggable="canEdit" :nodes-connectable="canEdit" :min-zoom="0.35" :max-zoom="1.8" :snap-to-grid="false" :edge-types="edgeTypes" :default-edge-options="defaultEdgeOptions" :delete-key-code="null" :fit-view-on-init="true" @connect="connectNodes" @connect-start="beginCanvasConnection" @connect-end="endCanvasConnection" @node-click="selectCanvasNode" @pane-click="clearSelection" @node-drag="snapDraggedNode" @node-drag-stop="onNodeDragStop" @edge-click="selectEdge" @edges-delete="removeDeletedEdges">
+            <Background id="grid-lines" variant="lines" pattern-color="#f3f5f8" :gap="8" :size="1" />
             <Controls position="bottom-left" :show-interactive="true" :show-zoom="true" :show-fit-view="true">
-              <ControlButton title="DAG 自动布局" @click="autoLayout">
+              <ControlButton title="按执行关系从左向右自动布局" @click="autoLayout">
                 <el-icon class="auto-layout-icon"><Grid /></el-icon>
               </ControlButton>
             </Controls>
             <template #node-workflow="slotProps">
-              <WorkflowCanvasNode :node="nodeByName(slotProps.data.nodeName)" :selected="slotProps.selected" :issues="nodeIssues(slotProps.data.nodeName)" />
+              <WorkflowCanvasNode :node="nodeByName(slotProps.data.nodeName)" :selected="slotProps.selected" :issues="nodeIssues(slotProps.data.nodeName)" :device-capabilities="capabilitiesForCanvasNode(slotProps.data.nodeName)" :hide-port-tooltips="connectionInProgress" />
+            </template>
+            <template #edge-workflow="edgeProps">
+              <WorkflowCanvasEdge v-bind="edgeProps" :hide-tooltips="connectionInProgress" />
             </template>
           </VueFlow>
           <section v-if="!flowNodes.length" class="empty-workbench">
@@ -118,7 +154,7 @@
       </main>
       <aside class="inspector-panel workflow-overview-panel">
         <div class="panel-titlebar inspector-titlebar">
-          <div><strong>流程属性</strong><span>流程级设置与建模检查</span></div>
+          <div><strong>流程属性</strong><span>设置与建模检查</span></div>
         </div>
         <div class="inspector-scroll">
           <section class="overview-view">
@@ -133,7 +169,7 @@
                 </el-form-item>
               </el-form>
             </div>
-            <div class="section-heading"><strong>静态建模检查</strong><span>完整检查结果 · {{ validationSummary.errors }} 错误 · {{ validationSummary.warnings }} 提醒</span></div>
+            <div class="section-heading"><strong>静态建模检查</strong><span>即时本地提示 · {{ validationSummary.errors }} 错误 · {{ validationSummary.warnings }} 提醒</span></div>
             <div class="overview-metrics"><div><strong>{{ form.nodesDef.length }}</strong><span>节点</span></div><div><strong>{{ executionConnectionCount }}</strong><span>执行连接</span></div><div><strong>{{ form.portConnections.length }}</strong><span>数据连接</span></div><div><strong>{{ deviceNodeCount }}</strong><span>设备节点</span></div></div>
             <div v-if="workflowValidationIssues.length" class="validation-groups">
               <section v-if="flowValidationIssues.length" class="validation-group">
@@ -157,18 +193,27 @@
                 </div>
               </section>
             </div>
-            <el-result v-else icon="success" title="建模校验通过" sub-title="节点配置和流程结构均符合要求" />
+            <p v-else-if="lastPublishCheck?.executable" class="overview-empty">
+              <strong>发布检查通过</strong>
+              <span>编译、设备模型与子流程引用检查均已通过</span>
+            </p>
+            <p v-else class="overview-empty">
+              <strong>暂无即时建模问题</strong>
+              <span>点校验可核对设备模型与子流程引用</span>
+            </p>
           </section>
         </div>
       </aside>
     </div>
-    <el-drawer v-model="elementDrawerVisible" :with-header="false" class="workflow-element-drawer" size="62vw" append-to-body @closed="clearElementSelection">
+    <el-drawer v-model="elementDrawerVisible" :with-header="false" class="workflow-element-drawer" size="50%" append-to-body @closed="clearElementSelection">
       <div class="workflow-element-drawer-body">
         <WorkflowNodeInspector v-if="selectedNode" :visible="elementDrawerVisible" :node="selectedNode" :readonly="!canEdit" :protocol-metadata="protocolMetadata" :errors="selectedNodeIssues" :device-capabilities="selectedDeviceModel?.capabilities || []" :device-attributes="selectedDeviceModel?.attributes || []" :interface-connections="form.interfaceConnections" :port-connections="form.portConnections" :contract-ready="contractReady" @close="closeElementDrawer" @rename="renameSelectedNode" @update:node="replaceSelectedNode" @update:interface-connections="replaceInterfaceConnections" @update:port-connections="replacePortConnections" @remove-port-request="confirmRemovePort" @remove-node="removeSelectedNode" />
         <section v-else-if="selectedEdge" class="edge-view">
-          <div class="connection-type" :class="selectedEdge.data?.connectionKind?.toLowerCase()"><span>{{ selectedEdge.data?.connectionKind === 'PORT' ? '数据流' : '执行流' }}</span><b>{{ selectedEdgeEndpoint.source }} → {{ selectedEdgeEndpoint.target }}</b></div>
-          <dl class="property-list"><div><dt>源连接点</dt><dd>{{ selectedEdgeEndpoint.sourceHandle }}</dd></div><div><dt>目标连接点</dt><dd>{{ selectedEdgeEndpoint.targetHandle }}</dd></div><div><dt>业务语义</dt><dd>{{ selectedEdge.data?.connectionKind === 'PORT' ? '将上游节点内部变量传递给下游节点' : '上游节点完成后激活下游节点' }}</dd></div></dl>
-          <el-button v-if="canEdit" class="wide-action btn-aliyun-danger-link" plain @click="deleteSelectedEdge">删除该连接</el-button>
+          <div class="connection-type" :class="selectedEdgeDetails.kind.toLowerCase()"><span>{{ selectedEdgeDetails.kind === 'PORT' ? '数据流' : '执行流' }}</span><b>{{ selectedEdgeDetails.title }}</b></div>
+          <dl class="property-list">
+            <div v-for="row in selectedEdgeDetails.rows" :key="row.label"><dt>{{ row.label }}</dt><dd>{{ row.value }}</dd></div>
+          </dl>
+          <button v-if="canEdit" type="button" class="wide-action btn-link danger" @click="deleteSelectedEdge">删除该连接</button>
         </section>
       </div>
     </el-drawer>
@@ -176,10 +221,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Document, FolderOpened, Grid, Monitor, Plus, Search } from '@element-plus/icons-vue'
+import { Cpu, Document, Folder, Grid, Plus } from '@element-plus/icons-vue'
 import { VueFlow, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls, ControlButton } from '@vue-flow/controls'
@@ -194,15 +239,22 @@ import {
   layoutKey,
   removeCanvasEdge,
   renameNodeConnections,
-  serializeLayout
+  serializeLayout,
+  unwrapStoredLayout,
+  wrapStoredLayout,
+  snapWorkflowNodePosition,
+  formatWorkflowTriggerText,
+  workflowPortValueSummary,
+  parseHandleId,
 } from '../../../utils/workflowCanvas.js'
 import WorkflowCanvasNode from './components/WorkflowCanvasNode.vue'
+import WorkflowCanvasEdge from './components/WorkflowCanvasEdge.vue'
 import WorkflowNodeInspector from './components/WorkflowNodeInspector.vue'
 import { invalidateFrontendContractMetadata, loadFrontendContractMetadata } from '../../../services/frontendContractMetadata.js'
 import { workflowApi } from '../../../services/workflowApi.js'
-import { adoptPreparedWorkflow, indexWorkflowIssues, toAuthoringPayload } from '../../../utils/workflowAuthoring.js'
+import { adoptPreparedWorkflow, indexWorkflowIssues, toDesignerWorkflow, toWorkflowModelDocument, workflowModelName } from '../../../utils/workflowAuthoring.js'
 import { configureWorkflowNodeTemplates, createDeviceNode, createFunctionNode, createSubflowNode, rehydrateWorkflowNodes, removePort, validateNodeDefinition } from '../../../utils/workflowNodeDefinition.js'
-import { canDragWorkflowResource, clearWorkflowCanvas, workflowLibraryGroups, workflowNodeConnectionIssues } from '../../../utils/workflowDesignerRules.js'
+import { canDragWorkflowResource, clearWorkflowCanvas, workflowLibraryGroups, workflowNodeConnectionIssues, workflowStatusLabel, workflowSuccessorConflict, workflowUnconnectedPortIssues, workflowVersionLabel } from '../../../utils/workflowDesignerRules.js'
 
 type NodeDefinition = Record<string, any>
 type FlowNode = Record<string, any>
@@ -216,7 +268,10 @@ const instances = ref<any[]>([])
 const categories = ref<any[]>([])
 const draftSaving = ref(false)
 const publishSaving = ref(false)
+const copySaving = ref(false)
+const validating = ref(false)
 const deleteLoading = ref(false)
+const lastPublishCheck = ref<{ executable: boolean } | null>(null)
 const resourceKeyword = ref('')
 const contractReady = ref(false)
 const contractError = ref('')
@@ -227,6 +282,7 @@ const dirty = ref(false)
 const elementDrawerVisible = ref(false)
 const selectedNodeName = ref('')
 const selectedEdgeId = ref('')
+const connectionInProgress = ref(false)
 const flowNodes = ref<FlowNode[]>([])
 const flowEdges = ref<FlowEdge[]>([])
 const draftLayoutKey = ref(newDraftKey())
@@ -243,13 +299,14 @@ const palette = [
   { type:'BRANCH', label:'分支', glyph:'◇', description:'条件路由' },
   { type:'AGGREGATE', label:'汇聚', glyph:'◆', description:'合并路径' }
 ]
-const defaultEdgeOptions = { type:'smoothstep', pathOptions:{ offset:24, borderRadius:8 }, style:{ stroke:'#7890ad', strokeWidth:1.6 } }
+const defaultEdgeOptions = { type:'workflow', markerEnd:'arrowclosed', style:{ stroke:'#7c93b8', strokeWidth:1.8 } }
+const edgeTypes = { workflow: markRaw(WorkflowCanvasEdge) }
 const canEdit = computed(() => contractReady.value && isEditing.value)
 
 const selectedNode = computed(() => nodeByName(selectedNodeName.value))
 const selectedDeviceModel = computed(() => selectedNode.value?.nodeType === 'DEV_NODE' ? modelById(selectedNode.value.deviceModelId) : null)
 const selectedNodeIssues = computed(() => nodeValidationIssues.value
-  .filter(issue => issue.nodeName === selectedNode.value?.name)
+  .filter(issue => issue.nodeName === selectedNode.value?.name && issue.severity !== 'warning')
   .map(issue => ({ path:issue.path, title:stripNodeName(issue.title, issue.nodeName), message:issue.detail, nodeName:issue.nodeName })))
 const nodeConnections = computed(() => [
   ...form.interfaceConnections.filter((item:any) => item.connectionType === 'NODE_TO_NODE'),
@@ -260,14 +317,36 @@ const executionConnectionCount = computed(() => executionConnections.value.lengt
 const deviceNodeCount = computed(() => form.nodesDef.filter((node:any) => node.nodeType === 'DEV_NODE').length)
 const hasSingleStartEnd = computed(() => form.nodesDef.filter((node:any) => node.functionType === 'START').length === 1 && form.nodesDef.filter((node:any) => node.functionType === 'END').length === 1)
 const selectedEdge = computed(() => flowEdges.value.find(edge => edge.id === selectedEdgeId.value) || null)
-const selectedEdgeEndpoint = computed(() => {
+const selectedEdgeDetails = computed(() => {
   const edge = selectedEdge.value
-  if (!edge) return { source:'-', target:'-', sourceHandle:'-', targetHandle:'-' }
+  if (!edge) return { kind: 'INTERFACE', title: '-', rows: [] }
+  const sourceName = editorNodeName(edge.source)
+  const targetName = editorNodeName(edge.target)
+  const sourceHandle = safeParseHandle(edge.sourceHandle)
+  const targetHandle = safeParseHandle(edge.targetHandle)
+  const sourceNode = nodeByName(sourceName)
+  const targetNode = nodeByName(targetName)
+  if (edge.data?.connectionKind === 'PORT') {
+    const source = workflowPortValueSummary(sourceNode, sourceHandle.name)
+    const target = workflowPortValueSummary(targetNode, targetHandle.name)
+    return {
+      kind: 'PORT',
+      title: `${sourceName} → ${targetName}`,
+      rows: [
+        { label: '源端口', value: `${source.portName} · ${source.variableName} = ${source.value}` },
+        { label: '目标端口', value: `${target.portName} · ${target.variableName} = ${target.value}` },
+      ],
+    }
+  }
+  const sourceInterface = (sourceNode?.interfaces || []).find((item: any) => item.name === sourceHandle.name) || {}
   return {
-    source: editorNodeName(edge.source),
-    target: editorNodeName(edge.target),
-    sourceHandle: editorHandleName(edge.sourceHandle),
-    targetHandle: editorHandleName(edge.targetHandle)
+    kind: 'INTERFACE',
+    title: `${sourceName} → ${targetName}`,
+    rows: [
+      { label: '源接口', value: sourceHandle.name || '-' },
+      { label: '目标接口', value: targetHandle.name || '-' },
+      { label: '触发条件', value: formatWorkflowTriggerText(sourceInterface) || '未配置触发条件' },
+    ],
   }
 })
 const backendValidationIssues = computed<ValidationIssue[]>(() => serverValidationIssues())
@@ -286,7 +365,7 @@ const validationSummary = computed(() => ({
 }))
 const deviceTree = computed(() => {
   const map = new Map<any, any>()
-  categories.value.forEach((category:any) => map.set(category.id || category.categoryId, { key:'c-'+(category.id || category.categoryId), kind:'category', label:category.categoryName || category.name, children:[] }))
+  categories.value.forEach((category:any) => map.set(category.id || category.categoryId, { key:'c-'+(category.id || category.categoryId), kind:'category', type:'category', label:category.categoryName || category.name, children:[] }))
   const roots:any[] = []
   map.forEach((item:any) => {
     const raw = categories.value.find((category:any) => 'c-'+(category.id || category.categoryId) === item.key)
@@ -296,15 +375,23 @@ const deviceTree = computed(() => {
   models.value.forEach((model:any) => {
     const category = map.get(model.categoryId)
     const parent = category ? category.children : roots
+    const modelInstances = instances.value.filter((item:any) => Number(item.deviceModelId || item.modelId) === Number(model.id))
     parent.push({
       key:'m-'+model.id,
       kind:'model',
+      type:'model',
       label:model.modelName,
       model,
-      children:instances.value.filter((item:any) => Number(item.deviceModelId || item.modelId) === Number(model.id)).map((item:any) => ({ key:'i-'+item.id, kind:'instance', label:item.instanceName || '设备'+item.id, instance:item, model }))
+      count: modelInstances.length,
+      children: modelInstances.map((item:any) => ({ key:'i-'+item.id, kind:'instance', type:'instance', label:item.instanceName || '设备'+item.id, instance:item, model }))
     })
   })
-  return roots
+  const withCounts = (nodes:any[]):any[] => nodes.map(node => {
+    if (node.kind !== 'category') return node
+    const children = withCounts(node.children || [])
+    return { ...node, children, count: children.reduce((total:number, child:any) => total + (child.kind === 'instance' ? 1 : Number(child.count || 0)), 0) }
+  })
+  return withCounts(roots)
 })
 
 const filteredDeviceTree = computed(() => {
@@ -319,31 +406,34 @@ const filteredDeviceTree = computed(() => {
 
 const filteredWorkflows = computed(() => {
   const keyword = resourceKeyword.value.trim().toLowerCase()
-  return workflows.value.filter(item => !keyword || item.flowName?.toLowerCase().includes(keyword) || item.description?.toLowerCase().includes(keyword))
+  return workflows.value.filter(item => !keyword || workflowModelName(item).toLowerCase().includes(keyword) || item.description?.toLowerCase().includes(keyword))
 })
 
-const workflowTree = computed(() => workflowLibraryGroups(filteredWorkflows.value).map(group => ({
-  key:`workflow-group-${group.key}`,
-  label:group.label,
-  children:group.children.map(item => ({ key:`workflow-${item.id}`, label:item.flowName, workflow:item })),
-})).filter(group => group.children.length))
-
-function resourceNodeMeta(data:any) {
-  if (data.kind === 'category') return `${countTreeLeaves(data)} 个设备实例`
-  if (data.kind === 'model') return `${(data.children || []).length} 个设备实例`
-  return '设备实例'
-}
-
-function workflowNodeMeta(data:any) {
-  if (data.children) return `${data.children.length} 个流程`
-  if (data.workflow?.id === openedWorkflowId.value) return '当前流程'
-  return data.workflow?.status === 'ACTIVE' ? '已启用' : '草稿'
-}
-
-function countTreeLeaves(data:any):number {
-  if (data.kind === 'instance') return 1
-  return (data.children || []).reduce((total:number, child:any) => total + countTreeLeaves(child), 0)
-}
+const workflowTree = computed(() => workflowLibraryGroups(filteredWorkflows.value).map(group => {
+  const children = group.children.map(item => ({
+    key:`workflow-${item.id}`,
+    label: workflowModelName(item),
+    type: 'workflow',
+    workflow: item,
+    status: item.status,
+    versionLabel: workflowVersionLabel(item),
+    statusLabel: workflowStatusLabel(item.status),
+  }))
+  if (!children.length) {
+    children.push({
+      key: `workflow-empty-${group.key}`,
+      type: 'empty-hint',
+      label: group.key === 'active' ? '暂无已启用流程' : '暂无草稿流程',
+    })
+  }
+  return {
+    key: `workflow-group-${group.key}`,
+    label: group.label,
+    type: 'group-header',
+    count: group.children.length,
+    children,
+  }
+}))
 
 function newDraftKey() {
   return 'draft-'+Date.now()+'-'+Math.random().toString(36).slice(2, 8)
@@ -352,7 +442,8 @@ function newDraftKey() {
 function markDirty() {
   if (!canEdit.value) return
   dirty.value = true
-  workflowIssueIndex.value = indexWorkflowIssues()
+  setWorkflowIssues()
+  lastPublishCheck.value = null
 }
 
 function startEditing() { isEditing.value = true }
@@ -413,6 +504,14 @@ function editorHandleName(value:any) {
   return raw.includes(':') ? raw.slice(raw.indexOf(':') + 1) : raw || '-'
 }
 
+function safeParseHandle(value:any) {
+  try {
+    return parseHandleId(value)
+  } catch {
+    return { kind: 'INTERFACE', name: editorHandleName(value) }
+  }
+}
+
 function nodeBusinessLabel(node:any) {
   if (node.nodeType === 'DEV_NODE') return '设备能力调用'
   if (node.nodeType === 'SUBFLOW_NODE') return '子流程调用'
@@ -433,6 +532,12 @@ function buildNodeValidationIssues():ValidationIssue[] {
       path:issue.path
     }))
   })
+  workflowUnconnectedPortIssues(form.nodesDef, form.portConnections).forEach((issue:any) => issues.push({
+    ...issue,
+    severity:'warning',
+    scope:'node',
+    title:`${issue.nodeName}：${issue.title}`,
+  }))
   return issues
 }
 
@@ -495,10 +600,27 @@ function stripNodeName(title = '', nodeName = '') {
   return nodeName && title.startsWith(`${nodeName}：`) ? title.slice(nodeName.length + 1) : title
 }
 
-function runValidation() {
+async function runValidation() {
   closeElementDrawer()
-  if (validationSummary.value.errors) ElMessage.error(`流程有 ${validationSummary.value.errors} 个错误，请按右侧清单处理`)
-  else ElMessage.success('流程校验通过')
+  if (validating.value) return
+  validating.value = true
+  try {
+    const payload = toWorkflowModelDocument(form)
+    const response = await workflowApi.validate(payload)
+    if (!response.data?.success) throw Error(response.data?.message || '校验失败')
+    const prepared = response.data.data
+    setWorkflowIssues(prepared.issues || [])
+    lastPublishCheck.value = { executable: !!prepared.executable }
+    if (prepared.executable) ElMessage.success('发布检查通过')
+    else {
+      const blocking = (prepared.issues || []).filter((issue:any) => issue.blocking).length
+      ElMessage.error(blocking ? `发布检查未通过，有 ${blocking} 个阻断问题` : '发布检查未通过，请按右侧清单处理')
+    }
+  } catch (error:any) {
+    ElMessage.error(error.message || '校验失败')
+  } finally {
+    validating.value = false
+  }
 }
 
 function focusValidationIssue(issue:ValidationIssue) {
@@ -522,7 +644,7 @@ function currentLayoutKey() {
 
 function readLayout() {
   try {
-    return JSON.parse(localStorage.getItem(currentLayoutKey()) || '{}')
+    return unwrapStoredLayout(JSON.parse(localStorage.getItem(currentLayoutKey()) || 'null'))
   } catch {
     return {}
   }
@@ -531,24 +653,39 @@ function readLayout() {
 function persistLayout() {
   if (!canEdit.value && form.id) return
   try {
-    localStorage.setItem(currentLayoutKey(), JSON.stringify(serializeLayout(flowNodes.value)))
+    localStorage.setItem(currentLayoutKey(), JSON.stringify(wrapStoredLayout(flowNodes.value)))
   } catch {
     ElMessage.warning('浏览器无法保存画布布局，本次编辑仍可继续')
   }
 }
 
+function snapDraggedNode(event: any) {
+  const node = event?.node
+  if (!node) return
+  const snapped = snapWorkflowNodePosition(nodeByName(node.data?.nodeName), node.position.x, node.position.y)
+  node.position.x = snapped.x
+  node.position.y = snapped.y
+}
+
+function onNodeDragStop(event: any) {
+  snapDraggedNode(event)
+  persistLayout()
+}
+
 function rebuildCanvas(layout = readLayout()) {
-  flowNodes.value = buildFlowNodes(form.nodesDef, layout)
-  flowEdges.value = buildFlowEdges(form.interfaceConnections, form.portConnections)
+  const auto = buildWorkflowAutoLayout(form.nodesDef, executionConnections.value, form.portConnections)
+  flowNodes.value = buildFlowNodes(form.nodesDef, { ...auto, ...layout })
+  flowEdges.value = buildFlowEdges(form.interfaceConnections, form.portConnections, form.nodesDef)
   selectedEdgeId.value = ''
   void nextTick(() => fitCanvas())
 }
 
 function reset(value:any, layout = readLayout()) {
-  Object.assign(form, empty(), value, { nodesDef:rehydrateWorkflowNodes(value.nodesDef || []), interfaceConnections:value.interfaceConnections || [], portConnections:value.portConnections || [] })
+  const designer = toDesignerWorkflow(value)
+  Object.assign(form, empty(), designer, { nodesDef:rehydrateWorkflowNodes(designer.nodesDef || []), interfaceConnections:designer.interfaceConnections || [], portConnections:designer.portConnections || [] })
   closeElementDrawer()
   clearElementSelection()
-  openedWorkflowId.value = value.id || null
+  openedWorkflowId.value = designer.id || null
   rebuildCanvas(layout)
   dirty.value = false
 }
@@ -567,29 +704,38 @@ async function create() {
   if (!await confirmDiscardChanges()) return
   draftLayoutKey.value = newDraftKey()
   openedWorkflowId.value = null
+  setWorkflowIssues()
+  lastPublishCheck.value = null
   reset(empty())
   isEditing.value = true
 }
 
 function exportWorkflow() {
-  const payload = {
-    flowName: form.name || '未命名流程',
-    description: form.description,
-    version: form.version,
-    status: form.status,
-    nodesDef: form.nodesDef,
-    interfaceConnections: form.interfaceConnections,
-    portConnections: form.portConnections,
+  void downloadWorkflowDocument()
+}
+
+async function downloadWorkflowDocument() {
+  try {
+    let modelDocument
+    if (form.id && !dirty.value) {
+      const response = await workflowApi.export(form.id)
+      if (!response.data?.success) throw Error(response.data?.message || '导出失败')
+      modelDocument = response.data.data
+    } else {
+      modelDocument = toWorkflowModelDocument(form)
+    }
+    const json = JSON.stringify(modelDocument, null, 2)
+    const blob = new Blob([json], { type: 'application/json' })
+    const url = URL.createObjectURL(blob)
+    const anchor = window.document.createElement('a')
+    const safeName = (form.name || '未命名流程').replace(/[\\/:*?"<>|]/g, '_')
+    anchor.href = url
+    anchor.download = `${safeName}_V${form.version || 1}.json`
+    anchor.click()
+    URL.revokeObjectURL(url)
+  } catch (error:any) {
+    ElMessage.error(error.message || '导出失败')
   }
-  const json = JSON.stringify(payload, null, 2)
-  const blob = new Blob([json], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const anchor = document.createElement('a')
-  const safeName = (form.name || '未命名流程').replace(/[\\/:*?"<>|]/g, '_')
-  anchor.href = url
-  anchor.download = `${safeName}_V${form.version}.json`
-  anchor.click()
-  URL.revokeObjectURL(url)
 }
 
 function uniqueName(prefix:string) {
@@ -624,8 +770,11 @@ function drag(event:DragEvent, data:any) {
 }
 
 function suggestedPosition() {
-  const index = flowNodes.value.length
-  return { x:80+(index%3)*290, y:100+Math.floor(index/3)*170 }
+  if (!flowNodes.value.length) return { x: 80, y: 120 }
+  const startY = flowNodes.value.find((node:any) => node.data?.functionType === 'START')?.position?.y
+  const rowY = Number.isFinite(Number(startY)) ? Number(startY) : (Number(flowNodes.value[0].position?.y) || 120)
+  const right = Math.max(...flowNodes.value.map((node:any) => Number(node.position?.x) || 0))
+  return { x: right + 280, y: rowY }
 }
 
 function drop(event:DragEvent) {
@@ -675,14 +824,15 @@ function addResource(data:any, position = suggestedPosition()) {
   form.nodesDef.push(node)
   markDirty()
   const canvasNode = buildFlowNodes([node], { [node.name]:position })[0]
-  flowNodes.value = [...flowNodes.value, canvasNode]
+  flowNodes.value = [...flowNodes.value.map(item => ({ ...item, selected: false })), { ...canvasNode, selected: true }]
+  selectedNodeName.value = node.name
+  selectedEdgeId.value = ''
   syncEdges()
   persistLayout()
-  openNodeDrawer(node.name)
 }
 
 function syncEdges() {
-  flowEdges.value = buildFlowEdges(form.interfaceConnections, form.portConnections)
+  flowEdges.value = buildFlowEdges(form.interfaceConnections, form.portConnections, form.nodesDef)
 }
 
 function connectNodes(params:any) {
@@ -706,6 +856,14 @@ function connectNodes(params:any) {
   } catch (error:any) {
     ElMessage.error(error.message || '无法创建连接')
   }
+}
+
+function beginCanvasConnection() {
+  connectionInProgress.value = true
+}
+
+function endCanvasConnection() {
+  connectionInProgress.value = false
 }
 
 function selectCanvasNode(event:any) {
@@ -864,6 +1022,12 @@ function modelById(id:any) {
   return models.value.find((item:any) => Number(item.id) === Number(id)) || null
 }
 
+function capabilitiesForCanvasNode(nodeName:string) {
+  const node = nodeByName(nodeName)
+  if (!node || node.nodeType !== 'DEV_NODE') return []
+  return modelById(node.deviceModelId)?.capabilities || []
+}
+
 function nodeByName(nodeName:string) {
   return form.nodesDef.find((node:any) => node.name === nodeName) || null
 }
@@ -957,29 +1121,73 @@ async function loadAll() {
   if (workflowResult.status === 'rejected') ElMessage.error(workflowResult.reason?.message || '加载已有工作流失败')
 }
 
+async function openSuccessorIfPresent(body:any) {
+  const conflict = workflowSuccessorConflict(body)
+  if (!conflict) return false
+  try {
+    await ElMessageBox.confirm(
+      conflict.message || '已有后续版本，请打开该版本继续编辑。',
+      '已有后续版本',
+      { type:'warning', confirmButtonText:'打开该版本', cancelButtonText:'留在当前页' },
+    )
+  } catch {
+    return true
+  }
+  dirty.value = false
+  await loadWorkflow(conflict.successorId)
+  return true
+}
+
 async function saveDraft() {
   if (!canEdit.value) return ElMessage.warning('请先点击编辑')
   draftSaving.value = true
   const previousLayoutKey = currentLayoutKey()
   const currentLayout = serializeLayout(flowNodes.value)
   try {
-    const payload = toAuthoringPayload(form)
+    const payload = toWorkflowModelDocument(form)
     const response = await workflowApi.saveDraft(payload)
-    if (!response.data?.success) throw Error(response.data?.message || '保存失败')
+    if (!response.data?.success) {
+      if (await openSuccessorIfPresent(response.data)) return
+      throw Error(response.data?.message || '保存失败')
+    }
     const prepared = response.data.data
     const definition = adoptPreparedWorkflow(prepared)
-    if (!definition?.nodesDef) throw Error('服务端没有返回规范化流程定义')
+    if (!Array.isArray(definition?.nodesDef)) throw Error('服务端没有返回规范化流程定义')
     setWorkflowIssues(prepared.issues || [])
     reset(definition, currentLayout)
     persistLayout()
     if (previousLayoutKey !== currentLayoutKey()) localStorage.removeItem(previousLayoutKey)
-    ElMessage.success('流程草稿已保存')
-    if ((prepared.issues || []).some((issue:any) => issue.blocking)) runValidation()
+    ElMessage.success(definition.predecessorId ? `已保存为草稿 ${workflowVersionLabel(definition)}` : '流程草稿已保存')
     await loadList()
   } catch (error:any) {
     ElMessage.error(error.message || '保存失败')
   } finally {
     draftSaving.value = false
+  }
+}
+
+async function saveAsNew() {
+  if (copySaving.value) return
+  copySaving.value = true
+  const currentLayout = serializeLayout(flowNodes.value)
+  try {
+    const payload = toWorkflowModelDocument(form)
+    const response = await workflowApi.saveAsNew(payload)
+    if (!response.data?.success) throw Error(response.data?.message || '保存失败')
+    const prepared = response.data.data
+    const definition = adoptPreparedWorkflow(prepared)
+    if (!Array.isArray(definition?.nodesDef)) throw Error('服务端没有返回规范化流程定义')
+    setWorkflowIssues(prepared.issues || [])
+    lastPublishCheck.value = null
+    isEditing.value = true
+    reset(definition, currentLayout)
+    persistLayout()
+    ElMessage.success(`已保存为新流程 ${workflowVersionLabel(definition)}`)
+    await loadList()
+  } catch (error:any) {
+    ElMessage.error(error.message || '保存失败')
+  } finally {
+    copySaving.value = false
   }
 }
 
@@ -991,24 +1199,33 @@ async function publishAndValidate() {
   const previousLayoutKey = currentLayoutKey()
   const currentLayout = serializeLayout(flowNodes.value)
   try {
-    const payload = toAuthoringPayload(form)
+    const payload = toWorkflowModelDocument(form)
     const response = await workflowApi.publish(payload)
-    if (!response.data?.success) throw Error(response.data?.message || '发布失败')
+    if (!response.data?.success) {
+      if (await openSuccessorIfPresent(response.data)) return
+      throw Error(response.data?.message || '发布失败')
+    }
     const prepared = response.data.data
     const definition = adoptPreparedWorkflow(prepared)
-    if (!definition?.nodesDef) throw Error('服务端没有返回规范化流程定义')
+    if (!Array.isArray(definition?.nodesDef)) throw Error('服务端没有返回规范化流程定义')
     setWorkflowIssues(prepared.issues || [])
+    lastPublishCheck.value = { executable: !!prepared.executable }
     if (prepared.published) {
       reset(definition, currentLayout)
       persistLayout()
       if (previousLayoutKey !== currentLayoutKey()) localStorage.removeItem(previousLayoutKey)
-      ElMessage.success('流程已保存并启用')
+      isEditing.value = false
+      ElMessage.success(prepared.predecessorId
+        ? `已发布为 ${workflowVersionLabel(definition)}，原已启用版本仍保留给已绑定任务`
+        : '流程已保存并启用')
     } else {
       reset(definition, currentLayout)
       persistLayout()
-      ElMessage.warning('发布检查未通过，请修复问题后重新发布')
+      if (previousLayoutKey !== currentLayoutKey()) localStorage.removeItem(previousLayoutKey)
+      ElMessage.warning(prepared.predecessorId
+        ? `已创建草稿 ${workflowVersionLabel(definition)}，发布检查未通过，请按右侧清单修复后重新发布`
+        : '发布检查未通过，请修复问题后重新发布')
     }
-    if ((prepared.issues || []).some((issue) => issue.blocking)) runValidation()
     await loadList()
   } catch (error) {
     ElMessage.error(error.message || '发布失败')
@@ -1031,7 +1248,8 @@ async function loadWorkflow(id:number | null) {
     const response = await workflowApi.detail(id)
     if (!response.data?.success) throw Error(response.data?.message || '加载失败')
     const workflow = response.data.data
-    setWorkflowIssues([])
+    setWorkflowIssues()
+    lastPublishCheck.value = null
     reset(workflow)
     isEditing.value = false
   } catch (error:any) {
@@ -1051,57 +1269,817 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
 </script>
 
 <style scoped>
-.existing-flow-item{cursor:pointer}
-.existing-flow-item:hover{background:#f2f6fc;border-color:#9ebdde}
-.existing-flow-item.is-active{background:#eef6ff;border-color:#4f87d4}
-.existing-flow-item.is-active strong{color:#1a5fb4}
-.existing-icon{background:#f0f4ff;color:#3b6ec7}
-.load-mark{color:#4a86c7;font-size:13px;font-weight:700}
-.existing-flow-item.is-active .load-mark{color:#1a5fb4}
-.workflow-page{height:calc(100vh - 64px);min-height:680px;padding:16px 18px;box-sizing:border-box;overflow:hidden;background:#f3f6fa;color:#172033}.workspace-header{height:66px;display:flex;align-items:center;justify-content:space-between;gap:20px}.title-block{min-width:0}.breadcrumb{margin-bottom:3px;color:#8693a6;font-size:11px}.title-line{display:flex;align-items:center;gap:9px}.title-line h1{max-width:420px;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:22px;line-height:30px}.title-block p{margin:3px 0 0;color:#69778c;font-size:12px}.status-pill{padding:2px 8px;border:1px solid #d6dee9;border-radius:999px;background:#fff;color:#67758a;font-size:10px;font-weight:700;letter-spacing:.04em}.status-pill.active{border-color:#b9e4cd;background:#effaf4;color:#16804a}.model-id{color:#8b97a8;font-size:11px}.header-actions{display:flex;align-items:center;gap:8px}.workflow-select{width:220px}.workspace-shell{height:calc(100% - 66px);display:flex;gap:12px;min-height:0}.resource-panel{width:286px;flex:0 0 286px;display:flex;flex-direction:column;min-height:0;border:1px solid #dfe6ef;border-radius:10px;background:#fff;box-shadow:0 2px 10px rgba(28,48,74,.04);overflow:hidden}.resource-heading{padding:16px 14px 12px;border-bottom:1px solid #edf1f6}.resource-heading>div{display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px}.resource-heading strong{font-size:15px}.resource-heading span{color:#8a96a8;font-size:11px}.function-section{padding:13px 14px 4px}.section-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}.section-title span{color:#4c5a70;font-size:12px;font-weight:700}.section-title small{color:#9aa5b5}.function-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}.function-card{display:flex;align-items:center;gap:8px;min-width:0;padding:9px 8px;border:1px solid #e1e8f1;border-radius:7px;background:#fafcff;color:#26344a;text-align:left;cursor:grab;transition:.16s ease}.function-card:hover{border-color:#98b8df;background:#f4f8fd;box-shadow:0 3px 10px rgba(59,105,160,.08);transform:translateY(-1px)}.function-icon{width:27px;height:27px;display:grid;place-items:center;flex:none;border-radius:6px;background:#eef4fb;color:#2f6fb9;font-size:11px;font-weight:800}.function-icon.start{background:#eaf8f0;color:#218654}.function-icon.end{background:#f1f3f6;color:#536073}.function-icon.branch{background:#fff5df;color:#ad7213}.function-icon.aggregate{background:#f2edff;color:#7251b6}.function-card>span:last-child{display:grid;min-width:0}.function-card strong{font-size:12px}.function-card small{color:#8a96a8;font-size:10px}.resource-tabs{min-height:0;display:flex;flex:1;flex-direction:column;padding:0 12px}.resource-tabs :deep(.el-tabs__header){margin:8px 0}.resource-tabs :deep(.el-tabs__content){min-height:0;flex:1;overflow:auto}.resource-tabs :deep(.el-tab-pane){height:100%}.resource-tree{background:transparent}.tree-item{width:100%;display:flex;align-items:center;justify-content:space-between;gap:5px;padding-right:4px}.tree-item.draggable{cursor:grab}.tree-label{display:flex;align-items:center;gap:7px;min-width:0}.tree-label>span:last-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.tree-dot{width:7px;height:7px;border-radius:50%;background:#c2cad5}.tree-dot.model{background:#4f8fd4}.tree-dot.instance{border:1px solid #7f9bb9;background:#fff}.tree-item small{color:#9aa5b5;font-size:10px}.flow-list{display:grid;gap:7px;padding-bottom:10px}.flow-item{width:100%;display:grid;grid-template-columns:28px minmax(0,1fr) 20px;align-items:center;gap:8px;padding:10px;border:1px solid #e5eaf1;border-radius:7px;background:#fff;color:#26344a;text-align:left;cursor:grab}.flow-item:hover{border-color:#9ebdde;background:#f8fbff}.flow-icon{width:27px;height:27px;display:grid;place-items:center;border-radius:6px;background:#ecf8f7;color:#23827b;font-weight:700}.flow-item>span:nth-child(2){display:grid;min-width:0}.flow-item strong,.flow-item small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.flow-item strong{font-size:12px}.flow-item small{color:#8a96a8;font-size:10px}.add-mark{color:#4a86c7;font-size:16px}.canvas-panel{min-width:0;display:flex;flex:1;flex-direction:column;border:1px solid #dfe6ef;border-radius:10px;background:#fff;box-shadow:0 3px 12px rgba(28,48,74,.05);overflow:hidden}.canvas-toolbar{height:48px;display:flex;align-items:center;justify-content:space-between;flex:none;padding:0 13px 0 16px;border-bottom:1px solid #e7ecf2}.canvas-title{display:flex;align-items:center;gap:10px}.canvas-title strong{font-size:14px}.canvas-count{padding-left:10px;border-left:1px solid #dfe5ed;color:#7c899b;font-size:11px}.canvas-actions{display:flex;align-items:center;gap:7px}.flow-stage{position:relative;min-height:0;flex:1;background:#f8fafc}.workflow-flow{width:100%;height:100%}.workflow-flow :deep(.vue-flow__pane){cursor:grab}.workflow-flow :deep(.vue-flow__edge-path){stroke:#6f8fb7;stroke-width:2}.workflow-flow :deep(.vue-flow__edge.selected .vue-flow__edge-path){stroke:#e05252;stroke-width:2.5}.workflow-flow :deep(.vue-flow__controls){overflow:hidden;border:1px solid #dce4ee;border-radius:7px;box-shadow:0 3px 12px rgba(30,50,75,.1)}.workflow-flow :deep(.vue-flow__controls-button){border-bottom-color:#e7ecf2;background:#fff}.canvas-node{position:relative;width:218px;min-height:96px;display:flex;border:1px solid #c8d5e5;border-radius:9px;background:#fff;box-shadow:0 4px 13px rgba(34,61,94,.09);overflow:visible;transition:border-color .15s,box-shadow .15s,transform .15s}.canvas-node:hover{border-color:#83a7d3;box-shadow:0 6px 18px rgba(34,61,94,.14)}.canvas-node.selected{border-color:#3277c5;box-shadow:0 0 0 3px rgba(50,119,197,.14),0 6px 18px rgba(34,61,94,.13)}.canvas-node.warning{border-color:#e0ae54}.node-accent{width:5px;flex:none;border-radius:8px 0 0 8px;background:#5f8fc8}.canvas-node.start .node-accent{background:#3ca36b}.canvas-node.end .node-accent{background:#657386}.canvas-node.branch .node-accent{background:#d89427}.canvas-node.aggregate .node-accent{background:#8566c2}.canvas-node.subflow .node-accent{background:#32958d}.node-main{min-width:0;display:flex;flex:1;flex-direction:column;padding:12px 14px}.node-topline{display:flex;align-items:center;gap:6px;margin-bottom:8px}.node-glyph{width:20px;height:20px;display:grid;place-items:center;border-radius:5px;background:#eef4fb;color:#3978bd;font-size:9px;font-weight:800}.start .node-glyph{background:#eaf8f0;color:#218654}.end .node-glyph{background:#f0f2f5;color:#536073}.branch .node-glyph{background:#fff4de;color:#ad7213}.aggregate .node-glyph{background:#f2edff;color:#7251b6}.subflow .node-glyph{background:#eaf7f6;color:#237f78}.node-kind{color:#78869a;font-size:10px;font-weight:700}.warning-dot{width:16px;height:16px;display:grid;place-items:center;margin-left:auto;border-radius:50%;background:#fff1d6;color:#aa6a00;font-size:10px;font-weight:800}.node-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#213047;font-size:14px}.node-summary{margin-top:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#7d899a;font-size:11px}.workflow-handle{width:11px!important;height:11px!important;border:2px solid #fff!important;background:#4f83bf!important;box-shadow:0 0 0 1px #4f83bf}.input-handle{left:-6px!important}.output-handle{right:-6px!important}.empty-canvas{position:absolute;left:50%;top:47%;display:grid;place-items:center;width:340px;transform:translate(-50%,-50%);pointer-events:none;text-align:center}.empty-illustration{position:relative;width:120px;height:68px;margin-bottom:15px}.empty-illustration span{position:absolute;width:42px;height:28px;border:1px solid #c8d6e7;border-radius:6px;background:#fff;box-shadow:0 3px 8px rgba(55,78,106,.05)}.empty-illustration span:nth-child(1){left:0;top:20px}.empty-illustration span:nth-child(2){right:0;top:20px}.empty-illustration span:nth-child(3){left:39px;top:0;border-color:#92afd2;background:#f5f9fd}.empty-illustration:before,.empty-illustration:after{content:'';position:absolute;top:35px;width:39px;border-top:1px dashed #a9bed7}.empty-illustration:before{left:34px;transform:rotate(-17deg)}.empty-illustration:after{right:34px;transform:rotate(17deg)}.empty-canvas strong{color:#44536a;font-size:14px}.empty-canvas p{margin:7px 0 0;color:#8a96a8;font-size:11px;line-height:1.7}.canvas-statusbar{height:31px;display:flex;align-items:center;justify-content:space-between;flex:none;padding:0 13px;border-top:1px solid #e7ecf2;background:#fbfcfe;color:#8490a1;font-size:10px}.canvas-statusbar span{display:flex;align-items:center;gap:6px}.status-dot{width:6px;height:6px;border-radius:50%;background:#43a46d}.drawer-form :deep(.el-form-item){margin-bottom:20px}.drawer-form :deep(.el-select),.drawer-form :deep(.el-input-number){width:100%}.two-column-form{display:grid;grid-template-columns:1fr 1fr;gap:12px}.node-inspector-head{display:flex;align-items:center;gap:11px;padding:12px;margin-bottom:14px;border:1px solid #e3e9f1;border-radius:8px;background:#f8fafc}.inspector-icon{width:38px;height:38px;display:grid;place-items:center;border-radius:8px;background:#eaf2fb;color:#3476bd;font-weight:800}.inspector-icon.start{background:#eaf8f0;color:#218654}.inspector-icon.end{background:#eef1f4;color:#536073}.inspector-icon.branch{background:#fff4de;color:#ad7213}.inspector-icon.aggregate{background:#f2edff;color:#7251b6}.inspector-icon.subflow{background:#eaf7f6;color:#237f78}.node-inspector-head>div{display:grid;gap:3px}.node-inspector-head strong{font-size:14px}.node-inspector-head span{color:#7f8b9b;font-size:11px}.config-alert{margin-bottom:17px}.capability-preview{display:grid;gap:5px;margin:-7px 0 18px;padding:11px;border-left:3px solid #4f87c6;border-radius:4px;background:#f5f8fc}.capability-preview strong{font-size:12px}.capability-preview span,.form-hint{color:#7c899b;font-size:11px;line-height:1.6}.form-hint{margin-top:-10px;margin-bottom:18px}.inspector-section{margin-top:20px;padding-top:17px;border-top:1px solid #e8edf3}.inspector-title{display:flex;align-items:center;justify-content:space-between;margin-bottom:9px}.inspector-title strong{font-size:13px}.inspector-title span{min-width:21px;padding:2px 6px;border-radius:10px;background:#eef2f7;color:#617085;text-align:center;font-size:10px}.interface-list,.connection-list{display:grid;gap:7px}.interface-row{display:flex;align-items:center;gap:9px;padding:9px;border:1px solid #e7ecf2;border-radius:6px}.interface-row>span:last-child{display:grid;gap:2px;min-width:0}.interface-row strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}.interface-row small{color:#8b97a8;font-size:10px}.direction{width:28px;padding:3px 4px;border-radius:4px;background:#edf3fa;color:#3476bd;text-align:center;font-size:9px;font-weight:800}.direction.out{background:#edf8f2;color:#238052}.connection-row{display:grid;grid-template-columns:minmax(0,1fr) 16px minmax(0,1fr);align-items:center;gap:4px;padding:8px 9px;border-radius:6px;background:#f6f8fb;color:#5f6e83;font-size:10px}.connection-row span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.connection-row b{text-align:center;color:#9ba7b6}.drawer-footer{display:flex;justify-content:space-between;width:100%}@media(max-width:1100px){.resource-panel{width:250px;flex-basis:250px}.function-grid{grid-template-columns:1fr}.workflow-select{width:180px}.title-block p{display:none}}@media(max-width:820px){.workflow-page{height:auto;min-height:calc(100vh - 64px);overflow:auto}.workspace-header{height:auto;align-items:flex-start;flex-direction:column;padding-bottom:12px}.header-actions{width:100%;flex-wrap:wrap}.workspace-shell{height:720px}.resource-panel{width:220px;flex-basis:220px}.canvas-statusbar span:last-child{display:none}}
-.workflow-page{height:calc(100vh - 64px);min-height:620px;padding:0;overflow:hidden;background:#fff;color:#182230;font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,"Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}.flow-identity{display:grid;gap:2px;min-width:0}.product-path{color:#7a8595;font-size:10px}.flow-title-row{display:flex;align-items:center;gap:7px;min-width:0}.flow-title-row>strong{max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:14px}.status-chip,.meta-chip,.dirty-mark{height:18px;display:inline-flex;align-items:center;padding:0 6px;border:1px solid #d7dde6;border-radius:2px;background:#f7f8fa;color:#637083;font-size:9px;font-weight:700}.status-chip.active{border-color:#9fd5b7;background:#edf8f2;color:#167a45}.dirty-mark{border-color:#e8c684;background:#fff8e8;color:#9b650b}.designer-grid{height:100%;min-height:0;display:grid;grid-template-columns:250px minmax(430px,1fr) 368px;gap:0;overflow:hidden}
-.empty-workbench.compact{width:280px}
-.empty-workbench.compact .empty-head{display:none}
-.empty-workbench.compact ol{display:none}
-.empty-workbench.compact .quick-start{border-bottom:0}
-.quick-start.single-action{display:flex;justify-content:center;align-items:center;padding:14px}
-.quick-start.single-action button{width:100%;max-width:240px;height:40px;border-radius:4px}
-.resource-panel{width:auto;min-width:0;display:flex;flex-direction:column;border:0;border-right:1px solid #d9dee6;border-radius:0;background:#fff;box-shadow:none;overflow:hidden}.panel-titlebar{height:49px;display:flex;align-items:center;justify-content:space-between;gap:8px;flex:none;padding:0 12px;border-bottom:1px solid #e2e6ec;background:#fafbfc;box-sizing:border-box}.panel-titlebar>div{display:grid;gap:1px;min-width:0}.panel-titlebar strong{font-size:13px}.panel-titlebar span,.panel-titlebar small{overflow:hidden;color:#7b8797;font-size:10px;text-overflow:ellipsis;white-space:nowrap}.resource-search{padding:8px 10px;border-bottom:1px solid #e8ebf0}.resource-search :deep(.el-input__wrapper){border-radius:2px;box-shadow:0 0 0 1px #dfe4ea inset}.function-section{padding:0;border-bottom:1px solid #dfe4ea}.contract-error{margin:8px;width:auto}.group-title{height:30px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:#f5f6f8;color:#526074}.group-title strong{font-size:10px;letter-spacing:.04em}.group-title span{font-size:9px}.function-list{display:grid;grid-template-columns:1fr 1fr}.function-item{height:48px;display:grid;grid-template-columns:26px minmax(0,1fr) 12px;align-items:center;gap:6px;padding:5px 8px;border:0;border-right:1px solid #e7eaf0;border-bottom:1px solid #e7eaf0;background:#fff;color:#26364b;text-align:left;cursor:grab}.function-item:nth-child(even){border-right:0}.function-item:hover{background:#edf5ff}.function-item:disabled{cursor:not-allowed;opacity:.5}.function-item>span:nth-child(2){display:grid;min-width:0}.function-item strong,.function-item small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.function-item strong{font-size:11px}.function-item small{color:#8a95a5;font-size:9px}.function-item>b{color:#3978bd;font-size:13px}.function-icon{width:24px;height:24px;border-radius:2px}.resource-tabs{padding:0;min-height:0}.resource-tabs :deep(.el-tabs__header){margin:0}.resource-tabs :deep(.el-tabs__nav-wrap){padding:0 8px;border-bottom:1px solid #e2e6ec}.resource-tabs :deep(.el-tabs__nav-wrap:after){display:none}.resource-tabs :deep(.el-tabs__item){height:36px;font-size:11px}.resource-tabs :deep(.el-tabs__content){padding:4px 6px 8px}.resource-tabs :deep(.el-tree-node__content){height:30px}.tree-item{padding-right:2px}.flow-list{gap:0;padding:0}.flow-item{grid-template-columns:26px minmax(0,1fr) 16px;gap:7px;padding:8px;border:0;border-bottom:1px solid #e5e9ef;border-radius:0}.flow-icon{width:24px;height:24px;border-radius:2px}.canvas-panel{position:relative;min-width:0;display:flex;flex-direction:column;border:0;border-right:1px solid #d9dee6;border-radius:0;background:#fff;box-shadow:none;overflow:hidden}.canvas-floating-island{position:absolute;top:10px;left:12px;right:12px;z-index:10;height:42px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 10px;border:1px solid rgba(217,222,230,.9);border-radius:6px;background:rgba(255,255,255,.94);backdrop-filter:blur(8px);box-shadow:0 4px 16px rgba(24,34,48,.07);box-sizing:border-box}.island-left{display:flex;align-items:center;gap:10px;min-width:0}.island-right{display:flex;align-items:center;gap:6px;flex:none}.workflow-select-compact{width:170px}.workflow-select-compact :deep(.el-input__wrapper){height:28px;border-radius:3px;box-shadow:0 0 0 1px #d9dee6 inset}.canvas-toolbar{height:49px;padding:0 8px 0 12px;margin-top:52px}.canvas-title{gap:0}.canvas-title strong{padding-right:10px;font-size:13px}.canvas-title>span{padding:0 9px;border-left:1px solid #dfe4ea;color:#738094;font-size:10px}.canvas-title>.error-count{color:#c43d3d;font-weight:700}.canvas-actions{gap:0}.canvas-actions :deep(.el-button+.el-button){margin-left:0}.flow-stage{background:#f7f9fb}.workflow-flow :deep(.vue-flow__controls){border-radius:2px}.empty-workbench{position:absolute;left:50%;top:50%;z-index:3;width:430px;border:1px solid #cfd6df;background:#fff;transform:translate(-50%,-50%);box-shadow:0 8px 26px rgba(30,45,65,.08)}.empty-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid #dfe4ea;background:#f5f7fa}.empty-head>span,.empty-workbench li>span{color:#3576b8;font-size:10px;font-weight:800}.empty-head>div,.empty-workbench li>div{display:grid;gap:2px}.empty-head strong,.empty-workbench li strong{font-size:12px}.empty-head small,.empty-workbench li small{color:#7b8797;font-size:10px}.quick-start{height:72px;display:grid;grid-template-columns:1fr 28px 1fr;align-items:center;padding:0 14px;border-bottom:1px solid #e4e8ed}.quick-start button{height:38px;display:flex;align-items:center;justify-content:center;gap:7px;border:1px solid #bfcbd9;border-radius:2px;background:#fff;color:#2f6196;cursor:pointer}.quick-start button:hover{border-color:#3379bd;background:#eef6ff}.quick-start button:disabled{cursor:not-allowed;opacity:.5}.quick-start i{text-align:center;color:#8793a3}.empty-workbench ol{display:grid;grid-template-columns:1fr 1fr 1fr;margin:0;padding:0;list-style:none}.empty-workbench li{display:flex;gap:7px;padding:10px;border-right:1px solid #e4e8ed}.empty-workbench li:last-child{border-right:0}.canvas-statusbar{height:28px;justify-content:flex-start;gap:15px;padding:0 10px}.status-grow{flex:1}.legend-line{width:15px;height:0;border-top:2px solid #3276d2}.legend-line.data{border-top-color:#7c4dce;border-top-style:dashed}.inspector-panel{min-width:0;display:flex;flex-direction:column;background:#fff;overflow:hidden}.inspector-titlebar{height:49px}.inspector-scroll{min-height:0;flex:1;overflow:auto}.settings-view,.edge-view,.validation-view,.overview-view{min-height:100%;box-sizing:border-box}.settings-view{padding-bottom:12px}.business-note{display:grid;grid-template-columns:26px 1fr;gap:8px;padding:10px 12px;border-bottom:1px solid #e3e7ed}.business-note>b{color:#3276b8;font-size:10px}.business-note>div{display:grid;gap:3px}.business-note strong{font-size:11px}.business-note span{color:#6d798b;font-size:10px;line-height:1.55}.dense-form{padding:12px 12px 2px;border-bottom:1px solid #e3e7ed}.dense-form :deep(.el-form-item){margin-bottom:11px}.dense-form :deep(.el-form-item__label){height:20px;padding:0;color:#556276;font-size:10px;line-height:20px}.dense-form :deep(.el-select),.dense-form :deep(.el-input-number){width:100%}.two-column-form{grid-template-columns:108px 1fr;gap:8px}.wide-action{width:calc(100% - 24px);margin:12px}.connection-type{display:grid;gap:5px;padding:13px 12px;border-bottom:3px solid #3276d2;background:#edf5ff}.connection-type.port{border-color:#7c4dce;background:#f5f0ff}.connection-type span{color:#607086;font-size:10px}.connection-type b{font-size:12px}.property-list{margin:0;border-bottom:1px solid #e1e5eb}.property-list>div{display:grid;grid-template-columns:90px 1fr;border-bottom:1px solid #e8ebef}.property-list>div:last-child{border-bottom:0}.property-list dt,.property-list dd{margin:0;padding:9px 10px;font-size:10px;line-height:1.55}.property-list dt{background:#f7f8fa;color:#697587}.property-list dd{color:#27364a}.validation-summary,.overview-metrics{display:grid;grid-template-columns:repeat(3,1fr);border-bottom:1px solid #dfe4ea}.validation-summary>div,.overview-metrics>div{display:grid;place-items:center;gap:2px;padding:12px 4px;border-right:1px solid #e2e6eb}.validation-summary>div:last-child,.overview-metrics>div:last-child{border-right:0}.validation-summary strong,.overview-metrics strong{font-size:18px}.validation-summary span,.overview-metrics span{color:#7d8898;font-size:9px}.issue-list{display:grid}.issue-list button{display:grid;grid-template-columns:38px minmax(0,1fr) 12px;align-items:start;gap:8px;padding:10px 12px;border:0;border-bottom:1px solid #e4e8ed;background:#fff;text-align:left;cursor:pointer}.issue-list button:hover{background:#f6f8fb}.issue-list button>b{padding:2px 4px;background:#fdeaea;color:#b52f2f;font-size:9px;text-align:center}.issue-list button.warning>b{background:#fff2d7;color:#9a6200}.issue-list button>span{display:grid;gap:3px}.issue-list strong{font-size:11px}.issue-list small{color:#748194;font-size:10px;line-height:1.5}.issue-list i{color:#9aa4b2}.overview-metrics{grid-template-columns:repeat(4,1fr)}.section-heading{height:34px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-top:1px solid #dfe4ea;border-bottom:1px solid #dfe4ea;background:#f6f7f9}.section-heading strong{font-size:11px}.section-heading span{color:#8a95a4;font-size:9px}.check-list{margin:0;padding:0;list-style:none}.check-list li{display:grid;grid-template-columns:14px 1fr;gap:8px;padding:10px 12px;border-bottom:1px solid #e6e9ee}.check-list i{width:10px;height:10px;margin-top:2px;border:2px solid #d34e4e;border-radius:50%;box-sizing:border-box}.check-list li.ok i{border-color:#2a9a5b;background:#2a9a5b;box-shadow:inset 0 0 0 2px #fff}.check-list span{display:grid;gap:2px}.check-list strong{font-size:11px}.check-list small{color:#788496;font-size:9px;line-height:1.5}.business-flow{display:grid;grid-template-columns:1fr;place-items:center;padding:10px 12px}.business-flow span{width:100%;padding:7px;border:1px solid #dce2e9;background:#fafbfc;box-sizing:border-box;text-align:center;font-size:10px}.business-flow b{color:#5383b4;font-size:10px}.overview-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:0 12px 12px}.overview-actions :deep(.el-button+.el-button){margin-left:0}@media(max-width:1280px){.designer-grid{grid-template-columns:224px minmax(400px,1fr) 340px}.workflow-select{width:190px}.command-actions :deep(.el-button){padding-left:10px;padding-right:10px}}.tab-scroll-body{flex:1;min-height:0;overflow-y:auto;padding:8px}
-.function-list.vertical{display:flex;flex-direction:column;gap:8px}
-.function-list.vertical .function-item{height:52px;grid-template-columns:32px minmax(0,1fr) 20px;border:1px solid #e2e7ee;border-radius:4px;padding:6px 10px}
-.function-list.vertical .function-item:hover{border-color:#4096ff;background:#f0f7ff}
-.tree-item.category{font-weight:600;color:#334155;background:#f8fafc;padding:3px 6px;border-radius:3px}
-.tree-item.model{font-weight:600;color:#1e293b;padding:2px 4px}
-.tree-item.instance{background:#ffffff;border:1px solid #e2e8f0;border-radius:4px;padding:4px 8px;margin:2px 0}
-.tree-item.instance:hover{border-color:#3b82f6;background:#eff6ff}
-.tree-dot.category{background:#94a3b8}
-.tree-dot.model{background:#2563eb}
-.tree-dot.instance{background:#16a34a}
-.tree-item .node-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px}
-.canvas-floating-controls{position:absolute;top:62px;right:16px;z-index:15;display:flex;align-items:center;gap:8px;padding:4px 8px;border:1px solid rgba(217,222,230,.9);border-radius:6px;background:rgba(255,255,255,.95);backdrop-filter:blur(8px);box-shadow:0 4px 14px rgba(24,34,48,.08)}
-.control-bar-label{font-size:10px;font-weight:700;color:#64748b;letter-spacing:.02em}
-.control-btn-group{display:flex;align-items:center;gap:5px}
-.flow-control-tool{height:28px;padding:0 8px;display:flex;align-items:center;gap:5px;border:1px solid #cbd5e1;border-radius:4px;background:#fff;color:#1e293b;cursor:grab;transition:all .15s ease}
-.flow-control-tool:hover{border-color:#2563eb;background:#f0f7ff;transform:translateY(-1px);box-shadow:0 2px 6px rgba(37,99,235,.1)}
-.flow-control-tool:disabled{cursor:not-allowed;opacity:.5}
-.flow-control-tool .tool-icon{width:18px;height:18px;display:grid;place-items:center;border-radius:3px;background:#eef4fb;color:#3978bd;font-size:9px;font-weight:800}
-.flow-control-tool .tool-icon.start{background:#eaf8f0;color:#218654}
-.flow-control-tool .tool-icon.end{background:#f1f3f6;color:#536073}
-.flow-control-tool .tool-icon.branch{background:#fff5df;color:#ad7213}
-.flow-control-tool .tool-icon.aggregate{background:#f2edff;color:#7251b6}
-.flow-control-tool .tool-name{font-size:11px;font-weight:600}
-.clickable-flow-item{cursor:pointer;transition:all .15s ease}
-.clickable-flow-item:hover{border-color:#2563eb;background:#f0f7ff}
-.clickable-flow-item.is-active-flow{background:#eff6ff;border-color:#93c5fd}
-.opened-badge{font-size:9px;font-weight:700;color:#2563eb;background:#eff6ff;padding:1px 4px;border-radius:2px;border:1px solid #bfdbfe;margin-left:auto}
-.stats-chip{height:18px;display:inline-flex;align-items:center;padding:0 6px;border:1px solid #cbd5e1;border-radius:2px;background:#f8fafc;color:#475569;font-size:9px;font-weight:600}
-.error-badge{height:18px;display:inline-flex;align-items:center;padding:0 6px;border:1px solid #fca5a5;border-radius:2px;background:#fef2f2;color:#dc2626;font-size:9px;font-weight:700}
-.config-section{padding-bottom:12px;border-bottom:1px solid #e2e8f0}
-.workflow-element-drawer-body{height:100%;overflow:hidden;box-sizing:border-box;background:#fff}.workflow-element-drawer-body>.edge-view{min-height:100%;overflow-y:auto}:global(.workflow-element-drawer){min-width:880px;max-width:1180px;box-shadow:-6px 0 20px rgba(0,0,0,.12);transition:transform .2s cubic-bezier(.23,1,.32,1)!important}:global(.workflow-element-drawer .el-drawer__body){min-height:0;padding:0;overflow:hidden;background:#fff}@media(max-width:900px){:global(.workflow-element-drawer){width:100vw!important;min-width:0;max-width:none}}
+/* SmartLab 2.0 Workflow Designer — Design System SSOT (Release 1.3) */
+.workflow-page {
+  height: calc(100vh - 50px);
+  padding: 10px 14px 14px;
+  box-sizing: border-box;
+  overflow: hidden;
+  background: var(--sl-bg-page);
+  color: var(--sl-text-body, #334155);
+  font-family: var(--sl-font-family);
+}
 
-/* 连续控制台视觉覆盖：资源、画布和流程属性通过分隔线形成一个完整工作台。 */
-.designer-grid{grid-template-columns:240px minmax(430px,1fr) 304px;background:#fff}.resource-panel{border-right-color:#e5e5e5}.inspector-panel{border-left:0;background:#fff}.panel-titlebar{height:45px;padding:0 12px;border-bottom-color:#e5e5e5;background:#fff}.panel-titlebar strong{color:#262626;font-size:13px;font-weight:500}.panel-titlebar span,.panel-titlebar small{color:#8c8c8c;font-size:10px}.resource-titlebar{border-right:0}.resource-tabs :deep(.el-tabs__nav-wrap){padding:0 8px;border-bottom-color:#e5e5e5;background:#fafafa}.resource-tabs :deep(.el-tabs__item){height:36px;color:#595959;font-size:12px}.resource-tabs :deep(.el-tabs__item.is-active){color:#1677ff;font-weight:500}.resource-tabs :deep(.el-tabs__active-bar){height:2px;background:#1677ff}.resource-search{padding:8px 10px;border-bottom-color:#f0f0f0}.resource-tabs :deep(.el-tree-node__content){position:relative;height:34px;padding-right:6px;border-radius:4px;transition:background-color .15s ease}.resource-tabs :deep(.el-tree-node__content:hover){background:#f5f8fc}.resource-tabs :deep(.el-tree-node.is-current>.el-tree-node__content){background:#eaf3ff;color:#1677ff;box-shadow:inset 3px 0 #1677ff}.tab-scroll-body{padding:4px 6px}.flow-item{height:42px;padding:0 10px;border-bottom-color:#f0f0f0;transition:background-color .15s ease}.flow-item:hover,.flow-item.is-active-flow{border-color:#f0f0f0;background:#e6f4ff}.flow-icon{border:1px solid #bae0ff;background:#e6f4ff;color:#1677ff}.canvas-panel{border-right-color:#e5e5e5}.canvas-commandbar{position:static;z-index:10;height:45px;display:flex;align-items:center;justify-content:space-between;gap:12px;padding:0 10px;border-bottom:1px solid #e5e5e5;background:#fff;box-shadow:none}.flow-title-row>strong{color:#262626;font-weight:500}.status-chip,.meta-chip,.dirty-mark,.stats-chip,.error-badge{border-radius:2px}.island-right{gap:0}.island-right :deep(.el-button){height:28px;margin-left:-1px;border-radius:0;transition:border-color .15s ease,color .15s ease,background-color .15s ease}.island-right :deep(.el-button:first-child){margin-left:0}.island-right :deep(.btn-aliyun-cta){margin-left:8px;border-radius:2px;background:#1677ff}.flow-stage{background:#f8fafc}.canvas-floating-controls{top:10px;right:10px;border-color:#d9d9d9;border-radius:2px;box-shadow:0 2px 8px rgba(0,0,0,.08)}.workflow-flow :deep(.vue-flow__edge-path){stroke:#7890ad;stroke-width:1.6;transition:stroke .15s ease,stroke-width .15s ease}.workflow-flow :deep(.execution-edge:hover .vue-flow__edge-path){stroke:#477db5;stroke-width:2.2}.workflow-flow :deep(.data-edge .vue-flow__edge-path){stroke:#7569bd;stroke-dasharray:6 5}.workflow-flow :deep(.data-edge:hover .vue-flow__edge-path){stroke:#6254b2;stroke-width:2.2}.workflow-flow :deep(.vue-flow__edge.selected .vue-flow__edge-path){stroke:#1677ff;stroke-width:2.4}.workflow-flow :deep(.vue-flow__controls){border-color:#d9d9d9;border-radius:2px;box-shadow:0 2px 8px rgba(0,0,0,.08)}.canvas-statusbar{height:28px;border-top-color:#e5e5e5;background:#fff;color:#8c8c8c}.legend-line{border-top-color:#7890ad}.legend-line.data{border-top-color:#7569bd}.inspector-titlebar{height:45px}.section-heading{height:36px;padding:0 12px;border-color:#e5e5e5;background:#fafafa}.section-heading strong{color:#262626;font-size:11px;font-weight:500}.dense-form{padding:12px 12px 2px;border-bottom-color:#e5e5e5}.overview-metrics{border-bottom-color:#e5e5e5}.overview-metrics>div{border-right-color:#f0f0f0}.overview-metrics strong{color:#262626;font-size:16px;font-weight:500}.overview-metrics span{color:#8c8c8c;font-size:10px}.issue-list button{border-bottom-color:#f0f0f0;transition:background-color .15s ease}.issue-list button:hover{background:#fafafa}
-.resource-function-section{border-bottom:1px solid #e5e5e5;background:#fff}.resource-group-heading{height:30px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;background:#fafafa;color:#595959}.resource-group-heading strong{font-size:11px;font-weight:500}.resource-group-heading span{color:#8c8c8c;font-size:9px}.resource-function-list{display:grid;grid-template-columns:1fr 1fr}.resource-function-item{height:48px;display:grid;grid-template-columns:24px minmax(0,1fr);align-items:center;gap:7px;padding:5px 9px;border:0;border-right:1px solid #f0f0f0;border-bottom:1px solid #f0f0f0;background:#fff;color:#262626;text-align:left;cursor:grab;transition:background-color .15s ease,color .15s ease}.resource-function-item:nth-child(even){border-right:0}.resource-function-item:nth-last-child(-n+2){border-bottom:0}.resource-function-item:hover{background:#e6f4ff;color:#1677ff}.resource-function-item:disabled{cursor:not-allowed;opacity:.5}.resource-function-item>span:last-child{display:grid;min-width:0}.resource-function-item strong,.resource-function-item small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.resource-function-item strong{font-size:11px;font-weight:500}.resource-function-item small{color:#8c8c8c;font-size:9px}.function-mark{width:22px;height:22px;display:grid;place-items:center;border:1px solid #bae0ff;border-radius:2px;background:#e6f4ff;color:#1677ff;font-size:9px}.function-mark.start{border-color:#b7eb8f;background:#f6ffed;color:#389e0d}.function-mark.end{border-color:#d9d9d9;background:#fafafa;color:#595959}.function-mark.branch{border-color:#ffe58f;background:#fffbe6;color:#d48806}.function-mark.aggregate{border-color:#d3adf7;background:#f9f0ff;color:#722ed1}
-.resource-tree-node{width:100%;min-width:0;display:flex;align-items:center;gap:7px;padding-right:4px;box-sizing:border-box;color:#3d4a5d}.resource-tree-node.draggable{cursor:grab}.tree-resource-icon{flex:none;color:#7f8b9b;font-size:14px}.resource-tree-node.model .tree-resource-icon,.workflow-tree-item .tree-resource-icon{color:#4d7fac}.resource-tree-node.instance .tree-resource-icon{color:#6e8c7b}.resource-node-text{min-width:0;display:flex;flex:1;align-items:center;gap:6px}.resource-node-label{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px}.resource-node-meta{flex:none;color:#9aa4b2;font-size:9px}.resource-tree-node.category .resource-node-label{font-weight:600}.resource-tree-node.model .resource-node-label{font-weight:500}.workflow-tree-item.is-active-flow{color:#1677ff;background:#eaf3ff;box-shadow:inset 3px 0 #1677ff}.workflow-tree-item.is-active-flow .resource-node-meta{color:#5c89bd}.resource-tree-empty{padding:28px 10px;color:#9aa4b2;text-align:center;font-size:11px}.canvas-floating-controls{top:10px;left:10px;right:auto;border-radius:2px;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.08)}
-.validation-groups{display:grid}.validation-group{display:grid}.issue-group-heading{height:30px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-bottom:1px solid #e5e5e5;background:#fff}.issue-group-heading strong{color:#595959;font-size:10px;font-weight:500}.issue-group-heading span{color:#8c8c8c;font-size:9px}
+.designer-grid {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 270px minmax(0, 1fr) 304px;
+  background: var(--sl-bg-surface, #ffffff);
+  border: 1px solid var(--sl-border-base, #e2e8f0);
+  border-radius: var(--sl-radius-lg, 10px);
+  overflow: hidden;
+  box-shadow: var(--sl-shadow-container);
+}
+
+.resource-panel,
+.canvas-panel,
+.inspector-panel {
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.canvas-panel {
+  border-right: 1px solid var(--sl-border-base, #e2e8f0);
+}
+
+.panel-titlebar {
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex: none;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+  background: #ffffff;
+  box-sizing: border-box;
+}
+
+.panel-titlebar > div {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.panel-titlebar strong {
+  color: var(--sl-text-heading, #0f172a);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.panel-titlebar span {
+  overflow: hidden;
+  color: var(--sl-text-secondary, #64748b);
+  font-size: 12px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resource-tabs {
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  padding: 0;
+  height: 100%;
+}
+
+.resource-tabs :deep(.el-tabs__header) {
+  margin: 0;
+  flex: none;
+}
+
+.resource-tabs :deep(.el-tabs__nav-wrap) {
+  padding: 0 8px;
+  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+  background: var(--sl-bg-page, #f1f5f9);
+}
+
+.resource-tabs :deep(.el-tabs__nav-wrap:after) {
+  display: none;
+}
+
+.resource-tabs :deep(.el-tabs__item) {
+  height: 36px;
+  color: var(--sl-text-secondary, #64748b);
+  font-size: 12.5px;
+}
+
+.resource-tabs :deep(.el-tabs__item.is-active) {
+  color: var(--sl-primary, #2563eb);
+  font-weight: 600;
+}
+
+.resource-tabs :deep(.el-tabs__active-bar) {
+  height: 2px;
+  background: var(--sl-primary, #2563eb);
+}
+
+.resource-tabs :deep(.el-tabs__content) {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+}
+
+.resource-tabs :deep(.el-tab-pane) {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.canvas-commandbar {
+  height: 52px;
+  min-height: 52px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+  background: #ffffff;
+  box-sizing: border-box;
+  flex: none;
+}
+
+.island-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.flow-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.flow-title-row > strong {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--sl-text-heading, #0f172a);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.status-chip,
+.meta-chip,
+.stats-chip,
+.dirty-mark,
+.error-badge {
+  height: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: 1px solid var(--sl-border-base, #e2e8f0);
+  border-radius: var(--sl-radius-sm, 6px);
+  background: var(--sl-bg-hover, #f8fafc);
+  color: var(--sl-text-secondary, #64748b);
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.status-chip .chip-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--sl-text-secondary, #64748b);
+}
+
+.status-chip.is-active .chip-dot {
+  background: var(--sl-success, #16a34a);
+}
+
+.error-badge {
+  border-color: var(--sl-danger-border, #fecaca);
+  background: var(--sl-danger-light, #fef2f2);
+  color: var(--sl-danger, #dc2626);
+}
+
+.dirty-mark {
+  border-color: var(--sl-warning-border, #fde68a);
+  background: var(--sl-warning-light, #fffbeb);
+  color: var(--sl-warning, #d97706);
+}
+
+.island-right {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: none;
+}
+
+.island-right .btn-aliyun,
+.island-right .btn-aliyun-cta,
+.island-right .btn-primary-blue {
+  flex-shrink: 0;
+}
+
+.island-right .btn-aliyun:disabled,
+.island-right .btn-primary-blue:disabled,
+.island-right .btn-link:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.flow-stage {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+  background: var(--sl-bg-page);
+}
+
+.canvas-floating-controls {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 15;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border: 1px solid var(--sl-border-base, #e2e8f0);
+  border-radius: var(--sl-radius-sm, 6px);
+  background: #ffffff;
+  box-shadow: var(--sl-shadow-sm);
+}
+
+.control-bar-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--sl-text-secondary, #64748b);
+}
+
+.control-btn-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.flow-control-tool {
+  height: 28px;
+  padding: 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--sl-border-input, #cbd5e1);
+  border-radius: var(--sl-radius-sm, 6px);
+  background: #ffffff;
+  color: var(--sl-text-heading, #0f172a);
+  cursor: grab;
+  transition: var(--sl-ease-smooth);
+}
+
+.flow-control-tool:hover:not(:disabled) {
+  border-color: var(--sl-primary, #2563eb);
+  background: var(--sl-primary-light, #eff6ff);
+}
+
+.flow-control-tool:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.flow-control-tool .tool-icon {
+  width: 16px;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  background: var(--sl-primary-light, #eff6ff);
+  color: var(--sl-primary, #2563eb);
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.flow-control-tool .tool-icon.start {
+  background: var(--sl-success-light, #f0fdf4);
+  color: var(--sl-success, #16a34a);
+}
+
+.flow-control-tool .tool-icon.end {
+  background: var(--sl-bg-page, #f1f5f9);
+  color: var(--sl-text-secondary, #64748b);
+}
+
+.flow-control-tool .tool-icon.branch {
+  background: var(--sl-warning-light, #fffbeb);
+  color: var(--sl-warning, #d97706);
+}
+
+.flow-control-tool .tool-icon.aggregate {
+  background: #f5f3ff;
+  color: #6d28d9;
+}
+
+.flow-control-tool .tool-name {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.workflow-flow {
+  width: 100%;
+  height: 100%;
+}
+
+.workflow-flow :deep(.vue-flow__pane) {
+  cursor: grab;
+}
+
+.workflow-flow :deep(.vue-flow__edge-path) {
+  stroke: #7c93b8;
+  stroke-width: 1.8;
+  fill: none;
+}
+
+.workflow-flow :deep(.execution-edge .vue-flow__edge-path) {
+  stroke: #7c93b8;
+}
+
+.workflow-flow :deep(.execution-edge:hover .vue-flow__edge-path),
+.workflow-flow :deep(.execution-edge.selected .vue-flow__edge-path) {
+  stroke: #3b6fd4;
+}
+
+.workflow-flow :deep(.data-edge .vue-flow__edge-path) {
+  stroke: #9a8ab5;
+  stroke-dasharray: 6 5;
+}
+
+.workflow-flow :deep(.data-edge:hover .vue-flow__edge-path),
+.workflow-flow :deep(.data-edge.selected .vue-flow__edge-path) {
+  stroke: #7a5fc0;
+}
+
+.workflow-flow :deep(.vue-flow__edge) {
+  cursor: pointer;
+}
+
+.workflow-flow :deep(.vue-flow__edge:hover) {
+  z-index: 12;
+}
+
+.workflow-flow :deep(.vue-flow__edge:hover .vue-flow__edge-path),
+.workflow-flow :deep(.vue-flow__edge.selected .vue-flow__edge-path) {
+  stroke-width: 2.2;
+}
+
+.workflow-flow :deep(.vue-flow__controls) {
+  overflow: hidden;
+  border: 1px solid var(--sl-border-base, #e2e8f0);
+  border-radius: var(--sl-radius-sm, 6px);
+  box-shadow: var(--sl-shadow-sm);
+}
+
+.workflow-flow :deep(.vue-flow__controls-button) {
+  border-bottom-color: var(--sl-border-base, #e2e8f0);
+  background: #ffffff;
+}
+
+.empty-workbench {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  z-index: 3;
+  width: 360px;
+  border: 1px solid var(--sl-border-base, #e2e8f0);
+  border-radius: var(--sl-radius-md, 8px);
+  background: #ffffff;
+  transform: translate(-50%, -50%);
+  box-shadow: var(--sl-shadow-container);
+}
+
+.empty-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+  background: var(--sl-bg-hover, #f8fafc);
+}
+
+.empty-head > span {
+  color: var(--sl-primary, #2563eb);
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--sl-font-mono);
+}
+
+.empty-head strong {
+  display: block;
+  color: var(--sl-text-heading, #0f172a);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.empty-head small {
+  color: var(--sl-text-secondary, #64748b);
+  font-size: 12px;
+}
+
+.quick-start.single-action {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 16px;
+}
+
+.quick-start.single-action button {
+  width: 100%;
+  max-width: 240px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border: 1px solid var(--sl-primary, #2563eb);
+  border-radius: var(--sl-radius-sm, 6px);
+  background: #ffffff;
+  color: var(--sl-primary, #2563eb);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.quick-start.single-action button:hover:not(:disabled) {
+  background: var(--sl-primary, #2563eb);
+  color: #ffffff;
+}
+
+.quick-start.single-action button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.canvas-statusbar {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 16px;
+  flex: none;
+  padding: 0 16px;
+  border-top: 1px solid var(--sl-border-base, #e2e8f0);
+  background: #ffffff;
+  color: var(--sl-text-secondary, #64748b);
+  font-size: 12px;
+}
+
+.canvas-statusbar span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-grow {
+  flex: 1;
+}
+
+.legend-line {
+  width: 16px;
+  height: 0;
+  border-top: 2px solid #7c93b8;
+}
+
+.legend-line.data {
+  border-top-color: #9a8ab5;
+  border-top-style: dashed;
+}
+
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--sl-text-secondary, #64748b);
+}
+
+.inspector-scroll {
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.inspector-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.inspector-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 6px;
+}
+
+.overview-view,
+.edge-view {
+  min-height: 100%;
+  box-sizing: border-box;
+}
+
+.section-heading {
+  min-height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+  background: #ffffff;
+}
+
+.section-heading strong {
+  color: var(--sl-text-heading, #0f172a);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.section-heading span {
+  color: var(--sl-text-secondary, #64748b);
+  font-size: 12px;
+}
+
+.config-section {
+  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+}
+
+.dense-form {
+  padding: 12px 12px 4px;
+}
+
+.dense-form :deep(.el-form-item) {
+  margin-bottom: 12px;
+}
+
+.dense-form :deep(.el-form-item__label) {
+  height: 20px;
+  padding: 0;
+  color: var(--sl-text-secondary, #64748b);
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.dense-form :deep(.el-input__wrapper),
+.dense-form :deep(.el-textarea__inner) {
+  min-height: 28px;
+  border-radius: var(--sl-radius-sm, 6px);
+}
+
+.overview-metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+}
+
+.overview-metrics > div {
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 2px;
+  min-height: 58px;
+  padding: 10px 14px;
+  border-right: 1px solid var(--sl-border-base, #e2e8f0);
+  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+}
+
+.overview-metrics > div:nth-child(2n) {
+  border-right: 0;
+}
+
+.overview-metrics > div:nth-last-child(-n + 2) {
+  border-bottom: 0;
+}
+
+.overview-metrics strong {
+  color: var(--sl-text-heading, #0f172a);
+  font-size: 14.5px;
+  font-weight: 700;
+  font-family: var(--sl-font-mono);
+  line-height: 1.3;
+}
+
+.overview-metrics span {
+  color: var(--sl-text-secondary, #64748b);
+  font-size: 11px;
+}
+
+.validation-groups {
+  display: grid;
+}
+
+.issue-group-heading {
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+  background: #ffffff;
+}
+
+.issue-group-heading strong {
+  color: var(--sl-text-heading, #0f172a);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.issue-group-heading span {
+  color: var(--sl-text-secondary, #64748b);
+  font-size: 12px;
+}
+
+.issue-list {
+  display: grid;
+}
+
+.issue-list button {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 12px;
+  align-items: start;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+  background: #ffffff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.issue-list button:hover {
+  background: var(--sl-bg-hover, #f8fafc);
+}
+
+.issue-list button > b {
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: var(--sl-danger-light, #fef2f2);
+  color: var(--sl-danger, #dc2626);
+  font-size: 11px;
+  font-weight: 500;
+  text-align: center;
+}
+
+.issue-list button.warning > b {
+  background: var(--sl-warning-light, #fffbeb);
+  color: var(--sl-warning, #d97706);
+}
+
+.issue-list button > span {
+  display: grid;
+  gap: 2px;
+}
+
+.issue-list strong {
+  color: var(--sl-text-heading, #0f172a);
+  font-size: 12.5px;
+}
+
+.issue-list small {
+  color: var(--sl-text-secondary, #64748b);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.issue-list i {
+  color: var(--sl-text-disabled, #94a3b8);
+}
+
+.overview-empty {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 16px 14px 20px;
+}
+
+.overview-empty strong {
+  color: var(--sl-text-heading, #0f172a);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.overview-empty span {
+  color: var(--sl-text-secondary, #64748b);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.wide-action {
+  width: calc(100% - 24px);
+  margin: 12px;
+  justify-content: center;
+}
+
+.connection-type {
+  display: grid;
+  gap: 4px;
+  padding: 12px 16px;
+  border-bottom: 3px solid var(--sl-primary, #2563eb);
+  background: var(--sl-primary-light, #eff6ff);
+}
+
+.connection-type.port {
+  border-color: #6d28d9;
+  background: #f5f3ff;
+}
+
+.connection-type span {
+  color: var(--sl-text-secondary, #64748b);
+  font-size: 12px;
+}
+
+.connection-type b {
+  color: var(--sl-text-heading, #0f172a);
+  font-size: 13px;
+}
+
+.property-list {
+  margin: 0;
+  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+}
+
+.property-list > div {
+  display: grid;
+  grid-template-columns: 90px 1fr;
+  border-bottom: 1px solid var(--sl-border-subtle, #f1f5f9);
+}
+
+.property-list > div:last-child {
+  border-bottom: 0;
+}
+
+.property-list dt,
+.property-list dd {
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 12.5px;
+  line-height: 20px;
+}
+
+.property-list dt {
+  background: var(--sl-bg-hover, #f8fafc);
+  color: var(--sl-text-secondary, #64748b);
+}
+
+.property-list dd {
+  color: var(--sl-text-body, #334155);
+  font-family: var(--sl-font-mono);
+  white-space: normal;
+  word-break: break-word;
+}
+
+.workflow-element-drawer-body {
+  height: 100%;
+  overflow: hidden;
+  box-sizing: border-box;
+  background: #ffffff;
+}
+
+.workflow-element-drawer-body > .edge-view {
+  min-height: 100%;
+  overflow-y: auto;
+}
+
+@media (max-width: 1280px) {
+  .designer-grid {
+    grid-template-columns: 240px minmax(0, 1fr) 280px;
+  }
+
+  .flow-title-row > strong {
+    max-width: 160px;
+  }
+}
+</style>
+
+<style>
+.workflow-element-drawer {
+  width: 50% !important;
+  max-width: 92vw;
+}
+
+.workflow-element-drawer .el-drawer__body {
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+  background: #ffffff;
+}
 </style>

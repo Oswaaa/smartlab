@@ -113,7 +113,7 @@ function restoreMatchedItems(actualItems = [], expectedItems = [], identity) {
 function triggerBusinessIdentity(trigger) {
   return JSON.stringify([
     canonicalJson(trigger?.condition),
-    canonicalJson(trigger?.action),
+    canonicalJson(workflowTriggerActions(trigger)),
   ])
 }
 
@@ -135,7 +135,19 @@ export function normalizeWorkflowNodeDefinition(node = {}) {
   for (const item of restored.interfaces ?? []) {
     item.bindingTriggers = (item.bindingTriggers ?? []).map(trigger => {
       const normalized = structuredClone(trigger)
-      if (typeof normalized.action === 'string') {
+      const rawActions = Array.isArray(normalized.actions) && normalized.actions.length
+        ? normalized.actions
+        : [normalized.action]
+      const actions = rawActions.map(item => {
+        if (typeof item === 'string') {
+          return structuredClone(legacyActions.get(item) ?? { actionName: item, payload: {} })
+        }
+        return canonicalAction(item)
+      }).filter(item => item?.actionName)
+      if (actions.length) {
+        normalized.actions = actions
+        normalized.action = actions[0]
+      } else if (typeof normalized.action === 'string') {
         normalized.action = structuredClone(legacyActions.get(normalized.action) ?? {
           actionName: normalized.action,
           payload: {},
@@ -158,6 +170,13 @@ export function emptyWorkflowUpdateValue(dataType) {
   if (dataType === 'BOOLEAN') return false
   if (dataType === 'STRING') return ''
   return null
+}
+
+export function workflowTriggerActions(trigger) {
+  if (Array.isArray(trigger?.actions) && trigger.actions.length) {
+    return trigger.actions.filter(item => item && typeof item === 'object')
+  }
+  return trigger?.action && typeof trigger.action === 'object' ? [trigger.action] : []
 }
 
 export function workflowTriggerConditions(condition) {
@@ -281,7 +300,9 @@ export function createWorkflowInterfaceDefinition(node, direction, name) {
   if (!['IN', 'OUT'].includes(direction)) throw new Error('接口方向只允许IN或OUT')
   const bindingTriggers = node?.nodeType === 'FUNC_NODE' && node?.functionType === 'AGGREGATE' && direction === 'IN'
     ? [aggregateCounterTrigger(name)]
-    : []
+    : direction === 'OUT' && node?.nodeType === 'FUNC_NODE' && ['BRANCH', 'AGGREGATE'].includes(node.functionType)
+      ? [defaultRoutingOutTrigger(node, name)]
+      : []
   return {
     name,
     direction,
@@ -294,6 +315,25 @@ export function createWorkflowInterfaceDefinition(node, direction, name) {
 export function defaultWorkflowInterfaceDirection(node) {
   if (node?.nodeType !== 'FUNC_NODE') return 'OUT'
   return ['END', 'AGGREGATE'].includes(node.functionType) ? 'IN' : 'OUT'
+}
+
+export function defaultRoutingOutTrigger(node, interfaceName) {
+  const emit = {
+    actionName: 'EMIT',
+    payload: { targetInterfaceName: interfaceName, signalName: 'ACTIVE' },
+  }
+  const succeed = {
+    actionName: 'UPDATE',
+    payload: { updateType: 'NODE_LIFECYCLE', targetName: 'SUCCEEDED' },
+  }
+  const running = { object: 'nodeLifecycleState', operator: '=', threshold: 'RUNNING' }
+  const condition = node?.functionType === 'AGGREGATE'
+    ? { logic: 'AND', conditions: [
+      { object: 'aggregateCount', operator: '>=', threshold: 1 },
+      running,
+    ] }
+    : running
+  return { condition, action: succeed, actions: [succeed, emit] }
 }
 
 function aggregateCounterTrigger(interfaceName) {
@@ -313,11 +353,56 @@ function aggregateCounterTrigger(interfaceName) {
 }
 
 function isAggregateCounterTrigger(trigger) {
-  const payload = trigger?.action?.payload
   return trigger?.condition?.object === 'signalName' && trigger?.condition?.operator === '=' &&
-    trigger?.condition?.threshold === 'ACTIVE' && trigger?.action?.actionName === 'UPDATE' &&
-    payload?.updateType === 'INTERNAL_VARIABLE' && payload?.targetName === 'aggregateCount' &&
-    String(payload?.valueExpression || '').replace(/\s+/g, '') === 'aggregateCount+1'
+    trigger?.condition?.threshold === 'ACTIVE' && workflowTriggerActions(trigger).some(action => {
+      const payload = action?.payload
+      return action?.actionName === 'UPDATE' && payload?.updateType === 'INTERNAL_VARIABLE'
+        && payload?.targetName === 'aggregateCount'
+        && String(payload?.valueExpression || '').replace(/\s+/g, '') === 'aggregateCount+1'
+    })
+}
+
+function rewriteEmitHost(action, interfaceName) {
+  if (!action || action.actionName !== 'EMIT') return action
+  return { ...action, payload: { ...action.payload, targetInterfaceName: interfaceName } }
+}
+
+function rewriteInterfaceBoundTrigger(trigger, oldName, newName) {
+  const next = { ...trigger }
+  if (typeof next._systemKey === 'string' && next._systemKey.endsWith(`.${oldName}`)) {
+    next._systemKey = `${next._systemKey.slice(0, -oldName.length)}${newName}`
+  }
+  if (next.action) next.action = rewriteEmitHost(next.action, newName)
+  if (Array.isArray(next.actions)) next.actions = next.actions.map(action => rewriteEmitHost(action, newName))
+  return next
+}
+
+function renameInterfaceEndpoint(endpoint, nodeName, oldName, newName) {
+  if (!endpoint || endpoint.nodeName !== nodeName || endpoint.interfaceName !== oldName) return endpoint
+  return { ...endpoint, interfaceName: newName }
+}
+
+export function renameWorkflowInterface(node, oldName, newName, interfaceConnections = []) {
+  const target = (node?.interfaces ?? []).find(item => item.name === oldName)
+  if (!target || isSystemItem(target) || newName === oldName) {
+    return { node, interfaceConnections }
+  }
+  const nextInterface = {
+    ...target,
+    name: newName,
+    bindingTriggers: (target.bindingTriggers ?? []).map(trigger => rewriteInterfaceBoundTrigger(trigger, oldName, newName)),
+  }
+  return {
+    node: {
+      ...node,
+      interfaces: (node.interfaces ?? []).map(item => item.name === oldName ? nextInterface : item),
+    },
+    interfaceConnections: (interfaceConnections ?? []).map(connection => ({
+      ...connection,
+      source: renameInterfaceEndpoint(connection.source, node.name, oldName, newName),
+      target: renameInterfaceEndpoint(connection.target, node.name, oldName, newName),
+    })),
+  }
 }
 
 export function changeWorkflowInterfaceDirection(node, interfaceName, direction, interfaceConnections = []) {
@@ -340,10 +425,10 @@ export function changeWorkflowInterfaceDirection(node, interfaceName, direction,
     !(connection.target?.nodeName === node.name && connection.target?.interfaceName === interfaceName))
   const currentTriggers = target.bindingTriggers ?? []
   const removedTriggerCount = direction === 'IN'
-    ? currentTriggers.filter(trigger => trigger?.action?.actionName === 'EMIT').length
+    ? currentTriggers.filter(trigger => workflowTriggerActions(trigger).some(action => action?.actionName === 'EMIT')).length
     : currentTriggers.filter(isAggregateCounterTrigger).length
   let nextTriggers = direction === 'IN'
-    ? currentTriggers.filter(trigger => trigger?.action?.actionName !== 'EMIT')
+    ? currentTriggers.filter(trigger => workflowTriggerActions(trigger).every(action => action?.actionName !== 'EMIT'))
     : currentTriggers.filter(trigger => !isAggregateCounterTrigger(trigger))
 
   if (direction === 'IN' && node?.nodeType === 'FUNC_NODE' && node?.functionType === 'AGGREGATE') {
@@ -487,7 +572,19 @@ function validatePorts(node, errors) {
 
 function validateActions() {}
 function validateTriggers(node, errors) {
+  validateInterfaceTriggerPresence(node, errors)
   validateInlineTriggers(node, errors)
+}
+
+function validateInterfaceTriggerPresence(node, errors) {
+  ;(node.interfaces ?? []).forEach((item, index) => {
+    if (!Array.isArray(item.bindingTriggers) || item.bindingTriggers.length === 0) {
+      errors.push({
+        path: `interfaces[${index}].bindingTriggers`,
+        message: `接口${item.name}必须配置触发器`,
+      })
+    }
+  })
 }
 
 function validateInlineTriggers(node, errors) {
@@ -498,19 +595,28 @@ function validateInlineTriggers(node, errors) {
   ;(node.interfaces ?? []).forEach((item, interfaceIndex) => (item.bindingTriggers ?? []).forEach((trigger, triggerIndex) => {
     const path = `interfaces[${interfaceIndex}].bindingTriggers[${triggerIndex}]`
     validateTriggerCondition(trigger.condition, `${path}.condition`, errors)
-    const action = trigger.action
-    const actionName = action?.actionName
-    const payload = action?.payload
-    if (!action || typeof action !== 'object' || !payload || typeof payload !== 'object') {
-      errors.push({ path: `${path}.action`, message: '触发器action必须是内联对象' })
+    const actions = workflowTriggerActions(trigger)
+    if (!actions.length) {
+      errors.push({ path: `${path}.action`, message: '触发器必须配置action或非空actions' })
       return
     }
-    if (!actionNames.has(actionName)) {
-      errors.push({ path: `${path}.action.actionName`, message: `动作能力${actionName || ''}未在actions中声明` })
-      return
-    }
-    if (actionName === 'EMIT') validateEmitPayload(path, payload, interfaces, item, errors)
-    if (actionName === 'UPDATE') validateUpdatePayload(path, payload, variables, lifecycleStates, errors)
+    actions.forEach((action, actionIndex) => {
+      const actionPath = actions.length > 1 || Array.isArray(trigger.actions)
+        ? `${path}.actions[${actionIndex}]`
+        : `${path}.action`
+      const actionName = action?.actionName
+      const payload = action?.payload
+      if (!action || typeof action !== 'object' || !payload || typeof payload !== 'object') {
+        errors.push({ path: actionPath, message: '触发器action必须是内联对象' })
+        return
+      }
+      if (!actionNames.has(actionName)) {
+        errors.push({ path: `${actionPath}.actionName`, message: `动作能力${actionName || ''}未在actions中声明` })
+        return
+      }
+      if (actionName === 'EMIT') validateEmitPayload(actionPath, payload, interfaces, item, errors)
+      if (actionName === 'UPDATE') validateUpdatePayload(actionPath, payload, variables, lifecycleStates, errors)
+    })
   }))
 }
 
@@ -534,34 +640,34 @@ function validateTriggerCondition(condition, path, errors) {
 
 function validateEmitPayload(path, payload, interfaces, hostInterface, errors) {
   const target = interfaces.get(payload.targetInterfaceName)
-  if (payload.targetInterfaceName !== hostInterface.name) errors.push({ path: `${path}.action.payload.targetInterfaceName`, message: `EMIT目标必须是触发器所在接口${hostInterface.name}` })
-  else if (!target) errors.push({ path: `${path}.action.payload.targetInterfaceName`, message: `EMIT目标接口${payload.targetInterfaceName || ''}不存在` })
-  else if (target.direction !== 'OUT') errors.push({ path: `${path}.action.payload.targetInterfaceName`, message: `EMIT目标接口${payload.targetInterfaceName}必须是OUT接口` })
-  else if (!target.allowedSignals?.includes(payload.signalName)) errors.push({ path: `${path}.action.payload.signalName`, message: `信号${payload.signalName || ''}不在接口allowedSignals中` })
+  if (payload.targetInterfaceName !== hostInterface.name) errors.push({ path: `${path}.payload.targetInterfaceName`, message: `EMIT目标必须是触发器所在接口${hostInterface.name}` })
+  else if (!target) errors.push({ path: `${path}.payload.targetInterfaceName`, message: `EMIT目标接口${payload.targetInterfaceName || ''}不存在` })
+  else if (target.direction !== 'OUT') errors.push({ path: `${path}.payload.targetInterfaceName`, message: `EMIT目标接口${payload.targetInterfaceName}必须是OUT接口` })
+  else if (!target.allowedSignals?.includes(payload.signalName)) errors.push({ path: `${path}.payload.signalName`, message: `信号${payload.signalName || ''}不在接口allowedSignals中` })
 }
 
 function validateUpdatePayload(path, payload, variables, lifecycleStates, errors) {
   if (payload.updateType === 'NODE_LIFECYCLE') {
     if (!lifecycleStates.has(payload.targetName)) {
-      errors.push({ path: `${path}.action.payload.targetName`, message: `生命周期状态${payload.targetName || ''}不存在` })
+      errors.push({ path: `${path}.payload.targetName`, message: `生命周期状态${payload.targetName || ''}不存在` })
     }
     if (Object.hasOwn(payload, 'value') || Object.hasOwn(payload, 'valueExpression')) {
-      errors.push({ path: `${path}.action.payload`, message: '生命周期UPDATE不能包含value或valueExpression' })
+      errors.push({ path: `${path}.payload`, message: '生命周期UPDATE不能包含value或valueExpression' })
     }
     return
   }
   if (payload.updateType !== 'INTERNAL_VARIABLE') {
-    errors.push({ path: `${path}.action.payload.updateType`, message: 'updateType只允许INTERNAL_VARIABLE或NODE_LIFECYCLE' })
+    errors.push({ path: `${path}.payload.updateType`, message: 'updateType只允许INTERNAL_VARIABLE或NODE_LIFECYCLE' })
     return
   }
   const variable = variables.get(payload.targetName)
-  if (!variable) errors.push({ path: `${path}.action.payload.targetName`, message: `内部变量${payload.targetName || ''}不存在` })
+  if (!variable) errors.push({ path: `${path}.payload.targetName`, message: `内部变量${payload.targetName || ''}不存在` })
   const hasValue = Object.hasOwn(payload, 'value')
   const hasExpression = typeof payload.valueExpression === 'string' && payload.valueExpression.trim() !== ''
   if (hasValue === hasExpression) {
-    errors.push({ path: `${path}.action.payload`, message: 'INTERNAL_VARIABLE UPDATE必须且只能设置value或valueExpression之一' })
+    errors.push({ path: `${path}.payload`, message: 'INTERNAL_VARIABLE UPDATE必须且只能设置value或valueExpression之一' })
   } else if (hasValue && variable && !matchesInternalValue(payload.value, variable.dataType)) {
-    errors.push({ path: `${path}.action.payload.value`, message: `常量类型与内部变量${payload.targetName}不一致` })
+    errors.push({ path: `${path}.payload.value`, message: `常量类型与内部变量${payload.targetName}不一致` })
   }
 }
 

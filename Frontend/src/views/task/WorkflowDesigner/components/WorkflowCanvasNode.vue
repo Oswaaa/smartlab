@@ -1,11 +1,12 @@
 <template>
-  <div class="canvas-node" :class="[{ selected, warning: issues.length }, meta.className]" :style="nodeDimensions">
+  <div class="canvas-node" :class="[{ selected, warning: issues.length, compact: isCompact }, meta.className]" :style="nodeDimensions">
     <div class="handle-layer input-interfaces">
       <el-tooltip
         v-for="(item, index) in controlInputs"
         :key="item.name"
         :content="workflowInterfaceTooltip(item)"
         placement="left"
+        :disabled="hidePortTooltips"
         :show-after="220"
         :teleported="true"
       >
@@ -23,30 +24,45 @@
       <el-tooltip
         v-for="(item, index) in outputPorts"
         :key="item.name"
-        :content="workflowPortTooltip(item, node || {})"
-        placement="top"
+        :content="workflowPortTooltip(item)"
+        placement="bottom"
+        :disabled="hidePortTooltips"
         :show-after="220"
         :teleported="true"
       >
         <div
           class="connector-hit-area horizontal-connector"
           :style="horizontalHandleStyle(index, outputPorts.length)"
-          :aria-label="workflowPortTooltip(item, node || {})"
+          :aria-label="workflowPortTooltip(item)"
         >
-          <Handle :id="portHandleId(item.name)" type="source" :position="Position.Top" class="workflow-handle port-handle" />
+          <Handle :id="portHandleId(item.name)" type="source" :position="Position.Bottom" class="workflow-handle port-handle" />
         </div>
       </el-tooltip>
     </div>
 
     <div class="node-main">
-      <div class="node-topline">
-        <span class="node-type-dot"></span>
-        <span class="node-kind">{{ meta.label }}</span>
+      <header class="node-header">
+        <span class="node-chip" v-html="meta.icon"></span>
+        <div class="node-title">
+          <strong class="node-name" :title="node?.name">{{ node?.name || '未命名节点' }}</strong>
+          <small class="node-kind">{{ meta.label }}</small>
+        </div>
         <span v-if="issues.length" class="warning-dot" :title="issues[0]?.message || '节点配置未完成'">!</span>
+      </header>
+      <div v-if="isBranch" class="node-body rows">
+        <div v-for="item in controlOutputs" :key="item.name" class="out-row">
+          <b :title="outputRowText(item)">{{ outputRowText(item) }}</b>
+        </div>
+        <div v-if="!controlOutputs.length" class="out-row muted"><b>未配置输出接口</b></div>
       </div>
-      <div class="node-body">
-        <strong class="node-name" :title="node?.name">{{ node?.name || '未命名节点' }}</strong>
-        <span class="node-summary" :title="summary">{{ summary }}</span>
+      <div v-else-if="!isCompact" class="node-body">
+        <div class="node-op">
+          <label>操作</label>
+          <span :title="operationTitle">{{ operationTitle }}</span>
+        </div>
+        <div v-if="paramChips.length" class="node-params">
+          <span v-for="chip in paramChips" :key="chip" class="kv">{{ chip }}</span>
+        </div>
       </div>
     </div>
 
@@ -56,12 +72,13 @@
         :key="item.name"
         :content="workflowInterfaceTooltip(item)"
         placement="right"
+        :disabled="hidePortTooltips"
         :show-after="220"
         :teleported="true"
       >
         <div
           class="connector-hit-area side-connector"
-          :style="sideHandleStyle(index, controlOutputs.length)"
+          :style="outputHandleStyle(index)"
           :aria-label="workflowInterfaceTooltip(item)"
         >
           <Handle :id="interfaceHandleId(item.name)" type="source" :position="Position.Right" class="workflow-handle interface-handle" />
@@ -73,20 +90,34 @@
       <el-tooltip
         v-for="(item, index) in inputPorts"
         :key="item.name"
-        :content="workflowPortTooltip(item, node || {})"
-        placement="bottom"
+        :content="workflowPortTooltip(item)"
+        placement="top"
+        :disabled="hidePortTooltips"
         :show-after="220"
         :teleported="true"
       >
         <div
           class="connector-hit-area horizontal-connector"
           :style="horizontalHandleStyle(index, inputPorts.length)"
-          :aria-label="workflowPortTooltip(item, node || {})"
+          :aria-label="workflowPortTooltip(item)"
         >
-          <Handle :id="portHandleId(item.name)" type="target" :position="Position.Bottom" class="workflow-handle port-handle" />
+          <Handle :id="portHandleId(item.name)" type="target" :position="Position.Top" class="workflow-handle port-handle" />
         </div>
       </el-tooltip>
     </div>
+
+    <span
+      v-for="(item, index) in inputPorts"
+      :key="`in-label-${item.name}`"
+      class="port-label top"
+      :style="portLabelStyle(index, inputPorts.length)"
+    >{{ item.name }}</span>
+    <span
+      v-for="(item, index) in outputPorts"
+      :key="`out-label-${item.name}`"
+      class="port-label bottom"
+      :style="portLabelStyle(index, outputPorts.length)"
+    >{{ item.name }}</span>
   </div>
 </template>
 
@@ -97,12 +128,35 @@ import {
   interfaceHandleId,
   portHandleId,
   workflowCanvasNodeSize,
+  workflowDeviceCapabilityPresentation,
   workflowInterfaceTooltip,
   workflowPortTooltip,
+  formatWorkflowTriggerText,
 } from '../../../../utils/workflowCanvas.js'
 
+const NODE_ICONS: Record<string, string> = {
+  start: '<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z" fill="currentColor"/></svg>',
+  end: '<svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="2" fill="currentColor"/></svg>',
+  branch: '<svg viewBox="0 0 24 24"><rect x="7" y="7" width="10" height="10" rx="1.5" transform="rotate(45 12 12)" fill="none" stroke="currentColor" stroke-width="1.8"/></svg>',
+  device: '<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="10" y="10" width="4" height="4" fill="currentColor"/></svg>',
+  aggregate: '<svg viewBox="0 0 24 24"><path d="M4 7h6M4 17h6M14 12h6" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M10 7l6 5-6 5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+  subflow: '<svg viewBox="0 0 24 24"><rect x="4" y="4" width="10" height="10" rx="2" fill="none" stroke="currentColor" stroke-width="1.8"/><rect x="10" y="10" width="10" height="10" rx="2" fill="currentColor" opacity=".45"/></svg>',
+}
+
 type Item = Record<string, any>
-const props = withDefaults(defineProps<{ node?: Item | null, selected?: boolean, issues?: Item[] }>(), { node: null, selected: false, issues: () => [] })
+const props = withDefaults(defineProps<{
+  node?: Item | null
+  selected?: boolean
+  issues?: Item[]
+  deviceCapabilities?: Item[]
+  hidePortTooltips?: boolean
+}>(), {
+  node: null,
+  selected: false,
+  issues: () => [],
+  deviceCapabilities: () => [],
+  hidePortTooltips: false,
+})
 const workflowInterfaces = computed(() => (props.node?.interfaces || []).filter((item: Item) => item.interfaceType === 'WORKFLOW'))
 const controlInputs = computed(() => workflowInterfaces.value.filter((item: Item) => item.direction === 'IN'))
 const controlOutputs = computed(() => workflowInterfaces.value.filter((item: Item) => item.direction === 'OUT'))
@@ -110,45 +164,100 @@ const inputPorts = computed(() => (props.node?.ports || []).filter((item: Item) 
 const outputPorts = computed(() => (props.node?.ports || []).filter((item: Item) => item.direction === 'OUT'))
 const canvasSize = computed(() => workflowCanvasNodeSize(props.node || {}))
 const nodeDimensions = computed(() => ({ width: `${canvasSize.value.width}px`, height: `${canvasSize.value.height}px` }))
+const isCompact = computed(() => props.node?.functionType === 'START' || props.node?.functionType === 'END')
+const isBranch = computed(() => props.node?.functionType === 'BRANCH')
 const meta = computed(() => {
-  if (props.node?.nodeType === 'DEV_NODE') return { className: 'device', label: '设备能力' }
-  if (props.node?.nodeType === 'SUBFLOW_NODE') return { className: 'subflow', label: '子流程' }
-  if (props.node?.functionType === 'START') return { className: 'start', label: '开始节点' }
-  if (props.node?.functionType === 'END') return { className: 'end', label: '结束节点' }
-  if (props.node?.functionType === 'BRANCH') return { className: 'branch', label: '分支节点' }
-  return { className: 'aggregate', label: '汇聚节点' }
+  if (props.node?.nodeType === 'DEV_NODE') return { className: 'device', label: '设备能力', icon: NODE_ICONS.device }
+  if (props.node?.nodeType === 'SUBFLOW_NODE') return { className: 'subflow', label: '子流程', icon: NODE_ICONS.subflow }
+  if (props.node?.functionType === 'START') return { className: 'start', label: '开始节点', icon: NODE_ICONS.start }
+  if (props.node?.functionType === 'END') return { className: 'end', label: '结束节点', icon: NODE_ICONS.end }
+  if (props.node?.functionType === 'BRANCH') return { className: 'branch', label: '分支节点', icon: NODE_ICONS.branch }
+  return { className: 'aggregate', label: '汇聚节点', icon: NODE_ICONS.aggregate }
 })
-const capabilityDisplayName = computed(() => (
-  props.node?.capability?.displayName
-  || props.node?.capability?.capabilityDisplayName
-  || props.node?.capability?.capabilityName
-  || '未选择能力'
-))
-const parameterCount = computed(() => Object.keys(props.node?.capability?.capabilityParameters || {}).length)
-const summary = computed(() => {
-  if (props.node?.nodeType === 'DEV_NODE') return `${capabilityDisplayName.value} · ${parameterCount.value} 个参数`
+const capabilityCopy = computed(() => workflowDeviceCapabilityPresentation(props.node, props.deviceCapabilities))
+const operationTitle = computed(() => {
+  if (props.node?.nodeType === 'DEV_NODE') return capabilityCopy.value.title
   if (props.node?.nodeType === 'SUBFLOW_NODE') return props.node.subFlowModelDescription || `流程模型 ${props.node.subFlowModelId || '-'}`
   if (props.node?.functionType === 'BRANCH') return props.node.expression || '按控制接口判断下游路径'
   if (props.node?.functionType === 'START') return '启动流程执行'
   if (props.node?.functionType === 'END') return '结束流程执行'
   return '汇聚上游执行结果'
 })
+const operationDetail = computed(() => props.node?.nodeType === 'DEV_NODE' ? capabilityCopy.value.detail : '')
+const paramChips = computed(() => (operationDetail.value || '').split('、').map(item => item.trim()).filter(Boolean))
+
+function outputRowText(item: Item) {
+  return formatWorkflowTriggerText(item) || '未配置触发条件'
+}
 
 function sideHandleStyle(index: number, total: number) {
+  if (isCompact.value) {
+    const center = canvasSize.value.height / 2
+    if (total <= 1) return { top: `${Math.round(center)}px` }
+    const spread = Math.min(24 * (total - 1), canvasSize.value.height - 16)
+    const start = center - spread / 2
+    return { top: `${Math.round(start + spread * index / (total - 1))}px` }
+  }
   const available = Math.max(24, canvasSize.value.height - 52)
   return { top: `${Math.round(26 + available * (index + 1) / (total + 1))}px` }
+}
+
+function outputHandleStyle(index: number) {
+  if (isBranch.value) return { top: `${65 + 30 * index}px` }
+  return sideHandleStyle(index, controlOutputs.value.length)
 }
 
 function horizontalHandleStyle(index: number, total: number) {
   return { left: `${Math.round((index + 1) * 100 / (total + 1))}%` }
 }
+
+function portLabelStyle(index: number, total: number) {
+  return { left: `calc(${Math.round((index + 1) * 100 / (total + 1))}% + 10px)` }
+}
 </script>
 
 <style scoped>
-.canvas-node{position:relative;width:220px;min-height:92px;display:flex;border:1px solid #b9c6d7;border-radius:6px;background:#fff;box-shadow:0 2px 8px rgba(30,55,80,.08);overflow:visible;transition:border-color .16s ease,box-shadow .16s ease,transform .16s ease;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",Arial,sans-serif}
-.canvas-node:before{content:'';position:absolute;left:-1px;top:8px;bottom:8px;width:3px;border-radius:0 2px 2px 0;background:#1677ff}.canvas-node.start:before{background:#52a56b}.canvas-node.end:before{background:#7d8794}.canvas-node.branch:before{background:#d99a26}.canvas-node.aggregate:before{background:#7367c7}.canvas-node.subflow:before{background:#2b9ea1}
-.canvas-node:hover{border-color:#6da5e8;box-shadow:0 5px 14px rgba(48,93,142,.14);transform:translateY(-1px)}.canvas-node.selected{border-color:#1677ff;box-shadow:0 0 0 2px rgba(22,119,255,.16),0 5px 14px rgba(48,93,142,.12)}.canvas-node.warning{border-color:#dc9f32}
-.node-main{min-width:0;display:flex;flex:1;flex-direction:column;justify-content:center;padding:14px 20px}.node-topline{display:flex;align-items:center;gap:6px;min-width:0}.node-type-dot{width:7px;height:7px;flex:none;border-radius:50%;background:#1677ff}.start .node-type-dot{background:#52a56b}.end .node-type-dot{background:#7d8794}.branch .node-type-dot{background:#d99a26}.aggregate .node-type-dot{background:#7367c7}.subflow .node-type-dot{background:#2b9ea1}.node-kind{color:#7d8998;font-size:11px;font-weight:500}.warning-dot{width:15px;height:15px;display:grid;place-items:center;flex:none;margin-left:auto;border-radius:50%;background:#fff2cf;color:#9b6508;font-size:10px;font-weight:600}.node-body{display:grid;gap:4px;min-width:0;margin-top:7px}.node-name,.node-summary{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.node-name{color:#1f2d3d;font-size:13px;font-weight:600}.node-summary{color:#8190a2;font-size:10px}
-.handle-layer{position:absolute;inset:0;pointer-events:none}.connector-hit-area{position:absolute;z-index:4;width:22px;height:22px;display:block;pointer-events:auto;cursor:crosshair}.side-connector{transform:translateY(-50%)}.horizontal-connector{transform:translateX(-50%)}.input-interfaces .connector-hit-area{left:-11px}.output-interfaces .connector-hit-area{right:-11px}.output-ports .connector-hit-area{top:-11px}.input-ports .connector-hit-area{bottom:-11px}
-.workflow-handle{left:50%!important;right:auto!important;top:50%!important;bottom:auto!important;width:10px!important;height:10px!important;margin:0!important;transform:translate(-50%,-50%)!important;border:2px solid #fff!important;background:#407fbd!important;box-shadow:0 0 0 1px #407fbd;pointer-events:auto;transition:width .14s ease,height .14s ease,box-shadow .14s ease}.connector-hit-area:hover .workflow-handle{width:12px!important;height:12px!important;box-shadow:0 0 0 2px rgba(64,127,189,.2),0 0 0 1px #407fbd}.interface-handle{border-radius:50%!important}.port-handle{border-radius:2px!important;background:#7367c7!important;box-shadow:0 0 0 1px #7367c7}.connector-hit-area:hover .port-handle{box-shadow:0 0 0 2px rgba(115,103,199,.2),0 0 0 1px #7367c7}
+.canvas-node{position:relative;width:220px;min-height:44px;display:flex;border:1px solid var(--sl-border-base,#e4e7ed);border-radius:10px;background:#fff;box-shadow:var(--sl-shadow-sm);overflow:visible;transition:border-color .15s ease,box-shadow .15s ease,transform .15s ease;font-family:var(--sl-font-family)}
+.canvas-node:hover{border-color:#c4cad3;box-shadow:0 2px 4px rgba(16,24,40,.06),0 12px 28px -8px rgba(16,24,40,.14);transform:translateY(-1px)}
+.canvas-node.selected{border-color:var(--sl-primary,#2563eb);box-shadow:0 0 0 3px rgba(37,99,235,.14),var(--sl-shadow-sm)}
+.canvas-node.selected:hover{border-color:var(--sl-primary,#2563eb)}
+.canvas-node.warning{border-color:#e8c47f}
+.node-main{min-width:0;display:flex;flex:1;flex-direction:column}
+.node-header{display:flex;align-items:center;gap:8px;padding:10px 12px 8px}
+.compact .node-header{padding:9px 12px}
+.node-chip{flex:none;display:grid;place-items:center;width:26px;height:26px;border-radius:7px}
+.compact .node-chip{width:22px;height:22px;border-radius:6px}
+.node-chip :deep(svg){width:14px;height:14px;display:block}
+.canvas-node.start .node-chip{background:#eaf7f0;color:#1e9e62}
+.canvas-node.device .node-chip{background:#edf3fe;color:#2563eb}
+.canvas-node.branch .node-chip{background:#fdf4e3;color:#c77414}
+.canvas-node.end .node-chip{background:#f1f2f4;color:#6b7280}
+.canvas-node.aggregate .node-chip{background:#f5f3ff;color:#6d28d9}
+.canvas-node.subflow .node-chip{background:#f0fdfa;color:#0f766e}
+.node-title{min-width:0;flex:1}
+.node-name{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--sl-text-heading,#1f2329);font-size:13px;font-weight:600;line-height:1.25}
+.compact .node-name{font-size:12.5px}
+.node-kind{display:block;color:var(--sl-text-secondary,#8f959e);font-size:10.5px}
+.warning-dot{width:16px;height:16px;display:grid;place-items:center;flex:none;border-radius:50%;background:var(--sl-warning-light,#fffbeb);color:var(--sl-warning,#d97706);font-size:10px;font-weight:600}
+.node-body{flex:1;display:flex;flex-direction:column;padding:4px 12px 18px;border-top:1px solid var(--sl-border-light,#f0f1f4)}
+.node-body:not(.rows){align-items:center;justify-content:flex-start;text-align:center}
+.node-op{display:flex;align-items:baseline;justify-content:center;gap:8px;min-width:0;max-width:100%}
+.node-op label{flex:none;color:#a9aeb8;font-size:10px}
+.node-op span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--sl-text-heading,#1f2329);font-size:12.5px;font-weight:650}
+.node-params{display:flex;flex-wrap:wrap;justify-content:center;gap:4px;margin-top:4px;max-height:24px;overflow:hidden}
+.kv{padding:2px 6px;border:1px solid #e9ebef;border-radius:4px;background:#f5f6f8;color:#5b6470;font-size:10.5px;white-space:nowrap}
+.node-body.rows{padding:6px 0}
+.out-row{display:flex;align-items:center;gap:6px;height:30px;padding:0 12px}
+.out-row+.out-row{border-top:1px solid var(--sl-border-light,#f0f1f4)}
+.out-row b{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#4e5969;font-size:11px;font-weight:600}
+.out-row.muted b{color:#a9aeb8;font-weight:500}
+.port-label{position:absolute;z-index:4;color:#a9aeb8;font-size:9px;font-family:Consolas,"JetBrains Mono",monospace;white-space:nowrap;pointer-events:none}
+.port-label.top{top:-15px}
+.port-label.bottom{top:calc(100% + 4px)}
+.handle-layer{position:absolute;inset:0;pointer-events:none}.connector-hit-area{position:absolute;z-index:4;width:22px;height:22px;display:block;pointer-events:auto;cursor:crosshair}.side-connector{transform:translateY(-50%)}.horizontal-connector{transform:translateX(-50%)}.input-interfaces .connector-hit-area{left:-11px}.output-interfaces .connector-hit-area{right:-11px}.output-ports .connector-hit-area{bottom:-11px}.input-ports .connector-hit-area{top:-11px}
+.workflow-handle{left:50%!important;right:auto!important;top:50%!important;bottom:auto!important;width:10px!important;height:10px!important;margin:0!important;transform:translate(-50%,-50%)!important;border:2px solid #9aa5b1!important;background:#fff!important;box-shadow:none;pointer-events:auto;transition:width .14s ease,height .14s ease,border-color .14s ease,box-shadow .14s ease}
+.connector-hit-area:hover .workflow-handle{width:12px!important;height:12px!important;border-color:var(--sl-primary,#2563eb)!important;box-shadow:0 0 0 3px rgba(37,99,235,.18)}
+.canvas-node.selected .workflow-handle{border-color:var(--sl-primary,#2563eb)!important}
+.interface-handle{border-radius:50%!important}
+.port-handle{border-radius:2px!important}
 </style>

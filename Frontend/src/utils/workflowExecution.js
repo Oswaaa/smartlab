@@ -51,8 +51,33 @@ function stepNodeName(step) {
   return step?.nodeName ?? step?.flowNodeName ?? step?.node?.name ?? null
 }
 
-function definitionIdRef(node) {
-  return node?.nodeIdRef ?? node?.idRef ?? node?.flowNodeId ?? null
+function nodeIdRefsByName(workflow) {
+  const map = new Map()
+  const refs = workflow?.nodeIdRefs
+  const list = Array.isArray(refs) ? refs : []
+  for (const item of list) {
+    if (item?.nodeName == null || item?.nodeIdRef == null) continue
+    map.set(String(item.nodeName), String(item.nodeIdRef))
+  }
+  return map
+}
+
+function definitionIdRef(node, refsByName) {
+  const direct = node?.nodeIdRef ?? node?.idRef ?? node?.flowNodeId
+  if (direct != null && String(direct) !== '') return String(direct)
+  return refsByName.get(String(node?.name || '')) ?? null
+}
+
+export function workflowNodeNameByIdRef(workflow, nodeIdRef) {
+  if (nodeIdRef == null || workflow == null) return null
+  const key = String(nodeIdRef)
+  const refs = Array.isArray(workflow.nodeIdRefs) ? workflow.nodeIdRefs : []
+  for (const item of refs) {
+    if (String(item?.nodeIdRef) === key && item?.nodeName) return item.nodeName
+  }
+  const nodes = workflow.nodesDef || workflow.nodes || []
+  const matched = nodes.find(node => String(node?.nodeIdRef ?? node?.idRef ?? '') === key)
+  return matched?.name || null
 }
 
 function latestStep(steps) {
@@ -66,11 +91,16 @@ export function buildRuntimeGraph(workflow, steps) {
   const treeById = new Map()
   const indexTree = (items) => items.forEach(item => { treeById.set(item.id, item); indexTree(item.children || []) })
   indexTree(stepTree)
+  const refsByName = nodeIdRefsByName(workflow)
 
   const nodes = definitions.map((definition, index) => {
     const name = definition?.name ?? `node-${index + 1}`
-    const idRef = definitionIdRef(definition)
-    const matches = allSteps.filter(step => stepNodeName(step) === name || (idRef != null && step?.nodeIdRef != null && String(step.nodeIdRef) === String(idRef)))
+    const idRef = definitionIdRef(definition, refsByName) ?? String(index + 1)
+    const matches = allSteps.filter(step => {
+      const stepName = stepNodeName(step)
+      if (stepName && stepName === name) return true
+      return idRef != null && step?.nodeIdRef != null && String(step.nodeIdRef) === String(idRef)
+    })
     const step = latestStep(matches)
     return {
       ...definition,

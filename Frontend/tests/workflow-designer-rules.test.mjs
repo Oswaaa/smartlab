@@ -10,8 +10,13 @@ import {
   workflowExpressionDisplayTokens,
   workflowExpressionMentions,
   workflowNodeConnectionIssues,
+  workflowUnconnectedPortIssues,
   workflowTemporalFunctions,
+  workflowCopyName,
   workflowLibraryGroups,
+  workflowStatusLabel,
+  workflowSuccessorConflict,
+  workflowVersionLabel,
 } from '../src/utils/workflowDesignerRules.js'
 
 test('workflow library allows dragging another workflow only while editing', () => {
@@ -30,6 +35,44 @@ test('workflow library groups active and draft models without changing records',
     { key: 'active', label: '已启用流程', children: [active] },
     { key: 'draft', label: '草稿流程', children: [draft] },
   ])
+})
+
+test('workflow library groups always keep both empty sections', () => {
+  assert.deepEqual(workflowLibraryGroups([]), [
+    { key: 'active', label: '已启用流程', children: [] },
+    { key: 'draft', label: '草稿流程', children: [] },
+  ])
+})
+
+test('workflow library item badges use stored version and status', () => {
+  assert.equal(workflowVersionLabel({ version: 2 }), 'v2')
+  assert.equal(workflowVersionLabel({}), 'v1')
+  assert.equal(workflowStatusLabel('ACTIVE'), '已启用')
+  assert.equal(workflowStatusLabel('DRAFT'), '草稿')
+})
+
+test('copy name starts a new lineage label and increments copies', () => {
+  assert.equal(workflowCopyName('恒温反应'), '恒温反应（副本）')
+  assert.equal(workflowCopyName('恒温反应（副本）'), '恒温反应（副本 2）')
+  assert.equal(workflowCopyName('恒温反应（副本 2）'), '恒温反应（副本 3）')
+  assert.equal(workflowCopyName('  '), '未命名流程（副本）')
+  assert.equal(workflowCopyName('A'.repeat(80)).length, 80)
+  assert.ok(workflowCopyName('A'.repeat(80)).endsWith('（副本）'))
+})
+
+test('successor conflict payload exposes the existing follow-up version', () => {
+  assert.equal(workflowSuccessorConflict({ success: true, data: { successorId: 8 } }), null)
+  assert.deepEqual(workflowSuccessorConflict({
+    success: false,
+    message: '已有后续版本',
+    data: { successorId: 8, version: 2, status: 'DRAFT', flowModelName: '恒温反应' },
+  }), {
+    successorId: 8,
+    version: 2,
+    status: 'DRAFT',
+    flowModelName: '恒温反应',
+    message: '已有后续版本',
+  })
 })
 
 test('clear canvas preserves flow identity and removes only nodes and connections', () => {
@@ -234,4 +277,39 @@ test('reachability issues appear only after a node already has the relevant conn
   assert.ok(issues.some(issue => issue.code === 'no-end-detachedA'))
   assert.ok(!issues.some(issue => issue.code === 'unreachable-detachedA'))
   assert.ok(!issues.some(issue => issue.code === 'no-end-detachedB'))
+})
+
+test('unconnected data ports are reminders and empty port lists are not errors', () => {
+  const nodes = [
+    { name: 'start', functionType: 'START', ports: [] },
+    { name: 'heater', functionType: undefined, ports: [{ name: 'tempOut', direction: 'OUT' }, { name: 'setpointIn', direction: 'IN' }] },
+    { name: 'end', functionType: 'END', ports: [{ name: 'resultIn', direction: 'IN' }] },
+  ]
+  assert.deepEqual(workflowUnconnectedPortIssues(nodes, []), [
+    {
+      code: 'unconnected-ports-heater',
+      title: '有未连接端口',
+      detail: '数据端口 tempOut、setpointIn 尚未连接，节点仍可使用内部变量运行。',
+      nodeName: 'heater',
+      path: 'ports',
+    },
+    {
+      code: 'unconnected-ports-end',
+      title: '有未连接端口',
+      detail: '数据端口 resultIn 尚未连接，节点仍可使用内部变量运行。',
+      nodeName: 'end',
+      path: 'ports',
+    },
+  ])
+  assert.deepEqual(workflowUnconnectedPortIssues(nodes, [
+    { source: { nodeName: 'heater', portName: 'tempOut' }, target: { nodeName: 'end', portName: 'resultIn' } },
+  ]), [
+    {
+      code: 'unconnected-ports-heater',
+      title: '有未连接端口',
+      detail: '数据端口 setpointIn 尚未连接，节点仍可使用内部变量运行。',
+      nodeName: 'heater',
+      path: 'ports',
+    },
+  ])
 })

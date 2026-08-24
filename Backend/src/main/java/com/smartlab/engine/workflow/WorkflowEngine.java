@@ -3,6 +3,8 @@ package com.smartlab.engine.workflow;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.smartlab.engine.connection.InterfaceConnectionForwarder;
+import com.smartlab.engine.connection.PortConnectionPuller;
 import com.smartlab.engine.constraint.ConstraintExpressionEvaluator;
 import com.smartlab.engine.observation.ObservableKey;
 import com.smartlab.engine.observation.ObservableSnapshotReader;
@@ -35,17 +37,17 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 /** 工作流运行时按节点轮询接口触发器；设备事件只持久化输入，由下一轮统一求值。 */
 @Service
-public class WorkflowEngine {
+public class WorkflowEngine implements WorkflowTaskPollScheduler {
     private static final Logger log = LoggerFactory.getLogger(WorkflowEngine.class);
     private static final int MAX_SUB_FLOW_DEPTH = 32;
+    private static final int MAX_CONSECUTIVE_DIRTY_ROUNDS = 64;
     private static final Set<String> TERMINAL_NODE_STATES = Set.of("SUCCEEDED", "FAILED", "TERMINATED");
-    private static final Object[] TASK_LOCKS = createTaskLocks(256);
+    private static final Set<String> ACTIVE_NODE_STATES = Set.of("PENDING", "RUNNING", "TERMINATING");
 
     private final WorkflowRuntimeService runtime;
     private final WorkflowService workflowService;
@@ -56,14 +58,19 @@ public class WorkflowEngine {
     private final WorkflowExecutionOperations executionOperations;
     private final ObservableSnapshotReader observationReader;
     private final Executor workflowExecutor;
+    private final PortConnectionPuller portConnectionPuller;
+    private final InterfaceConnectionForwarder interfaceConnections;
     private final Set<Long> inFlightTaskIds = ConcurrentHashMap.newKeySet();
+    private final Set<Long> pendingTaskIds = ConcurrentHashMap.newKeySet();
+    private final ThreadLocal<Boolean> roundDirty = ThreadLocal.withInitial(() -> Boolean.FALSE);
 
     @Autowired
     public WorkflowEngine(WorkflowRuntimeService runtime, WorkflowService workflowService,
             FlowNodeService flowNodeService, WorkflowConditionEvaluator conditionEvaluator,
             ConstraintExpressionEvaluator expressionEvaluator, WorkflowActionRegistry actionRegistry,
             WorkflowExecutionOperations executionOperations, ObservableSnapshotReader observationReader,
-            @Qualifier("workflowEngineExecutor") Executor workflowExecutor) {
+            @Qualifier("workflowEngineExecutor") Executor workflowExecutor,
+            PortConnectionPuller portConnectionPuller, InterfaceConnectionForwarder interfaceConnections) {
         this.runtime = runtime;
         this.workflowService = workflowService;
         this.flowNodeService = flowNodeService;
@@ -73,6 +80,13 @@ public class WorkflowEngine {
         this.executionOperations = executionOperations;
         this.observationReader = observationReader;
         this.workflowExecutor = workflowExecutor;
+        this.portConnectionPuller = portConnectionPuller != null
+                ? portConnectionPuller
+                : new PortConnectionPuller(runtime, workflowService, flowNodeService, executionOperations);
+        this.interfaceConnections = interfaceConnections != null
+                ? interfaceConnections
+                : new InterfaceConnectionForwarder(runtime, workflowService, flowNodeService, executionOperations,
+                        this.portConnectionPuller);
     }
 
     public WorkflowEngine(WorkflowRuntimeService runtime, WorkflowService workflowService,
@@ -80,7 +94,7 @@ public class WorkflowEngine {
             ConstraintExpressionEvaluator expressionEvaluator, WorkflowActionRegistry actionRegistry,
             WorkflowExecutionOperations executionOperations) {
         this(runtime, workflowService, flowNodeService, conditionEvaluator, expressionEvaluator,
-                actionRegistry, executionOperations, emptyObservationReader(), Runnable::run);
+                actionRegistry, executionOperations, emptyObservationReader(), Runnable::run, null, null);
     }
 
     public WorkflowEngine(WorkflowRuntimeService runtime, WorkflowService workflowService,
@@ -88,7 +102,7 @@ public class WorkflowEngine {
             ConstraintExpressionEvaluator expressionEvaluator, WorkflowActionRegistry actionRegistry,
             WorkflowExecutionOperations executionOperations, ObservableSnapshotReader observationReader) {
         this(runtime, workflowService, flowNodeService, conditionEvaluator, expressionEvaluator,
-                actionRegistry, executionOperations, observationReader, Runnable::run);
+                actionRegistry, executionOperations, observationReader, Runnable::run, null, null);
     }
 
     public WorkflowEngine(WorkflowRuntimeService runtime, WorkflowService workflowService,
@@ -96,58 +110,104 @@ public class WorkflowEngine {
             ConstraintExpressionEvaluator expressionEvaluator, WorkflowActionRegistry actionRegistry,
             WorkflowExecutionOperations executionOperations, Executor workflowExecutor) {
         this(runtime, workflowService, flowNodeService, conditionEvaluator, expressionEvaluator,
-                actionRegistry, executionOperations, emptyObservationReader(), workflowExecutor);
+                actionRegistry, executionOperations, emptyObservationReader(), workflowExecutor, null, null);
     }
 
     @Scheduled(fixedDelayString = "${smartlab.workflow.poll-interval-ms:100}")
     public void driveWorkflows() {
         for (Task task : runtime.runningTasks()) {
-            dispatchTask(task.getId());
+            requestPoll(task.getId());
         }
     }
 
+    @Override
+    public void requestPoll(Long taskId) {
+        if (taskId == null) return;
+        pendingTaskIds.add(taskId);
+        trySchedule(taskId);
+    }
+
     void dispatchTask(Long taskId) {
-        if (taskId == null || !inFlightTaskIds.add(taskId)) return;
+        requestPoll(taskId);
+    }
+
+    private void trySchedule(Long taskId) {
+        if (!inFlightTaskIds.add(taskId)) return;
         try {
-            workflowExecutor.execute(() -> {
-                try {
-                    Task task = runtime.task(taskId);
-                    if (task != null && "RUNNING".equals(task.getTaskStatus())) {
-                        processTask(task);
-                    }
-                } catch (Exception error) {
-                    log.error("工作流任务{}调度失败", taskId, error);
-                    Task task = runtime.task(taskId);
-                    if (task != null) runtime.failTask(task, error.getMessage());
-                } finally {
-                    inFlightTaskIds.remove(taskId);
-                }
-            });
+            workflowExecutor.execute(() -> runTaskRounds(taskId));
         } catch (RuntimeException error) {
             inFlightTaskIds.remove(taskId);
             log.warn("工作流任务{}本轮未进入执行线程池: {}", taskId, error.getMessage());
         }
     }
 
-    void processTask(Task task) {
-        synchronized (taskLock(task.getId())) {
-            processTaskLocked(task);
+    private void runTaskRounds(Long taskId) {
+        boolean yieldToScan = false;
+        try {
+            int consecutive = 0;
+            while (pendingTaskIds.remove(taskId)) {
+                if (++consecutive > MAX_CONSECUTIVE_DIRTY_ROUNDS) {
+                    pendingTaskIds.add(taskId);
+                    yieldToScan = true;
+                    break;
+                }
+                try {
+                    Task task = runtime.task(taskId);
+                    if (task == null || !isPollableTask(task.getTaskStatus())) break;
+                    if (processTask(task)) pendingTaskIds.add(taskId);
+                } catch (Exception error) {
+                    log.error("工作流任务{}调度失败", taskId, error);
+                    Task task = runtime.task(taskId);
+                    if (task != null) runtime.failTask(task, error.getMessage());
+                    break;
+                }
+            }
+        } finally {
+            inFlightTaskIds.remove(taskId);
+            if (!yieldToScan && pendingTaskIds.contains(taskId)) trySchedule(taskId);
         }
     }
 
+    boolean processTask(Task task) {
+        roundDirty.set(false);
+        try {
+            synchronized (WorkflowTaskLocks.of(task.getId())) {
+                processTaskLocked(task);
+            }
+            return Boolean.TRUE.equals(roundDirty.get());
+        } finally {
+            roundDirty.remove();
+        }
+    }
+
+    private void markRoundDirty() {
+        roundDirty.set(true);
+    }
+
     private void processTaskLocked(Task task) {
-        List<TaskStep> pollable = runtime.pollableSteps(task.getId());
+        List<TaskStep> steps = runtime.steps(task.getId());
+        if (steps == null) steps = List.of();
+        portConnectionPuller.pullForTask(task, steps);
+        interfaceConnections.refreshForTask(task, steps);
+        List<TaskStep> pollable = pollableSteps(steps);
         if (pollable.isEmpty()) {
-            if (runtime.steps(task.getId()).isEmpty())
+            Task latest = runtime.task(task.getId());
+            if (steps.isEmpty() && latest != null && "RUNNING".equals(latest.getTaskStatus())) {
                 startFlow(task, task.getFlowModelId(), null, 0);
+                markRoundDirty();
+            } else if (latest != null && "TERMINATING".equals(latest.getTaskStatus())) {
+                runtime.completeTerminationIfSettled(latest.getId());
+            }
             return;
         }
         for (TaskStep step : pollable) {
-            if (!"RUNNING".equals(runtime.task(task.getId()).getTaskStatus()))
+            String taskStatus = runtime.task(task.getId()).getTaskStatus();
+            if (!isPollableTask(taskStatus))
                 return;
             try {
                 boolean terminalAtPollStart = TERMINAL_NODE_STATES.contains(step.getNodeStatus());
                 processStep(task, step);
+                failTaskIfNodeFailed(task, step);
                 if (terminalAtPollStart) {
                     FlowNode node = flowNodeService.getById(step.getFlowNodeId());
                     if (node != null && "SUCCEEDED".equals(step.getNodeStatus())
@@ -159,6 +219,10 @@ public class WorkflowEngine {
             } catch (Exception error) {
                 runtime.failStep(step, error.getMessage());
             }
+        }
+        Task latest = runtime.task(task.getId());
+        if (latest != null && "TERMINATING".equals(latest.getTaskStatus())) {
+            runtime.completeTerminationIfSettled(latest.getId());
         }
     }
 
@@ -176,11 +240,13 @@ public class WorkflowEngine {
         FlowNode node = flowNodeService.getById(step.getFlowNodeId());
         if (node == null)
             throw new IllegalArgumentException("找不到FLOW_NODE: " + step.getFlowNodeId());
-        if ("SUBFLOW_NODE".equals(node.getNodeType()) && "RUNNING".equals(step.getNodeStatus())) {
+        if ("SUBFLOW_NODE".equals(node.getNodeType()) && "RUNNING".equals(step.getNodeStatus())
+                && "RUNNING".equals(task.getTaskStatus())) {
             int depth = step.getStepDepth() == null ? 0 : step.getStepDepth();
             startFlow(task, node.getSubFlowModelId(), step.getId(), depth + 1);
         }
         ObjectNode frozenSnapshot = actionVariables(task, step, null, node);
+        portConnectionPuller.syncOutputMailbox(node, step);
         evaluateNodeTriggers(task, step, node, frozenSnapshot);
     }
 
@@ -204,10 +270,16 @@ public class WorkflowEngine {
                 parent.getInterfaceInSnapshot(), parentNode.getInterfaces(), "IN",
                 "Interface_workflow_in", WorkflowNodeSignal.SUBFLOW_COMPLETED.name(), null);
         runtime.updateInputSnapshot(parent, input);
+        runtime.appendStepLog(task, parent, "INFO", WorkflowExecutionLogs.received(
+                nodeName(parentNode), parentNode.getNodeIdRef(), "Interface_workflow_in",
+                WorkflowNodeSignal.SUBFLOW_COMPLETED.name(), null));
+        markRoundDirty();
     }
 
+    /** 各接口触发器对照本轮开始时的冻结快照求值；动作立即持久化，但不把生命周期写回本轮快照。 */
     private void evaluateNodeTriggers(Task task, TaskStep step, FlowNode node, ObjectNode frozenSnapshot) {
         ObjectNode triggerStates = triggerStates(step);
+        boolean statesChanged = false;
         List<JsonNode> orderedInterfaces = new java.util.ArrayList<>();
         List<String> directions = TERMINAL_NODE_STATES.contains(step.getNodeStatus())
                 ? List.of("OUT") : List.of("OUT", "IN");
@@ -227,21 +299,28 @@ public class WorkflowEngine {
                 boolean previous = triggerStates.path(key).asBoolean(false);
                 boolean current = conditionEvaluator.evaluate(trigger.path("condition"), interfaceSnapshot);
                 if (current && !previous) {
-                    WorkflowActionResult result = executeAction(task, step, node, interfaceSnapshot,
-                            WorkflowActionDefinition.from(trigger.path("action")));
+                    String lifecycleBefore = step.getNodeStatus();
+                    WorkflowActionResult result = WorkflowActionResult.continueExecution();
+                    for (JsonNode actionNode : WorkflowTriggerState.actions(trigger)) {
+                        result = executeAction(task, step, node, interfaceSnapshot,
+                                WorkflowActionDefinition.from(actionNode));
+                        if (result.emittedInterfaceName() != null && !result.emittedInterfaceName().isBlank()) {
+                            result = routeEmission(task, step, node, result);
+                        }
+                        if (result.status() == WorkflowActionStatus.WAIT_DEVICE_IDLE) break;
+                    }
+                    if (!java.util.Objects.equals(lifecycleBefore, step.getNodeStatus())) markRoundDirty();
                     if (result.status() != WorkflowActionStatus.WAIT_DEVICE_IDLE) {
                         triggerStates.put(key, true);
-                        persistTriggerStates(step, triggerStates);
-                    }
-                    if (result.emittedInterfaceName() != null && !result.emittedInterfaceName().isBlank()) {
-                        routeEmission(task, step, node, result);
+                        statesChanged = true;
                     }
                 } else if (!current && previous) {
                     triggerStates.put(key, false);
-                    persistTriggerStates(step, triggerStates);
+                    statesChanged = true;
                 }
             }
         }
+        if (statesChanged) persistTriggerStates(step, triggerStates);
     }
 
     private ObjectNode interfaceVariables(TaskStep step, JsonNode interfaceNode, ObjectNode frozenSnapshot) {
@@ -282,12 +361,50 @@ public class WorkflowEngine {
         persistTriggerStates(step, states);
     }
 
-    private void routeEmission(Task task, TaskStep step, FlowNode node, WorkflowActionResult result) {
+    private WorkflowActionResult routeEmission(Task task, TaskStep step, FlowNode node, WorkflowActionResult result) {
+        JsonNode target = interfaceByName(node, result.emittedInterfaceName());
+        JsonNode payload = "STATE".equals(target.path("interfaceType").asText())
+                ? stateEmissionPayload(task, step, node) : null;
         ArrayNode output = WorkflowInterfaceSnapshots.withSignal(
                 step.getInterfaceOutSnapshot(), node.getInterfaces(), "OUT",
-                result.emittedInterfaceName(), result.emittedSignalName(), null);
+                result.emittedInterfaceName(), result.emittedSignalName(), payload);
         runtime.updateOutputSnapshot(step, output);
-        route(task, step, node, result.emittedInterfaceName(), result.emittedSignalName());
+        runtime.appendStepLog(task, step, "INFO", WorkflowExecutionLogs.emitted(
+                nodeName(node), node.getNodeIdRef(), result.emittedInterfaceName(), result.emittedSignalName(), payload));
+        markRoundDirty();
+        if ("STATE".equals(target.path("interfaceType").asText())) {
+            long instanceId = executionOperations.resolveDeviceInstance(task, step, node);
+            String messageId = payload.path("messageId").asText();
+            JsonNode parameters = payload.path("parameters");
+            return executionOperations.dispatchDeviceSignal(task, step, node, instanceId, messageId,
+                    result.emittedInterfaceName(), result.emittedSignalName(), parameters)
+                    == WorkflowExecutionOperations.DeviceDispatchResult.DEVICE_BUSY
+                    ? WorkflowActionResult.waitDeviceIdle(messageId)
+                    : WorkflowActionResult.awaitExternalSignal(messageId);
+        }
+        interfaceConnections.forwardFromNode(task, step, node, result.emittedInterfaceName(), result.emittedSignalName());
+        return result;
+    }
+
+    private ObjectNode stateEmissionPayload(Task task, TaskStep step, FlowNode node) {
+        long instanceId = executionOperations.resolveDeviceInstance(task, step, node);
+        String capabilityName = node.getCapability() == null ? "" : node.getCapability().path("capabilityName").asText("");
+        ObjectNode payload = JsonNodeSupport.objectNode();
+        payload.put("messageId", executionOperations.ensureMessageId(step, instanceId, capabilityName));
+        payload.put("capabilityName", capabilityName);
+        JsonNode parameters = node.getCapability() == null ? null : node.getCapability().path("capabilityParameters");
+        payload.set("parameters", parameters != null && parameters.isObject()
+                ? parameters.deepCopy() : JsonNodeSupport.objectNode());
+        return payload;
+    }
+
+    private JsonNode interfaceByName(FlowNode node, String name) {
+        if (node != null && node.getInterfaces() != null) {
+            for (JsonNode item : node.getInterfaces()) {
+                if (name.equals(item.path("name").asText())) return item;
+            }
+        }
+        throw new IllegalArgumentException("节点接口不存在: " + name);
     }
 
     private ObjectNode actionVariables(Task task, TaskStep step, JsonNode inputInterface, FlowNode node) {
@@ -299,6 +416,7 @@ public class WorkflowEngine {
         }
         applyNodeExpression(task, step, node, variables);
         variables.put("nodeLifecycleState", step.getNodeStatus());
+        variables.put("taskLifecycleState", task.getTaskStatus());
         if (inputInterface != null)
             variables.put("inputInterfaceName", inputInterface.path("name").asText(""));
         return variables;
@@ -413,6 +531,7 @@ public class WorkflowEngine {
         latest.fields().forEachRemaining(entry -> {
             if (!"_triggerStates".equals(entry.getKey())
                     && !"nodeLifecycleState".equals(entry.getKey())
+                    && !"taskLifecycleState".equals(entry.getKey())
                     && !"inputInterfaceName".equals(entry.getKey())
                     && !"signalName".equals(entry.getKey())
                     && !"payload".equals(entry.getKey())) {
@@ -430,28 +549,6 @@ public class WorkflowEngine {
             else
                 target.set(entry.getKey(), entry.getValue().deepCopy());
         });
-    }
-
-    private void route(Task task, TaskStep completed, FlowNode node, String sourceInterface, String signalName) {
-        var compiled = workflowService.compileDefinition(node.getFlowModelId());
-        for (var connection : compiled.outgoing(node.getNodeIdRef())) {
-            if (!sourceInterface.equals(connection.sourceInterface()))
-                continue;
-            FlowNode target = nodeByRef(node.getFlowModelId(), connection.targetNodeIdRef());
-            JsonNode targetInterface = interfaceByName(target, connection.targetInterface());
-            if (!allows(targetInterface, signalName)) continue;
-            TaskStep targetStep = runtime.createStep(task, target, completed.getParentStepId(),
-                    completed.getStepDepth(), null);
-            if (TERMINAL_NODE_STATES.contains(targetStep.getNodeStatus())) continue;
-            JsonNode sourceSlot = WorkflowInterfaceSnapshots.find(
-                    completed.getInterfaceOutSnapshot(), sourceInterface);
-            JsonNode payload = sourceSlot.path("payload");
-            ArrayNode input = WorkflowInterfaceSnapshots.withSignal(
-                    targetStep.getInterfaceInSnapshot(), target.getInterfaces(), "IN",
-                    connection.targetInterface(), signalName, payload.isObject() ? payload : null);
-            runtime.updateInputSnapshot(targetStep, input);
-            runtime.mergeVariableSpace(targetStep, mapPortValues(node, target, completed));
-        }
     }
 
     ObjectNode mapPortValues(FlowNode sourceNode, FlowNode targetNode, TaskStep sourceStep) {
@@ -519,139 +616,45 @@ public class WorkflowEngine {
         if (!valid) throw new IllegalStateException("端口目标变量" + variableName + "要求" + dataType);
     }
 
-    @EventListener
-    public void handleStateMachineSignal(StateMachineInterfaceSignalEvent event) {
-        JsonNode signal = event.signal();
-        if (!"STATE".equals(event.interfaceType()))
-            return;
-        String signalName = signal.path("signalName").asText();
-        if (!("CMD_STATE".equals(signalName) || "OP_STATE".equals(signalName)))
-            return;
+    void handleStateMachineSignal(StateMachineInterfaceSignalEvent event) {
+        interfaceConnections.onStateMachineSignal(event);
+    }
 
-        if ("CMD_STATE".equals(signalName)) {
-            Long taskStepId = longContext(event, "taskStepId");
-            if (taskStepId == null) return;
-            TaskStep step = runtime.step(taskStepId);
-            if (step != null)
-                handleStateMachineSignalForStep(event, step);
-            return;
-        }
-
-        Long deviceInstanceId = signal.path("payload").path("deviceInstanceId").canConvertToLong()
-                ? signal.path("payload").path("deviceInstanceId").asLong()
-                : null;
-        if (deviceInstanceId == null || deviceInstanceId <= 0)
-            return;
-        for (TaskStep step : runtime.runningDeviceSteps()) {
-            Task task = runtime.task(step.getTaskId());
-            FlowNode node = flowNodeService.getById(step.getFlowNodeId());
-            if (task == null || node == null || !"DEV_NODE".equals(node.getNodeType())) continue;
-            if (executionOperations.resolveDeviceInstance(task, step, node) == deviceInstanceId) {
-                handleStateMachineSignalForStep(event, step);
-            }
+    private String nodeName(FlowNode node) {
+        if (node == null || node.getFlowModelId() == null || node.getNodeIdRef() == null) return null;
+        try {
+            return workflowService.nodeName(node.getFlowModelId(), node.getNodeIdRef());
+        } catch (RuntimeException ignored) {
+            return null;
         }
     }
 
-    private Long longContext(StateMachineInterfaceSignalEvent event, String key) {
-        if (event.executionContext() == null) return null;
-        Object value = event.executionContext().get(key);
-        if (value instanceof Number number) return number.longValue();
-        if (value instanceof String text) {
-            try {
-                return Long.parseLong(text);
-            } catch (NumberFormatException ignored) {
-                return null;
-            }
-        }
-        return null;
+    private boolean isPollableTask(String status) {
+        return "RUNNING".equals(status) || "TERMINATING".equals(status);
     }
 
-    private void handleStateMachineSignalForStep(StateMachineInterfaceSignalEvent event, TaskStep located) {
-        synchronized (taskLock(located.getTaskId())) {
-            TaskStep step = runtime.step(located.getId());
-            if (step == null || !("RUNNING".equals(step.getNodeStatus()) || "TERMINATING".equals(step.getNodeStatus())))
-                return;
-            Task task = runtime.task(step.getTaskId());
-            FlowNode node = flowNodeService.getById(step.getFlowNodeId());
-            if (task == null || node == null)
-                return;
-            String inputInterface = stateInputInterface(node);
-            if (!hasDeviceToNodeConnection(task, step, node, event, inputInterface)) {
-                runtime.failStep(step, "设备状态回执未声明DEVICE_TO_NODE连接");
-                return;
-            }
-            JsonNode targetInterface = interfaceByName(node, inputInterface);
-            String signalName = event.signal().path("signalName").asText("");
-            if (!allows(targetInterface, signalName)) return;
-            JsonNode payload = event.signal().path("payload");
-            ArrayNode input = WorkflowInterfaceSnapshots.withSignal(
-                    step.getInterfaceInSnapshot(), node.getInterfaces(), "IN", inputInterface,
-                    signalName, payload.isObject() ? payload : null);
-            runtime.updateInputSnapshot(step, input);
-            ObjectNode mapped = executionOperations.resolveMappedVariables(task, step, node);
-            if (mapped != null && !mapped.isEmpty()) {
-                runtime.mergeVariableSpace(step, mapped);
-            }
+    private void failTaskIfNodeFailed(Task task, TaskStep step) {
+        if (!"FAILED".equals(step.getNodeStatus())) return;
+        Task current = runtime.task(task.getId());
+        if (current != null && ("RUNNING".equals(current.getTaskStatus()) || "PAUSED".equals(current.getTaskStatus()))) {
+            runtime.failTask(current, "节点失败: " + step.getNodeIdRef());
         }
     }
 
-    private boolean hasDeviceToNodeConnection(Task task, TaskStep step, FlowNode node,
-            StateMachineInterfaceSignalEvent event, String nodeInputInterface) {
-        Long deviceInstanceId = event.signal().path("payload").path("deviceInstanceId").canConvertToLong()
-                ? event.signal().path("payload").path("deviceInstanceId").asLong()
-                : null;
-        if (deviceInstanceId == null || deviceInstanceId <= 0)
-            return false;
-        if (executionOperations.resolveDeviceInstance(task, step, node) != deviceInstanceId)
-            return false;
-        var definition = workflowService.getDefinition(node.getFlowModelId());
-        if (definition == null)
-            return false;
-        var compiled = workflowService.compileDefinition(node.getFlowModelId());
-        for (JsonNode connection : iterable(definition.getInterfaceConnections())) {
-            if (!"DEVICE_TO_NODE".equals(connection.path("connectionType").asText()))
-                continue;
-            Long targetRef = compiled.refsByNodeName().get(connection.path("target").path("nodeName").asText(""));
-            if (targetRef == null || targetRef != node.getNodeIdRef())
-                continue;
-            if (connection.path("source").path("deviceModelId").asLong(0) != node.getDeviceModelId())
-                continue;
-            if (!event.interfaceName().equals(connection.path("source").path("interfaceName").asText("")))
-                continue;
-            if (nodeInputInterface.equals(connection.path("target").path("interfaceName").asText("")))
-                return true;
-        }
-        return false;
+    private List<TaskStep> pollableSteps(List<TaskStep> steps) {
+        if (steps == null || steps.isEmpty()) return List.of();
+        return steps.stream()
+                .filter(step -> ACTIVE_NODE_STATES.contains(step.getNodeStatus())
+                        || (TERMINAL_NODE_STATES.contains(step.getNodeStatus())
+                        && !terminalObservationSettled(step)))
+                .toList();
     }
 
-    private String stateInputInterface(FlowNode node) {
-        String selected = null;
-        for (JsonNode item : iterable(node.getInterfaces())) {
-            if (!"IN".equals(item.path("direction").asText()) || !"STATE".equals(item.path("interfaceType").asText()))
-                continue;
-            if (selected != null)
-                throw new IllegalArgumentException("DEV_NODE存在多个STATE输入接口: " + node.getNodeIdRef());
-            selected = item.path("name").asText();
-        }
-        if (selected == null || selected.isBlank())
-            throw new IllegalArgumentException("DEV_NODE缺少STATE输入接口: " + node.getNodeIdRef());
-        return selected;
-    }
-
-    private JsonNode interfaceByName(FlowNode node, String name) {
-        for (JsonNode item : iterable(node.getInterfaces()))
-            if (name.equals(item.path("name").asText()))
-                return item;
-        return null;
-    }
-
-    private boolean allows(JsonNode interfaceDefinition, String signalName) {
-        if (interfaceDefinition == null)
-            return false;
-        for (JsonNode item : iterable(interfaceDefinition.path("allowedSignals")))
-            if (signalName.equals(item.asText()))
-                return true;
-        return false;
+    private boolean terminalObservationSettled(TaskStep step) {
+        JsonNode variableSpace = step.getVariableSpace();
+        return variableSpace != null
+                && variableSpace.path("_triggerStates")
+                        .path(WorkflowTriggerState.TERMINAL_OBSERVED_KEY).asBoolean(false);
     }
 
     private String functionType(FlowNode node) {
@@ -661,19 +664,6 @@ public class WorkflowEngine {
     private FlowNode nodeByRef(Long flowModelId, long nodeIdRef) {
         return workflowService.nodes(flowModelId).stream().filter(node -> node.getNodeIdRef() == nodeIdRef).findFirst()
                 .orElseThrow(() -> new IllegalArgumentException("流程节点不存在: " + nodeIdRef));
-    }
-
-    private static Object[] createTaskLocks(int count) {
-        Object[] locks = new Object[count];
-        for (int index = 0; index < count; index++)
-            locks[index] = new Object();
-        return locks;
-    }
-
-    private Object taskLock(Long taskId) {
-        if (taskId == null)
-            throw new IllegalArgumentException("任务ID不能为空");
-        return TASK_LOCKS[Math.floorMod(Long.hashCode(taskId), TASK_LOCKS.length)];
     }
 
     private JsonNode mergeVariables(Task task, TaskStep step) {

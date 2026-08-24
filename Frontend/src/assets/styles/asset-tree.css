@@ -1,0 +1,348 @@
+/* ==============================================================================
+ * SmartLab 2.0 — Asset Tree Pane SSOT
+ * Canonical visual: 数据中心侧边栏（270px / 27px 行高 / 虚线层级 / 浅蓝选中）
+ * ============================================================================== */
+
+.sl-asset-tree {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+  border-right: 1px solid var(--sl-border-base);
+  box-sizing: border-box;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.sl-asset-tree .tree-header-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 12px;
+  background: #ffffff;
+  border-bottom: 1px solid var(--sl-border-base);
+  flex-shrink: 0;
+}
+
+.sl-asset-tree .tree-header-left {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.sl-asset-tree .tree-header-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--sl-text-heading);
+  line-height: 20px;
+}
+
+.sl-asset-tree .tree-header-count {
+  font-size: 11px;
+  color: var(--sl-text-secondary);
+  white-space: nowrap;
+}
+
+.sl-asset-tree .tree-search-bar {
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--sl-border-subtle);
+  background: #ffffff;
+  flex-shrink: 0;
+}
+
+.sl-asset-tree .tree-search-input {
+  width: 100%;
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--sl-border-input);
+  border-radius: var(--sl-radius-sm);
+  font-size: 12px;
+  color: var(--sl-text-heading);
+  outline: none;
+  transition: var(--sl-ease-smooth);
+  background: #ffffff;
+  box-sizing: border-box;
+}
+
+.sl-asset-tree .tree-search-input:focus {
+  border-color: var(--sl-primary);
+  box-shadow: 0 0 0 1px var(--sl-primary);
+}
+
+.sl-asset-tree .tree-list-scroll {
+  flex: 1;
+  padding: 4px 6px;
+  overflow-y: auto;
+  min-height: 0;
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.sl-asset-tree .tree-list-scroll::-webkit-scrollbar {
+  width: 6px;
+}
+
+.sl-asset-tree .tree-list-scroll::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 6px;
+}
+
+.sl-asset-tree .el-tree {
+  background: transparent;
+}
+
+.sl-asset-tree .el-tree-node__content {
+  height: 27px;
+  padding-left: 2px !important;
+  border-radius: 4px;
+  background-color: transparent !important;
+}
+
+.sl-asset-tree .el-tree--highlight-current .el-tree-node.is-current > .el-tree-node__content {
+  background-color: transparent !important;
+}
+
+.sl-asset-tree .el-tree-node__expand-icon {
+  padding: 3px;
+  font-size: 10.5px;
+  color: #94a3b8;
+  transition: transform 0.15s ease;
+}
+
+.sl-asset-tree .el-tree-node__expand-icon.is-leaf {
+  color: transparent;
+  width: 10.5px;
+  padding: 3px 0 3px 3px;
+}
+
+.sl-asset-tree .el-tree-node__children {
+  position: relative;
+  margin-left: 10px;
+  padding-left: 2px;
+  border-left: 1px dashed #e2e8f0;
+}
+
+.sl-asset-tree .t-row {
+  width: 100%;
+  height: 27px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  margin: 0;
+  background: transparent;
+  transition: background-color 0.15s ease, color 0.15s ease;
+  box-sizing: border-box;
+}
+
+.sl-asset-tree .t-row:hover {
+  background: #f1f5f9;
+}
+
+.sl-asset-tree .t-row.is-draggable {
+  cursor: grab;
+}
+
+.sl-asset-tree .t-row.is-draggable:active {
+  cursor: grabbing;
+}
+
+.sl-asset-tree .group-header-row {
+  cursor: default;
+  background: #f1f5f9 !important;
+  border: 1px solid #e2e8f0 !important;
+  padding: 3px 8px;
+  margin: 6px 0 4px;
+  border-radius: 4px;
+}
+
+.sl-asset-tree .t-group-label {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #334155;
+  letter-spacing: 0.3px;
+}
+
+.sl-asset-tree .node-type-category {
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.sl-asset-tree .node-type-model {
+  font-weight: 500;
+  color: #334155;
+}
+
+.sl-asset-tree .node-type-instance {
+  color: #475569;
+}
+
+.sl-asset-tree .node-type-dataset {
+  color: #15803d;
+}
+
+.sl-asset-tree .node-type-template {
+  color: #7e22ce;
+}
+
+.sl-asset-tree .node-type-empty-hint {
+  cursor: default;
+}
+.sl-asset-tree .node-type-empty-hint:hover {
+  background: transparent;
+}
+.sl-asset-tree .t-empty-label {
+  font-size: 12px;
+  color: var(--sl-text-disabled);
+}
+
+.sl-asset-tree .t-badge.is-active {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+.sl-asset-tree .t-badge.is-draft {
+  background: #f1f5f9;
+  color: var(--sl-text-secondary);
+}
+
+.sl-asset-tree .t-row.active {
+  background: #eff6ff !important;
+  font-weight: 600;
+}
+
+.sl-asset-tree .t-row.active .t-label {
+  color: #2563eb !important;
+}
+
+.sl-asset-tree .t-row.active .t-icon {
+  color: #2563eb !important;
+}
+
+.sl-asset-tree .t-row.active .t-badge {
+  background: #dbeafe;
+  color: #1d4ed8;
+}
+
+.sl-asset-tree .t-row-left {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+
+.sl-asset-tree .t-icon {
+  font-size: 13.5px;
+  color: var(--sl-text-secondary);
+  flex-shrink: 0;
+}
+
+.sl-asset-tree .category-icon { color: #64748b; }
+.sl-asset-tree .model-icon { color: #2563eb; }
+.sl-asset-tree .instance-icon { color: #0284c7; }
+.sl-asset-tree .dataset-icon { color: #059669; }
+.sl-asset-tree .template-icon { color: #7c3aed; }
+.sl-asset-tree .workflow-icon { color: #2563eb; }
+
+.sl-asset-tree .t-label {
+  font-size: 12.5px;
+  color: var(--sl-text-body);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sl-asset-tree .t-row-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.sl-asset-tree .t-badge {
+  font-size: 10.5px;
+  padding: 0 5px;
+  border-radius: 8px;
+  background: #f1f5f9;
+  color: var(--sl-text-secondary);
+  font-family: var(--sl-font-mono);
+  font-weight: 400;
+}
+
+.sl-asset-tree .node-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.sl-asset-tree .t-row .node-actions.is-hover {
+  display: none;
+}
+
+.sl-asset-tree .t-row:hover .node-actions.is-hover {
+  display: inline-flex;
+}
+
+.sl-asset-tree .node-action {
+  width: 18px;
+  height: 18px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--sl-border-input);
+  background: #ffffff;
+  border-radius: 3px;
+  cursor: pointer;
+  color: var(--sl-text-secondary);
+  font-size: 11px;
+  transition: var(--sl-ease-smooth);
+  padding: 0;
+}
+
+.sl-asset-tree .node-action:hover {
+  border-color: var(--sl-primary);
+  color: var(--sl-primary);
+  background: #eff6ff;
+}
+
+.sl-asset-tree .node-action.model-action {
+  color: var(--sl-success);
+}
+
+.sl-asset-tree .node-action.model-action:hover {
+  border-color: var(--sl-success);
+  color: var(--sl-success);
+  background: var(--sl-success-light);
+}
+
+.sl-asset-tree .node-action.danger:hover {
+  border-color: var(--sl-danger);
+  color: var(--sl-danger);
+  background: #fef2f2;
+}
+
+.sl-asset-tree .node-action:disabled,
+.sl-asset-tree .node-action[disabled] {
+  opacity: 0.35 !important;
+  cursor: not-allowed !important;
+  pointer-events: none !important;
+  border-color: #e2e8f0 !important;
+  color: #94a3b8 !important;
+  background: transparent !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.sl-asset-tree .tree-empty {
+  padding: 24px 10px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--sl-text-disabled);
+}

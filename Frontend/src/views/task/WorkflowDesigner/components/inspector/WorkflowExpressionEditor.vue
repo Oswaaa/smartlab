@@ -250,34 +250,34 @@ function escapeRegExp(value:string) {
 
 <style scoped>
 .workflow-expression-editor{display:grid;gap:10px}
-.expression-toolbar{display:grid;gap:0;border:1px solid #e5e5e5;background:#fff}
-.toolbar-group{display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-height:38px;padding:6px 10px;border-bottom:1px solid #f0f0f0;box-sizing:border-box}.toolbar-group:last-child{border-bottom:0}
-.toolbar-label{width:54px;flex:none;color:#8c8c8c;font-size:10px}
-.toolbar-group button{height:24px;min-width:26px;padding:0 7px;border:1px solid #d9d9d9;border-radius:2px;background:#fff;color:#262626;font-size:11px;line-height:22px;cursor:pointer;transition:all .15s ease}
-.toolbar-group button:hover{border-color:#4096ff;background:#e6f4ff;color:#1677ff}
-.temporal-function-picker{background:#fafafa}.temporal-function-picker .function-button{padding:0 9px;background:#fff}
-.variable-picker button{border-color:#91caff;background:#e6f4ff;color:#0958d9}
+.expression-toolbar{display:grid;gap:0;border:1px solid var(--sl-border-base);background:#fff}
+.toolbar-group{display:flex;align-items:center;flex-wrap:wrap;gap:6px;min-height:38px;padding:6px 10px;border-bottom:1px solid var(--sl-border-subtle);box-sizing:border-box}.toolbar-group:last-child{border-bottom:0}
+.toolbar-label{width:54px;flex:none;color:var(--sl-text-secondary);font-size:10px}
+.toolbar-group button{height:24px;min-width:26px;padding:0 7px;border:1px solid #d9d9d9;border-radius:2px;background:#fff;color:var(--sl-text-heading);font-size:11px;line-height:22px;cursor:pointer;transition:all .15s ease}
+.toolbar-group button:hover{border-color:var(--sl-primary-hover);background:var(--sl-primary-light);color:var(--sl-primary)}
+.temporal-function-picker{background:var(--sl-bg-hover)}.temporal-function-picker .function-button{padding:0 9px;background:#fff}
+.variable-picker button{border-color:#91caff;background:var(--sl-primary-light);color:#0958d9}
 .function-tooltip{display:grid;gap:4px;max-width:300px;padding:2px}.function-tooltip strong{font-size:12px;font-weight:500}.function-tooltip span{font-size:11px;line-height:1.6}.function-tooltip code{color:#d6e4ff;font-family:Consolas,Menlo,monospace;font-size:10px}
 .picker-empty{color:#bfbfbf;font-size:10px}
 .formula-composer{display:grid;gap:7px}
 .formula-input-shell{position:relative;height:32px;border:1px solid #d9d9d9;background:#fff}
 .formula-input-highlight{position:absolute;inset:0;z-index:1;overflow:hidden;pointer-events:none}
-.formula-input-highlight-content{width:max-content;min-width:100%;box-sizing:border-box;padding:5px 9px;color:#262626;font-family:Consolas,Menlo,monospace;font-size:12px;line-height:20px;white-space:pre;will-change:transform}
-.formula-input-token{border-radius:2px;background:#e6f4ff;box-shadow:0 0 0 2px #e6f4ff;color:#0958d9}
-.formula-plain-input{position:relative;z-index:2;width:100%;height:30px;box-sizing:border-box;padding:5px 9px;border:0;background:transparent;color:transparent;caret-color:#262626;font-family:Consolas,Menlo,monospace;font-size:12px;line-height:20px;outline:0}
+.formula-input-highlight-content{width:max-content;min-width:100%;box-sizing:border-box;padding:5px 9px;color:var(--sl-text-heading);font-family:Consolas,Menlo,monospace;font-size:12px;line-height:20px;white-space:pre;will-change:transform}
+.formula-input-token{border-radius:2px;background:var(--sl-primary-light);box-shadow:0 0 0 2px var(--sl-primary-light);color:#0958d9}
+.formula-plain-input{position:relative;z-index:2;width:100%;height:30px;box-sizing:border-box;padding:5px 9px;border:0;background:transparent;color:transparent;caret-color:var(--sl-text-heading);font-family:Consolas,Menlo,monospace;font-size:12px;line-height:20px;outline:0}
 .formula-plain-input::selection{background:rgba(22,119,255,.2);color:transparent}
 .formula-plain-input::placeholder{color:#bfbfbf}
-.formula-plain-input:focus{border-color:#1677ff;box-shadow:0 0 0 1px #1677ff inset}
-.formula-input-shell:focus-within{border-color:#1677ff;box-shadow:0 0 0 1px #1677ff}
+.formula-plain-input:focus{border-color:var(--sl-primary);box-shadow:0 0 0 1px var(--sl-primary) inset}
+.formula-input-shell:focus-within{border-color:var(--sl-primary);box-shadow:0 0 0 1px var(--sl-primary)}
 .formula-plain-input:disabled{background:rgba(245,245,245,.72);color:transparent}
 .formula-suggestions{position:absolute;left:0;right:0;top:calc(100% + 3px);z-index:20;max-height:220px;overflow-y:auto;border:1px solid #d9d9d9;background:#fff;box-shadow:0 5px 14px rgba(0,0,0,.12)}
-.formula-suggestions button{width:100%;height:34px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 10px;border:0;border-bottom:1px solid #f0f0f0;background:#fff;color:#262626;text-align:left;cursor:pointer}
-.formula-suggestions button:hover{background:#e6f4ff}
-.formula-suggestions button>span{font-family:Consolas,Menlo,monospace;color:#1677ff}
-.formula-suggestions button>small{color:#8c8c8c;font-size:10px}
-.formula-result-preview{display:flex;align-items:baseline;min-height:28px;padding:5px 8px;border:1px solid #f0f0f0;background:#fafafa}
-.formula-result-preview code{min-width:0;color:#595959;font-family:Consolas,Menlo,monospace;font-size:11px;line-height:18px;white-space:pre-wrap;word-break:break-all}
+.formula-suggestions button{width:100%;height:34px;display:flex;align-items:center;justify-content:space-between;gap:16px;padding:0 10px;border:0;border-bottom:1px solid var(--sl-border-subtle);background:#fff;color:var(--sl-text-heading);text-align:left;cursor:pointer}
+.formula-suggestions button:hover{background:var(--sl-primary-light)}
+.formula-suggestions button>span{font-family:Consolas,Menlo,monospace;color:var(--sl-primary)}
+.formula-suggestions button>small{color:var(--sl-text-secondary);font-size:10px}
+.formula-result-preview{display:flex;align-items:baseline;min-height:28px;padding:5px 8px;border:1px solid var(--sl-border-subtle);background:var(--sl-bg-hover)}
+.formula-result-preview code{min-width:0;color:var(--sl-text-body);font-family:Consolas,Menlo,monospace;font-size:11px;line-height:18px;white-space:pre-wrap;word-break:break-all}
 .expression-error,.expression-help{margin:0}
 .expression-error{color:#cf1322;font-size:10px}
-.expression-help{color:#8c8c8c;font-size:10px}
+.expression-help{color:var(--sl-text-secondary);font-size:10px}
 </style>

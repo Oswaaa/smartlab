@@ -219,8 +219,8 @@ const aggregatedControlGroups = computed(() => {
   )
   groups.push({
     key: 'main',
-    name: `主设备 (${inst.instanceName || inst.instanceId})`,
-    shortName: '主设备',
+    name: inst.instanceName || inst.instanceId,
+    shortName: inst.instanceName || inst.instanceId,
     modelName: activeInstanceModel.value?.modelName || inst.modelId || '-',
     isComponent: false,
     targetInstanceId: inst.instanceId,
@@ -394,11 +394,7 @@ const sendManualCommand = async () => {
   if (props.retired || !controlCapabilityName.value || !props.instance?.instanceId) return
   sendingControl.value = true
   const targetInstanceId = activeControlGroup.value?.targetInstanceId || props.instance.instanceId
-  const targetName = activeControlGroup.value?.shortName || '设备'
-  const targetPoint = activeControlGroup.value?.boundDevicePoint || '-'
-  const capDisplayName = activeControlCapability.value?.displayName || activeControlCapability.value?.capabilityName || controlCapabilityName.value
   const params = buildControlParameters()
-  appendConsoleLog('下发', 'send', `向【${targetName}】(点位: ${targetPoint})下发【${capDisplayName}】指令，等待设备响应...`)
   try {
     const data = await api.controlInstance(targetInstanceId, {
       capabilityName: controlCapabilityName.value,
@@ -631,7 +627,7 @@ const handleForceResetCommand = async () => {
 .console-line.success { color: #4ade80; }
 .console-line.fail { color: #f87171; }
 .console-line.info { color: #94a3b8; }
-.console-time { color: #64748b; margin-right: 6px; }
+.console-time { color: #64748b; margin-right: 6px; white-space: nowrap; }
 .console-tag { font-weight: 700; margin-right: 6px; }
 .console-empty {
   color: #475569; text-align: center; height: 100%;

@@ -43,7 +43,8 @@ describe('Task 6 — Designer Structure', () => {
     assert.match(controlInterfacesSource, /动作能力/)
     assert.doesNotMatch(controlInterfacesSource, /missingActions|enableAction|启用 \{\{ name \}\}/)
     assert.match(controlInterfacesSource, /orderedControlInterfaces/)
-    assert.match(triggersSource, /trigger\.action\?\.actionName/)
+    assert.match(triggersSource, /action\.actionName/)
+    assert.match(triggersSource, /workflowTriggerActions|actionsOf/)
     assert.match(triggersSource, /isSystemItem/)
   })
 
@@ -53,8 +54,17 @@ describe('Task 6 — Designer Structure', () => {
   })
 
   test('designer has separate draft and publish buttons', () => {
+    const commandbar = designerSource.split('island-right')[1]?.split('island-right')[0] || designerSource
+    const order = ['新建', '编辑', '清空', '校验', '导出', '保存草稿', '保存为新流程', '发布启用', '删除'].map(label => commandbar.indexOf(label))
+    assert.equal(order.every(index => index >= 0), true)
+    assert.deepEqual(order, [...order].sort((left, right) => left - right))
     assert.match(designerSource, /保存草稿/)
+    assert.match(designerSource, /保存为新流程/)
     assert.match(designerSource, /发布启用/)
+    assert.match(designerSource, /openSuccessorIfPresent/)
+    assert.match(designerSource, /打开该版本/)
+    assert.match(designerSource, /workflowApi\.saveAsNew/)
+    assert.doesNotMatch(designerSource.split('async function saveAsNew')[1]?.split('async function')[0] || '', /localStorage\.removeItem\(previousLayoutKey\)/)
   })
 
   test('canvas nodes render only workflow control interfaces and every data port', () => {
@@ -73,13 +83,37 @@ describe('Task 6 — Designer Structure', () => {
 
   test('canvas distinguishes compact nodes, workflow handles, data handles and edge types', () => {
     const canvasNodeSource = readSource('views/task/WorkflowDesigner/components/WorkflowCanvasNode.vue')
+    assert.match(designerSource, /WorkflowCanvasEdge/)
+    assert.match(designerSource, /#edge-workflow/)
+    assert.match(designerSource, /\.vue-flow__edge-path[^}]*#3b6fd4/)
+    assert.match(designerSource, /\.data-edge[^}]*stroke-dasharray/)
+    assert.doesNotMatch(designerSource, /#a78bfa|#60a5fa/)
+    const canvasEdgeSource = readSource('views/task/WorkflowDesigner/components/WorkflowCanvasEdge.vue')
+    assert.match(canvasEdgeSource, /EdgeLabelRenderer/)
+    assert.match(canvasEdgeSource, /edge-hover-tooltip/)
+    assert.match(canvasEdgeSource, /#7c93b8/)
+    assert.match(canvasEdgeSource, /#9a8ab5/)
+    assert.doesNotMatch(canvasEdgeSource, /#60a5fa|#a78bfa/)
+    assert.match(designerSource, /:hide-tooltips="connectionInProgress"/)
+    assert.match(designerSource, /unwrapStoredLayout/)
+    assert.match(designerSource, /wrapStoredLayout/)
+    assert.match(designerSource, /\{ \.\.\.auto, \.\.\.layout \}/)
+    assert.match(designerSource, /id="grid-lines"[^>]*variant="lines"[^>]*pattern-color="#f3f5f8"[^>]*:gap="8"/)
+    assert.match(designerSource, /:snap-to-grid="false"/)
+    assert.match(designerSource, /@node-drag="snapDraggedNode"/)
+    assert.match(designerSource, /selectedEdgeDetails/)
+    assert.match(designerSource, /触发条件/)
+    assert.doesNotMatch(designerSource, /业务语义/)
+    assert.match(designerSource, /snapWorkflowNodePosition/)
+    assert.match(canvasNodeSource, /formatWorkflowTriggerText/)
+    assert.match(canvasNodeSource, /outputRowText/)
     assert.match(canvasNodeSource, /width:220px/)
-    assert.match(canvasNodeSource, /border-radius:6px/)
     assert.match(canvasNodeSource, /\.interface-handle[^}]*border-radius:50%/)
     assert.match(canvasNodeSource, /\.port-handle[^}]*border-radius:2px/)
-    assert.match(designerSource, /\.vue-flow__edge-path[^}]*#7890ad/)
-    assert.match(designerSource, /\.data-edge[^}]*stroke-dasharray/)
-    assert.match(designerSource, /pattern-color="#e2e7ee"[^>]*:gap="20"/)
+    assert.match(canvasNodeSource, /border-radius:10px/)
+    assert.match(canvasNodeSource, /node-chip/)
+    assert.match(canvasNodeSource, /out-row/)
+    assert.match(canvasNodeSource, /port-label/)
   })
 
   test('canvas node keeps connector text out of the node body and reveals details only on hover', () => {
@@ -89,8 +123,9 @@ describe('Task 6 — Designer Structure', () => {
     assert.match(source, /workflowInterfaceTooltip/)
     assert.match(source, /workflowPortTooltip/)
     assert.doesNotMatch(source, /handle-index|handle-popover|connectorShortLabel/)
-    assert.match(source, /capabilityDisplayName/)
-    assert.match(source, /parameterCount/)
+    assert.match(source, /workflowDeviceCapabilityPresentation/)
+    assert.match(source, /hidePortTooltips/)
+    assert.doesNotMatch(source, /个参数/)
   })
 
   test('node inspector uses the five confirmed business tabs', () => {
@@ -108,13 +143,17 @@ describe('Task 6 — Designer Structure', () => {
     assert.match(designerSource, /<el-drawer[\s\S]*class="workflow-element-drawer"/)
     assert.match(designerSource, /<WorkflowNodeInspector[\s\S]*v-if="selectedNode"/)
     assert.match(designerSource, /v-else-if="selectedEdge"/)
+    assert.match(designerSource, /openNodeDrawer\(event\.node\.data\.nodeName\)/)
+    assert.doesNotMatch(designerSource, /openNodeDrawer\(node\.name\)/)
     assert.doesNotMatch(designerSource, /v-else-if="validationVisible"/)
   })
 
   test('workflow validation groups flow and node issues while the node drawer receives only node issues', () => {
     assert.match(designerSource, /flowValidationIssues/)
     assert.match(designerSource, /nodeValidationIssues/)
-    assert.match(designerSource, /完整检查结果/)
+    assert.match(designerSource, /即时本地提示/)
+    assert.match(designerSource, /workflowApi\.validate/)
+    assert.match(designerSource, /发布检查通过/)
     assert.match(designerSource, /流程问题/)
     assert.match(designerSource, /节点问题/)
     assert.match(designerSource, /const selectedNodeIssues = computed\(\(\) => nodeValidationIssues\.value/)
@@ -124,23 +163,23 @@ describe('Task 6 — Designer Structure', () => {
   })
 
   test('designer keeps resources in the sidebar and restores function nodes to the canvas toolbar', () => {
-    assert.match(designerSource, /grid-template-columns:240px minmax\(430px,1fr\) 304px/)
-    assert.match(designerSource, /<strong>节点资源<\/strong>/)
+    assert.match(designerSource, /grid-template-columns:\s*270px minmax\(0,\s*1fr\) 304px/)
+    assert.match(designerSource, /<strong class="tree-header-title">节点资源<\/strong>/)
     assert.match(designerSource, /<strong>流程属性<\/strong>/)
     assert.doesNotMatch(designerSource.split('<script setup')[0], /canvas-floating-island|CONFIGURATION|DEVICE CAPABILITY|PARAMETERS|EXPRESSION/)
     assert.doesNotMatch(designerSource.split('<script setup')[0], /class="resource-function-section"/)
     assert.match(designerSource.split('<script setup')[0], /class="canvas-floating-controls"/)
-    assert.match(designerSource, /FolderOpened|Folder/)
+    assert.match(designerSource, /<Folder/)
   })
 
-  test('resource sidebar uses compact model-tree rows without decorative badges or empty illustrations', () => {
-    assert.match(designerSource, /class="resource-tree-node/)
-    assert.match(designerSource, /class="resource-node-text"/)
-    assert.match(designerSource, /class="resource-node-meta"/)
-    assert.match(designerSource, /class="resource-tree-empty"/)
-    assert.match(designerSource, /\.resource-tabs :deep\(\.el-tree-node__content\)\{[^}]*height:34px/)
-    assert.match(designerSource, /box-shadow:inset 3px 0/)
-    assert.doesNotMatch(designerSource, /model-badge|instance-badge|<el-empty/)
+  test('resource sidebar uses the data-center asset tree chrome without empty illustrations', () => {
+    assert.match(designerSource, /class="resource-panel sl-asset-tree"/)
+    assert.match(designerSource, /class="t-row"/)
+    assert.match(designerSource, /tree-search-input/)
+    assert.match(designerSource, /node-type-\$\{data\.kind\}/)
+    assert.match(designerSource, /class="tree-empty"/)
+    assert.doesNotMatch(designerSource, /resource-tree-node|resource-node-meta|<el-empty/)
+    assert.doesNotMatch(designerSource.split('<script setup')[0], /Tickets|dataTable|绑定的数据表/)
   })
 
   test('auto layout uses graph connections, real node sizes and refreshes connector geometry', () => {
@@ -150,9 +189,9 @@ describe('Task 6 — Designer Structure', () => {
   })
 
   test('node drawer uses a compact seamless console layout and top-level destructive action', () => {
-    assert.match(designerSource, /size="62vw"/)
-    assert.match(designerSource, /min-width:880px/)
-    assert.match(designerSource, /max-width:1180px/)
+    assert.match(designerSource, /size="50%"/)
+    assert.match(designerSource, /width: 50%/)
+    assert.match(designerSource, /max-width: 92vw/)
     assert.match(inspectorSource, /class="node-profile-header"/)
     assert.match(inspectorSource, /class="node-config-workspace"/)
     assert.match(inspectorSource, /class="node-error-summary"/)
@@ -177,7 +216,8 @@ describe('Task 6 — Designer Structure', () => {
   })
 
   test('persisted workflows expose a confirmed delete action and reset after deletion', () => {
-    assert.match(designerSource, /v-if="form\.id"[^>]*:loading="deleteLoading"[^>]*@click="deleteCurrentWorkflow"/)
+    assert.match(designerSource, /v-if="form\.id"[\s\S]*?@click="deleteCurrentWorkflow"/)
+    assert.match(designerSource, /deleteLoading/)
     assert.match(designerSource, /删除流程后无法恢复/)
     assert.match(designerSource, /workflowApi\.delete\(workflowId\)/)
     assert.match(designerSource, /localStorage\.removeItem\(layoutKey\(workflowId\)\)/)
@@ -192,7 +232,7 @@ describe('Task 6 — Designer Structure', () => {
     assert.match(businessSource, /parameter\.description/)
     assert.doesNotMatch(businessSource, /<span>{{ parameter\.name }}<\/span>/)
     assert.doesNotMatch(businessSource, /<strong>{{ parameter\.displayName \|\| parameter\.name }}<\/strong>/)
-    assert.match(businessSource, /max-width:320px/)
+    assert.match(businessSource, /grid-template-columns:1fr/)
     assert.doesNotMatch(businessSource.split('<script setup')[0], /DEVICE CAPABILITY|PARAMETERS|EXPRESSION/)
   })
 
@@ -200,7 +240,7 @@ describe('Task 6 — Designer Structure', () => {
     assert.match(triggersSource, /class="condition-rule-row"/)
     assert.match(triggersSource, /class="action-rule-row"/)
     assert.match(triggersSource, /'且' : '当'/)
-    assert.match(triggersSource, />则</)
+    assert.match(triggersSource, /actionIndex \? '再' : '则'/)
     assert.match(triggersSource, /grid-template-columns:32px minmax\(180px,240px\) 96px minmax\(130px,190px\)/)
     assert.match(triggersSource, /grid-template-columns:32px 110px minmax\(180px,240px\) minmax\(130px,190px\)/)
     assert.match(triggersSource, /系统预置/)
@@ -301,7 +341,7 @@ describe('Task 6 — Designer Structure', () => {
   test('workflow library leaf items are draggable as subflows except for the current workflow', () => {
     assert.match(designerSource, /canDragWorkflowResource/)
     assert.match(designerSource, /:draggable="data\.workflow && canDragWorkflowResource/)
-    assert.match(designerSource, /@dragstart\.stop="drag\(\$event,\{ kind:'workflow', workflow:data\.workflow \}\)"/)
+    assert.match(designerSource, /@dragstart\.stop="data\.workflow && drag\(\$event, \{ kind:'workflow', workflow:data\.workflow \}\)"/)
   })
 
   test('trigger editor uses interface-local condition names', () => {

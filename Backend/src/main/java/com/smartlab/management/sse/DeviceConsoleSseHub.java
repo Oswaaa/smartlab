@@ -6,6 +6,8 @@ import com.smartlab.engine.statemachine.StateMachineInterfaceSignalEvent;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.Ordered;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -29,7 +31,8 @@ public class DeviceConsoleSseHub {
     private final List<SseEmitter> globalEmitters = new CopyOnWriteArrayList<>();
 
     /**
-     * 为指定设备实例注册新的 SSE 终端连接（抽屉打开时建立）。
+     * 为指定设备实例注册 SSE 连接。主路径是 {@link #registerGlobal()}：登录后前端建一条全局流。
+     * 本方法仅保留按实例订阅，控制台 UI 仍在实例抽屉中展示。
      */
     public SseEmitter register(Long instanceId) {
         if (instanceId == null) {
@@ -95,7 +98,9 @@ public class DeviceConsoleSseHub {
 
     /**
      * 监听状态机底层信号事件，实时推送到前端控制台终端。
+     * 必须先于工作流转发器执行：转发器会写远程库并可能抛错，Spring 默认同线程顺序通知，后面的监听器会被跳过。
      */
+    @Order(Ordered.HIGHEST_PRECEDENCE)
     @EventListener
     public void handleStateMachineSignal(StateMachineInterfaceSignalEvent event) {
         if (event == null || event.instanceId() == null) return;

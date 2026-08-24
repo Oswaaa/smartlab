@@ -27,7 +27,10 @@ import {
   validateNodeDefinition,
   workflowUpdateVariableDataType,
   workflowTriggerConditions,
+  workflowTriggerActions,
+  defaultRoutingOutTrigger,
   workflowNodeTemplates,
+  renameWorkflowInterface,
 } from '../src/utils/workflowNodeDefinition.js'
 
 const states = ['PENDING', 'RUNNING', 'SUCCEEDED', 'FAILED', 'TERMINATING', 'TERMINATED']
@@ -42,6 +45,15 @@ function lifecycle(key) {
 }
 
 function action(actionName, payload) { return { actionName, payload } }
+function withAggregateCompletionTrigger(node) {
+  if ((node.interfaces[1].bindingTriggers ?? []).length === 0) {
+    node.interfaces[1].bindingTriggers.push({
+      condition: { object: 'aggregateCount', operator: '>', threshold: 0 },
+      action: action('EMIT', { targetInterfaceName: 'Interface_workflow_out', signalName: 'ACTIVE' }),
+    })
+  }
+  return node
+}
 function trigger(key, object, threshold, inlineAction) {
   return { condition: { object, operator: '=', threshold }, action: inlineAction, _system: true, _systemKey: key }
 }
@@ -54,7 +66,16 @@ const workflowTemplateFixture = {
     lifecycle: lifecycle('start'),
     interfaces: [iface('start.out', 'Interface_workflow_out', 'OUT', 'WORKFLOW', ['ACTIVE'], [
       trigger('start.begin', 'nodeLifecycleState', 'PENDING', action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'RUNNING' })),
-      trigger('start.emit', 'nodeLifecycleState', 'RUNNING', action('EMIT', { targetInterfaceName: 'Interface_workflow_out', signalName: 'ACTIVE' })),
+      {
+        condition: { object: 'nodeLifecycleState', operator: '=', threshold: 'RUNNING' },
+        action: action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'SUCCEEDED' }),
+        actions: [
+          action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'SUCCEEDED' }),
+          action('EMIT', { targetInterfaceName: 'Interface_workflow_out', signalName: 'ACTIVE' }),
+        ],
+        _system: true,
+        _systemKey: 'start.complete',
+      },
     ])],
     actions: ['UPDATE', 'EMIT'],
   },
@@ -164,6 +185,7 @@ test('聚合节点新增输入接口时自动附带只读计数触发器', () =>
   assert.equal(input.bindingTriggers[0].action.payload.targetName, 'aggregateCount')
   assert.equal(input.bindingTriggers[0].action.payload.valueExpression, 'aggregateCount + 1')
   node.interfaces.push(input)
+  withAggregateCompletionTrigger(node)
   assert.deepEqual(validateNodeDefinition(node), [])
   input.bindingTriggers = []
   assert.ok(validateNodeDefinition(node).some(error => /聚合输入接口必须包含计数触发器/.test(error.message)))
@@ -268,6 +290,42 @@ test('creation requires templates and always clones them', () => {
   assert.deepEqual(workflowNodeTemplates().BRANCH.actions, ['UPDATE', 'EMIT'])
 })
 
+test('BRANCH and AGGREGATE output triggers default to succeed then emit', () => {
+  const branch = createFunctionNode('BRANCH', 'branch')
+  const branchOut = createWorkflowInterfaceDefinition(branch, 'OUT', 'high')
+  assert.equal(branchOut.bindingTriggers[0].action.actionName, 'UPDATE')
+  assert.deepEqual(workflowTriggerActions(branchOut.bindingTriggers[0]).map(item => item.actionName), ['UPDATE', 'EMIT'])
+  assert.equal(workflowTriggerActions(branchOut.bindingTriggers[0])[0].payload.targetName, 'SUCCEEDED')
+  assert.equal(branchOut.bindingTriggers[0].condition.object, 'nodeLifecycleState')
+
+  const aggregate = createFunctionNode('AGGREGATE', 'aggregate')
+  const routed = defaultRoutingOutTrigger(aggregate, 'Interface_workflow_out')
+  assert.equal(routed.condition.logic, 'AND')
+  assert.deepEqual(routed.condition.conditions.map(item => item.object), ['aggregateCount', 'nodeLifecycleState'])
+  assert.equal(routed.condition.conditions[0].threshold, 1)
+  assert.deepEqual(workflowTriggerActions(routed).map(item => item.actionName), ['UPDATE', 'EMIT'])
+})
+
+test('renaming a branch output rewrites EMIT host and canvas connections', () => {
+  const node = createFunctionNode('BRANCH', 'branch')
+  const output = createWorkflowInterfaceDefinition(node, 'OUT', 'Interface_workflow_out_1')
+  node.interfaces.push(output)
+  const connections = [{
+    connectionType: 'NODE_TO_NODE',
+    source: { nodeName: 'branch', interfaceName: 'Interface_workflow_out_1' },
+    target: { nodeName: 'heater', interfaceName: 'Interface_workflow_in' },
+  }]
+
+  const result = renameWorkflowInterface(node, 'Interface_workflow_out_1', 'high', connections)
+  const renamed = result.node.interfaces.find(item => item.name === 'high')
+  const renamedActions = workflowTriggerActions(renamed.bindingTriggers[0])
+  assert.equal(renamedActions.find(item => item.actionName === 'EMIT').payload.targetInterfaceName, 'high')
+  assert.deepEqual(renamedActions.map(item => item.payload.targetInterfaceName || item.payload.targetName), ['SUCCEEDED', 'high'])
+  assert.equal(result.interfaceConnections[0].source.interfaceName, 'high')
+  assert.equal(result.interfaceConnections[0].target.interfaceName, 'Interface_workflow_in')
+  assert.deepEqual(validateNodeDefinition(result.node), [])
+})
+
 test('BRANCH starts without fixed true/false outputs and accepts user-defined N-way outputs', () => {
   const node = createFunctionNode('BRANCH', 'branch')
   assert.deepEqual(node.interfaces.map(item => item.name), ['Interface_workflow_in'])
@@ -279,6 +337,22 @@ test('BRANCH starts without fixed true/false outputs and accepts user-defined N-
     ] })
   }
   assert.deepEqual(validateNodeDefinition(node), [])
+})
+
+test('every interface must declare at least one trigger', () => {
+  const branch = createFunctionNode('BRANCH', 'branch')
+  assert.deepEqual(validateNodeDefinition(branch), [])
+  branch.interfaces.push({
+    name: 'high',
+    direction: 'OUT',
+    interfaceType: 'WORKFLOW',
+    allowedSignals: ['ACTIVE'],
+    bindingTriggers: [],
+  })
+  assert.ok(validateNodeDefinition(branch).some(error => error.message === '接口high必须配置触发器'))
+
+  const aggregate = createFunctionNode('AGGREGATE', 'aggregate')
+  assert.ok(validateNodeDefinition(aggregate).some(error => error.message === '接口Interface_workflow_out必须配置触发器'))
 })
 
 test('DEV_NODE exposes four independent inline lifecycle and signal triggers', () => {
@@ -397,7 +471,7 @@ test('constant UPDATE preserves scalar number boolean and string types', () => {
 })
 
 test('device attribute mapping reports variable and attribute type mismatches', () => {
-  const node = createFunctionNode('AGGREGATE', 'aggregate')
+  const node = withAggregateCompletionTrigger(createFunctionNode('AGGREGATE', 'aggregate'))
   node.internalVariables.push({ name: 'temperature', dataType: 'STRING', attributesMapping: 'temperature' })
   const errors = validateNodeDefinition(node, { deviceAttributes: [{ attributeName: 'temperature', dataType: 'DOUBLE' }] })
   assert.ok(errors.some(error => /不一致/.test(error.message)))

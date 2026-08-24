@@ -54,6 +54,23 @@ test('runtime graph keeps uncreated workflow nodes waiting', () => {
   assert.deepEqual(graph.nodes.map(node => [node.name, node.status]), [['start', 'SUCCEEDED'], ['end', 'WAITING']])
 })
 
+test('runtime graph matches steps via workflow nodeIdRefs when nodes have no nodeIdRef field', () => {
+  const graph = buildRuntimeGraph({
+    nodeIdRefs: [
+      { nodeName: 'start1', nodeIdRef: 1 },
+      { nodeName: 'device1', nodeIdRef: 2 },
+    ],
+    nodesDef: [{ name: 'start1' }, { name: 'device1', nodeType: 'DEV_NODE' }],
+    interfaceConnections: [],
+  }, [
+    { id: 11, nodeIdRef: 1, nodeStatus: 'SUCCEEDED' },
+    { id: 12, nodeIdRef: 2, nodeStatus: 'SUCCEEDED' },
+  ])
+  assert.equal(graph.nodes[1].name, 'device1')
+  assert.equal(graph.nodes[1].status, 'SUCCEEDED')
+  assert.equal(graph.nodes[1].stepId, 12)
+})
+
 test('runtime graph matches numeric and string node references consistently', () => {
   const graph = buildRuntimeGraph({ nodesDef: [{ name: 'heater', nodeIdRef: '7' }], interfaceConnections: [] }, [
     { id: 2, nodeIdRef: 7, nodeStatus: 'RUNNING' },

@@ -65,5 +65,5 @@ function emitJson() {
 </script>
 
 <style scoped>
-.json-entry-list{display:grid;gap:10px}.json-entry-row{display:grid;grid-template-columns:minmax(120px,1fr) minmax(160px,2fr) auto;gap:10px;padding:10px;border:1px solid #e5e6eb;background:#fafafa}.json-error{margin:0;color:#ff4d4f;font-size:12px}:deep(.el-input-number),:deep(.el-input),:deep(.el-select){width:100%}
+.json-entry-list{display:grid;gap:10px}.json-entry-row{display:grid;grid-template-columns:minmax(120px,1fr) minmax(160px,2fr) auto;gap:10px;padding:10px;border:1px solid #e5e6eb;background:var(--sl-bg-hover)}.json-error{margin:0;color:#ff4d4f;font-size:12px}:deep(.el-input-number),:deep(.el-input),:deep(.el-select){width:100%}
 </style>

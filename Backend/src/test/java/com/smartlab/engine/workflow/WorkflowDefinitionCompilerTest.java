@@ -147,6 +147,30 @@ class WorkflowDefinitionCompilerTest {
     }
 
     @Test
+    void acceptsTemporalFunctionInUpdateValueExpression() {
+        ObjectNode aggregate = node(new NodeCase("FUNC_NODE", "AGGREGATE"));
+        aggregate.withArray("internalVariables").addObject()
+                .put("name", "temperature")
+                .put("dataType", "DOUBLE");
+        aggregate.withArray("internalVariables").addObject()
+                .put("name", "tempRate")
+                .put("dataType", "DOUBLE");
+        ObjectNode trigger = ((ObjectNode) aggregate.withArray("interfaces").get(0)).withArray("bindingTriggers").addObject();
+        trigger.putObject("condition")
+                .put("object", "signalName")
+                .put("operator", "=")
+                .put("threshold", "OTHER");
+        trigger.putObject("action")
+                .put("actionName", "UPDATE")
+                .putObject("payload")
+                .put("updateType", "INTERNAL_VARIABLE")
+                .put("targetName", "tempRate")
+                .put("valueExpression", "rate(temperature, 10)");
+
+        assertDoesNotThrow(() -> compiler.compile(requestWith(aggregate)));
+    }
+
+    @Test
     void acceptsAdditionalEmitTriggerOnAnyInterface() {
         ObjectNode aggregate = node(new NodeCase("FUNC_NODE", "AGGREGATE"));
         ObjectNode trigger = ((ObjectNode) aggregate.withArray("interfaces").get(1))

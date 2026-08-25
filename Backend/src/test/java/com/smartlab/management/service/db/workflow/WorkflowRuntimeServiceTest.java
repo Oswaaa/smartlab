@@ -3,6 +3,7 @@ package com.smartlab.management.service.db.workflow;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.engine.workflow.WorkflowTriggerState;
+import com.smartlab.global.event.WorkflowNodeObservationEvent;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.entity.workflow.FlowNode;
 import com.smartlab.management.entity.workflow.Task;
@@ -142,6 +143,26 @@ class WorkflowRuntimeServiceTest {
         assertTrue(step.getInterfaceOutSnapshot().isArray());
         assertEquals(snapshot, step.getInterfaceOutSnapshot());
         verify(steps).updateById(step);
+    }
+
+    @Test
+    void snapshotAndPortUpdatesPublishNodeObservation() {
+        TaskStepMapper steps = mock(TaskStepMapper.class);
+        FlowNodeMapper nodes = mock(FlowNodeMapper.class);
+        ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
+        WorkflowRuntimeService runtime = new WorkflowRuntimeService(mock(TaskMapper.class), steps, nodes,
+                mock(ExecutionLogService.class), events);
+        TaskStep step = step("RUNNING");
+        when(nodes.selectById(7L)).thenReturn(node(lifecycle("PENDING", "RUNNING", "RUNNING", "SUCCEEDED")));
+        ArrayNode snapshot = JsonNodeSupport.arrayNode();
+        snapshot.addObject().put("interfaceName", "workflow-in").put("signalName", "ACTIVE");
+
+        runtime.updateInputSnapshot(step, snapshot);
+        runtime.updateOutputSnapshot(step, snapshot);
+        runtime.updatePortInSnapshot(step, snapshot);
+        runtime.updatePortOutSnapshot(step, snapshot);
+
+        verify(events, times(4)).publishEvent(any(WorkflowNodeObservationEvent.class));
     }
 
     @Test

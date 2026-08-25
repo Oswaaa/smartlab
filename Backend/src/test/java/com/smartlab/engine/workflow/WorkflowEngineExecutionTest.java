@@ -11,7 +11,6 @@ import com.smartlab.engine.workflow.action.WorkflowActionExecutor;
 import com.smartlab.engine.workflow.action.WorkflowActionRegistry;
 import com.smartlab.engine.workflow.action.WorkflowActionResult;
 import com.smartlab.engine.workflow.action.UpdateWorkflowActionExecutor;
-import com.smartlab.engine.workflow.action.WorkflowValueResolver;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.workflow.WorkflowDetailResponse;
 import com.smartlab.management.entity.workflow.FlowNode;
@@ -246,7 +245,10 @@ class WorkflowEngineExecutionTest {
                 .add(JsonNodeSupport.objectNode().put("interfaceName", "aggregate-in-1").put("signalName", "ACTIVE"))
                 .add(JsonNodeSupport.objectNode().put("interfaceName", "aggregate-in-2").put("signalName", "ACTIVE")));
         WorkflowActionRegistry latestValueRegistry = new WorkflowActionRegistry(List.of(
-                new UpdateWorkflowActionExecutor(new WorkflowValueResolver(new ConstraintExpressionEvaluator())),
+                new UpdateWorkflowActionExecutor(new ConstraintExpressionEvaluator(),
+                        new WorkflowExpressionHistoryResolver(workflows, flowNodes, runtime, operations,
+                                mock(com.smartlab.engine.observation.ObservableSnapshotReader.class),
+                                new ConstraintExpressionEvaluator())),
                 executor("EMIT", WorkflowActionResult.continueExecution())));
         WorkflowEngine latestValueEngine = new WorkflowEngine(runtime, workflows, flowNodes,
                 new WorkflowConditionEvaluator(), new ConstraintExpressionEvaluator(), latestValueRegistry,
@@ -367,7 +369,10 @@ class WorkflowEngineExecutionTest {
                 new WorkflowConditionEvaluator(), new ConstraintExpressionEvaluator(),
                 new WorkflowActionRegistry(List.of(
                         new EmitSignalWorkflowActionExecutor(),
-                        new UpdateWorkflowActionExecutor(new WorkflowValueResolver(new ConstraintExpressionEvaluator())))),
+                        new UpdateWorkflowActionExecutor(new ConstraintExpressionEvaluator(),
+                                new WorkflowExpressionHistoryResolver(workflows, flowNodes, runtime, operations,
+                                        mock(com.smartlab.engine.observation.ObservableSnapshotReader.class),
+                                        new ConstraintExpressionEvaluator())))),
                 operations);
         stubPoll(task, step, node);
         when(operations.resolveDeviceInstance(task, step, node)).thenReturn(99L);

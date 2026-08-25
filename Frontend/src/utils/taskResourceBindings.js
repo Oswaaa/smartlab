@@ -1,4 +1,5 @@
 import { buildWorkflowAutoLayout } from './workflowCanvas.js'
+import { runtimeNodeToNodeConnections } from './workflowExecution.js'
 
 export function escapeBindingSegment(value) {
   return String(value).replaceAll('~', '~0').replaceAll('/', '~1')
@@ -54,8 +55,7 @@ export async function expandWorkflowDefinition(rootFlowModelId, loadDefinition) 
     const flowName = definition.metadata?.flowModelName || definition.flowModelName || definition.flowName || definition.name || `流程#${flowModelId}`
     const groupBreadcrumb = breadcrumbNames.length ? breadcrumbNames : [flowName]
     const groupKey = slotSegments.length ? slotSegments.join('/') : 'root'
-    const interfaceConnections = (definition.interfaceConnections || [])
-      .filter(connection => connection.connectionType === 'NODE_TO_NODE')
+    const interfaceConnections = runtimeNodeToNodeConnections(definition.interfaceConnections)
     const group = {
       groupKey,
       parentGroupKey,
@@ -65,6 +65,7 @@ export async function expandWorkflowDefinition(rootFlowModelId, loadDefinition) 
       occurrencePath: groupBreadcrumb.join(' / '),
       nodes: [],
       interfaceConnections,
+      portConnections: definition.portConnections || [],
       connections: interfaceConnections
         .map(connection => ({
           sourceNodeName: connection.source?.nodeName || '',
@@ -138,18 +139,45 @@ export function applyInheritedBinding(routes, currentBindings, sourceRoute, devi
 
 // --- Backend-requirement-based helpers (Task 7) ---
 
-export function buildDeviceBindings(requirements, selections) {
+export function isParameterHole(value) {
+  return value === undefined || value === null
+}
+
+export function holeParametersOf(requirement) {
+  return (requirement?.capabilityParameters || []).filter(parameter => parameter.hole)
+}
+
+export function missingHoleCount(requirements, parameterBindings = {}) {
+  if (!Array.isArray(requirements)) return 0
+  return requirements.reduce((count, requirement) => {
+    const values = parameterBindings[requirement.slotId] || {}
+    return count + holeParametersOf(requirement).filter(parameter => isParameterHole(values[parameter.name])).length
+  }, 0)
+}
+
+export function buildDeviceBindings(requirements, selections, parameterBindings = {}) {
   if (!Array.isArray(requirements)) return []
   return requirements
     .filter(item => selections[item.slotId] != null && selections[item.slotId] !== '')
-    .map(item => ({ slotId: item.slotId, deviceInstanceId: Number(selections[item.slotId]) }))
+    .map(item => {
+      const binding = { slotId: item.slotId, deviceInstanceId: Number(selections[item.slotId]) }
+      const holes = holeParametersOf(item)
+      if (!holes.length) return binding
+      const values = parameterBindings[item.slotId] || {}
+      const capabilityParameters = {}
+      for (const parameter of holes) {
+        if (!isParameterHole(values[parameter.name])) capabilityParameters[parameter.name] = values[parameter.name]
+      }
+      binding.capabilityParameters = capabilityParameters
+      return binding
+    })
 }
 
 export function buildTaskCreatePayload(form, requirements) {
   return {
     taskName: form.taskName,
     flowModelId: form.flowModelId,
-    deviceBindings: buildDeviceBindings(requirements, form.resourceBindings || {}),
+    deviceBindings: buildDeviceBindings(requirements, form.resourceBindings || {}, form.parameterBindings || {}),
     taskConstraints: form.taskConstraints || [],
     taskVariables: {}
   }
@@ -174,7 +202,7 @@ export function buildBindingWorkflowView(expanded = {}, requirements = []) {
   const matchedSlots = new Set()
   const errors = [...(expanded.errors || [])]
   const groups = (expanded.groups || []).map(group => {
-    const layout = buildWorkflowAutoLayout(group.nodes || [], group.interfaceConnections || [], [])
+    const layout = buildWorkflowAutoLayout(group.nodes || [], group.interfaceConnections || [], group.portConnections || [])
     const nodes = (group.nodes || []).map(node => {
       if (node.nodeType !== 'DEV_NODE') {
         return { ...node, slotId: null, requirement: null, bindingInvalid: false, position: layout[node.name] }
@@ -221,6 +249,17 @@ export function groupRequirementsByFlow(requirements) {
     group.slots.push(req)
   }
   return Array.from(groups.values())
+}
+
+export function presentCapabilityDisplayName(requirement, models = [], node = null) {
+  const fromRequirement = String(requirement?.capabilityDisplayName || '').trim()
+  if (fromRequirement) return fromRequirement
+  const fromNode = String(node?.capability?.displayName || node?.capability?.capabilityDisplayName || '').trim()
+  if (fromNode) return fromNode
+  const capabilityName = requirement?.capabilityName || node?.capability?.capabilityName
+  const model = (models || []).find(item => Number(item.id ?? item.modelId) === Number(requirement?.deviceModelId ?? node?.deviceModelId))
+  const capability = (model?.capabilities || []).find(item => item.capabilityName === capabilityName)
+  return capability?.displayName || capability?.capabilityDisplayName || capabilityName || '未指定'
 }
 
 export function compatibleInstances(requirement, instances, models) {

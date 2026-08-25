@@ -213,21 +213,25 @@ public class WorkflowRuntimeService {
     public void updateInputSnapshot(TaskStep step, JsonNode snapshot) {
         step.setInterfaceInSnapshot(snapshot);
         stepMapper.updateById(step);
+        publishNode(step);
     }
 
     public void updateOutputSnapshot(TaskStep step, JsonNode snapshot) {
         step.setInterfaceOutSnapshot(snapshot);
         stepMapper.updateById(step);
+        publishNode(step);
     }
 
     public void updatePortInSnapshot(TaskStep step, JsonNode snapshot) {
         step.setPortInSnapshot(snapshot);
         stepMapper.updateById(step);
+        publishNode(step);
     }
 
     public void updatePortOutSnapshot(TaskStep step, JsonNode snapshot) {
         step.setPortOutSnapshot(snapshot);
         stepMapper.updateById(step);
+        publishNode(step);
     }
 
     @Transactional(rollbackFor = Exception.class)

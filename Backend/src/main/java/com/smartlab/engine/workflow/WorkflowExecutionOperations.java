@@ -19,6 +19,12 @@ public interface WorkflowExecutionOperations {
     }
 
     long resolveDeviceInstance(Task task, TaskStep step, FlowNode node);
+
+    default JsonNode resolveCapabilityParameters(Task task, TaskStep step, FlowNode node) {
+        JsonNode parameters = node == null || node.getCapability() == null
+                ? null : node.getCapability().path("capabilityParameters");
+        return parameters != null && parameters.isObject() ? parameters.deepCopy() : JsonNodeSupport.objectNode();
+    }
     String ensureMessageId(TaskStep step, long deviceInstanceId, String capabilityRef);
     DeviceDispatchResult dispatchDeviceSignal(Task task, TaskStep step, FlowNode node, long deviceInstanceId,
                                               String messageId, String nodeOutputInterfaceName,

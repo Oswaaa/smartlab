@@ -16,6 +16,8 @@ import com.smartlab.management.entity.constraint.ViolationLog;
 import com.smartlab.management.mapper.constraint.ConstraintRuleMapper;
 import com.smartlab.management.mapper.constraint.ViolationLogMapper;
 import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
+import com.smartlab.management.mapper.resource.device.DeviceModelsMapper;
+import com.smartlab.management.entity.resource.device.DeviceModels;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
 import org.springframework.context.ApplicationEventPublisher;
@@ -38,6 +40,7 @@ public class ConstraintRuleService extends ManagementCrudService<ConstraintRule>
 
     private final ConstraintRuleMapper mapper;
     private final DeviceInstancesMapper deviceInstancesMapper;
+    private final DeviceModelsMapper deviceModelsMapper;
     private final ConstraintExpressionEvaluator expressionEvaluator;
     private final ApplicationEventPublisher eventPublisher;
     private final ViolationLogMapper violationLogMapper;
@@ -46,18 +49,27 @@ public class ConstraintRuleService extends ManagementCrudService<ConstraintRule>
     public ConstraintRuleService(ConstraintRuleMapper mapper, DeviceInstancesMapper deviceInstancesMapper,
                                  ConstraintExpressionEvaluator expressionEvaluator,
                                  ApplicationEventPublisher eventPublisher,
-                                 ViolationLogMapper violationLogMapper) {
+                                 ViolationLogMapper violationLogMapper,
+                                 DeviceModelsMapper deviceModelsMapper) {
         super(mapper);
         this.mapper = mapper;
         this.deviceInstancesMapper = deviceInstancesMapper;
+        this.deviceModelsMapper = deviceModelsMapper;
         this.expressionEvaluator = expressionEvaluator;
         this.eventPublisher = eventPublisher;
         this.violationLogMapper = violationLogMapper;
     }
 
     public ConstraintRuleService(ConstraintRuleMapper mapper, DeviceInstancesMapper deviceInstancesMapper,
+                                 ConstraintExpressionEvaluator expressionEvaluator,
+                                 ApplicationEventPublisher eventPublisher,
+                                 ViolationLogMapper violationLogMapper) {
+        this(mapper, deviceInstancesMapper, expressionEvaluator, eventPublisher, violationLogMapper, null);
+    }
+
+    public ConstraintRuleService(ConstraintRuleMapper mapper, DeviceInstancesMapper deviceInstancesMapper,
                                  ConstraintExpressionEvaluator expressionEvaluator) {
-        this(mapper, deviceInstancesMapper, expressionEvaluator, event -> { }, null);
+        this(mapper, deviceInstancesMapper, expressionEvaluator, event -> { }, null, null);
     }
 
     public List<ConstraintRule> list(Boolean isEnabled) {
@@ -311,7 +323,7 @@ public class ConstraintRuleService extends ManagementCrudService<ConstraintRule>
         if (!"DEVICE_CAPABILITY".equals(actionType)) {
             throw new IllegalArgumentException(scope + ".actionType必须是SYSTEM或DEVICE_CAPABILITY");
         }
-        requireText(action, "capabilityName", scope);
+        String capabilityName = requireText(action, "capabilityName", scope);
         long actionModelId = requirePositiveLong(action, "deviceModelId", scope);
         Long deviceInstanceId = optionalLong(action.get("deviceInstanceId"));
         if (deviceInstanceId != null) {
@@ -328,6 +340,58 @@ public class ConstraintRuleService extends ManagementCrudService<ConstraintRule>
         if (parameters != null && !parameters.isNull() && !parameters.isObject()) {
             throw new IllegalArgumentException(scope + ".parameters必须是对象");
         }
+        validateCapabilityParameters(actionModelId, capabilityName, parameters, scope);
+    }
+
+    private void validateCapabilityParameters(long deviceModelId, String capabilityName, JsonNode parameters, String scope) {
+        if (deviceModelsMapper == null) return;
+        DeviceModels model = deviceModelsMapper.selectById(deviceModelId);
+        if (model == null) return;
+        JsonNode capability = findCapability(model.getCapabilities(), capabilityName);
+        if (capability == null) {
+            throw new IllegalArgumentException(scope + "引用的设备能力不存在: " + capabilityName);
+        }
+        JsonNode defined = capability.path("parameters");
+        if (!defined.isArray() || defined.isEmpty()) return;
+        JsonNode values = parameters == null || parameters.isNull() ? JsonNodeSupport.objectNode() : parameters;
+        for (JsonNode definition : defined) {
+            String name = definition.path("name").asText("");
+            if (name.isBlank()) continue;
+            JsonNode value = values.get(name);
+            String display = definition.path("displayName").asText(name);
+            if (isBlankCapabilityParameter(value)) {
+                throw new IllegalArgumentException(scope + ".parameters." + name + "不能为空（" + display + "）");
+            }
+            String dataType = definition.path("dataType").asText("STRING");
+            if (!matchesCapabilityParameterType(dataType, value)) {
+                throw new IllegalArgumentException(scope + ".parameters." + name + "类型不正确，要求" + dataType);
+            }
+        }
+    }
+
+    private JsonNode findCapability(JsonNode capabilities, String capabilityName) {
+        if (capabilities == null || !capabilities.isArray() || capabilityName == null || capabilityName.isBlank()) return null;
+        for (JsonNode capability : capabilities) {
+            if (capabilityName.equals(capability.path("capabilityName").asText())) return capability;
+        }
+        return null;
+    }
+
+    private static boolean isBlankCapabilityParameter(JsonNode value) {
+        return value == null || value.isMissingNode() || value.isNull()
+                || (value.isTextual() && value.asText().isBlank());
+    }
+
+    private static boolean matchesCapabilityParameterType(String dataType, JsonNode value) {
+        if (value == null || value.isNull() || dataType == null || dataType.isBlank()) return false;
+        return switch (dataType) {
+            case "INTEGER" -> value.isIntegralNumber();
+            case "DOUBLE" -> value.isNumber();
+            case "STRING" -> value.isTextual();
+            case "BOOLEAN" -> value.isBoolean();
+            case "JSON" -> value.isObject() || value.isArray();
+            default -> false;
+        };
     }
 
     /** 所有设备观测都未指定实例时，动作可以省略实例，运行时绑定到触发该规则的 twin。 */

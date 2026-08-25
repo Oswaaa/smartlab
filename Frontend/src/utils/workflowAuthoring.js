@@ -51,6 +51,17 @@ export function workflowModelName(item) {
   return item.metadata?.flowModelName || item.flowModelName || item.flowName || item.name || ''
 }
 
+export function workflowModelVersionLabel(item) {
+  const version = Number(item?.version)
+  return Number.isInteger(version) && version > 0 ? `v${version}` : ''
+}
+
+export function workflowModelDisplayName(item) {
+  const name = workflowModelName(item)
+  const version = workflowModelVersionLabel(item)
+  return version ? `${name} ${version}` : name
+}
+
 export function workflowModelId(item) {
   if (item == null || typeof item !== 'object') return null
   return item.metadata?.flowModelId ?? item.flowModelId ?? item.id ?? null

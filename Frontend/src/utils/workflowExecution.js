@@ -1,3 +1,14 @@
+import { buildWorkflowAutoLayout } from './workflowCanvas.js'
+
+export function interfaceDefinitionForSnapshot(node, row) {
+  const interfaces = node?.interfaces || []
+  const name = row?.interfaceName
+  const direction = row?.direction
+  return interfaces.find(item => item.name === name && item.direction === direction)
+    || interfaces.find(item => item.name === name)
+    || null
+}
+
 export function isExecutableWorkflow(workflow) {
   return String(workflow?.status || '').trim().toUpperCase() === 'ACTIVE'
 }
@@ -23,8 +34,72 @@ export function normalizeInterfaceSnapshot(snapshot, direction) {
   })
 }
 
+export function normalizePortSnapshot(snapshot, direction) {
+  if (snapshot == null) return []
+  if (!Array.isArray(snapshot)) throw new Error('端口快照格式不符合当前协议')
+  return snapshot.map((item) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item) || typeof item.portName !== 'string') {
+      throw new Error('端口快照格式不符合当前协议')
+    }
+    return {
+      direction,
+      portName: item.portName,
+      value: Object.hasOwn(item, 'value') ? item.value : null,
+    }
+  })
+}
+
+export function isSnapshotScalar(value) {
+  return value == null || typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean'
+}
+
+export function formatSnapshotScalar(value) {
+  if (value === null || value === undefined) return '—'
+  if (typeof value === 'boolean') return value ? 'true' : 'false'
+  if (value === '') return '""'
+  return String(value)
+}
+
+export function snapshotObjectEntries(value) {
+  if (value == null || typeof value !== 'object' || Array.isArray(value)) return []
+  return Object.entries(value)
+}
+
+export function hasSnapshotPayload(value) {
+  if (value === undefined || value === null) return false
+  if (typeof value === 'object') {
+    if (Array.isArray(value)) return value.length > 0
+    return Object.keys(value).length > 0
+  }
+  return true
+}
+
 export function visibleVariableEntries(variableSpace) {
   return Object.entries(variableSpace ?? {}).filter(([name]) => name !== '_triggerStates')
+}
+
+export function triggerStatesOf(variableSpace) {
+  const states = variableSpace?._triggerStates
+  return states && typeof states === 'object' && !Array.isArray(states) ? states : {}
+}
+
+export function isWorkflowTriggerFired(triggerStates, interfaceName, index) {
+  const prefix = `${interfaceName || ''}::`
+  const keys = Object.keys(triggerStates || {}).filter(key => key.startsWith(prefix) && key !== '__terminalObserved')
+  return Boolean(triggerStates?.[keys[index]])
+}
+
+function snapshotHasValue(value) {
+  return value !== null && value !== undefined
+}
+
+export function runtimeNodeToNodeConnections(connections = []) {
+  return (connections || []).flatMap((connection) => {
+    if (connection?.connectionType && connection.connectionType !== 'NODE_TO_NODE') return []
+    if (connection?.target?.deviceModelId && !connection?.target?.nodeName) return []
+    if (!connection?.source?.nodeName || !connection?.target?.nodeName) return []
+    return [{ ...connection, connectionType: connection.connectionType || 'NODE_TO_NODE' }]
+  })
 }
 
 export function buildStepTree(steps) {
@@ -111,9 +186,17 @@ export function buildRuntimeGraph(workflow, steps) {
       children: step ? (treeById.get(step.id)?.children || []) : [],
     }
   })
+  const layout = buildWorkflowAutoLayout(
+    nodes,
+    workflow?.interfaceConnections ?? [],
+    workflow?.portConnections ?? [],
+  )
+  for (const node of nodes) {
+    node.position = layout[node.name] || { x: 80, y: 120 }
+  }
   const runtimeNodeByName = new Map(nodes.map(node => [node.name, node]))
 
-  const interfaceEdges = (workflow?.interfaceConnections ?? []).map((connection, index) => {
+  const interfaceEdges = runtimeNodeToNodeConnections(workflow?.interfaceConnections).map((connection, index) => {
     const sourceName = connection?.source?.interfaceName
     const targetName = connection?.target?.interfaceName
     const targetNode = runtimeNodeByName.get(connection?.target?.nodeName)
@@ -134,17 +217,25 @@ export function buildRuntimeGraph(workflow, steps) {
       targetStatus: targetNode?.status ?? 'WAITING',
     }
   }).filter(edge => edge.source && edge.target)
-  const portEdges = (workflow?.portConnections ?? []).map((connection, index) => ({
-    id: `port-${index}`,
-    kind: 'PORT',
-    source: connection?.source?.nodeName,
-    target: connection?.target?.nodeName,
-    sourceName: connection?.source?.portName,
-    targetName: connection?.target?.portName,
-    sourceHandle: `port:${connection?.source?.portName}`,
-    targetHandle: `port:${connection?.target?.portName}`,
-    used: false,
-  })).filter(edge => edge.source && edge.target)
+  const portEdges = (workflow?.portConnections ?? []).map((connection, index) => {
+    const targetNode = runtimeNodeByName.get(connection?.target?.nodeName)
+    const targetSnapshot = Array.isArray(targetNode?.step?.portInSnapshot)
+      ? targetNode.step.portInSnapshot
+      : []
+    const accepted = targetSnapshot.find(item => item?.portName === connection?.target?.portName)
+    return {
+      id: `port-${index}`,
+      kind: 'PORT',
+      source: connection?.source?.nodeName,
+      target: connection?.target?.nodeName,
+      sourceName: connection?.source?.portName,
+      targetName: connection?.target?.portName,
+      sourceHandle: `port:${connection?.source?.portName}`,
+      targetHandle: `port:${connection?.target?.portName}`,
+      used: snapshotHasValue(accepted?.value),
+      targetStatus: targetNode?.status ?? 'WAITING',
+    }
+  }).filter(edge => edge.source && edge.target)
   return { nodes, edges: [...interfaceEdges, ...portEdges] }
 }
 
@@ -153,4 +244,43 @@ const TECHNICAL_EVENT_PATTERN = /轮询|线程池|调度器|队列领取|心跳|
 export function businessExecutionEvents(logs) {
   return (logs ?? []).filter(log =>
     log?.sourceType !== 'SYSTEM' && !TECHNICAL_EVENT_PATTERN.test(String(log?.logInfo ?? '')))
+}
+
+function nodeNameFromLogInfo(info) {
+  const text = String(info || '')
+  const created = text.match(/^节点已创建:\s*(.+?)(?:\s*\(#\d+\))?\s*$/)
+  if (created) return created[1].trim()
+  const named = text.match(/^节点\s+(.+?)(?:\s*\(#\d+\))?\s+(?:生命周期|接口)/)
+  if (named) return named[1].trim()
+  return null
+}
+
+export function businessEventNodeName(log, steps = [], workflow = null) {
+  const step = (steps || []).find(item => log?.taskStepId != null && item?.id === log.taskStepId)
+  if (step) {
+    const fromStep = step.nodeName || workflowNodeNameByIdRef(workflow, step.nodeIdRef)
+    if (fromStep) return fromStep
+  }
+  return nodeNameFromLogInfo(log?.logInfo)
+}
+
+export function groupBusinessExecutionEvents(logs, steps = [], workflow = null) {
+  const groups = []
+  const index = new Map()
+  for (const event of businessExecutionEvents(logs)) {
+    const nodeName = businessEventNodeName(event, steps, workflow)
+    const key = nodeName || (
+      event?.sourceType === 'CONSTRAINT' ? '__constraint__'
+        : event?.sourceType === 'TASK' || event?.sourceType === 'MANUAL' ? '__task__'
+          : '__other__'
+    )
+    const label = nodeName
+      || (key === '__constraint__' ? '任务约束' : key === '__task__' ? '任务' : '其他')
+    if (!index.has(key)) {
+      index.set(key, groups.length)
+      groups.push({ key, nodeName: nodeName || null, label, events: [] })
+    }
+    groups[index.get(key)].events.push(event)
+  }
+  return groups
 }

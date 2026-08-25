@@ -1,5 +1,7 @@
 package com.smartlab.management.dto.constraint;
 
+import com.fasterxml.jackson.databind.JsonNode;
+
 public record ConstraintModelRuleSummary(
         String origin,
         Long ruleId,
@@ -7,6 +9,9 @@ public record ConstraintModelRuleSummary(
         String ruleName,
         String expression,
         int bindingCount,
-        int actionCount
+        int actionCount,
+        Integer windowSeconds,
+        JsonNode bindings,
+        JsonNode violationActions
 ) {
 }

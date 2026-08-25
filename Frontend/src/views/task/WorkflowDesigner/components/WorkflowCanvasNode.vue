@@ -1,5 +1,5 @@
 <template>
-  <div class="canvas-node" :class="[{ selected, warning: issues.length, compact: isCompact }, meta.className]" :style="nodeDimensions">
+  <div class="canvas-node" :class="[{ selected, warning: issues.length, compact: isCompact, readonly, unbound: showUnboundState }, meta.className, statusClass]" :style="nodeDimensions">
     <div class="handle-layer input-interfaces">
       <el-tooltip
         v-for="(item, index) in controlInputs"
@@ -48,6 +48,12 @@
           <small class="node-kind">{{ meta.label }}</small>
         </div>
         <span v-if="issues.length" class="warning-dot" :title="issues[0]?.message || '节点配置未完成'">!</span>
+        <div v-if="statusLabel || showBindingLine" class="node-badges">
+          <span v-if="statusLabel" class="status-pill" :class="statusTone">{{ statusLabel }}</span>
+          <span v-if="showBindingLine" class="bind-pill" :class="overlay.bound ? 'is-bound' : 'is-unbound'">
+            {{ overlay.bound ? (overlay.boundLabel || '已绑定') : '待绑定' }}
+          </span>
+        </div>
       </header>
       <div v-if="isBranch" class="node-body rows">
         <div v-for="item in controlOutputs" :key="item.name" class="out-row">
@@ -150,12 +156,16 @@ const props = withDefaults(defineProps<{
   issues?: Item[]
   deviceCapabilities?: Item[]
   hidePortTooltips?: boolean
+  readonly?: boolean
+  overlay?: Item
 }>(), {
   node: null,
   selected: false,
   issues: () => [],
   deviceCapabilities: () => [],
   hidePortTooltips: false,
+  readonly: false,
+  overlay: () => ({}),
 })
 const workflowInterfaces = computed(() => (props.node?.interfaces || []).filter((item: Item) => item.interfaceType === 'WORKFLOW'))
 const controlInputs = computed(() => workflowInterfaces.value.filter((item: Item) => item.direction === 'IN'))
@@ -185,6 +195,15 @@ const operationTitle = computed(() => {
 })
 const operationDetail = computed(() => props.node?.nodeType === 'DEV_NODE' ? capabilityCopy.value.detail : '')
 const paramChips = computed(() => (operationDetail.value || '').split('、').map(item => item.trim()).filter(Boolean))
+const statusLabel = computed(() => props.overlay?.mode === 'runtime' ? (props.overlay.statusLabel || '') : '')
+const statusTone = computed(() => String(props.overlay?.status || '').toLowerCase())
+const statusClass = computed(() => statusTone.value ? `status-${statusTone.value}` : '')
+const showBindingLine = computed(() => {
+  if (props.node?.nodeType !== 'DEV_NODE') return false
+  if (props.overlay?.mode === 'binding' || props.overlay?.showBinding) return true
+  return props.overlay?.bound === true || props.overlay?.bound === false || Boolean(props.overlay?.boundLabel)
+})
+const showUnboundState = computed(() => showBindingLine.value && !props.overlay?.bound)
 
 function outputRowText(item: Item) {
   return formatWorkflowTriggerText(item) || '未配置触发条件'
@@ -239,12 +258,25 @@ function portLabelStyle(index: number, total: number) {
 .compact .node-name{font-size:12.5px}
 .node-kind{display:block;color:var(--sl-text-secondary,#8f959e);font-size:10.5px}
 .warning-dot{width:16px;height:16px;display:grid;place-items:center;flex:none;border-radius:50%;background:var(--sl-warning-light,#fffbeb);color:var(--sl-warning,#d97706);font-size:10px;font-weight:600}
+.node-badges{margin-left:auto;flex:none;display:flex;align-items:center;gap:6px;min-width:0}
+.status-pill{flex:none;font-size:10px;font-weight:700;color:#94a3b8}
+.status-pill.running{color:var(--sl-primary,#2563eb)}
+.status-pill.succeeded{color:var(--sl-success,#16a34a)}
+.status-pill.failed{color:var(--sl-danger,#dc2626)}
+.status-pill.terminating,.status-pill.terminated{color:var(--sl-warning,#d97706)}
+.canvas-node.status-running{box-shadow:0 0 0 3px rgba(37,99,235,.16),var(--sl-shadow-sm)}
+.canvas-node.status-failed{border-color:#fca5a5}
+.canvas-node.status-succeeded{border-color:#bbf7d0}
+.canvas-node.unbound{border-color:#f0b429;box-shadow:0 0 0 2px rgba(240,180,41,.22),var(--sl-shadow-sm)}
+.bind-pill{flex:none;padding:1px 6px;border-radius:999px;font-size:10px;font-weight:700;line-height:16px}
+.bind-pill.is-unbound{background:#fff7e8;color:#b45309;border:1px solid #f5d08a}
+.bind-pill.is-bound{background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;max-width:88px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .node-body{flex:1;display:flex;flex-direction:column;padding:4px 12px 18px;border-top:1px solid var(--sl-border-light,#f0f1f4)}
-.node-body:not(.rows){align-items:center;justify-content:flex-start;text-align:center}
-.node-op{display:flex;align-items:baseline;justify-content:center;gap:8px;min-width:0;max-width:100%}
+.node-body:not(.rows){align-items:flex-start;justify-content:flex-start;text-align:left}
+.node-op{display:flex;align-items:baseline;justify-content:flex-start;gap:6px;min-width:0;max-width:100%}
 .node-op label{flex:none;color:#a9aeb8;font-size:10px}
 .node-op span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--sl-text-heading,#1f2329);font-size:12.5px;font-weight:650}
-.node-params{display:flex;flex-wrap:wrap;justify-content:center;gap:4px;margin-top:4px;max-height:24px;overflow:hidden}
+.node-params{display:flex;flex-wrap:wrap;justify-content:flex-start;gap:4px;margin-top:4px;max-height:24px;overflow:hidden}
 .kv{padding:2px 6px;border:1px solid #e9ebef;border-radius:4px;background:#f5f6f8;color:#5b6470;font-size:10.5px;white-space:nowrap}
 .node-body.rows{padding:6px 0}
 .out-row{display:flex;align-items:center;gap:6px;height:30px;padding:0 12px}
@@ -255,6 +287,8 @@ function portLabelStyle(index: number, total: number) {
 .port-label.top{top:-15px}
 .port-label.bottom{top:calc(100% + 4px)}
 .handle-layer{position:absolute;inset:0;pointer-events:none}.connector-hit-area{position:absolute;z-index:4;width:22px;height:22px;display:block;pointer-events:auto;cursor:crosshair}.side-connector{transform:translateY(-50%)}.horizontal-connector{transform:translateX(-50%)}.input-interfaces .connector-hit-area{left:-11px}.output-interfaces .connector-hit-area{right:-11px}.output-ports .connector-hit-area{bottom:-11px}.input-ports .connector-hit-area{top:-11px}
+.canvas-node.readonly .connector-hit-area{cursor:default}
+.canvas-node.readonly:hover{transform:none}
 .workflow-handle{left:50%!important;right:auto!important;top:50%!important;bottom:auto!important;width:10px!important;height:10px!important;margin:0!important;transform:translate(-50%,-50%)!important;border:2px solid #9aa5b1!important;background:#fff!important;box-shadow:none;pointer-events:auto;transition:width .14s ease,height .14s ease,border-color .14s ease,box-shadow .14s ease}
 .connector-hit-area:hover .workflow-handle{width:12px!important;height:12px!important;border-color:var(--sl-primary,#2563eb)!important;box-shadow:0 0 0 3px rgba(37,99,235,.18)}
 .canvas-node.selected .workflow-handle{border-color:var(--sl-primary,#2563eb)!important}

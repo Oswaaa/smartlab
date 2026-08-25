@@ -15,6 +15,11 @@ export async function pageInstances(params: Record<string, any> = {}) {
   return res.data
 }
 
+export async function listInstances(lifecycleStatus?: string) {
+  const res = await axios.get('/api/device/instance/list', { params: lifecycleStatus ? { lifecycleStatus } : {} })
+  return res.data
+}
+
 export async function listAdapters() {
   const res = await axios.get('/api/adapter/index/list')
   return res.data

@@ -4,24 +4,36 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.engine.constraint.ConstraintExpressionEvaluator;
 import com.smartlab.engine.workflow.WorkflowExecutionOperations;
+import com.smartlab.engine.workflow.WorkflowExpressionHistoryResolver;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.entity.workflow.FlowNode;
 import com.smartlab.management.entity.workflow.Task;
 import com.smartlab.management.entity.workflow.TaskStep;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
 import java.lang.reflect.Proxy;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 class UpdateWorkflowActionExecutorTest {
 
-    private final UpdateWorkflowActionExecutor executor = new UpdateWorkflowActionExecutor(
-            new WorkflowValueResolver(new ConstraintExpressionEvaluator()));
+    private final ConstraintExpressionEvaluator evaluator = new ConstraintExpressionEvaluator();
+    private final WorkflowExpressionHistoryResolver histories = mock(WorkflowExpressionHistoryResolver.class);
+    private final UpdateWorkflowActionExecutor executor = new UpdateWorkflowActionExecutor(evaluator, histories);
+
+    @BeforeEach
+    void historiesDefaultToEmpty() {
+        when(histories.histories(any(), any(), any(), any(), any(), any())).thenReturn(Map.of());
+    }
 
     @Test
     void evaluatesArithmeticAndNestedInputPayloadBeforeWritingVariable() {
@@ -95,6 +107,36 @@ class UpdateWorkflowActionExecutorTest {
     }
 
     @Test
+    void evaluatesTemporalExpressionWithHistoriesBeforeWritingVariable() {
+        ObjectNode variables = JsonNodeSupport.objectNode();
+        variables.put("temperature", 20.0);
+        Instant now = Instant.now();
+        when(histories.histories(any(), any(), any(), any(), any(), any())).thenReturn(Map.of(
+                "temperature", List.of(
+                        new ConstraintExpressionEvaluator.TimedValue(now.minusSeconds(10), JsonNodeSupport.toNode(18.0)),
+                        new ConstraintExpressionEvaluator.TimedValue(now, JsonNodeSupport.toNode(20.0)))));
+
+        WorkflowActionResult result = executor.execute(
+                action("tempRate", "rate(temperature, 30)"),
+                context(variables, variable("tempRate", "DOUBLE"), now));
+
+        assertThat(result.variableUpdates().path("tempRate").asDouble()).isEqualTo(0.2);
+    }
+
+    @Test
+    void waitsWhenTemporalExpressionLacksHistory() {
+        ObjectNode variables = JsonNodeSupport.objectNode();
+        variables.put("temperature", 20.0);
+
+        WorkflowActionResult result = executor.execute(
+                action("tempRate", "rate(temperature, 10)"),
+                context(variables, variable("tempRate", "DOUBLE")));
+
+        assertThat(result.status()).isEqualTo(WorkflowActionStatus.AWAIT_EXTERNAL_SIGNAL);
+        assertThat(result.variableUpdates()).isEmpty();
+    }
+
+    @Test
     void rejectsUpdateResultThatDoesNotMatchDeclaredType() {
         assertThatThrownBy(() -> executor.execute(
                 action("enabled", "\"true\""),
@@ -114,11 +156,15 @@ class UpdateWorkflowActionExecutorTest {
     }
 
     private WorkflowActionContext context(ObjectNode variables, ObjectNode variable) {
+        return context(variables, variable, Instant.now());
+    }
+
+    private WorkflowActionContext context(ObjectNode variables, ObjectNode variable, Instant now) {
         FlowNode node = new FlowNode();
         ArrayNode definitions = JsonNodeSupport.arrayNode();
         definitions.add(variable);
         node.setInVariables(definitions);
-        return new WorkflowActionContext(new Task(), new TaskStep(), node, variables, Instant.now(), null);
+        return new WorkflowActionContext(new Task(), new TaskStep(), node, variables, now, null);
     }
 
     private ObjectNode variable(String name, String dataType) {

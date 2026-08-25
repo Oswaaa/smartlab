@@ -187,7 +187,10 @@ public class EffectiveConstraintModelCompiler {
                 rule.getRuleName(),
                 rule.getExpression(),
                 bindingCount,
-                rule.getViolationActions().size()
+                rule.getViolationActions().size(),
+                rule.getWindowSeconds(),
+                rule.getBindings() == null ? JsonNodeSupport.objectNode() : rule.getBindings().deepCopy(),
+                rule.getViolationActions().deepCopy()
         );
         String version = hash(canonical(exportedRule).toString()).substring(0, 16);
         return new CompiledRuleTemplate(source, Map.copyOf(runtimeBindings), observedVariables, version, summary);

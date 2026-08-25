@@ -2,9 +2,6 @@
   <div class="workflow-page">
     <div class="designer-grid">
       <aside class="resource-panel sl-asset-tree">
-        <div class="tree-header-bar">
-          <strong class="tree-header-title">节点资源</strong>
-        </div>
         <el-tabs v-model="tab" class="resource-tabs" stretch>
           <el-tab-pane label="设备库" name="devices">
             <div class="tree-search-bar">
@@ -106,7 +103,7 @@
             <button type="button" class="btn-aliyun" :disabled="validating || draftSaving || publishSaving || copySaving" @click="runValidation">{{ validating ? '校验中' : '校验' }}</button>
             <button type="button" class="btn-aliyun" :disabled="!form.name" @click="exportWorkflow">导出</button>
             <button type="button" class="btn-aliyun" :disabled="!canEdit || draftSaving || copySaving" @click="saveDraft">{{ draftSaving ? '保存中' : '保存草稿' }}</button>
-            <button type="button" class="btn-aliyun" :disabled="copySaving || draftSaving || publishSaving" @click="saveAsNew">{{ copySaving ? '保存中' : '保存为新流程' }}</button>
+            <button v-if="form.id" type="button" class="btn-aliyun" :disabled="copySaving || draftSaving || publishSaving" @click="saveAsNew">{{ copySaving ? '保存中' : '保存为新流程' }}</button>
             <button type="button" class="btn-aliyun-cta" :disabled="!canEdit || publishSaving || copySaving" @click="publishAndValidate">{{ publishSaving ? '发布中' : '发布启用' }}</button>
             <button
               v-if="form.id"
@@ -154,58 +151,127 @@
       </main>
       <aside class="inspector-panel workflow-overview-panel">
         <div class="panel-titlebar inspector-titlebar">
-          <div><strong>流程属性</strong><span>设置与建模检查</span></div>
+          <div class="overview-title-wrap">
+            <strong>流程属性</strong>
+            <span class="overview-status-tag" :class="form.status === 'ACTIVE' ? 'is-active' : 'is-draft'">
+              {{ form.status === 'ACTIVE' ? '已启用' : '草稿' }} V{{ form.version || 1 }}
+            </span>
+          </div>
         </div>
+
         <div class="inspector-scroll">
           <section class="overview-view">
-            <div class="config-section">
-              <div class="section-heading"><strong>流程基本配置</strong><span>身份与描述</span></div>
-              <el-form label-position="top" class="dense-form">
+            <!-- 1. 基本配置 (平铺无卡片嵌套) -->
+            <div class="overview-section">
+              <div class="section-title-row">
+                <strong>基本配置</strong>
+                <span>基础属性与描述</span>
+              </div>
+              <el-form label-position="top" class="overview-form">
                 <el-form-item label="流程名称">
-                  <el-input v-model="form.name" :disabled="!canEdit" maxlength="80" placeholder="例如：恒温反应实验流程" @input="markDirty" />
+                  <el-input
+                    v-model="form.name"
+                    :disabled="!canEdit"
+                    maxlength="80"
+                    placeholder="请输入流程名称"
+                    @input="markDirty"
+                  />
                 </el-form-item>
                 <el-form-item label="流程描述">
-                  <el-input v-model="form.description" :disabled="!canEdit" type="textarea" :rows="3" maxlength="500" placeholder="说明前置条件、执行目标和适用范围" @input="markDirty" />
+                  <el-input
+                    v-model="form.description"
+                    :disabled="!canEdit"
+                    type="textarea"
+                    :rows="3"
+                    maxlength="500"
+                    placeholder="说明前置条件、执行目标和适用范围"
+                    @input="markDirty"
+                  />
                 </el-form-item>
               </el-form>
             </div>
-            <div class="section-heading"><strong>静态建模检查</strong><span>即时本地提示 · {{ validationSummary.errors }} 错误 · {{ validationSummary.warnings }} 提醒</span></div>
-            <div class="overview-metrics"><div><strong>{{ form.nodesDef.length }}</strong><span>节点</span></div><div><strong>{{ executionConnectionCount }}</strong><span>执行连接</span></div><div><strong>{{ form.portConnections.length }}</strong><span>数据连接</span></div><div><strong>{{ deviceNodeCount }}</strong><span>设备节点</span></div></div>
-            <div v-if="workflowValidationIssues.length" class="validation-groups">
-              <section v-if="flowValidationIssues.length" class="validation-group">
-                <div class="issue-group-heading"><strong>流程问题</strong><span>{{ flowValidationIssues.length }} 项</span></div>
-                <div class="issue-list">
-                  <button v-for="issue in flowValidationIssues" :key="issue.code" :class="issue.severity" @click="focusValidationIssue(issue)">
-                    <b>{{ issue.severity === 'error' ? '错误' : '提醒' }}</b>
-                    <span><strong>{{ issue.title }}</strong><small>{{ issue.detail }}</small></span>
-                    <i>›</i>
-                  </button>
+
+            <!-- 3. 建模检查 (平铺无卡片嵌套) -->
+            <div class="overview-section">
+              <div class="section-title-row">
+                <strong>建模检查</strong>
+                <span v-if="validationSummary.errors" class="validation-badge-error">
+                  {{ validationSummary.errors }} 错误<template v-if="validationSummary.warnings"> · {{ validationSummary.warnings }} 提醒</template>
+                </span>
+                <span v-else-if="validationSummary.warnings" class="validation-badge-warn">
+                  {{ validationSummary.warnings }} 提醒
+                </span>
+                <span v-else class="validation-badge-pass">
+                  全部正常
+                </span>
+              </div>
+
+              <div v-if="workflowValidationIssues.length" class="validation-groups">
+                <section v-if="flowValidationIssues.length" class="validation-group">
+                  <div class="issue-group-heading">
+                    <strong>流程拓扑问题</strong>
+                    <span>{{ flowValidationIssues.length }} 项</span>
+                  </div>
+                  <div class="issue-list">
+                    <button
+                      v-for="issue in flowValidationIssues"
+                      :key="issue.code"
+                      :class="issue.severity"
+                      @click="focusValidationIssue(issue)"
+                    >
+                      <b>{{ issue.severity === 'error' ? '错误' : '提醒' }}</b>
+                      <span>
+                        <strong>{{ issue.title }}</strong>
+                        <small>{{ issue.detail }}</small>
+                      </span>
+                      <i>›</i>
+                    </button>
+                  </div>
+                </section>
+
+                <section v-if="nodeValidationIssues.length" class="validation-group">
+                  <div class="issue-group-heading">
+                    <strong>节点配置问题</strong>
+                    <span>{{ nodeValidationIssues.length }} 项</span>
+                  </div>
+                  <div class="issue-list">
+                    <button
+                      v-for="issue in nodeValidationIssues"
+                      :key="issue.code"
+                      :class="issue.severity"
+                      @click="focusValidationIssue(issue)"
+                    >
+                      <b>{{ issue.severity === 'error' ? '错误' : '提醒' }}</b>
+                      <span>
+                        <strong>{{ issue.title }}</strong>
+                        <small>{{ issue.detail }}</small>
+                      </span>
+                      <i>›</i>
+                    </button>
+                  </div>
+                </section>
+              </div>
+
+              <div v-else-if="lastPublishCheck?.executable" class="overview-empty-state">
+                <span class="pass-dot">●</span>
+                <div>
+                  <strong>发布检查通过</strong>
+                  <p>编译、设备模型与子流程引用检查均已通过</p>
                 </div>
-              </section>
-              <section v-if="nodeValidationIssues.length" class="validation-group">
-                <div class="issue-group-heading"><strong>节点问题</strong><span>{{ nodeValidationIssues.length }} 项</span></div>
-                <div class="issue-list">
-                  <button v-for="issue in nodeValidationIssues" :key="issue.code" :class="issue.severity" @click="focusValidationIssue(issue)">
-                    <b>{{ issue.severity === 'error' ? '错误' : '提醒' }}</b>
-                    <span><strong>{{ issue.title }}</strong><small>{{ issue.detail }}</small></span>
-                    <i>›</i>
-                  </button>
+              </div>
+              <div v-else class="overview-empty-state">
+                <span class="pass-dot">●</span>
+                <div>
+                  <strong>暂无即时建模问题</strong>
+                  <p>点击上方「校验」可核对设备模型与外部引用</p>
                 </div>
-              </section>
+              </div>
             </div>
-            <p v-else-if="lastPublishCheck?.executable" class="overview-empty">
-              <strong>发布检查通过</strong>
-              <span>编译、设备模型与子流程引用检查均已通过</span>
-            </p>
-            <p v-else class="overview-empty">
-              <strong>暂无即时建模问题</strong>
-              <span>点校验可核对设备模型与子流程引用</span>
-            </p>
           </section>
         </div>
       </aside>
     </div>
-    <el-drawer v-model="elementDrawerVisible" :with-header="false" class="workflow-element-drawer" size="50%" append-to-body @closed="clearElementSelection">
+    <el-drawer v-model="elementDrawerVisible" :with-header="false" class="workflow-element-drawer" size="600px" append-to-body @closed="clearElementSelection">
       <div class="workflow-element-drawer-body">
         <WorkflowNodeInspector v-if="selectedNode" :visible="elementDrawerVisible" :node="selectedNode" :readonly="!canEdit" :protocol-metadata="protocolMetadata" :errors="selectedNodeIssues" :device-capabilities="selectedDeviceModel?.capabilities || []" :device-attributes="selectedDeviceModel?.attributes || []" :interface-connections="form.interfaceConnections" :port-connections="form.portConnections" :contract-ready="contractReady" @close="closeElementDrawer" @rename="renameSelectedNode" @update:node="replaceSelectedNode" @update:interface-connections="replaceInterfaceConnections" @update:port-connections="replacePortConnections" @remove-port-request="confirmRemovePort" @remove-node="removeSelectedNode" />
         <section v-else-if="selectedEdge" class="edge-view">
@@ -680,20 +746,43 @@ function rebuildCanvas(layout = readLayout()) {
   void nextTick(() => fitCanvas())
 }
 
-function reset(value:any, layout = readLayout()) {
+function reset(value:any, layout?:any) {
   const designer = toDesignerWorkflow(value)
-  Object.assign(form, empty(), designer, { nodesDef:rehydrateWorkflowNodes(designer.nodesDef || []), interfaceConnections:designer.interfaceConnections || [], portConnections:designer.portConnections || [] })
+  const targetId = designer.id || null
+  const targetLayout = layout !== undefined
+    ? layout
+    : unwrapStoredLayout(JSON.parse(localStorage.getItem(layoutKey(targetId, targetId ? null : draftLayoutKey.value)) || 'null'))
+
+  flowNodes.value = []
+  flowEdges.value = []
+  const blank = empty()
+  Object.keys(form).forEach(k => delete (form as any)[k])
+  Object.assign(form, blank, designer, {
+    nodesDef: rehydrateWorkflowNodes(designer.nodesDef || []),
+    interfaceConnections: designer.interfaceConnections || [],
+    portConnections: designer.portConnections || []
+  })
   closeElementDrawer()
   clearElementSelection()
-  openedWorkflowId.value = designer.id || null
-  rebuildCanvas(layout)
+  openedWorkflowId.value = targetId
+  rebuildCanvas(targetLayout)
   dirty.value = false
 }
 
 async function confirmDiscardChanges() {
-  if (!dirty.value) return true
+  if (!isEditing.value) return true
+  const hasCanvasContent = (form.nodesDef && form.nodesDef.length > 0) || (form.interfaceConnections && form.interfaceConnections.length > 0)
+  if (!hasCanvasContent && !dirty.value) return true
   try {
-    await ElMessageBox.confirm('当前流程有未保存修改，继续后这些修改会丢失。', '切换流程', { type:'warning', confirmButtonText:'放弃修改', cancelButtonText:'继续编辑' })
+    await ElMessageBox.confirm(
+      '加载新流程将清空当前画布中的所有节点与配置，未保存的修改将会丢失。是否确认清空画布并加载？',
+      '切换流程确认',
+      {
+        type: 'warning',
+        confirmButtonText: '确认加载',
+        cancelButtonText: '取消'
+      }
+    )
     return true
   } catch {
     return false
@@ -1353,23 +1442,40 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
 
 .resource-tabs :deep(.el-tabs__header) {
   margin: 0;
+  height: 36px;
+  min-height: 36px;
+  max-height: 36px;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+  background: #ffffff;
   flex: none;
 }
 
 .resource-tabs :deep(.el-tabs__nav-wrap) {
-  padding: 0 8px;
-  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
-  background: var(--sl-bg-page, #f1f5f9);
+  padding: 0 4px;
+  height: 35px;
+  background: transparent;
 }
 
 .resource-tabs :deep(.el-tabs__nav-wrap:after) {
   display: none;
 }
 
+.resource-tabs :deep(.el-tabs__nav-scroll) {
+  height: 35px;
+}
+
+.resource-tabs :deep(.el-tabs__nav) {
+  height: 35px;
+}
+
 .resource-tabs :deep(.el-tabs__item) {
-  height: 36px;
+  height: 35px;
+  line-height: 35px;
   color: var(--sl-text-secondary, #64748b);
   font-size: 12.5px;
+  font-weight: 500;
+  box-sizing: border-box;
 }
 
 .resource-tabs :deep(.el-tabs__item.is-active) {
@@ -1380,6 +1486,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
 .resource-tabs :deep(.el-tabs__active-bar) {
   height: 2px;
   background: var(--sl-primary, #2563eb);
+  bottom: 0;
 }
 
 .resource-tabs :deep(.el-tabs__content) {
@@ -1399,13 +1506,14 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
 }
 
 .canvas-commandbar {
-  height: 52px;
-  min-height: 52px;
+  height: 36px;
+  min-height: 36px;
+  max-height: 36px;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 0 16px;
+  gap: 12px;
+  padding: 0 12px;
   border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
   background: #ffffff;
   box-sizing: border-box;
@@ -1415,26 +1523,26 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
 .island-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 
 .flow-title-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 
 .flow-title-row > strong {
-  max-width: 240px;
+  max-width: 220px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--sl-text-heading, #0f172a);
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1.2;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
 }
 
 .status-chip,
@@ -1445,20 +1553,20 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
   height: 20px;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 0 8px;
+  gap: 4px;
+  padding: 0 6px;
   border: 1px solid var(--sl-border-base, #e2e8f0);
-  border-radius: var(--sl-radius-sm, 6px);
+  border-radius: var(--sl-radius-sm, 3px);
   background: var(--sl-bg-hover, #f8fafc);
   color: var(--sl-text-secondary, #64748b);
-  font-size: 11px;
+  font-size: 10.5px;
   font-weight: 500;
   white-space: nowrap;
 }
 
 .status-chip .chip-dot {
-  width: 6px;
-  height: 6px;
+  width: 5px;
+  height: 5px;
   border-radius: 50%;
   background: var(--sl-text-secondary, #64748b);
 }
@@ -1482,9 +1590,9 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
 .island-right {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   justify-content: flex-end;
-  gap: 8px;
+  gap: 5px;
   flex: none;
 }
 
@@ -1492,6 +1600,16 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
 .island-right .btn-aliyun-cta,
 .island-right .btn-primary-blue {
   flex-shrink: 0;
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11.5px;
+  border-radius: 3px;
+  gap: 3px;
+}
+
+.island-right .btn-link {
+  font-size: 11.5px;
+  padding: 2px 4px;
 }
 
 .island-right .btn-aliyun:disabled,
@@ -1797,90 +1915,140 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
   box-sizing: border-box;
 }
 
-.section-heading {
-  min-height: 36px;
+/* 常驻右侧面板：流程属性与建模检查（扁平流式无嵌套卡片规范） */
+.overview-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.overview-status-tag {
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: #f1f5f9;
+  color: #475569;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.overview-status-tag.is-active {
+  background: #eff6ff;
+  color: var(--sl-primary, #2563eb);
+  border: 1px solid #bfdbfe;
+}
+
+/* 1. 扁平区块 */
+.overview-section {
+  display: flex;
+  flex-direction: column;
+  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+}
+
+.section-title-row {
+  min-height: 34px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 14px;
-  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+  padding: 8px 12px;
   background: #ffffff;
+  border-bottom: 1px solid var(--sl-border-subtle, #f1f5f9);
 }
 
-.section-heading strong {
+.section-title-row strong {
   color: var(--sl-text-heading, #0f172a);
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 600;
 }
 
-.section-heading span {
+.section-title-row span {
   color: var(--sl-text-secondary, #64748b);
-  font-size: 12px;
+  font-size: 11px;
 }
 
-.config-section {
-  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+.overview-form {
+  padding: 10px 12px 2px;
 }
 
-.dense-form {
-  padding: 12px 12px 4px;
+.overview-form :deep(.el-form-item) {
+  margin-bottom: 10px;
 }
 
-.dense-form :deep(.el-form-item) {
-  margin-bottom: 12px;
-}
-
-.dense-form :deep(.el-form-item__label) {
+.overview-form :deep(.el-form-item__label) {
   height: 20px;
   padding: 0;
   color: var(--sl-text-secondary, #64748b);
-  font-size: 12px;
+  font-size: 11.5px;
   line-height: 20px;
 }
 
-.dense-form :deep(.el-input__wrapper),
-.dense-form :deep(.el-textarea__inner) {
+.overview-form :deep(.el-input__wrapper),
+.overview-form :deep(.el-textarea__inner) {
   min-height: 28px;
-  border-radius: var(--sl-radius-sm, 6px);
+  border-radius: var(--sl-radius-sm, 4px);
+  font-size: 12px;
 }
 
-.overview-metrics {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+/* 状态徽标 */
+.validation-badge-error {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--sl-danger, #dc2626);
+  background: var(--sl-danger-light, #fef2f2);
+  border: 1px solid #fecaca;
+  padding: 1px 6px;
+  border-radius: 3px;
 }
 
-.overview-metrics > div {
-  display: grid;
-  align-content: center;
-  justify-items: start;
-  gap: 2px;
-  min-height: 58px;
-  padding: 10px 14px;
-  border-right: 1px solid var(--sl-border-base, #e2e8f0);
-  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+.validation-badge-warn {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--sl-warning, #d97706);
+  background: var(--sl-warning-light, #fffbeb);
+  border: 1px solid #fed7aa;
+  padding: 1px 6px;
+  border-radius: 3px;
 }
 
-.overview-metrics > div:nth-child(2n) {
-  border-right: 0;
+.validation-badge-pass {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--sl-success, #16a34a);
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  padding: 1px 6px;
+  border-radius: 3px;
 }
 
-.overview-metrics > div:nth-last-child(-n + 2) {
-  border-bottom: 0;
+.overview-empty-state {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 12px;
+  background: #ffffff;
 }
 
-.overview-metrics strong {
+.overview-empty-state .pass-dot {
+  color: var(--sl-success, #16a34a);
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.overview-empty-state strong {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--sl-text-heading, #0f172a);
-  font-size: 14.5px;
-  font-weight: 700;
-  font-family: var(--sl-font-mono);
-  line-height: 1.3;
+  margin-bottom: 2px;
 }
 
-.overview-metrics span {
-  color: var(--sl-text-secondary, #64748b);
+.overview-empty-state p {
+  margin: 0;
   font-size: 11px;
+  color: var(--sl-text-secondary, #64748b);
+  line-height: 1.4;
 }
 
 .validation-groups {
@@ -2072,7 +2240,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
 
 <style>
 .workflow-element-drawer {
-  width: 50% !important;
+  width: 600px !important;
   max-width: 92vw;
 }
 
@@ -2081,5 +2249,23 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
   padding: 0;
   overflow: hidden;
   background: #ffffff;
+}
+
+/* 禁用工作流抽屉及相关下拉菜单的缓动/浮动动画，实现与方案1一致的瞬时极简响应 */
+.workflow-element-drawer .el-select__wrapper,
+.workflow-element-drawer .el-input__wrapper,
+.workflow-element-drawer .el-tabs__active-bar,
+.workflow-element-drawer .el-table {
+  transition: none !important;
+  animation: none !important;
+}
+
+.el-select__popper,
+.el-select-dropdown,
+.el-popper.is-pure,
+.el-zoom-in-top-enter-active,
+.el-zoom-in-top-leave-active {
+  transition: none !important;
+  animation: none !important;
 }
 </style>

@@ -1,0 +1,1034 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartLab 2.0 - 约束规则与任务级约束弹窗 官方 UI 设计效果图 (极致紧凑·无缝铺满·纯净对齐版)</title>
+  <style>
+    :root {
+      /* 色彩体系 (Colors SSOT) */
+      --sl-primary: #2563eb;
+      --sl-primary-hover: #1d4ed8;
+      --sl-primary-active: #1e40af;
+      --sl-primary-light: #eff6ff;
+      --sl-primary-border: #bfdbfe;
+
+      --sl-success: #16a34a;
+      --sl-danger: #dc2626;
+      --sl-warning: #d97706;
+
+      /* 文本灰阶 (Slate 冷灰体系) */
+      --sl-text-heading: #0f172a;    /* 碳黑大标题/强调 */
+      --sl-text-body: #334155;       /* 正文/表单文字 */
+      --sl-text-secondary: #64748b;  /* 辅助说明/次级标签 */
+      --sl-text-disabled: #94a3b8;   /* 占位/禁用提示 */
+
+      /* 背景与边框 */
+      --sl-bg-page: #0f172a;
+      --sl-bg-surface: #ffffff;
+      --sl-bg-hover: #f8fafc;
+
+      --sl-border-base: #e2e8f0;
+      --sl-border-input: #cbd5e1;
+      --sl-border-subtle: #f1f5f9;
+
+      /* 圆角体系 (微圆角 4px/6px) */
+      --sl-radius-sm: 4px;
+      --sl-radius-md: 6px;
+      --sl-radius-lg: 8px;
+
+      /* 字体规范 (带等宽) */
+      --sl-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --sl-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+      /* 投影与平滑动画 */
+      --sl-shadow-dialog: 0 20px 25px -5px rgba(0, 0, 0, 0.25), 0 10px 10px -5px rgba(0, 0, 0, 0.1);
+      --sl-ease-smooth: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    /* 全局防文字毛边与抗锯齿渲染 */
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+    }
+
+    body {
+      font-family: var(--sl-font-family);
+      background: var(--sl-bg-page);
+      color: var(--sl-text-body);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+
+    /* 顶部评审说明与模式切换栏 */
+    .top-action-bar {
+      width: 100%;
+      max-width: 960px;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: #ffffff;
+    }
+
+    .brand-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13.5px;
+      font-weight: 700;
+    }
+
+    .badge-spec {
+      background: rgba(59, 130, 246, 0.2);
+      color: #93c5fd;
+      border: 1px solid rgba(59, 130, 246, 0.4);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 4px;
+    }
+
+    .mode-switch-group {
+      display: flex;
+      background: #1e293b;
+      padding: 2px;
+      border-radius: 6px;
+      border: 1px solid #334155;
+      gap: 4px;
+    }
+
+    .mode-btn {
+      padding: 3px 10px;
+      border: none;
+      background: transparent;
+      color: #94a3b8;
+      font-size: 11.5px;
+      font-weight: 600;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: var(--sl-ease-smooth);
+    }
+    .mode-btn.active {
+      background: var(--sl-primary);
+      color: #ffffff;
+      box-shadow: 0 2px 6px rgba(37, 99, 235, 0.3);
+    }
+
+    /* ==========================================================================
+       整框大卡片弹窗 (Dialog as Master Card · 无缝铺满 · 极致紧凑)
+       ========================================================================== */
+    .dialog-wrapper {
+      width: 100%;
+      max-width: 960px;
+      height: 720px;
+      max-height: 85vh;
+      background: #ffffff;
+      border-radius: var(--sl-radius-md);
+      box-shadow: var(--sl-shadow-dialog);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid #334155;
+    }
+
+    /* 弹窗头部 (精炼 34px 高度 · padding: 0 14px) */
+    .dialog-header {
+      height: 34px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--sl-border-base);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #ffffff;
+      flex-shrink: 0;
+    }
+
+    .dialog-title-text {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--sl-text-heading);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .dialog-close-btn {
+      width: 22px;
+      height: 22px;
+      border: none;
+      background: transparent;
+      color: var(--sl-text-disabled);
+      cursor: pointer;
+      font-size: 14px;
+      display: grid;
+      place-items: center;
+      border-radius: 4px;
+      transition: var(--sl-ease-smooth);
+    }
+    .dialog-close-btn:hover { background: var(--sl-bg-hover); color: var(--sl-text-heading); }
+
+    /* 内部滚动容器 (padding: 0 铺满全部区域，无外层边距) */
+    .dialog-scroll-container {
+      flex: 1;
+      overflow-y: auto;
+      overflow-x: hidden;
+      background: #ffffff;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      box-sizing: border-box;
+    }
+
+    /* 统一精致细滚动条 (6px) */
+    .dialog-scroll-container::-webkit-scrollbar { width: 6px; }
+    .dialog-scroll-container::-webkit-scrollbar-track { background: #f8fafc; }
+    .dialog-scroll-container::-webkit-scrollbar-thumb { background: var(--sl-border-input); border-radius: 3px; }
+    .dialog-scroll-container::-webkit-scrollbar-thumb:hover { background: var(--sl-text-disabled); }
+
+    /* 弹窗底部操作条 (精炼 36px 高度 · padding: 0 14px) */
+    .dialog-footer {
+      height: 36px;
+      padding: 0 14px;
+      border-top: 1px solid var(--sl-border-base);
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      background: #ffffff;
+      flex-shrink: 0;
+    }
+
+    /* 按钮规范 (26px 紧凑高度) */
+    .btn-primary-blue {
+      height: 26px;
+      padding: 0 12px;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: #ffffff;
+      background: var(--sl-primary);
+      border: 1px solid var(--sl-primary);
+      border-radius: var(--sl-radius-sm);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: var(--sl-ease-smooth);
+    }
+    .btn-primary-blue:hover { background: var(--sl-primary-hover); border-color: var(--sl-primary-hover); }
+
+    .btn-aliyun {
+      height: 26px;
+      padding: 0 10px;
+      font-size: 11.5px;
+      font-weight: 500;
+      color: var(--sl-text-body);
+      background: #ffffff;
+      border: 1px solid var(--sl-border-input);
+      border-radius: var(--sl-radius-sm);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: var(--sl-ease-smooth);
+    }
+    .btn-aliyun:hover { border-color: #94a3b8; background: var(--sl-bg-hover); color: var(--sl-text-heading); }
+
+    .btn-aliyun.small {
+      height: 22px;
+      padding: 0 8px;
+      font-size: 11px;
+    }
+
+    .btn-link-danger {
+      border: none;
+      background: transparent;
+      color: var(--sl-danger);
+      font-size: 11px;
+      cursor: pointer;
+      padding: 2px 4px;
+      border-radius: 3px;
+      transition: var(--sl-ease-smooth);
+    }
+    .btn-link-danger:hover { text-decoration: underline; }
+
+    /* ==========================================================================
+       卡片内各功能分段 (直接平铺，由 1px 微分割线自然区分)
+       ========================================================================== */
+    .card-section-block {
+      padding: 7px 14px;
+      border-bottom: 1px solid var(--sl-border-subtle);
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .card-section-block:last-child {
+      border-bottom: none;
+    }
+
+    /* 章节标题栏 (3px 实体蓝竖条) */
+    .section-head-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1px;
+    }
+
+    .section-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--sl-text-heading);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .section-title::before {
+      content: "";
+      width: 3px;
+      height: 11px;
+      background: var(--sl-primary);
+      border-radius: 2px;
+      display: inline-block;
+    }
+
+    .section-desc-hint {
+      font-size: 10.5px;
+      color: var(--sl-text-secondary);
+      font-weight: normal;
+    }
+
+    /* ==========================================================================
+       模块 1：实时业务逻辑解析预览 (纯净无胶囊 · 纯蓝字/红字直接呈现)
+       ========================================================================== */
+    .logic-preview-bar {
+      background: var(--sl-bg-hover);
+      border-bottom: 1px solid var(--sl-border-base);
+      padding: 6px 14px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11.5px;
+      line-height: 1.4;
+    }
+
+    .logic-preview-label {
+      color: var(--sl-primary);
+      font-weight: 700;
+      font-size: 11px;
+      flex-shrink: 0;
+    }
+
+    .logic-preview-content {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      font-size: 11.5px;
+    }
+
+    .text-blue-var {
+      color: var(--sl-primary);
+      font-family: var(--sl-font-mono);
+      font-weight: 700;
+    }
+
+    .text-danger-act {
+      color: var(--sl-danger);
+      font-family: var(--sl-font-mono);
+      font-weight: 700;
+    }
+
+    .text-duration-val {
+      color: var(--sl-text-heading);
+      font-family: var(--sl-font-mono);
+      font-weight: 700;
+    }
+
+    /* ==========================================================================
+       28px 统一高密度表单控件
+       ========================================================================== */
+    .field {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      min-width: 0;
+    }
+    .field-label {
+      font-size: 10.5px;
+      color: var(--sl-text-secondary);
+      line-height: 13px;
+    }
+
+    .form-control-28 {
+      height: 26px;
+      border: 1px solid var(--sl-border-input);
+      border-radius: var(--sl-radius-sm);
+      padding: 0 8px;
+      font-size: 11.5px;
+      color: var(--sl-text-heading);
+      background: #ffffff;
+      outline: none;
+      transition: var(--sl-ease-smooth);
+      width: 100%;
+      box-sizing: border-box;
+    }
+    .form-control-28:focus {
+      border-color: var(--sl-primary);
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+    }
+
+    .form-lbl-compact {
+      font-size: 11px;
+      color: var(--sl-text-secondary);
+      text-align: right;
+      white-space: nowrap;
+    }
+    .form-lbl-compact.required::before {
+      content: "* ";
+      color: var(--sl-danger);
+      font-weight: bold;
+    }
+
+    /* ==========================================================================
+       模块 2：变量声明行 (纯白底 · 统一 field 结构杜绝对齐偏差)
+       ========================================================================== */
+    .var-decl-row {
+      background: #ffffff;
+      border: 1px solid var(--sl-border-base);
+      border-radius: var(--sl-radius-sm);
+      padding: 5px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .var-decl-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .var-name-ident {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      font-family: var(--sl-font-mono);
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--sl-primary);
+    }
+    .var-name-ident input {
+      border: 1px solid transparent;
+      background: transparent;
+      font-family: inherit;
+      font-weight: inherit;
+      color: inherit;
+      width: 65px;
+      font-size: 11.5px;
+      outline: none;
+      border-radius: 3px;
+      padding: 0 2px;
+    }
+    .var-name-ident input:focus {
+      background: #ffffff;
+      border-color: var(--sl-border-input);
+    }
+
+    /* 观测数据布局 (Flex 自适应对齐 · 一直固定展示 5 列) */
+    .var-grid-layout {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      width: 100%;
+    }
+    .var-grid-layout .field-source { width: 130px; flex-shrink: 0; }
+    .var-grid-layout .field-grow { flex: 1; min-width: 120px; }
+    .var-grid-layout .field-attr { flex: 1.2; min-width: 130px; }
+    .var-grid-layout .field-type-view { width: 75px; flex-shrink: 0; }
+
+    /* 固定值单行紧凑布局 (固定 180px 宽度 · 仅保留类型与固定值两项) */
+    .literal-row-flex {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      width: 100%;
+    }
+    .literal-row-flex .field-type { width: 130px; flex-shrink: 0; }
+    .literal-row-flex .field-value { width: 180px; flex-shrink: 0; }
+
+    /* 数据类型纯文字展示 (无灰底框、无边框、与上方标签严格左对齐) */
+    .data-type-cell {
+      height: 26px;
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      font-size: 11.5px;
+      font-family: var(--sl-font-mono);
+      font-weight: 600;
+      color: var(--sl-text-secondary);
+      background: transparent;
+      border: none;
+      padding: 0 2px;
+      box-sizing: border-box;
+    }
+
+    /* ==========================================================================
+       模块 3：公式点选工作台
+       ========================================================================== */
+    .composer-plain-box {
+      border: 1px solid var(--sl-border-input);
+      border-radius: var(--sl-radius-sm);
+      background: #ffffff;
+      padding: 6px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    .token-line {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+    }
+
+    .token-line-lbl {
+      color: var(--sl-text-secondary);
+      font-size: 10.5px;
+      width: 52px;
+      flex-shrink: 0;
+    }
+
+    /* 浅蓝底浅蓝字按钮 */
+    .btn-token-blue {
+      height: 21px;
+      padding: 0 6px;
+      border-radius: 3px;
+      border: 1px solid var(--sl-primary-border);
+      background: var(--sl-primary-light);
+      color: var(--sl-primary);
+      font-size: 10.5px;
+      font-family: var(--sl-font-mono);
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      transition: var(--sl-ease-smooth);
+    }
+    .btn-token-blue:hover {
+      background: #dbeafe;
+      border-color: #93c5fd;
+      color: #1d4ed8;
+    }
+    .btn-token-blue.var {
+      font-weight: 700;
+    }
+
+    /* 白底黑字操作符 */
+    .btn-token-plain {
+      height: 21px;
+      padding: 0 6px;
+      border: 1px solid var(--sl-border-input);
+      background: #ffffff;
+      border-radius: 3px;
+      font-size: 10.5px;
+      cursor: pointer;
+      color: var(--sl-text-heading);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 22px;
+      transition: var(--sl-ease-smooth);
+      font-family: var(--sl-font-mono);
+      font-weight: 600;
+    }
+    .btn-token-plain:hover {
+      border-color: var(--sl-primary);
+      color: var(--sl-primary);
+      background: var(--sl-bg-hover);
+    }
+
+    .formula-input-line {
+      height: 28px;
+      border: 1px solid #94a3b8;
+      border-radius: var(--sl-radius-sm);
+      padding: 0 8px;
+      font-family: var(--sl-font-mono);
+      font-size: 11.5px;
+      font-weight: 600;
+      color: #1d4ed8;
+      background: #ffffff;
+      outline: none;
+    }
+
+    .formula-meta-status {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 10.5px;
+      color: var(--sl-text-secondary);
+      padding: 1px 2px 0;
+    }
+
+    /* ==========================================================================
+       模块 4：判定窗口与处置动作 (系统处置 220px / 目标任务 240px / 提示自适应)
+       ========================================================================== */
+    .window-duration-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: #ffffff;
+      padding: 5px 8px;
+      border-radius: var(--sl-radius-sm);
+      border: 1px solid var(--sl-border-base);
+    }
+
+    .action-decl-row {
+      background: #ffffff;
+      border: 1px solid var(--sl-border-base);
+      border-radius: var(--sl-radius-sm);
+      padding: 5px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+      margin-top: 5px;
+    }
+
+    .action-decl-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .action-idx-title {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--sl-text-heading);
+    }
+
+    .action-device-block {
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+
+    /* 设备能力第一行：设备模型 | 设备实例 | 执行能力 */
+    .action-device-main-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 8px;
+      align-items: center;
+    }
+
+    /* 设备能力第二行：能力参数列表 */
+    .action-device-params-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 8px;
+      padding-top: 5px;
+      border-top: 1px dashed var(--sl-border-base);
+      margin-top: 2px;
+    }
+
+    /* 系统处置两列平衡布局 (无偏移、对称对齐) */
+    .action-system-row {
+      display: flex;
+      align-items: flex-end;
+      gap: 8px;
+      width: 100%;
+    }
+    .action-system-row .field-sys { width: 220px; flex-shrink: 0; }
+    .action-system-row .field-task { width: 240px; flex-shrink: 0; }
+    .action-system-row .field-desc { flex: 1; min-width: 200px; }
+
+    .action-hint-cell {
+      height: 26px;
+      display: flex;
+      align-items: center;
+      padding: 0 8px;
+      font-size: 11px;
+      color: var(--sl-text-secondary);
+      background: var(--sl-bg-hover);
+      border: 1px solid var(--sl-border-base);
+      border-radius: var(--sl-radius-sm);
+      box-sizing: border-box;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 顶部控制与评审栏 -->
+  <header class="top-action-bar">
+    <div class="brand-meta">
+      <span>SmartLab 2.0 约束规则与任务级约束弹窗 官方 UI 效果图</span>
+      <span class="badge-spec">纯净对齐 · 无灰底 · 一直显示列</span>
+    </div>
+    <div class="mode-switch-group">
+      <button class="mode-btn active" onclick="switchMode('global')">全局约束规则模式</button>
+      <button class="mode-btn" onclick="switchMode('task')">任务级约束模式 (taskMode)</button>
+    </div>
+  </header>
+
+  <!-- 弹窗主体 (整框即大卡片，消除内层多重卡片嵌套与外圈留白) -->
+  <main class="dialog-wrapper">
+
+    <!-- 弹窗顶栏 (精炼 34px) -->
+    <div class="dialog-header">
+      <span class="dialog-title-text" id="dialogTitle">新建约束规则</span>
+      <button class="dialog-close-btn" type="button" title="关闭弹窗">✕</button>
+    </div>
+
+    <!-- 独立内部无缝滚动容器 (padding: 0 铺满) -->
+    <div class="dialog-scroll-container">
+
+      <!-- 1. 实时业务逻辑解析预览条 (无胶囊 · 纯蓝字/红字直接呈现) -->
+      <div class="logic-preview-bar">
+        <label class="logic-preview-label">判定逻辑解析:</label>
+        <div class="logic-preview-content" id="previewSentence">
+          <span>当</span>
+          <span class="text-blue-var">@temp &gt; @limit</span>
+          <span>持续</span>
+          <span class="text-duration-val">10 秒</span>
+          <span style="color:var(--sl-text-disabled);">➔</span>
+          <span>执行</span>
+          <span class="text-danger-act">加温反应釜_01.power_off()</span>
+          <span>、</span>
+          <span class="text-danger-act">系统报警 (ALERT)</span>
+        </div>
+      </div>
+
+      <!-- 2. 规则基本信息分段 -->
+      <div class="card-section-block">
+        <div class="section-head-bar">
+          <span class="section-title">1. 基本信息</span>
+          <div style="display:flex; align-items:center; gap:6px;">
+            <span style="font-size:10.5px; color:var(--sl-text-secondary);">启用规则</span>
+            <input type="checkbox" checked style="accent-color:var(--sl-primary); cursor:pointer;" />
+          </div>
+        </div>
+        <div style="display:grid; grid-template-columns: 60px 1fr 60px 1fr; gap:8px; align-items:center;">
+          <label class="form-lbl-compact required">规则名称</label>
+          <input class="form-control-28" value="反应釜超温防爆保护" placeholder="例如：反应釜超温防爆保护" />
+          <label class="form-lbl-compact">规则说明</label>
+          <input class="form-control-28" value="监控加温釜温度，超过上限持续10秒自动切断电源并告警" placeholder="工艺或安全目的简要说明（选填）" />
+        </div>
+      </div>
+
+      <!-- 3. 声明变量与数据源分段 (纯白底 · 统一字段基线与对齐) -->
+      <div class="card-section-block">
+        <div class="section-head-bar">
+          <span class="section-title">2. 声明变量与数据源</span>
+          <div style="display:flex; gap:6px;">
+            <button class="btn-aliyun small" type="button">+ 观测变量</button>
+            <button class="btn-aliyun small" type="button">+ 固定阈值</button>
+          </div>
+        </div>
+        
+        <!-- 变量 1: 观测测点变量 (一直显示数据类型列，纯文字展示无灰底框) -->
+        <div class="var-decl-row">
+          <div class="var-decl-head">
+            <div class="var-name-ident">
+              <span>@</span>
+              <input value="temp" title="点击可修改变量标识" />
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:10.5px; color:var(--sl-success); font-weight:600;">● 已在公式中引用</span>
+              <button class="btn-link-danger" type="button">删除</button>
+            </div>
+          </div>
+          <div class="var-grid-layout" id="obsVarRow">
+            <div class="field field-source">
+              <span class="field-label">观测来源</span>
+              <select class="form-control-28">
+                <option>设备测点属性</option>
+                <option>设备功能状态</option>
+                <option>任务生命周期</option>
+                <option>节点内部变量</option>
+              </select>
+            </div>
+            <div class="field field-grow">
+              <span class="field-label">设备模型</span>
+              <select class="form-control-28"><option>加温反应釜模型 (ID:102)</option></select>
+            </div>
+            <div class="field field-grow">
+              <span class="field-label">设备实例</span>
+              <select class="form-control-28"><option>全模型实例 (或指定设备)</option></select>
+            </div>
+            <div class="field field-attr">
+              <span class="field-label">监测属性</span>
+              <select class="form-control-28"><option>实时温度 (temperature)</option></select>
+            </div>
+            <div class="field field-type-view">
+              <span class="field-label">数据类型</span>
+              <div class="data-type-cell">DOUBLE</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 变量 2: 固定阈值变量 (仅保留数据类型与固定值两项，删去类型说明) -->
+        <div class="var-decl-row">
+          <div class="var-decl-head">
+            <div class="var-name-ident" style="color:#0f766e;">
+              <span>@</span>
+              <input value="limit" />
+            </div>
+            <div style="display:flex; align-items:center; gap:8px;">
+              <span style="font-size:10.5px; color:var(--sl-success); font-weight:600;">● 已在公式中引用</span>
+              <button class="btn-link-danger" type="button">删除</button>
+            </div>
+          </div>
+          <div class="literal-row-flex">
+            <div class="field field-type">
+              <span class="field-label">数据类型</span>
+              <select class="form-control-28">
+                <option>DOUBLE (浮点数值)</option>
+                <option>INTEGER (整数值)</option>
+                <option>STRING (字符串)</option>
+                <option>BOOLEAN (布尔值)</option>
+              </select>
+            </div>
+            <div class="field field-value">
+              <span class="field-label">固定值</span>
+              <input class="form-control-28" value="85.0" placeholder="设定固定数值" />
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 4. 判定公式点选与编写分段 -->
+      <div class="card-section-block">
+        <div class="section-head-bar">
+          <span class="section-title">3. 判定公式点选与编写</span>
+          <span class="section-desc-hint">先声明变量与阈值，再点选组成判定布尔式</span>
+        </div>
+        <div class="composer-plain-box">
+          
+          <!-- 1行：公式模板 (浅蓝底浅蓝字) -->
+          <div class="token-line">
+            <span class="token-line-lbl">公式模板:</span>
+            <button class="btn-token-blue">上限越限</button>
+            <button class="btn-token-blue">下限越限</button>
+            <button class="btn-token-blue">区间越限</button>
+            <button class="btn-token-blue">突变超限</button>
+            <button class="btn-token-blue">均值超限</button>
+            <button class="btn-token-blue">速率超限</button>
+            <button class="btn-token-blue">状态不等</button>
+          </div>
+
+          <!-- 2行：时序函数 (浅蓝底浅蓝字) -->
+          <div class="token-line">
+            <span class="token-line-lbl">时序函数:</span>
+            <button class="btn-token-blue fn" title="计算每秒变化速率">rate(@temp, 10)</button>
+            <button class="btn-token-blue fn" title="计算首末差值">delta(@temp, 10)</button>
+            <button class="btn-token-blue fn" title="计算滑动窗口平均值">avg(@temp, 30)</button>
+            <button class="btn-token-blue fn" title="计算滑动窗口最大值">max(@temp, 30)</button>
+            <button class="btn-token-blue fn" title="计算滑动窗口最小值">min(@temp, 30)</button>
+            <button class="btn-token-blue fn" title="绝对值">abs()</button>
+          </div>
+
+          <!-- 3行：操作符 (白底黑字) -->
+          <div class="token-line">
+            <span class="token-line-lbl">操作符:</span>
+            <button class="btn-token-plain">&gt;</button>
+            <button class="btn-token-plain">&lt;</button>
+            <button class="btn-token-plain">&gt;=</button>
+            <button class="btn-token-plain">&lt;=</button>
+            <button class="btn-token-plain">==</button>
+            <button class="btn-token-plain">!=</button>
+            <button class="btn-token-plain">+</button>
+            <button class="btn-token-plain">-</button>
+            <button class="btn-token-plain">*</button>
+            <button class="btn-token-plain">/</button>
+            <button class="btn-token-plain">&amp;&amp;</button>
+            <button class="btn-token-plain">||</button>
+            <button class="btn-token-plain">!</button>
+            <button class="btn-token-plain">(</button>
+            <button class="btn-token-plain">)</button>
+          </div>
+
+          <!-- 4行：已声明变量 (独立新行 · 浅蓝底蓝字) -->
+          <div class="token-line">
+            <span class="token-line-lbl">已声明:</span>
+            <button class="btn-token-blue var">@temp</button>
+            <button class="btn-token-blue var">@limit</button>
+          </div>
+
+          <!-- 双层高亮输入框 -->
+          <input class="formula-input-line" value="@temp > @limit" spellcheck="false" />
+
+          <div class="formula-meta-status">
+            <span>执行表达式: <code>temperature &gt; 85.0</code></span>
+            <span style="color:var(--sl-success); font-weight:600;">● 语法校验通过 (有效布尔表达式)</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 5. 判定窗口与处置动作分段 (比例协调 · 无任何偏移) -->
+      <div class="card-section-block">
+        <div class="section-head-bar">
+          <span class="section-title">4. 判定窗口与违规处置动作</span>
+          <button class="btn-aliyun small" type="button">+ 添加处置动作</button>
+        </div>
+        
+        <!-- 持续判定时间 (纯白底) -->
+        <div class="window-duration-row">
+          <label class="form-lbl-compact" style="font-weight:600;">持续判定时间:</label>
+          <input class="form-control-28" style="width:65px; text-align:center;" value="10" />
+          <span style="font-size:10.5px; color:var(--sl-text-secondary);">秒（公式连续成立达到该时间后判定违规，留空表示瞬时触发）</span>
+        </div>
+
+        <!-- 动作 1: 设备能力联动 (两行排布：上行目标与能力，下行参数) -->
+        <div class="action-decl-row">
+          <div class="action-decl-head">
+            <span class="action-idx-title">动作 1 · 设备能力联动</span>
+            <button class="btn-link-danger" type="button">删除</button>
+          </div>
+          <div class="action-device-block">
+            <!-- 第一行：设备模型 | 设备实例 | 执行能力 -->
+            <div class="action-device-main-row">
+              <div class="field">
+                <span class="field-label">设备模型</span>
+                <select class="form-control-28"><option>加温反应釜模型 (ID:102)</option></select>
+              </div>
+              <div class="field">
+                <span class="field-label">设备实例</span>
+                <select class="form-control-28"><option>与观测同源实例 (加温反应釜_01)</option></select>
+              </div>
+              <div class="field">
+                <span class="field-label">执行能力</span>
+                <select class="form-control-28"><option>heat (加温控制)</option></select>
+              </div>
+            </div>
+            <!-- 第二行：执行能力参数 (分行独立展示) -->
+            <div class="action-device-params-row">
+              <div class="field">
+                <span class="field-label">目标温度 (°C)</span>
+                <input class="form-control-28" value="60.0" />
+              </div>
+              <div class="field">
+                <span class="field-label">加温时间 (秒)</span>
+                <input class="form-control-28" value="300" />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 动作 2: 系统处置动作 (系统处置 220px · 处置说明自适应 · 对齐无偏移) -->
+        <div class="action-decl-row">
+          <div class="action-decl-head">
+            <span class="action-idx-title">动作 2 · 系统处置动作</span>
+            <button class="btn-link-danger" type="button">删除</button>
+          </div>
+          <div class="action-system-row">
+            <div class="field field-sys">
+              <span class="field-label">系统处置</span>
+              <select class="form-control-28">
+                <option>发布系统告警 (ALERT)</option>
+                <option>终止当前任务 (ABORT)</option>
+                <option>暂停当前任务 (PAUSE)</option>
+              </select>
+            </div>
+            <div class="field field-desc">
+              <span class="field-label">处置说明</span>
+              <div class="action-hint-cell">触发违规时将在系统告警中心与顶部通知栏实时播报</div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- 弹窗底部操作条 (精炼 36px) -->
+    <div class="dialog-footer">
+      <button class="btn-aliyun" type="button">取消</button>
+      <button class="btn-primary-blue" type="button" id="submitBtn">保存规则</button>
+    </div>
+
+  </main>
+
+  <script>
+    function switchMode(mode) {
+      document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+      event.currentTarget.classList.add('active');
+
+      const title = document.getElementById('dialogTitle');
+      const submitBtn = document.getElementById('submitBtn');
+      const obsRow = document.getElementById('obsVarRow');
+
+      if (mode === 'task') {
+        title.innerText = '添加任务级约束';
+        submitBtn.innerText = '保存任务约束';
+        obsRow.innerHTML = `
+          <div class="field field-source">
+            <span class="field-label">观测来源</span>
+            <select class="form-control-28">
+              <option>设备测点属性</option>
+              <option>节点内部变量</option>
+            </select>
+          </div>
+          <div class="field" style="flex: 2;">
+            <span class="field-label">任务设备</span>
+            <select class="form-control-28">
+              <option>【当前任务设备】加温反应釜_01 (192.168.1.101)</option>
+              <option>【当前任务设备】移液机械臂_A</option>
+            </select>
+          </div>
+          <div class="field field-attr">
+            <span class="field-label">监测属性</span>
+            <select class="form-control-28">
+              <option>实时温度 (temperature)</option>
+            </select>
+          </div>
+          <div class="field field-type-view">
+            <span class="field-label">数据类型</span>
+            <div class="data-type-cell">DOUBLE</div>
+          </div>
+        `;
+      } else {
+        title.innerText = '新建约束规则';
+        submitBtn.innerText = '保存规则';
+        obsRow.innerHTML = `
+          <div class="field field-source">
+            <span class="field-label">观测来源</span>
+            <select class="form-control-28">
+              <option>设备测点属性</option>
+              <option>设备功能状态</option>
+              <option>任务生命周期</option>
+              <option>节点内部变量</option>
+            </select>
+          </div>
+          <div class="field field-grow">
+            <span class="field-label">设备模型</span>
+            <select class="form-control-28"><option>加温反应釜模型 (ID:102)</option></select>
+          </div>
+          <div class="field field-grow">
+            <span class="field-label">设备实例</span>
+            <select class="form-control-28"><option>全模型实例 (或指定设备)</option></select>
+          </div>
+          <div class="field field-attr">
+            <span class="field-label">监测属性</span>
+            <select class="form-control-28"><option>实时温度 (temperature)</option></select>
+          </div>
+          <div class="field field-type-view">
+            <span class="field-label">数据类型</span>
+            <div class="data-type-cell">DOUBLE</div>
+          </div>
+        `;
+      }
+    }
+  </script>
+</body>
+</html>

@@ -594,7 +594,7 @@ function validateInlineTriggers(node, errors) {
   const lifecycleStates = new Set(node.lifecycle?.states ?? [])
   ;(node.interfaces ?? []).forEach((item, interfaceIndex) => (item.bindingTriggers ?? []).forEach((trigger, triggerIndex) => {
     const path = `interfaces[${interfaceIndex}].bindingTriggers[${triggerIndex}]`
-    validateTriggerCondition(trigger.condition, `${path}.condition`, errors)
+    validateTriggerCondition(trigger.condition, `${path}.condition`, variables, lifecycleStates, item, errors)
     const actions = workflowTriggerActions(trigger)
     if (!actions.length) {
       errors.push({ path: `${path}.action`, message: '触发器必须配置action或非空actions' })
@@ -620,10 +620,36 @@ function validateInlineTriggers(node, errors) {
   }))
 }
 
-function validateTriggerCondition(condition, path, errors) {
-  const grouped = condition?.logic !== undefined || condition?.conditions !== undefined
-  if (!grouped) return
-  if (condition?.logic !== 'AND') {
+function validateTriggerPredicate(predicate, path, variables, lifecycleStates, hostInterface, errors) {
+  if (!predicate || typeof predicate !== 'object') return
+  const obj = predicate.object
+  if (!obj) {
+    errors.push({ path: `${path}.object`, message: '触发条件必须指定判断对象' })
+    return
+  }
+  const systemObjects = new Set(['nodeLifecycleState', 'taskLifecycleState', 'signalName', 'payload.stateName'])
+  if (systemObjects.has(obj)) {
+    if (obj === 'nodeLifecycleState' && predicate.threshold && !lifecycleStates.has(predicate.threshold)) {
+      errors.push({ path: `${path}.threshold`, message: `生命周期状态${predicate.threshold}不存在` })
+    }
+    if (obj === 'signalName' && hostInterface?.direction === 'IN' && predicate.threshold && !hostInterface.allowedSignals?.includes(predicate.threshold)) {
+      errors.push({ path: `${path}.threshold`, message: `信号${predicate.threshold}不在接口允许列表中` })
+    }
+  } else {
+    if (!variables.has(obj)) {
+      errors.push({ path: `${path}.object`, message: `未匹配的内部变量：${obj}` })
+    }
+  }
+}
+
+function validateTriggerCondition(condition, path, variables, lifecycleStates, hostInterface, errors) {
+  if (!condition || typeof condition !== 'object') return
+  const grouped = condition.logic !== undefined || condition.conditions !== undefined
+  if (!grouped) {
+    validateTriggerPredicate(condition, path, variables, lifecycleStates, hostInterface, errors)
+    return
+  }
+  if (condition.logic !== 'AND') {
     errors.push({ path: `${path}.logic`, message: '条件组合当前只支持AND' })
     return
   }
@@ -634,6 +660,8 @@ function validateTriggerCondition(condition, path, errors) {
   condition.conditions.forEach((predicate, index) => {
     if (predicate?.logic !== undefined || predicate?.conditions !== undefined) {
       errors.push({ path: `${path}.conditions[${index}]`, message: '条件组不允许嵌套' })
+    } else {
+      validateTriggerPredicate(predicate, `${path}.conditions[${index}]`, variables, lifecycleStates, hostInterface, errors)
     }
   })
 }
@@ -668,6 +696,11 @@ function validateUpdatePayload(path, payload, variables, lifecycleStates, errors
     errors.push({ path: `${path}.payload`, message: 'INTERNAL_VARIABLE UPDATE必须且只能设置value或valueExpression之一' })
   } else if (hasValue && variable && !matchesInternalValue(payload.value, variable.dataType)) {
     errors.push({ path: `${path}.payload.value`, message: `常量类型与内部变量${payload.targetName}不一致` })
+  } else if (hasExpression) {
+    const exprErrors = validateWorkflowExpression(payload.valueExpression, [...variables.values()], { assignment: false, temporal: true })
+    exprErrors.forEach(message => {
+      errors.push({ path: `${path}.payload.valueExpression`, message })
+    })
   }
 }
 
@@ -688,6 +721,7 @@ function validateDeviceConfiguration(node, model, errors) {
   }
   const definitions = new Map((capability.parameters ?? []).map(item => [item.name, item.dataType]))
   Object.entries(node.capability?.capabilityParameters ?? {}).forEach(([name, value]) => {
+    if (value === null || value === undefined) return
     if (!sameParameterType(value, definitions.get(name))) errors.push({ path: `capability.capabilityParameters.${name}`, message: '能力参数类型不匹配' })
   })
 }

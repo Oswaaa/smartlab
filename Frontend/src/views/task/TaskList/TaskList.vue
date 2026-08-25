@@ -4,8 +4,11 @@
       <!-- 顶部工具栏 (统一对齐 Adapter 与设备实例页面规范) -->
       <div class="workbench-header">
         <div class="header-left">
-          <h2 class="header-title">任务列表</h2>
-          <span class="header-subtitle">实验任务调度、设备资源绑定与实时执行跟踪</span>
+          <div class="header-copy">
+            <h2 class="header-title">任务列表</h2>
+            <span class="header-subtitle">实验任务调度、设备资源绑定与实时执行跟踪</span>
+          </div>
+          <TaskSummaryStrip compact :summary="taskSummary" :active-status="taskStatusFilter" @select-status="setTaskStatus" />
         </div>
         <div class="header-actions">
           <el-select
@@ -20,7 +23,7 @@
             <el-option
               v-for="wf in executableProcessTemplates"
               :key="wf.id"
-              :label="workflowModelName(wf)"
+              :label="workflowModelDisplayName(wf)"
               :value="wf.id"
             />
           </el-select>
@@ -57,8 +60,6 @@
           </button>
         </div>
       </div>
-
-      <TaskSummaryStrip :summary="taskSummary" :active-status="taskStatusFilter" @select-status="setTaskStatus" />
 
       <!-- 任务列表微边距表格卡片 -->
       <div class="table-scroll-container">
@@ -142,36 +143,48 @@
               </template>
             </el-table-column>
           </el-table>
-        </div>
-
-        <div class="pagination-bar">
-          <el-pagination
-            v-model:current-page="taskPageNo"
-            v-model:page-size="taskPageSize"
-            :page-sizes="[10, 20, 50, 100]"
-            :total="taskTotal"
-            layout="total, sizes, prev, pager, next, jumper"
-            background
-            @size-change="handleTaskPageSizeChange"
-            @current-change="handleTaskPageChange"
-          />
+          <div class="pager-wrap">
+            <el-pagination
+              v-model:current-page="taskPageNo"
+              v-model:page-size="taskPageSize"
+              :page-sizes="[10, 20, 50, 100]"
+              :total="taskTotal"
+              layout="total, sizes, prev, pager, next"
+              background
+              size="small"
+              @size-change="handleTaskPageSizeChange"
+              @current-change="handleTaskPageChange"
+            />
+          </div>
         </div>
       </div>
     </div>
 
-    <TaskCreateDrawer ref="createFormRef" v-model="createDrawerVisible" :form="createForm" :workflows="executableProcessTemplates" :loading-workflows="loadingWorkflows" :requirements="selectedWorkflowRequirements" :groups="selectedWorkflowGroups" :errors="selectedWorkflowErrors" :instances="deviceInstances" :models="deviceModels" :preflight-result="preflightResult" :preflighting="preflighting" :creating="creating" :constraint-reviews="taskConstraintReviews" @update:task-name="createForm.taskName = $event" @update:flow-model-id="handleTemplateChange" @update:resource-bindings="updateResourceBindings" @edit-constraint="openTaskConstraint" @remove-constraint="removeTaskConstraint" @preflight="runPreflight" @submit="submitCreateTask" />
+    <TaskCreateDrawer ref="createFormRef" v-model="createDrawerVisible" :form="createForm" :workflows="executableProcessTemplates" :loading-workflows="loadingWorkflows" :requirements="selectedWorkflowRequirements" :groups="selectedWorkflowGroups" :errors="selectedWorkflowErrors" :instances="deviceInstances" :models="deviceModels" :preflight-result="preflightResult" :preflighting="preflighting" :creating="creating" :constraint-reviews="taskConstraintReviews" @update:task-name="createForm.taskName = $event" @update:flow-model-id="handleTemplateChange" @update:resource-bindings="updateResourceBindings" @update:parameter-bindings="updateParameterBindings" @edit-constraint="openTaskConstraint" @remove-constraint="removeTaskConstraint" @preflight="runPreflight" @submit="submitCreateTask" />
 
-    <el-dialog v-model="taskConstraintDialogVisible" :title="editingTaskConstraintIndex == null ? '添加任务级约束' : '编辑任务级约束'" width="1040px" append-to-body destroy-on-close @opened="loadTaskConstraintEditor">
-      <ConstraintRuleEditor ref="taskConstraintEditorRef" :models="deviceModels" :instances="deviceInstances" :workflows="executableProcessTemplates" :tasks="[]" task-mode :task-resources="selectedTaskResources" :task-workflow-nodes="selectedWorkflowNodes" />
+    <el-dialog
+      v-model="taskConstraintDialogVisible"
+      :title="editingTaskConstraintIndex == null ? '添加任务级约束' : '编辑任务级约束'"
+      width="1040px"
+      append-to-body
+      destroy-on-close
+      align-center
+      class="constraint-editor-dialog"
+      :close-on-click-modal="false"
+      @opened="loadTaskConstraintEditor"
+    >
+      <div class="editor-scroll-container">
+        <ConstraintRuleEditor ref="taskConstraintEditorRef" :models="deviceModels" :instances="deviceInstances" :workflows="executableProcessTemplates" :tasks="[]" task-mode :task-resources="selectedTaskResources" :task-workflow-nodes="selectedWorkflowNodes" />
+      </div>
       <template #footer>
-        <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <div class="dialog-custom-footer">
           <button class="btn-aliyun" type="button" @click="taskConstraintDialogVisible=false">取消</button>
           <button class="btn-primary-blue" type="button" @click="saveTaskConstraint">保存任务约束</button>
         </div>
       </template>
     </el-dialog>
 
-    <TaskExecutionDrawer v-model="monitorDrawerVisible" :task="activeTask" :workflow="activeWorkflowDefinition" :steps="nodeSnapshots" :logs="executionLogs" :bindings="activeDeviceRoutes" :constraints="effectiveConstraintView" :loading="loadingDetails" @refresh="fetchLogsAndSnapshots()" @terminate="activeTask && abortTask(activeTask.id)" />
+    <TaskExecutionDrawer v-model="monitorDrawerVisible" :task="activeTask" :workflow="activeWorkflowDefinition" :steps="nodeSnapshots" :logs="executionLogs" :bindings="activeDeviceRoutes" :constraints="effectiveConstraintView" :models="deviceModels" :instances="deviceInstances" :loading="loadingDetails" @refresh="fetchLogsAndSnapshots()" @terminate="activeTask && abortTask(activeTask.id)" />
   </div>
 </template>
 
@@ -188,12 +201,13 @@ import {
   buildBindingWorkflowView,
   buildDeviceBindings,
   buildTaskCreatePayload,
-  expandWorkflowDefinition
+  expandWorkflowDefinition,
+  missingHoleCount
 } from '../../../utils/taskResourceBindings.js'
 import { filterExecutableWorkflows, isExecutableWorkflow } from '../../../utils/workflowExecution.js'
 import { taskApi } from '../../../services/taskApi.js'
 import { workflowApi } from '../../../services/workflowApi.js'
-import { workflowModelName } from '../../../utils/workflowAuthoring.js'
+import { workflowModelDisplayName } from '../../../utils/workflowAuthoring.js'
 import { reviewTaskConstraintsAfterBindingChange } from './taskConstraintReview.js'
 import { useAuthStore } from '../../../stores/authStore.js'
 import { formatLogDateTime } from '../../../utils/formatLogTime.js'
@@ -297,6 +311,7 @@ const createForm = ref({
   taskName: '',
   flowModelId: null as number | null,
   resourceBindings: {} as Record<string, number | null>,
+  parameterBindings: {} as Record<string, Record<string, unknown>>,
   taskConstraints: [] as any[]
 })
 const taskConstraintReviews = ref<Array<string | null>>([])
@@ -336,6 +351,19 @@ const clearTaskFilters = () => { taskKeyword.value = ''; taskStatusFilter.value 
 
 async function runPreflight() {
   if (!createForm.value.flowModelId) return
+  if (!String(createForm.value.taskName || '').trim()) {
+    preflightResult.value = {
+      ready: false,
+      message: '请先填写任务名称',
+      issues: [{
+        code: 'TASK_NAME_MISSING',
+        message: '任务名称不能为空',
+        suggestion: '在基础配置中填写任务名称',
+        blocking: true
+      }]
+    }
+    return
+  }
   if (unresolvedTaskConstraintReviews.value) return ElMessage.warning('请先复核受设备绑定变更影响的任务约束')
   const missingRequirements = selectedWorkflowRequirements.value.filter(requirement => !createForm.value.resourceBindings[requirement.slotId])
   if (missingRequirements.length) {
@@ -352,12 +380,26 @@ async function runPreflight() {
     }
     return
   }
+  const missingHoles = missingHoleCount(selectedWorkflowRequirements.value, createForm.value.parameterBindings || {})
+  if (missingHoles) {
+    preflightResult.value = {
+      ready: false,
+      message: `还有 ${missingHoles} 个能力参数未填写`,
+      issues: [{
+        code: 'TASK_BINDING_PARAM_MISSING',
+        message: '请填写设备节点中流程未写死的能力参数',
+        suggestion: '在绑定面板中填写空洞参数',
+        blocking: true
+      }]
+    }
+    return
+  }
   preflighting.value = true
   try {
     const payload = {
       flowModelId: createForm.value.flowModelId,
       taskVariables: {},
-      deviceBindings: buildDeviceBindings(selectedWorkflowRequirements.value, createForm.value.resourceBindings),
+      deviceBindings: buildDeviceBindings(selectedWorkflowRequirements.value, createForm.value.resourceBindings, createForm.value.parameterBindings),
       taskConstraints: createForm.value.taskConstraints || []
     }
     const response = await taskApi.preflight(payload)
@@ -374,6 +416,7 @@ async function runPreflight() {
 const handleTemplateChange = async (value: number | null) => {
   createForm.value.flowModelId = value
   createForm.value.resourceBindings = {}
+  createForm.value.parameterBindings = {}
   createForm.value.taskConstraints = []
   taskConstraintReviews.value = []
   preflightResult.value = null
@@ -397,6 +440,11 @@ const updateResourceBindings = (next: Record<string, number | null>) => {
     }
   }
   createForm.value.resourceBindings = next
+  preflightResult.value = null
+}
+
+const updateParameterBindings = (next: Record<string, Record<string, unknown>>) => {
+  createForm.value.parameterBindings = next
   preflightResult.value = null
 }
 
@@ -576,7 +624,7 @@ const getBoundDevicesText = (row: any) => {
 
 const getWorkflowName = (flowModelId: number) => {
   const match = processTemplates.value.find(workflow => workflow.id === Number(flowModelId))
-  return match ? workflowModelName(match) : String(flowModelId || '-')
+  return match ? workflowModelDisplayName(match) : String(flowModelId || '-')
 }
 
 // Status Badges helpers
@@ -633,8 +681,47 @@ const fetchEffectiveConstraints = async (taskId = activeTask.value?.id, silent =
 }
 
 const TERMINAL_TASK_STATUSES = new Set(['SUCCEEDED', 'FAILED', 'TERMINATED'])
+const RUNTIME_REFRESH_DEBOUNCE_MS = 200
 
 let taskEventSource: EventSource | null = null
+let runtimeRefreshTimer: ReturnType<typeof setTimeout> | null = null
+let runtimeRefreshInFlight = false
+let runtimeRefreshQueued = false
+
+const clearRuntimeRefreshSchedule = () => {
+  if (runtimeRefreshTimer != null) {
+    clearTimeout(runtimeRefreshTimer)
+    runtimeRefreshTimer = null
+  }
+  runtimeRefreshQueued = false
+}
+
+const scheduleSilentRuntimeRefresh = () => {
+  if (!monitorDrawerVisible.value || !activeTask.value) return
+  if (runtimeRefreshTimer != null) clearTimeout(runtimeRefreshTimer)
+  runtimeRefreshTimer = setTimeout(() => {
+    runtimeRefreshTimer = null
+    void runSilentRuntimeRefresh()
+  }, RUNTIME_REFRESH_DEBOUNCE_MS)
+}
+
+const runSilentRuntimeRefresh = async () => {
+  if (!monitorDrawerVisible.value || !activeTask.value) return
+  if (runtimeRefreshInFlight) {
+    runtimeRefreshQueued = true
+    return
+  }
+  runtimeRefreshInFlight = true
+  try {
+    await fetchLogsAndSnapshots(true)
+  } finally {
+    runtimeRefreshInFlight = false
+    if (runtimeRefreshQueued) {
+      runtimeRefreshQueued = false
+      scheduleSilentRuntimeRefresh()
+    }
+  }
+}
 
 const startTaskSseStream = (taskId: number) => {
   stopTaskSseStream()
@@ -646,6 +733,10 @@ const startTaskSseStream = (taskId: number) => {
       : `/api/task/stream/${taskId}`
     taskEventSource = new EventSource(url)
 
+    taskEventSource.addEventListener('connected', () => {
+      scheduleSilentRuntimeRefresh()
+    })
+
     taskEventSource.addEventListener('log', (event: MessageEvent) => {
       try {
         const logData = JSON.parse(event.data)
@@ -656,21 +747,8 @@ const startTaskSseStream = (taskId: number) => {
       } catch {}
     })
 
-    taskEventSource.addEventListener('step', (event: MessageEvent) => {
-      try {
-        const stepData = JSON.parse(event.data)
-        if (stepData) {
-          const existing = nodeSnapshots.value.find(s => s.id === stepData.taskStepId || (s.nodeIdRef && s.nodeIdRef === stepData.nodeIdRef))
-          if (existing) {
-            existing.nodeStatus = stepData.nodeLifecycleState
-            if (stepData.variableSpace) existing.variableSpace = stepData.variableSpace
-          } else {
-            taskApi.snapshots(taskId).then(snapRes => {
-              if (snapRes.data?.success) nodeSnapshots.value = snapRes.data.data || []
-            }).catch(() => {})
-          }
-        }
-      } catch {}
+    taskEventSource.addEventListener('step', () => {
+      scheduleSilentRuntimeRefresh()
     })
 
     taskEventSource.addEventListener('task', (event: MessageEvent) => {
@@ -699,6 +777,7 @@ const startTaskSseStream = (taskId: number) => {
 }
 
 const stopTaskSseStream = () => {
+  clearRuntimeRefreshSchedule()
   if (taskEventSource) {
     taskEventSource.close()
     taskEventSource = null
@@ -728,14 +807,14 @@ const stopDetailsPolling = () => {
 // Fetch logs and snapshots for active task
 const fetchLogsAndSnapshots = async (silent = false) => {
   if (!activeTask.value) return
+  const taskId = activeTask.value.id
   if (!silent) {
     loadingDetails.value = true
   }
-  
+
+  const stillActive = () => monitorDrawerVisible.value && activeTask.value?.id === taskId
+
   try {
-    const taskId = activeTask.value.id
-    
-    // Concurrently load snapshots & logs
     const logParams = latestDetailLogId > 0
       ? { afterLogId: latestDetailLogId, limit: 300 }
       : undefined
@@ -743,30 +822,34 @@ const fetchLogsAndSnapshots = async (silent = false) => {
       taskApi.snapshots(taskId),
       taskApi.executionLogs(taskId, logParams)
     ])
-    
+    if (!stillActive()) return
+
     if (snapRes.data?.success) {
       nodeSnapshots.value = snapRes.data.data || []
     }
-    
+
     if (logRes.data?.success) {
       const logs = logRes.data.data || []
       if (latestDetailLogId > 0) {
-        executionLogs.value = [...executionLogs.value, ...logs]
+        const existingIds = new Set(executionLogs.value.map(log => log.id))
+        executionLogs.value = [
+          ...executionLogs.value,
+          ...logs.filter((log: StepLog) => !existingIds.has(log.id))
+        ]
       } else {
         executionLogs.value = logs
       }
       latestDetailLogId = executionLogs.value.reduce((max, log) => Math.max(max, Number(log.id || 0)), latestDetailLogId)
     }
-    
-    // Also sync the task instance itself in case status updated
+
     const taskRes = await taskApi.detail(taskId)
+    if (!stillActive()) return
     if (taskRes.data?.success && taskRes.data.data) {
       const updated = taskRes.data.data
       activeTask.value.taskStatus = updated.taskStatus
       activeTask.value.startTime = updated.startTime
       activeTask.value.endTime = updated.endTime
-      
-      // Find matching item in main list and sync
+
       const mainMatch = tasks.value.find(t => t.id === taskId)
       if (mainMatch) {
         mainMatch.taskStatus = updated.taskStatus
@@ -775,7 +858,7 @@ const fetchLogsAndSnapshots = async (silent = false) => {
       }
     }
   } catch (error) {
-    ElMessage.error('加载任务详情失败')
+    if (!silent) ElMessage.error('加载任务详情失败')
   } finally {
     if (!silent) {
       loadingDetails.value = false
@@ -855,7 +938,7 @@ const openCreateDrawer = () => {
     ElMessage.warning('当前没有已启用的工作流，请先在流程设计器中保存并启用流程')
     return
   }
-  createForm.value = { taskName: '', flowModelId: null, resourceBindings: {}, taskConstraints: [] }
+  createForm.value = { taskName: '', flowModelId: null, resourceBindings: {}, parameterBindings: {}, taskConstraints: [] }
   taskConstraintReviews.value = []
   createDrawerVisible.value = true
   nextTick(() => {
@@ -904,6 +987,9 @@ const submitCreateTask = async () => {
     for (const requirement of selectedWorkflowRequirements.value) {
       const instanceId = Number(createForm.value.resourceBindings[requirement.slotId])
       if (!Number.isInteger(instanceId) || instanceId <= 0) throw new Error(`请为${requirement.occurrencePath || requirement.nodeName}绑定设备实例`)
+    }
+    if (missingHoleCount(selectedWorkflowRequirements.value, createForm.value.parameterBindings || {})) {
+      throw new Error('请填写全部能力参数空洞')
     }
     const payload = buildTaskCreatePayload(createForm.value, selectedWorkflowRequirements.value)
     const res = await axios.post('/api/task/save', payload)
@@ -991,6 +1077,14 @@ onUnmounted(() => {
 }
 
 .header-left {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  min-width: 0;
+  flex: 1;
+}
+
+.header-copy {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -1324,13 +1418,11 @@ onUnmounted(() => {
   gap: 10px;
 }
 
-.pagination-bar {
-  height: 44px;
-  padding: 0 16px;
+.pager-wrap {
+  padding: 6px 12px;
+  background: #ffffff;
   border-top: 1px solid var(--sl-border-base, #e2e8f0);
-  background: var(--sl-bg-surface, #ffffff);
   display: flex;
-  align-items: center;
   justify-content: flex-end;
   flex-shrink: 0;
 }
@@ -1351,5 +1443,89 @@ onUnmounted(() => {
     flex: 1;
     width: auto !important;
   }
+}
+
+.editor-scroll-container {
+  padding: 0 !important;
+  max-height: calc(85vh - 76px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-sizing: border-box;
+  background: #ffffff;
+}
+
+.editor-scroll-container::-webkit-scrollbar {
+  width: 6px;
+}
+.editor-scroll-container::-webkit-scrollbar-track {
+  background: var(--sl-bg-hover, #f8fafc);
+}
+.editor-scroll-container::-webkit-scrollbar-thumb {
+  background: var(--sl-border-input, #cbd5e1);
+  border-radius: 3px;
+}
+.editor-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: var(--sl-text-disabled, #94a3b8);
+}
+
+.dialog-custom-footer {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+}
+
+.dialog-custom-footer .btn-aliyun,
+.dialog-custom-footer .btn-primary-blue {
+  height: 26px !important;
+  font-size: 11.5px !important;
+  padding: 0 12px !important;
+}
+</style>
+
+<style>
+.el-dialog.constraint-editor-dialog {
+  display: flex;
+  flex-direction: column;
+  max-height: 85vh;
+  margin: 0 auto !important;
+  border-radius: var(--sl-radius-md);
+  overflow: hidden;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+.el-dialog.constraint-editor-dialog .el-dialog__header {
+  padding: 8px 14px !important;
+  margin-right: 0 !important;
+  border-bottom: 1px solid var(--sl-border-base);
+  background: #ffffff;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+.el-dialog.constraint-editor-dialog .el-dialog__title {
+  font-size: 13.5px !important;
+  font-weight: 700;
+  color: var(--sl-text-heading);
+  line-height: 1.2 !important;
+}
+.el-dialog.constraint-editor-dialog .el-dialog__headerbtn {
+  top: 7px !important;
+  right: 12px !important;
+  font-size: 14px !important;
+}
+.el-dialog.constraint-editor-dialog .el-dialog__body {
+  padding: 0 !important;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
+}
+.el-dialog.constraint-editor-dialog .el-dialog__footer {
+  padding: 5px 14px !important;
+  border-top: 1px solid var(--sl-border-base);
+  background: #ffffff;
+  flex-shrink: 0;
 }
 </style>

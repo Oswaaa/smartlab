@@ -372,7 +372,7 @@ public class WorkflowDefinitionCompiler {
 
     private void validateValueExpression(NodeIndex index, String expression, String fieldPath) {
         try {
-            expressionEvaluator.validateCalculation(expression, numericVariableSamples(index));
+            expressionEvaluator.validateTemporalCalculation(expression, numericVariableSamples(index));
         } catch (IllegalArgumentException error) {
             throw nodeError(index.nodeName(), fieldPath, error.getMessage());
         }

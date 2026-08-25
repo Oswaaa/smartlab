@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.engine.workflow.WorkflowDefinitionCompiler;
 import com.smartlab.global.util.JsonNodeSupport;
+import com.smartlab.management.dto.workflow.CapabilityParameterRequirement;
 import com.smartlab.management.dto.workflow.DeviceBindingRequirement;
 import com.smartlab.management.dto.workflow.TaskDeviceBindingRequest;
 import com.smartlab.management.dto.workflow.WorkflowIssue;
@@ -99,7 +100,10 @@ public class WorkflowTaskResourceService {
             ObjectNode binding = canonicalBindings.putObject(requirement.slotId());
             binding.put("deviceModelId", requirement.deviceModelId());
             binding.put("deviceInstanceId", suppliedBinding.deviceInstanceId());
+            ObjectNode storedParameters = storedHoleParameters(requirement, suppliedBinding.capabilityParameters(), issues);
+            if (storedParameters.size() > 0) binding.set("capabilityParameters", storedParameters);
         }
+        issues.addAll(inspectCapabilityParameters(flowModelId, resourceMap));
         if (issues.stream().noneMatch(WorkflowIssue::blocking)) try { validate(flowModelId, resourceMap); }
         catch (RuntimeException error) { issues.add(bindingIssue("TASK_BINDING_INVALID", "", error.getMessage(), "检查设备实例、模型和设备接口")); }
         return new PreparedTaskResources(resourceMap, List.copyOf(issues));
@@ -202,6 +206,191 @@ public class WorkflowTaskResourceService {
         return resolveBinding(node.getDeviceModelId(), task.getResourceMap(), slotId(subFlowOccurrences), key);
     }
 
+    public JsonNode resolveCapabilityParameters(Task task, TaskStep step, FlowNode node) {
+        if (task == null || task.getResourceMap() == null || step == null || node == null) {
+            throw new IllegalArgumentException("任务步骤能力参数解析上下文不完整");
+        }
+        List<String> subFlowPath = new ArrayList<>();
+        List<BindingOccurrence> occurrences = new ArrayList<>();
+        Set<Long> visitedSteps = new HashSet<>();
+        Long parentStepId = step.getParentStepId();
+        while (parentStepId != null) {
+            if (!visitedSteps.add(parentStepId)) throw new IllegalStateException("TASK_STEP父子关系存在循环");
+            TaskStep parentStep = taskStepMapper.selectById(parentStepId);
+            if (parentStep == null) throw new IllegalStateException("子流程父步骤不存在: " + parentStepId);
+            FlowNode parentNode = flowNodeMapper.selectById(parentStep.getFlowNodeId());
+            if (parentNode == null || !"SUBFLOW_NODE".equals(parentNode.getNodeType())) {
+                throw new IllegalStateException("子流程父步骤没有引用SUBFLOW_NODE: " + parentStepId);
+            }
+            String parentNodeName = nodeName(parentNode.getFlowModelId(), parentNode.getNodeIdRef());
+            subFlowPath.add(0, parentNodeName);
+            occurrences.add(0, new BindingOccurrence(parentNode.getFlowModelId(), parentNode.getNodeIdRef(), parentNodeName));
+            parentStepId = parentStep.getParentStepId();
+        }
+        String nodeName = nodeName(node.getFlowModelId(), node.getNodeIdRef());
+        occurrences.add(new BindingOccurrence(node.getFlowModelId(), node.getNodeIdRef(), nodeName));
+        JsonNode slotBinding = binding(bindings(task.getResourceMap()), slotId(occurrences), bindingKey(subFlowPath, nodeName));
+        return mergeCapabilityParameters(node, slotBinding.path("capabilityParameters"));
+    }
+
+    public List<WorkflowIssue> inspectCapabilityParameters(Long flowModelId, JsonNode resourceMap) {
+        List<WorkflowIssue> issues = new ArrayList<>();
+        if (flowModelId == null) return issues;
+        JsonNode deviceBindings;
+        try { deviceBindings = bindings(resourceMap); }
+        catch (RuntimeException error) { return issues; }
+        for (DeviceBindingRequirement requirement : requirements(flowModelId).bindings()) {
+            JsonNode slot = deviceBindings.path(requirement.slotId());
+            if (!slot.isObject() || slot.path("deviceInstanceId").asLong(0) <= 0) continue;
+            JsonNode slotParameters = slot.path("capabilityParameters");
+            Set<String> holeNames = new LinkedHashSet<>();
+            for (CapabilityParameterRequirement parameter : requirement.capabilityParameters()) {
+                if (!parameter.hole()) continue;
+                holeNames.add(parameter.name());
+                JsonNode value = slotParameters.path(parameter.name());
+                if (isParameterHole(value)) {
+                    issues.add(bindingIssue("TASK_BINDING_PARAM_MISSING", requirement.slotId(),
+                            "能力参数未填写: " + parameter.name(), "在创建任务时填写该设备节点的空洞参数"));
+                } else if (!matchesDataType(parameter.dataType(), value)) {
+                    issues.add(bindingIssue("TASK_BINDING_PARAM_TYPE", requirement.slotId(),
+                            "能力参数类型不正确: " + parameter.name() + "，要求" + parameter.dataType(),
+                            "按设备能力声明的数据类型填写参数"));
+                }
+            }
+            if (slotParameters.isObject()) {
+                slotParameters.fieldNames().forEachRemaining(name -> {
+                    if (!holeNames.contains(name)) {
+                        issues.add(bindingIssue("TASK_BINDING_PARAM_UNEXPECTED", requirement.slotId(),
+                                "任务不能覆盖模型已写死的能力参数: " + name, "只填写模型中为 null 的能力参数"));
+                    }
+                });
+            } else if (!slotParameters.isMissingNode() && !slotParameters.isNull()) {
+                issues.add(bindingIssue("TASK_BINDING_PARAM_INVALID", requirement.slotId(),
+                        "capabilityParameters必须是对象", "按槽位提交空洞参数对象"));
+            }
+        }
+        return issues;
+    }
+
+    private ObjectNode storedHoleParameters(DeviceBindingRequirement requirement, JsonNode suppliedParameters,
+                                            List<WorkflowIssue> issues) {
+        ObjectNode stored = JsonNodeSupport.objectNode();
+        Set<String> holeNames = new LinkedHashSet<>();
+        for (CapabilityParameterRequirement parameter : requirement.capabilityParameters()) {
+            if (!parameter.hole()) continue;
+            holeNames.add(parameter.name());
+            JsonNode value = suppliedParameters == null ? null : suppliedParameters.get(parameter.name());
+            if (isParameterHole(value)) continue;
+            stored.set(parameter.name(), value.deepCopy());
+        }
+        if (suppliedParameters != null && suppliedParameters.isObject()) {
+            suppliedParameters.fieldNames().forEachRemaining(name -> {
+                if (!holeNames.contains(name)) {
+                    issues.add(bindingIssue("TASK_BINDING_PARAM_UNEXPECTED", requirement.slotId(),
+                            "任务不能覆盖模型已写死的能力参数: " + name, "只填写模型中为 null 的能力参数"));
+                }
+            });
+        } else if (suppliedParameters != null && !suppliedParameters.isNull()) {
+            issues.add(bindingIssue("TASK_BINDING_PARAM_INVALID", requirement.slotId(),
+                    "capabilityParameters必须是对象", "按槽位提交空洞参数对象"));
+        }
+        return stored;
+    }
+
+    private String capabilityDisplayName(JsonNode node, long deviceModelId) {
+        String capabilityName = node.path("capability").path("capabilityName").asText("");
+        DeviceModels model = deviceModelsMapper.selectById(deviceModelId);
+        if (model == null) return capabilityName;
+        JsonNode capability = findByText(model.getCapabilities(), "capabilityName", capabilityName);
+        if (capability == null) return capabilityName;
+        String displayName = capability.path("displayName").asText("");
+        return displayName.isBlank() ? capabilityName : displayName;
+    }
+
+    private List<CapabilityParameterRequirement> capabilityParameterContracts(JsonNode node, long deviceModelId) {
+        DeviceModels model = deviceModelsMapper.selectById(deviceModelId);
+        if (model == null) return List.of();
+        String capabilityName = node.path("capability").path("capabilityName").asText("");
+        JsonNode capability = findByText(model.getCapabilities(), "capabilityName", capabilityName);
+        if (capability == null) return List.of();
+        JsonNode modelValues = node.path("capability").path("capabilityParameters");
+        List<CapabilityParameterRequirement> result = new ArrayList<>();
+        for (JsonNode definition : iterable(capability.path("parameters"))) {
+            String name = definition.path("name").asText("");
+            if (name.isBlank()) continue;
+            JsonNode modelValue = modelValues.get(name);
+            boolean hole = isParameterHole(modelValue);
+            result.add(new CapabilityParameterRequirement(
+                    name,
+                    definition.path("displayName").asText(name),
+                    definition.path("dataType").asText(""),
+                    hole ? JsonNodeSupport.MAPPER.nullNode() : modelValue,
+                    hole));
+        }
+        return result;
+    }
+
+    private JsonNode mergeCapabilityParameters(FlowNode node, JsonNode slotParameters) {
+        JsonNode modelValues = node.getCapability() == null
+                ? JsonNodeSupport.objectNode() : node.getCapability().path("capabilityParameters");
+        ObjectNode effective = JsonNodeSupport.objectNode();
+        List<CapabilityParameterRequirement> contracts = capabilityParameterContracts(
+                toCapabilityContractNode(node), node.getDeviceModelId() == null ? 0 : node.getDeviceModelId());
+        if (contracts.isEmpty()) {
+            if (modelValues.isObject()) {
+                modelValues.fields().forEachRemaining(entry -> {
+                    if (!isParameterHole(entry.getValue())) effective.set(entry.getKey(), entry.getValue().deepCopy());
+                });
+            }
+            return effective;
+        }
+        for (CapabilityParameterRequirement parameter : contracts) {
+            JsonNode modelValue = modelValues.get(parameter.name());
+            if (!isParameterHole(modelValue)) {
+                effective.set(parameter.name(), modelValue.deepCopy());
+                continue;
+            }
+            JsonNode slotValue = slotParameters == null ? null : slotParameters.get(parameter.name());
+            if (isParameterHole(slotValue)) {
+                throw new IllegalStateException("DEV_NODE能力参数未绑定: " + parameter.name());
+            }
+            effective.set(parameter.name(), slotValue.deepCopy());
+        }
+        return effective;
+    }
+
+    private ObjectNode toCapabilityContractNode(FlowNode node) {
+        ObjectNode contract = JsonNodeSupport.objectNode();
+        contract.put("deviceModelId", node.getDeviceModelId() == null ? 0 : node.getDeviceModelId());
+        if (node.getCapability() != null && node.getCapability().isObject()) {
+            contract.set("capability", node.getCapability());
+        }
+        return contract;
+    }
+
+    private JsonNode findByText(JsonNode values, String field, String expected) {
+        for (JsonNode value : iterable(values)) {
+            if (expected.equals(value.path(field).asText())) return value;
+        }
+        return null;
+    }
+
+    private static boolean isParameterHole(JsonNode value) {
+        return value == null || value.isMissingNode() || value.isNull();
+    }
+
+    private static boolean matchesDataType(String dataType, JsonNode value) {
+        if (value == null || value.isNull() || dataType == null || dataType.isBlank()) return false;
+        return switch (dataType) {
+            case "INTEGER" -> value.isIntegralNumber();
+            case "DOUBLE" -> value.isNumber();
+            case "STRING" -> value.isTextual();
+            case "BOOLEAN" -> value.isBoolean();
+            case "JSON" -> value.isObject() || value.isArray();
+            default -> false;
+        };
+    }
+
     private DeviceInstances resolveBinding(Long expectedModelId, JsonNode resourceMap, String... bindingKeys) {
         String key = bindingKeys.length == 0 ? "" : bindingKeys[0];
         if (expectedModelId == null || expectedModelId <= 0) throw new IllegalStateException("DEV_NODE缺少deviceModelId: " + key);
@@ -300,9 +489,11 @@ public class WorkflowTaskResourceService {
                 if ("DEV_NODE".equals(nodeType)) {
                     long deviceModelId = node.path("deviceModelId").asLong(0);
                     if (deviceModelId <= 0) throw new IllegalStateException("DEV_NODE缺少deviceModelId: " + nodeName);
+                    String capabilityName = node.path("capability").path("capabilityName").asText("");
                     result.add(new DeviceBindingRequirement(slotId(occurrence), occurrencePath(rootFlowName, occurrence),
                             flowModelId, definition.getVersion(), nodeIdRef, definition.getName(), nodeName,
-                            deviceModelId, node.path("capability").path("capabilityName").asText("")));
+                            deviceModelId, capabilityName, capabilityDisplayName(node, deviceModelId),
+                            capabilityParameterContracts(node, deviceModelId)));
                 } else if ("SUBFLOW_NODE".equals(nodeType)) {
                     long subFlowModelId = node.path("subFlowModelId").asLong(0);
                     if (subFlowModelId <= 0) throw new IllegalStateException("SUBFLOW_NODE缺少subFlowModelId");

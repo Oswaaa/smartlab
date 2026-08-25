@@ -376,12 +376,10 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
             });
         }
         for (Map.Entry<String, JsonNode> entry : expected.entrySet()) {
+            JsonNode value = values.isObject() ? values.get(entry.getKey()) : null;
+            if (value == null || value.isNull() || value.isMissingNode()) continue;
             String parameterPath = "capability.capabilityParameters." + entry.getKey();
-            if (!values.isObject() || !values.has(entry.getKey())) {
-                throw configurationError(nodeName, parameterPath, "缺少必需能力参数");
-            }
-            String dataType = entry.getValue().path("dataType").asText("");
-            requireStrictValueType(dataType, values.get(entry.getKey()), nodeName, parameterPath);
+            requireStrictValueType(entry.getValue().path("dataType").asText(""), value, nodeName, parameterPath);
         }
     }
 

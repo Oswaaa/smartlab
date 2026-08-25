@@ -4,9 +4,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.engine.workflow.WorkflowDefinitionCompiler;
 import com.smartlab.global.util.JsonNodeSupport;
+import com.smartlab.management.dto.workflow.CapabilityParameterRequirement;
 import com.smartlab.management.dto.workflow.DeviceBindingRequirement;
+import com.smartlab.management.dto.workflow.TaskDeviceBindingRequest;
 import com.smartlab.management.dto.workflow.WorkflowDetailResponse;
+import com.smartlab.management.dto.workflow.WorkflowIssue;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
+import com.smartlab.management.entity.resource.device.DeviceModels;
 import com.smartlab.management.entity.workflow.FlowNode;
 import com.smartlab.management.entity.workflow.Task;
 import com.smartlab.management.entity.workflow.TaskStep;
@@ -20,7 +24,9 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -175,6 +181,87 @@ class WorkflowTaskResourceServiceTest {
         assertThrows(IllegalStateException.class, () -> service.validate(3L, resourceMap("root/unknown", 7L, 55L)));
     }
 
+    @Test
+    void requirementsExposeCapabilityHolesAndPrepareStoresOnlyFilledHoles() throws Exception {
+        WorkflowService workflows = mock(WorkflowService.class);
+        DeviceModelsMapper models = mock(DeviceModelsMapper.class);
+        WorkflowTaskResourceService service = new WorkflowTaskResourceService(workflows, mock(DeviceInstancesMapper.class), models,
+                mock(TaskStepMapper.class), mock(FlowNodeMapper.class));
+        stubHeatCapabilityWorkflow(workflows, models, 3L, 7L);
+
+        DeviceBindingRequirement requirement = service.requirements(3L).bindings().get(0);
+        assertEquals(List.of("duration", "target"), requirement.capabilityParameters().stream().map(CapabilityParameterRequirement::name).toList());
+        assertEquals(List.of(false, true), requirement.capabilityParameters().stream().map(CapabilityParameterRequirement::hole).toList());
+        assertEquals("heat", requirement.capabilityName());
+        assertEquals("恒温加热", requirement.capabilityDisplayName());
+
+        ObjectNode supplied = JsonNodeSupport.objectNode().put("target", 80).put("duration", 99);
+        WorkflowTaskResourceService.PreparedTaskResources prepared = service.prepare(3L, List.of(new TaskDeviceBindingRequest("3:1", 55L, supplied)));
+        JsonNode stored = prepared.resourceMap().path("deviceBindings").path("3:1").path("capabilityParameters");
+        assertEquals(80, stored.path("target").asInt());
+        assertFalse(stored.has("duration"));
+        assertTrue(prepared.issues().stream().anyMatch(issue -> "TASK_BINDING_PARAM_UNEXPECTED".equals(issue.code())));
+    }
+
+    @Test
+    void inspectReportsMissingAndTypeMismatchedHoleParameters() throws Exception {
+        WorkflowService workflows = mock(WorkflowService.class);
+        DeviceModelsMapper models = mock(DeviceModelsMapper.class);
+        WorkflowTaskResourceService service = new WorkflowTaskResourceService(workflows, mock(DeviceInstancesMapper.class), models,
+                mock(TaskStepMapper.class), mock(FlowNodeMapper.class));
+        stubHeatCapabilityWorkflow(workflows, models, 3L, 7L);
+
+        ObjectNode missing = resourceMap("3:1", 7L, 55L);
+        assertTrue(service.inspectCapabilityParameters(3L, missing).stream().anyMatch(issue -> "TASK_BINDING_PARAM_MISSING".equals(issue.code())));
+
+        ObjectNode wrongType = resourceMap("3:1", 7L, 55L);
+        ((ObjectNode) wrongType.path("deviceBindings").path("3:1")).set("capabilityParameters", JsonNodeSupport.objectNode().put("target", "hot"));
+        assertTrue(service.inspectCapabilityParameters(3L, wrongType).stream().anyMatch(issue -> "TASK_BINDING_PARAM_TYPE".equals(issue.code())));
+        assertTrue(service.inspectCapabilityParameters(3L, wrongType).stream().noneMatch(issue -> "TASK_BINDING_PARAM_MISSING".equals(issue.code())));
+    }
+
+    @Test
+    void resolveCapabilityParametersPrefersModelValuesAndFillsHolesFromSlot() throws Exception {
+        WorkflowService workflows = mock(WorkflowService.class);
+        DeviceModelsMapper models = mock(DeviceModelsMapper.class);
+        WorkflowTaskResourceService service = new WorkflowTaskResourceService(workflows, mock(DeviceInstancesMapper.class), models,
+                mock(TaskStepMapper.class), mock(FlowNodeMapper.class));
+        stubHeatCapabilityWorkflow(workflows, models, 3L, 7L);
+        FlowNode node = flowNode(10L, 3L, 1L, "DEV_NODE", 7L);
+        node.setCapability(JsonNodeSupport.MAPPER.readTree("{\"capabilityName\":\"heat\",\"capabilityParameters\":{\"duration\":30,\"target\":null}}"));
+        Task task = new Task();
+        ObjectNode map = resourceMap("root/heat", 7L, 55L);
+        ((ObjectNode) map.path("deviceBindings").path("root/heat"))
+                .set("capabilityParameters", JsonNodeSupport.objectNode().put("target", 80).put("duration", 99).put("extra", 1));
+        task.setResourceMap(map);
+
+        JsonNode effective = service.resolveCapabilityParameters(task, step(1L, 10L, null), node);
+
+        assertEquals(30, effective.path("duration").asInt());
+        assertEquals(80, effective.path("target").asInt());
+        assertFalse(effective.has("extra"));
+    }
+
+    @Test
+    void resolveCapabilityParametersIgnoresSlotKeysWhenContractsAreEmpty() throws Exception {
+        WorkflowService workflows = mock(WorkflowService.class);
+        WorkflowTaskResourceService service = new WorkflowTaskResourceService(workflows, mock(DeviceInstancesMapper.class), mock(DeviceModelsMapper.class),
+                mock(TaskStepMapper.class), mock(FlowNodeMapper.class));
+        stubWorkflow(workflows, 3L, 7L);
+        FlowNode node = flowNode(10L, 3L, 1L, "DEV_NODE", 7L);
+        node.setCapability(JsonNodeSupport.MAPPER.readTree("{\"capabilityName\":\"heat\",\"capabilityParameters\":{\"duration\":30}}"));
+        Task task = new Task();
+        ObjectNode map = resourceMap("root/heat", 7L, 55L);
+        ((ObjectNode) map.path("deviceBindings").path("root/heat"))
+                .set("capabilityParameters", JsonNodeSupport.objectNode().put("extra", 1));
+        task.setResourceMap(map);
+
+        JsonNode effective = service.resolveCapabilityParameters(task, step(1L, 10L, null), node);
+
+        assertEquals(30, effective.path("duration").asInt());
+        assertFalse(effective.has("extra"));
+    }
+
     private ObjectNode resourceMap(String bindingKey, long deviceModelId, long instanceId) {
         ObjectNode result = JsonNodeSupport.objectNode();
         result.put("formatVersion", 1);
@@ -204,6 +291,20 @@ class WorkflowTaskResourceServiceTest {
                 Map.of(1L, node), Map.of(1L, java.util.List.of()), Map.of(1L, java.util.List.of()), Map.of("heat", 1L), 1L, 1L);
         when(workflows.getDefinition(flowModelId)).thenReturn(detail);
         when(workflows.compileDefinition(flowModelId)).thenReturn(compiled);
+    }
+
+    private void stubHeatCapabilityWorkflow(WorkflowService workflows, DeviceModelsMapper models, long flowModelId, long deviceModelId) throws Exception {
+        stubWorkflow(workflows, flowModelId, deviceModelId);
+        ObjectNode node = (ObjectNode) workflows.compileDefinition(flowModelId).nodes().get(1L);
+        node.putObject("capability").put("capabilityName", "heat")
+                .putObject("capabilityParameters").put("duration", 30).putNull("target");
+        DeviceModels model = new DeviceModels();
+        model.setCapabilities(JsonNodeSupport.MAPPER.readTree(
+                "[{\"capabilityName\":\"heat\",\"displayName\":\"恒温加热\",\"parameters\":["
+                        + "{\"name\":\"duration\",\"displayName\":\"时长\",\"dataType\":\"INTEGER\"},"
+                        + "{\"name\":\"target\",\"displayName\":\"目标\",\"dataType\":\"DOUBLE\"}]}]")
+        );
+        when(models.selectById(deviceModelId)).thenReturn(model);
     }
 
     private void stubRepeatedSubFlow(WorkflowService workflows) {

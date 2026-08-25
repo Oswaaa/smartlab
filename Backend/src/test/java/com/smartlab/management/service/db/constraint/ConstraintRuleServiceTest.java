@@ -7,6 +7,8 @@ import com.smartlab.management.entity.constraint.ConstraintRule;
 import com.smartlab.management.mapper.constraint.ConstraintRuleMapper;
 import com.smartlab.management.mapper.constraint.ViolationLogMapper;
 import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
+import com.smartlab.management.mapper.resource.device.DeviceModelsMapper;
+import com.smartlab.management.entity.resource.device.DeviceModels;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -81,6 +83,67 @@ class ConstraintRuleServiceTest {
         action.put("actionType", "DEVICE_CAPABILITY");
         action.put("deviceModelId", 1);
         action.put("capabilityName", "cool");
+        rule.setViolationActions(JsonNodeSupport.MAPPER.createArrayNode().add(action));
+
+        assertDoesNotThrow(() -> service.save(rule));
+    }
+
+    @Test
+    void rejectsDeviceCapabilityActionWhenRequiredParametersAreEmpty() {
+        ConstraintRuleMapper rules = mock(ConstraintRuleMapper.class);
+        DeviceModelsMapper models = mock(DeviceModelsMapper.class);
+        DeviceModels model = new DeviceModels();
+        model.setId(1L);
+        var capabilities = JsonNodeSupport.arrayNode();
+        var capability = capabilities.addObject();
+        capability.put("capabilityName", "heat");
+        var parameter = capability.putArray("parameters").addObject();
+        parameter.put("name", "targetTemp");
+        parameter.put("displayName", "目标温度");
+        parameter.put("dataType", "DOUBLE");
+        model.setCapabilities(capabilities);
+        when(models.selectById(1L)).thenReturn(model);
+        ConstraintRuleService service = new ConstraintRuleService(
+                rules, mock(DeviceInstancesMapper.class), new ConstraintExpressionEvaluator(),
+                event -> { }, null, models);
+        ConstraintRule rule = validRule();
+        ((ObjectNode) rule.getBindings().path("temperature").path("source")).remove("deviceInstanceId");
+        ObjectNode action = JsonNodeSupport.objectNode();
+        action.put("actionType", "DEVICE_CAPABILITY");
+        action.put("deviceModelId", 1);
+        action.put("capabilityName", "heat");
+        action.putObject("parameters").put("targetTemp", "");
+        rule.setViolationActions(JsonNodeSupport.MAPPER.createArrayNode().add(action));
+
+        assertThrows(IllegalArgumentException.class, () -> service.save(rule));
+    }
+
+    @Test
+    void acceptsDeviceCapabilityActionWhenRequiredParametersAreFilled() {
+        ConstraintRuleMapper rules = mock(ConstraintRuleMapper.class);
+        when(rules.insert(any(ConstraintRule.class))).thenReturn(1);
+        DeviceModelsMapper models = mock(DeviceModelsMapper.class);
+        DeviceModels model = new DeviceModels();
+        model.setId(1L);
+        var capabilities = JsonNodeSupport.arrayNode();
+        var capability = capabilities.addObject();
+        capability.put("capabilityName", "heat");
+        var parameter = capability.putArray("parameters").addObject();
+        parameter.put("name", "targetTemp");
+        parameter.put("displayName", "目标温度");
+        parameter.put("dataType", "DOUBLE");
+        model.setCapabilities(capabilities);
+        when(models.selectById(1L)).thenReturn(model);
+        ConstraintRuleService service = new ConstraintRuleService(
+                rules, mock(DeviceInstancesMapper.class), new ConstraintExpressionEvaluator(),
+                event -> { }, null, models);
+        ConstraintRule rule = validRule();
+        ((ObjectNode) rule.getBindings().path("temperature").path("source")).remove("deviceInstanceId");
+        ObjectNode action = JsonNodeSupport.objectNode();
+        action.put("actionType", "DEVICE_CAPABILITY");
+        action.put("deviceModelId", 1);
+        action.put("capabilityName", "heat");
+        action.putObject("parameters").put("targetTemp", 80);
         rule.setViolationActions(JsonNodeSupport.MAPPER.createArrayNode().add(action));
 
         assertDoesNotThrow(() -> service.save(rule));

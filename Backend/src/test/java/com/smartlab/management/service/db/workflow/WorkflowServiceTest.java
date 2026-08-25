@@ -27,6 +27,7 @@ import java.util.LinkedHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -404,6 +405,26 @@ class WorkflowServiceTest {
                 () -> fixture.service().saveDefinition(request));
         assertTrue(error.getMessage().contains("heater.capability.capabilityName"));
         assertTrue(error.getMessage().contains("missing"));
+    }
+
+    @Test
+    void acceptsNullCapabilityParameterAsHoleOnSave() throws Exception {
+        ServiceFixture fixture = semanticFixture();
+        WorkflowModelDocument request = validDeviceWorkflow();
+        ((ObjectNode) request.getNodes().get(0)).with("capability").with("capabilityParameters").putNull("target");
+
+        assertDoesNotThrow(() -> fixture.service().saveDefinition(request));
+    }
+
+    @Test
+    void rejectsFilledCapabilityParameterWithWrongType() throws Exception {
+        ServiceFixture fixture = semanticFixture();
+        WorkflowModelDocument request = validDeviceWorkflow();
+        ((ObjectNode) request.getNodes().get(0)).with("capability").with("capabilityParameters").put("target", "hot");
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> fixture.service().saveDefinition(request));
+        assertTrue(error.getMessage().contains("heater.capability.capabilityParameters.target"));
     }
 
     @Test

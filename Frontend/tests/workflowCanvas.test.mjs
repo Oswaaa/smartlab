@@ -6,8 +6,10 @@ import {
   buildFlowNodes,
   createCanvasConnection,
   createNodeConnection,
+  editorNodeId,
   interfaceHandleId,
   layoutKey,
+  nodeNameFromEditorId,
   portHandleId,
   polylineHitsNodeInteriors,
   removeCanvasEdge,
@@ -19,6 +21,7 @@ import {
   workflowOrthogonalPoints,
   edgeLaneOffset,
   workflowInterfaceTooltip,
+  workflowPortHandlePercent,
   workflowPortTooltip,
   workflowPortEdgeTooltip,
   workflowInterfaceEdgeTooltip,
@@ -26,6 +29,8 @@ import {
   wrapStoredLayout,
   WORKFLOW_LAYOUT_VERSION,
   formatWorkflowTriggerText,
+  formatWorkflowTriggerActionLabel,
+  workflowTriggerSummaries,
   workflowPortValueSummary,
   workflowNodeSnapAnchor,
   snapWorkflowNodePosition,
@@ -104,6 +109,13 @@ test('连接点悬停信息包含方向、完整名称和内部变量名', () =>
   )
 })
 
+test('editor node ids round-trip and port handles are evenly spaced', () => {
+  assert.equal(nodeNameFromEditorId(editorNodeId('device1')), 'device1')
+  assert.equal(workflowPortHandlePercent(0, 1), 50)
+  assert.equal(workflowPortHandlePercent(0, 2), 33)
+  assert.equal(workflowPortHandlePercent(1, 2), 67)
+})
+
 test('设备能力节点摘要使用 displayName 和具体参数名', () => {
   assert.equal(workflowDeviceCapabilitySummary({}), '未选择能力')
   assert.equal(workflowDeviceCapabilitySummary({
@@ -157,7 +169,31 @@ test('trigger text summarizes output-interface conditions for branch rows', () =
         { object: 'retryCount', operator: '>=', threshold: 3 },
       ] },
     }],
-  }), '接收信号 = DONE 且 retryCount ≥ 3')
+  }), 'retryCount ≥ 3 且 接收信号 = DONE')
+})
+
+test('trigger summaries keep action labels and fold extra triggers', () => {
+  const iface = {
+    bindingTriggers: [
+      { condition: { object: 'temperature', operator: '>', threshold: 80 }, action: { actionName: 'UPDATE' } },
+      { condition: { object: 'signalName', operator: '=', threshold: 'DONE' }, action: { actionName: 'EMIT', payload: { signalName: 'ACTIVE' } } },
+      { condition: { object: 'retryCount', operator: '>=', threshold: 3 }, action: { actionName: 'UPDATE' } },
+    ],
+  }
+  const summaries = workflowTriggerSummaries(iface, 2)
+  assert.equal(formatWorkflowTriggerActionLabel(iface.bindingTriggers[1]), '发出信号 ACTIVE')
+  assert.equal(formatWorkflowTriggerActionLabel({
+    action: { actionName: 'UPDATE', payload: { updateType: 'INTERNAL_VARIABLE', targetName: 'temp', value: 36.5 } },
+  }), 'UPDATE temp → 36.5')
+  assert.equal(formatWorkflowTriggerActionLabel({
+    action: { actionName: 'UPDATE', payload: { updateType: 'NODE_LIFECYCLE', targetName: 'SUCCEEDED' } },
+  }), 'UPDATE 节点生命周期 → SUCCEEDED')
+  assert.equal(summaries.items.length, 3)
+  assert.equal(summaries.items[0].title, '1#')
+  assert.equal(summaries.items[1].title, '2#')
+  assert.equal(summaries.previewItems.length, 2)
+  assert.equal(summaries.restCount, 1)
+  assert.equal(summaries.items[0].conditionText, 'temperature > 80')
 })
 
 test('port value summary includes bound variable and initial value', () => {

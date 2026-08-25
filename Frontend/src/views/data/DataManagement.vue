@@ -736,6 +736,14 @@ async function loadAll() {
 }
 
 function applyRouteQuery() {
+  const qDatasetId = route.query.datasetId
+  if (qDatasetId && datasets.value.length) {
+    const targetDataset = datasets.value.find(ds => String(ds.id) === String(qDatasetId))
+    if (targetDataset) {
+      selectDataset(targetDataset)
+      return true
+    }
+  }
   const qInstanceId = route.query.instanceId
   if (!qInstanceId || !instances.value.length) return false
   
@@ -752,8 +760,8 @@ function applyRouteQuery() {
   }
 }
 
-watch(() => route.query.instanceId, () => {
-  if (instances.value.length) {
+watch(() => [route.query.instanceId, route.query.datasetId], () => {
+  if (instances.value.length || datasets.value.length) {
     applyRouteQuery()
   }
 })

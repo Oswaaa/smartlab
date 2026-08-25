@@ -8,7 +8,6 @@ import com.smartlab.engine.connection.PortConnectionPuller;
 import com.smartlab.engine.constraint.ConstraintExpressionEvaluator;
 import com.smartlab.engine.observation.ObservableKey;
 import com.smartlab.engine.observation.ObservableSnapshotReader;
-import com.smartlab.engine.observation.ObservationHistoryStore;
 import com.smartlab.engine.statemachine.StateMachineInterfaceSignalEvent;
 import com.smartlab.engine.workflow.action.WorkflowActionContext;
 import com.smartlab.engine.workflow.action.WorkflowActionDefinition;
@@ -16,7 +15,6 @@ import com.smartlab.engine.workflow.action.WorkflowActionRegistry;
 import com.smartlab.engine.workflow.action.WorkflowActionResult;
 import com.smartlab.engine.workflow.action.WorkflowActionStatus;
 import com.smartlab.global.contract.WorkflowNodeSignal;
-import com.smartlab.global.contract.ObservableObjectType;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.entity.workflow.FlowNode;
 import com.smartlab.management.entity.workflow.Task;
@@ -25,8 +23,6 @@ import com.smartlab.management.service.db.workflow.FlowNodeService;
 import com.smartlab.management.service.db.workflow.WorkflowRuntimeService;
 import com.smartlab.management.service.db.workflow.WorkflowService;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -56,7 +52,7 @@ public class WorkflowEngine implements WorkflowTaskPollScheduler {
     private final ConstraintExpressionEvaluator expressionEvaluator;
     private final WorkflowActionRegistry actionRegistry;
     private final WorkflowExecutionOperations executionOperations;
-    private final ObservableSnapshotReader observationReader;
+    private final WorkflowExpressionHistoryResolver expressionHistoryResolver;
     private final Executor workflowExecutor;
     private final PortConnectionPuller portConnectionPuller;
     private final InterfaceConnectionForwarder interfaceConnections;
@@ -78,7 +74,8 @@ public class WorkflowEngine implements WorkflowTaskPollScheduler {
         this.expressionEvaluator = expressionEvaluator;
         this.actionRegistry = actionRegistry;
         this.executionOperations = executionOperations;
-        this.observationReader = observationReader;
+        this.expressionHistoryResolver = new WorkflowExpressionHistoryResolver(
+                workflowService, flowNodeService, runtime, executionOperations, observationReader, expressionEvaluator);
         this.workflowExecutor = workflowExecutor;
         this.portConnectionPuller = portConnectionPuller != null
                 ? portConnectionPuller
@@ -392,7 +389,7 @@ public class WorkflowEngine implements WorkflowTaskPollScheduler {
         ObjectNode payload = JsonNodeSupport.objectNode();
         payload.put("messageId", executionOperations.ensureMessageId(step, instanceId, capabilityName));
         payload.put("capabilityName", capabilityName);
-        JsonNode parameters = node.getCapability() == null ? null : node.getCapability().path("capabilityParameters");
+        JsonNode parameters = executionOperations.resolveCapabilityParameters(task, step, node);
         payload.set("parameters", parameters != null && parameters.isObject()
                 ? parameters.deepCopy() : JsonNodeSupport.objectNode());
         return payload;
@@ -433,8 +430,8 @@ public class WorkflowEngine implements WorkflowTaskPollScheduler {
         Instant now = Instant.now();
         Map<String, JsonNode> values = new LinkedHashMap<>();
         variables.fields().forEachRemaining(entry -> values.put(entry.getKey(), entry.getValue()));
-        Map<String, List<ConstraintExpressionEvaluator.TimedValue>> histories = expressionHistories(
-                task, node, assignment.valueExpression(), values, now);
+        Map<String, List<ConstraintExpressionEvaluator.TimedValue>> histories = expressionHistoryResolver.histories(
+                task, step, node, assignment.valueExpression(), values, now);
         try {
             JsonNode result = expressionEvaluator.evaluateWorkflowValue(
                     assignment.valueExpression(), values, histories, now);
@@ -446,30 +443,6 @@ public class WorkflowEngine implements WorkflowTaskPollScheduler {
         } catch (ConstraintExpressionEvaluator.TemporalDataUnavailableException unavailable) {
             variables.remove(assignment.targetName());
         }
-    }
-
-    private Map<String, List<ConstraintExpressionEvaluator.TimedValue>> expressionHistories(
-            Task task, FlowNode node, String expression, Map<String, JsonNode> values, Instant now) {
-        Map<String, List<ConstraintExpressionEvaluator.TimedValue>> result = new LinkedHashMap<>();
-        if (!expression.matches("(?is).*\\b(?:rate|delta|avg|max|min)\\s*\\(.*")) return result;
-        String nodeName = workflowService.compileDefinition(node.getFlowModelId()).refsByNodeName().entrySet().stream()
-                .filter(entry -> java.util.Objects.equals(entry.getValue(), node.getNodeIdRef()))
-                .map(Map.Entry::getKey).findFirst()
-                .orElseThrow(() -> new IllegalStateException("流程节点缺少名称映射: " + node.getNodeIdRef()));
-        for (String variable : expressionEvaluator.referencedVariables(expression)) {
-            ObservableKey key = new ObservableKey(ObservableObjectType.NODE_INTERNAL_VARIABLE,
-                    null, node.getFlowModelId(), task.getId(), null, nodeName, null, variable);
-            List<ConstraintExpressionEvaluator.TimedValue> samples = new ArrayList<>();
-            observationReader.readHistory(key, now.minus(ObservationHistoryStore.DEFAULT_MAX_SECONDS, ChronoUnit.SECONDS))
-                    .forEach(sample -> samples.add(new ConstraintExpressionEvaluator.TimedValue(
-                            sample.observedAt(), sample.value())));
-            JsonNode current = values.get(variable);
-            if (current != null && current.isNumber()) {
-                samples.add(new ConstraintExpressionEvaluator.TimedValue(now, current.deepCopy()));
-            }
-            result.put(variable, List.copyOf(samples));
-        }
-        return result;
     }
 
     private JsonNode normalizeExpressionResult(FlowNode node, String targetName, JsonNode value) {

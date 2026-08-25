@@ -1,9 +1,16 @@
-import { workflowTriggerConditions } from './workflowNodeDefinition.js'
+import { workflowTriggerActions, workflowTriggerConditions } from './workflowNodeDefinition.js'
 
 const LAYOUT_PREFIX = 'smartlab:workflow-layout:'
 
 export function editorNodeId(nodeName) {
   return `workflow-node:${encodeURIComponent(nodeName)}`
+}
+
+export function nodeNameFromEditorId(id) {
+  const value = String(id || '')
+  const prefix = 'workflow-node:'
+  if (!value.startsWith(prefix)) return value
+  return decodeURIComponent(value.slice(prefix.length))
 }
 
 export function layoutKey(workflowId, draftKey = 'draft') {
@@ -44,6 +51,32 @@ export function workflowCanvasNodeSize(node = {}) {
     return { width, height: Math.max(96, 56 + Math.max(1, outCount) * 30, 48 + inCount * 24) }
   }
   return { width, height: Math.max(118, 48 + maxSideCount * 24) }
+}
+
+export function workflowSideHandleTop(node = {}, index, total) {
+  const size = workflowCanvasNodeSize(node)
+  const compact = node.functionType === 'START' || node.functionType === 'END'
+  const count = Math.max(1, Number(total) || 1)
+  const i = Number(index) || 0
+  if (compact) {
+    const center = size.height / 2
+    if (count <= 1) return Math.round(center)
+    const spread = Math.min(24 * (count - 1), size.height - 16)
+    const start = center - spread / 2
+    return Math.round(start + spread * i / (count - 1))
+  }
+  const available = Math.max(24, size.height - 52)
+  return Math.round(26 + available * (i + 1) / (count + 1))
+}
+
+export function workflowOutputHandleTop(node = {}, index, outputCount) {
+  if (node.functionType === 'BRANCH') return 65 + 30 * (Number(index) || 0)
+  return workflowSideHandleTop(node, index, outputCount)
+}
+
+export function workflowPortHandlePercent(index, total) {
+  const count = Math.max(1, Number(total) || 1)
+  return Math.round(((Number(index) || 0) + 1) * 100 / (count + 1))
 }
 
 export function workflowInterfaceTooltip(interfaceDefinition = {}) {
@@ -139,17 +172,80 @@ export function formatWorkflowValue(value) {
   return String(value)
 }
 
+export const WORKFLOW_TRIGGER_CONDITION_SUMMARY_HINT = '条件摘要会展开同一触发器下的全部判定，用“且”连接；变量等业务条件排在节点/任务生命周期和信号之前。'
+
+export function formatWorkflowTriggerConditionText(trigger = {}) {
+  const systemObjects = new Set(['nodeLifecycleState', 'taskLifecycleState', 'signalName', 'payload.stateName'])
+  const conditions = workflowTriggerConditions(trigger.condition)
+  if (!conditions.length) return ''
+  const sorted = [...conditions].sort((a, b) => {
+    const isSystemA = systemObjects.has(a.object)
+    const isSystemB = systemObjects.has(b.object)
+    if (!isSystemA && isSystemB) return -1
+    if (isSystemA && !isSystemB) return 1
+    return 0
+  })
+  return sorted.map(condition => {
+    const object = TRIGGER_OBJECT_LABELS[condition.object] || condition.object || '条件'
+    const operator = TRIGGER_OPERATOR_LABELS[condition.operator] || condition.operator || '='
+    return `${object} ${operator} ${formatWorkflowValue(condition.threshold)}`
+  }).join(' 且 ')
+}
+
+function triggerActionPayload(action = {}) {
+  return action.payload && typeof action.payload === 'object' && !Array.isArray(action.payload)
+    ? action.payload
+    : action
+}
+
+export function formatWorkflowTriggerActionText(action = {}) {
+  const name = action.actionName || action.actionType || 'ACTION'
+  const payload = triggerActionPayload(action)
+  if (name === 'EMIT') {
+    const signal = payload.signalName ? `信号 ${payload.signalName}` : '信号（未指定）'
+    return payload.targetInterfaceName
+      ? `发出接口 ${payload.targetInterfaceName}，${signal}`
+      : `发出${signal}`
+  }
+  if (name === 'UPDATE') {
+    const target = payload.targetName || '（未指定目标）'
+    if (payload.updateType === 'NODE_LIFECYCLE') return `UPDATE 节点生命周期 → ${target}`
+    const valueText = Object.hasOwn(payload, 'valueExpression') && payload.valueExpression
+      ? `表达式 ${payload.valueExpression}`
+      : Object.hasOwn(payload, 'value')
+        ? formatWorkflowValue(payload.value)
+        : '（未指定目标值）'
+    return `UPDATE ${target} → ${valueText}`
+  }
+  return name
+}
+
+export function formatWorkflowTriggerActionLabel(trigger = {}) {
+  const actions = workflowTriggerActions(trigger)
+  if (!actions.length) return '未配置动作'
+  return actions.map(formatWorkflowTriggerActionText).join('；')
+}
+
+export function workflowTriggerSummaries(interfaceItem = {}, previewCount = 2) {
+  const items = (interfaceItem.bindingTriggers || []).map((trigger, index) => ({
+    index,
+    title: `${index + 1}#`,
+    actionLabel: formatWorkflowTriggerActionLabel(trigger),
+    conditionText: formatWorkflowTriggerConditionText(trigger) || '未配置条件',
+  }))
+  const preview = Math.max(0, Number(previewCount) || 0)
+  return {
+    items,
+    previewItems: items.slice(0, preview),
+    restCount: Math.max(0, items.length - preview),
+  }
+}
+
 export function formatWorkflowTriggerText(interfaceItem = {}) {
-  const summaries = (interfaceItem.bindingTriggers || []).map(trigger => {
-    const conditions = workflowTriggerConditions(trigger.condition)
-    if (!conditions.length) return ''
-    return conditions.map(condition => {
-      const object = TRIGGER_OBJECT_LABELS[condition.object] || condition.object || '条件'
-      const operator = TRIGGER_OPERATOR_LABELS[condition.operator] || condition.operator || '='
-      return `${object} ${operator} ${formatWorkflowValue(condition.threshold)}`
-    }).join(' 且 ')
-  }).filter(Boolean)
-  return summaries.join('；')
+  return (interfaceItem.bindingTriggers || [])
+    .map(trigger => formatWorkflowTriggerConditionText(trigger))
+    .filter(Boolean)
+    .join('；')
 }
 
 export function workflowPortValueSummary(node = {}, portName) {
@@ -872,33 +968,55 @@ export function parseHandleId(handleId) {
   throw new Error(`未知连接点:${handleId}`)
 }
 
+function nodesByNameMap(nodes = []) {
+  return new Map((nodes || []).map(node => [node?.name, node]))
+}
+
+function resolveInterfaceHandle(endpoint, nodesByName, direction) {
+  const preferred = endpoint?.interfaceName
+  if (preferred) return interfaceHandleId(preferred)
+  const fallback = workflowInterface(nodesByName.get(endpoint?.nodeName), direction)?.name
+  return fallback ? interfaceHandleId(fallback) : undefined
+}
+
+function resolvePortHandle(endpoint, nodesByName, direction) {
+  const preferred = endpoint?.portName
+  if (preferred) return portHandleId(preferred)
+  const ports = (nodesByName.get(endpoint?.nodeName)?.ports || []).filter(item => item.direction === direction)
+  return ports[0]?.name ? portHandleId(ports[0].name) : undefined
+}
+
 export function buildFlowEdges(interfaceConnections = [], portConnections = [], nodes = []) {
+  const nodesByName = nodesByNameMap(nodes)
   const interfaceEdges = interfaceConnections
-    .filter(connection => connection.connectionType === 'NODE_TO_NODE')
+    .filter(connection => !connection.connectionType || connection.connectionType === 'NODE_TO_NODE')
+    .filter(connection => connection?.source?.nodeName && connection?.target?.nodeName)
     .map((connection, index) => ({
       id: edgeId('interface', connection.source, connection.target, index),
       source: editorNodeId(connection.source.nodeName),
       target: editorNodeId(connection.target.nodeName),
-      sourceHandle: interfaceHandleId(connection.source.interfaceName),
-      targetHandle: interfaceHandleId(connection.target.interfaceName),
+      sourceHandle: resolveInterfaceHandle(connection.source, nodesByName, 'OUT'),
+      targetHandle: resolveInterfaceHandle(connection.target, nodesByName, 'IN'),
       type: 'workflow',
       class: 'execution-edge',
       markerEnd: 'arrowclosed',
       data: { connectionKind: 'INTERFACE', tooltip: workflowInterfaceEdgeTooltip(connection) },
       style: { stroke: '#7c93b8', strokeWidth: 1.8 }
     }))
-  const portEdges = portConnections.map((connection, index) => ({
-    id: edgeId('port', connection.source, connection.target, index),
-    source: editorNodeId(connection.source.nodeName),
-    target: editorNodeId(connection.target.nodeName),
-    sourceHandle: portHandleId(connection.source.portName),
-    targetHandle: portHandleId(connection.target.portName),
-    type: 'workflow',
-    class: 'data-edge',
-    markerEnd: 'arrowclosed',
-    data: { connectionKind: 'PORT', tooltip: workflowPortEdgeTooltip(connection, nodes) },
-    style: { stroke: '#9a8ab5', strokeWidth: 1.6, strokeDasharray: '6 5' }
-  }))
+  const portEdges = portConnections
+    .filter(connection => connection?.source?.nodeName && connection?.target?.nodeName)
+    .map((connection, index) => ({
+      id: edgeId('port', connection.source, connection.target, index),
+      source: editorNodeId(connection.source.nodeName),
+      target: editorNodeId(connection.target.nodeName),
+      sourceHandle: resolvePortHandle(connection.source, nodesByName, 'OUT'),
+      targetHandle: resolvePortHandle(connection.target, nodesByName, 'IN'),
+      type: 'workflow',
+      class: 'data-edge',
+      markerEnd: 'arrowclosed',
+      data: { connectionKind: 'PORT', tooltip: workflowPortEdgeTooltip(connection, nodes) },
+      style: { stroke: '#9a8ab5', strokeWidth: 1.6, strokeDasharray: '6 5' }
+    }))
   return assignEdgeLanes([...interfaceEdges, ...portEdges], nodes)
 }
 

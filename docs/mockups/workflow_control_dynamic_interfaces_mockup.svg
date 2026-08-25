@@ -1,0 +1,273 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1680 960" width="1680" height="960">
+  <defs>
+    <style>
+      .bg-page { fill: #f8fafc; }
+      .text-title { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; font-size: 15px; font-weight: 700; fill: #0f172a; }
+      .text-heading { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; font-size: 13px; font-weight: 700; fill: #0f172a; }
+      .text-sub { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; font-size: 11px; fill: #64748b; }
+      .text-body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; font-size: 12px; fill: #334155; }
+      .text-primary { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif; font-size: 12px; font-weight: 600; fill: #2563eb; }
+      .text-mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 11px; fill: #334155; }
+      .shadow-panel { filter: drop-shadow(0 4px 16px rgba(15, 23, 42, 0.06)); }
+    </style>
+  </defs>
+
+  <rect width="1680" height="960" class="bg-page" />
+
+  <!-- 顶部标题 -->
+  <g transform="translate(32, 24)">
+    <text x="0" y="20" font-family="-apple-system, sans-serif" font-size="16" font-weight="700" fill="#0f172a">控制接口支持动态新增 &amp; 工业分类排版 · 大厂级三版效果图</text>
+    <text x="0" y="42" class="text-sub">明确支持用户新增自定义接口，严格区分【输出】与【输入】专区，平铺无遗漏，工业级自适应扩容机制。</text>
+  </g>
+
+  <!-- ================= 方案一：西门子工业双栏动态端子树 (推荐 ⭐⭐⭐⭐⭐) ================= -->
+  <g transform="translate(32, 86)" class="shadow-panel">
+    <rect width="520" height="840" rx="4" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" />
+    <rect width="520" height="46" rx="4" fill="#ffffff" />
+    <text x="16" y="28" class="text-title" font-size="13.5">方案一：西门子工业双栏动态端子树 (强烈推荐)</text>
+    <line x1="0" y1="46" x2="520" y2="46" stroke="#e2e8f0" stroke-width="1" />
+
+    <g transform="translate(16, 60)">
+      <rect width="488" height="480" rx="4" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" />
+      
+      <!-- 头部 -->
+      <g transform="translate(14, 12)">
+        <text x="0" y="14" class="text-heading">控制接口与触发器</text>
+        <text x="0" y="30" class="text-sub">承载节点事件信号，并在条件满足时执行触发动作。</text>
+        <rect x="364" y="4" width="76" height="20" rx="2" fill="#eff6ff" />
+        <text x="372" y="18" font-size="10.5" font-weight="600" fill="#2563eb">系统契约</text>
+      </g>
+      <line x1="0" y1="56" x2="488" y2="56" stroke="#f1f5f9" stroke-width="1" />
+
+      <!-- 方案一核心：左右双栏动态端子树 -->
+      <g transform="translate(0, 56)">
+        <rect width="488" height="130" fill="#fafbfc" />
+        
+        <!-- 左栏: 输出接口 (OUT) -->
+        <g transform="translate(12, 10)">
+          <rect x="0" y="0" width="36" height="16" rx="2" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1" />
+          <text x="4" y="12" font-size="9" font-weight="700" font-family="monospace" fill="#2563eb">OUT</text>
+          <text x="42" y="12" font-size="11" font-weight="700" fill="#0f172a">输出 (2)</text>
+          
+          <!-- [+ 新增输出] CTA Button -->
+          <rect x="156" y="0" width="70" height="18" rx="2" fill="#ffffff" stroke="#2563eb" stroke-width="1" />
+          <text x="162" y="13" font-size="10" font-weight="600" fill="#2563eb">+ 新增输出</text>
+
+          <!-- Row 1 Active -->
+          <rect x="0" y="24" width="226" height="28" rx="2" fill="#eff6ff" stroke="#2563eb" stroke-width="1" />
+          <rect x="0" y="24" width="3.5" height="28" fill="#2563eb" />
+          <text x="10" y="42" font-size="11" font-weight="600" fill="#2563eb">Interface_state_out</text>
+          <rect x="175" y="29" width="44" height="18" rx="2" fill="#ffffff" />
+          <text x="180" y="42" font-size="9.5" font-family="monospace" fill="#2563eb">2 触发</text>
+
+          <!-- Row 2 -->
+          <rect x="0" y="56" width="226" height="28" rx="2" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" />
+          <text x="10" y="74" font-size="11" font-weight="600" fill="#0f172a">Interface_workflow_out</text>
+          <rect x="175" y="61" width="44" height="18" rx="2" fill="#f1f5f9" />
+          <text x="180" y="74" font-size="9.5" font-family="monospace" fill="#64748b">1 触发</text>
+
+          <!-- Row 3: 用户自定义新增接口示例 -->
+          <rect x="0" y="88" width="226" height="28" rx="2" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" />
+          <text x="10" y="106" font-size="11" font-weight="500" fill="#334155">custom_done_out</text>
+          <text x="210" y="106" font-size="12" fill="#dc2626">✕</text>
+        </g>
+
+        <!-- 右栏: 输入接口 (IN) -->
+        <g transform="translate(250, 10)">
+          <rect x="0" y="0" width="36" height="16" rx="2" fill="#f0fdf4" stroke="#bbf7d0" stroke-width="1" />
+          <text x="9" y="12" font-size="9" font-weight="700" font-family="monospace" fill="#16a34a">IN</text>
+          <text x="42" y="12" font-size="11" font-weight="700" fill="#0f172a">输入 (2)</text>
+
+          <!-- [+ 新增输入] CTA Button -->
+          <rect x="156" y="0" width="70" height="18" rx="2" fill="#ffffff" stroke="#2563eb" stroke-width="1" />
+          <text x="162" y="13" font-size="10" font-weight="600" fill="#2563eb">+ 新增输入</text>
+
+          <!-- Row 1 -->
+          <rect x="0" y="24" width="226" height="28" rx="2" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" />
+          <text x="10" y="42" font-size="11" font-weight="600" fill="#0f172a">Interface_workflow_in</text>
+          <rect x="175" y="29" width="44" height="18" rx="2" fill="#f1f5f9" />
+          <text x="180" y="42" font-size="9.5" font-family="monospace" fill="#64748b">3 触发</text>
+
+          <!-- Row 2 -->
+          <rect x="0" y="56" width="226" height="28" rx="2" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" />
+          <text x="10" y="74" font-size="11" font-weight="600" fill="#0f172a">Interface_state_in</text>
+          <rect x="175" y="61" width="44" height="18" rx="2" fill="#f1f5f9" />
+          <text x="180" y="74" font-size="9.5" font-family="monospace" fill="#64748b">5 触发</text>
+        </g>
+      </g>
+      <line x1="0" y1="186" x2="488" y2="186" stroke="#f1f5f9" stroke-width="1" />
+
+      <!-- 接口元信息条 -->
+      <g transform="translate(14, 196)">
+        <text x="0" y="16" class="text-heading" font-size="11.5">Interface_state_out</text>
+        <rect x="120" y="2" width="46" height="18" rx="2" fill="#f1f5f9" />
+        <text x="126" y="15" font-size="10" font-family="monospace" fill="#475569">STATE</text>
+
+        <text x="260" y="16" class="text-sub">允许信号:</text>
+        <rect x="312" y="2" width="76" height="18" rx="2" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1" />
+        <text x="316" y="15" font-size="9.5" font-family="monospace" fill="#334155">START</text>
+      </g>
+      <line x1="0" y1="224" x2="488" y2="224" stroke="#f1f5f9" stroke-width="1" />
+
+      <!-- 触发规则卡片 -->
+      <g transform="translate(14, 236)">
+        <rect width="460" height="96" rx="3" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" />
+        <rect width="460" height="26" fill="#fafbfc" />
+        <text x="10" y="18" font-size="11" font-weight="600" fill="#0f172a">触发规则 1</text>
+        <text x="370" y="18" font-size="9.5" fill="#64748b">系统预置 · 只读</text>
+        <line x1="0" y1="26" x2="460" y2="26" stroke="#f1f5f9" stroke-width="1" />
+
+        <g transform="translate(10, 34)">
+          <rect x="0" y="0" width="26" height="24" rx="2" fill="#eff6ff" />
+          <text x="8" y="16" font-size="10.5" font-weight="700" fill="#2563eb">当</text>
+          <rect x="32" y="0" width="160" height="24" rx="2" fill="transparent" stroke="#e2e8f0" stroke-width="1" />
+          <text x="40" y="16" class="text-body" font-size="11">节点生命周期</text>
+          <rect x="198" y="0" width="60" height="24" rx="2" fill="transparent" stroke="#e2e8f0" stroke-width="1" />
+          <text x="214" y="16" class="text-body" font-size="11">等于</text>
+          <rect x="264" y="0" width="176" height="24" rx="2" fill="transparent" stroke="#e2e8f0" stroke-width="1" />
+          <text x="272" y="16" class="text-mono" font-size="10.5">TERMINATING</text>
+        </g>
+        <g transform="translate(10, 64)">
+          <rect x="0" y="0" width="26" height="24" rx="2" fill="#f0fdf4" />
+          <text x="8" y="16" font-size="10.5" font-weight="700" fill="#16a34a">则</text>
+          <rect x="32" y="0" width="160" height="24" rx="2" fill="transparent" stroke="#e2e8f0" stroke-width="1" />
+          <text x="40" y="16" class="text-body" font-size="11">EMIT (发送信号)</text>
+          <text x="206" y="16" class="text-sub" font-size="10.5">自发 ➔</text>
+          <rect x="264" y="0" width="176" height="24" rx="2" fill="transparent" stroke="#e2e8f0" stroke-width="1" />
+          <text x="272" y="16" class="text-mono" font-size="10.5">WF_EXECUTE_ABORT</text>
+        </g>
+      </g>
+
+      <!-- 优势说明 -->
+      <g transform="translate(0, 540)">
+        <rect width="488" height="130" rx="4" fill="#eff6ff" stroke="#bfdbfe" stroke-width="1" />
+        <text x="14" y="24" class="text-primary" font-size="12.5">✓ 方案一优势（西门子 Industrial Edge 动态扩展规范）：</text>
+        <text x="14" y="50" class="text-body" font-size="11">• 左右独立新增按钮（[+新增输出] 与 [+新增输入]），用户心智清晰；</text>
+        <text x="14" y="74" class="text-body" font-size="11">• 动态增加接口垂直平铺，自定义接口支持一键删除 ✕；</text>
+        <text x="14" y="98" class="text-body" font-size="11">• 工业级方正几何，无论增减多少项都整齐如一。</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- ================= 方案二：Camunda 端子卡片流 ================= -->
+  <g transform="translate(580, 86)" class="shadow-panel">
+    <rect width="520" height="840" rx="4" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" />
+    <rect width="520" height="46" rx="4" fill="#ffffff" />
+    <text x="16" y="28" class="text-title" font-size="13.5">方案二：Camunda 端子卡片流 (末尾虚线新增)</text>
+    <line x1="0" y1="46" x2="520" y2="46" stroke="#e2e8f0" stroke-width="1" />
+
+    <g transform="translate(16, 60)">
+      <rect width="488" height="480" rx="4" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" />
+      <g transform="translate(14, 12)">
+        <text x="0" y="14" class="text-heading">控制接口与触发器</text>
+        <text x="0" y="30" class="text-sub">承载节点事件信号，并在条件满足时执行触发动作。</text>
+        <rect x="364" y="4" width="76" height="20" rx="2" fill="#eff6ff" />
+        <text x="372" y="18" font-size="10.5" font-weight="600" fill="#2563eb">系统契约</text>
+      </g>
+      <line x1="0" y1="56" x2="488" y2="56" stroke="#f1f5f9" stroke-width="1" />
+
+      <!-- 方案二核心：卡片流 + 虚线添加 -->
+      <g transform="translate(0, 56)">
+        <rect width="488" height="120" fill="#fafbfc" />
+        <g transform="translate(14, 10)">
+          <text x="0" y="12" font-size="11" font-weight="700" fill="#0f172a">输出接口 (OUT)</text>
+          
+          <rect x="0" y="20" width="146" height="28" rx="2" fill="#eff6ff" stroke="#2563eb" stroke-width="1" />
+          <text x="8" y="38" font-size="10.5" font-weight="600" fill="#2563eb">state_out (2)</text>
+
+          <rect x="154" y="20" width="146" height="28" rx="2" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" />
+          <text x="162" y="38" font-size="10.5" fill="#0f172a">workflow_out (1)</text>
+
+          <!-- 虚线新增卡片 -->
+          <rect x="308" y="20" width="146" height="28" rx="2" fill="#ffffff" stroke="#93c5fd" stroke-dasharray="3,3" stroke-width="1" />
+          <text x="336" y="38" font-size="10.5" font-weight="500" fill="#2563eb">+ 新增输出</text>
+        </g>
+        
+        <g transform="translate(14, 66)">
+          <text x="0" y="12" font-size="11" font-weight="700" fill="#0f172a">输入接口 (IN)</text>
+          
+          <rect x="0" y="20" width="146" height="28" rx="2" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" />
+          <text x="8" y="38" font-size="10.5" fill="#0f172a">workflow_in (3)</text>
+
+          <rect x="154" y="20" width="146" height="28" rx="2" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" />
+          <text x="162" y="38" font-size="10.5" fill="#0f172a">state_in (5)</text>
+
+          <rect x="308" y="20" width="146" height="28" rx="2" fill="#ffffff" stroke="#93c5fd" stroke-dasharray="3,3" stroke-width="1" />
+          <text x="336" y="38" font-size="10.5" font-weight="500" fill="#2563eb">+ 新增输入</text>
+        </g>
+      </g>
+      <line x1="0" y1="176" x2="488" y2="176" stroke="#f1f5f9" stroke-width="1" />
+
+      <!-- 优势说明 -->
+      <g transform="translate(0, 540)">
+        <rect width="488" height="130" rx="4" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1" />
+        <text x="14" y="24" class="text-heading" font-size="12.5">✓ 方案二优势：</text>
+        <text x="14" y="50" class="text-body" font-size="11">• 列表末尾带有明确的虚线引导框；</text>
+        <text x="14" y="74" class="text-body" font-size="11">• 低代码编排工具中常见的设计模式。</text>
+      </g>
+    </g>
+  </g>
+
+  <!-- ================= 方案三：Unreal / Blender 导轨清单 ================= -->
+  <g transform="translate(1128, 86)" class="shadow-panel">
+    <rect width="520" height="840" rx="4" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" />
+    <rect width="520" height="46" rx="4" fill="#ffffff" />
+    <text x="16" y="28" class="text-title" font-size="13.5">方案三：Unreal / Blender 导轨清单</text>
+    <line x1="0" y1="46" x2="520" y2="46" stroke="#e2e8f0" stroke-width="1" />
+
+    <g transform="translate(16, 60)">
+      <rect width="488" height="480" rx="4" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" />
+      <g transform="translate(14, 12)">
+        <text x="0" y="14" class="text-heading">控制接口与触发器</text>
+        <text x="0" y="30" class="text-sub">承载节点事件信号，并在条件满足时执行触发动作。</text>
+        <rect x="364" y="4" width="76" height="20" rx="2" fill="#eff6ff" />
+        <text x="372" y="18" font-size="10.5" font-weight="600" fill="#2563eb">系统契约</text>
+      </g>
+      <line x1="0" y1="56" x2="488" y2="56" stroke="#f1f5f9" stroke-width="1" />
+
+      <!-- 方案三核心：工具栏 + 3 列网格 -->
+      <g transform="translate(0, 56)">
+        <rect width="488" height="100" fill="#f8fafc" />
+        <g transform="translate(14, 10)">
+          <rect x="0" y="0" width="56" height="20" rx="2" fill="#2563eb" />
+          <text x="8" y="14" font-size="10" font-weight="600" fill="#ffffff">全部 (4)</text>
+
+          <rect x="62" y="0" width="56" height="20" rx="2" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" />
+          <text x="70" y="14" font-size="10" fill="#64748b">OUT (2)</text>
+
+          <rect x="124" y="0" width="56" height="20" rx="2" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" />
+          <text x="132" y="14" font-size="10" fill="#64748b">IN (2)</text>
+
+          <rect x="374" y="0" width="86" height="20" rx="2" fill="#ffffff" stroke="#2563eb" stroke-width="1" />
+          <text x="382" y="14" font-size="10" font-weight="600" fill="#2563eb">+ 新增接口</text>
+        </g>
+        
+        <g transform="translate(14, 40)">
+          <rect x="0" y="0" width="146" height="42" rx="2" fill="#eff6ff" stroke="#2563eb" stroke-width="1" />
+          <text x="8" y="18" font-size="9" font-weight="700" fill="#2563eb">[OUT]</text>
+          <text x="40" y="18" font-size="10.5" font-weight="600" fill="#2563eb">state_out</text>
+          <text x="8" y="32" font-size="9.5" fill="#64748b">2 触发器</text>
+
+          <rect x="154" y="0" width="146" height="42" rx="2" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" />
+          <text x="162" y="18" font-size="9" font-weight="700" fill="#2563eb">[OUT]</text>
+          <text x="194" y="18" font-size="10.5" fill="#0f172a">workflow_out</text>
+          <text x="162" y="32" font-size="9.5" fill="#64748b">1 触发器</text>
+
+          <rect x="308" y="0" width="146" height="42" rx="2" fill="#ffffff" stroke="#e2e8f0" stroke-width="1" />
+          <text x="316" y="18" font-size="9" font-weight="700" fill="#16a34a">[IN]</text>
+          <text x="340" y="18" font-size="10.5" fill="#0f172a">workflow_in</text>
+          <text x="316" y="32" font-size="9.5" fill="#64748b">3 触发器</text>
+        </g>
+      </g>
+      <line x1="0" y1="156" x2="488" y2="156" stroke="#f1f5f9" stroke-width="1" />
+
+      <!-- 优势说明 -->
+      <g transform="translate(0, 540)">
+        <rect width="488" height="130" rx="4" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1" />
+        <text x="14" y="24" class="text-heading" font-size="12.5">✓ 方案三优势：</text>
+        <text x="14" y="50" class="text-body" font-size="11">• 带有顶部快速类型筛选工具栏；</text>
+        <text x="14" y="74" class="text-body" font-size="11">• 适合图形着色器与蓝图类密集型节点。</text>
+      </g>
+    </g>
+  </g>
+</svg>

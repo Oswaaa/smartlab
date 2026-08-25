@@ -20,6 +20,24 @@
               <span class="mono">ID: {{ task.id }}</span>
               <el-icon><CopyDocument /></el-icon>
             </button>
+            <div class="drawer-metric-ribbon">
+              <div class="m-col">
+                <span class="m-lbl">关联流程</span>
+                <span class="m-val highlight">{{ workflowModelDisplayName(workflow) || '-' }}</span>
+              </div>
+              <div class="m-col">
+                <span class="m-lbl">执行步骤</span>
+                <span class="m-val mono">{{ completedStepCount }} / {{ steps.length }}</span>
+              </div>
+              <div class="m-col">
+                <span class="m-lbl">当前节点</span>
+                <span class="m-val">{{ currentNodeDisplay }}</span>
+              </div>
+              <div class="m-col">
+                <span class="m-lbl">开始时间</span>
+                <span class="m-val mono">{{ formatLogDateTime(task.startTime) }}</span>
+              </div>
+            </div>
           </div>
           <div class="head-status-group">
             <span :class="['status-indicator', statusTone(task.taskStatus)]">
@@ -30,24 +48,6 @@
             </button>
           </div>
         </div>
-        <div class="drawer-metric-ribbon">
-          <div class="m-col">
-            <span class="m-lbl">关联流程</span>
-            <span class="m-val highlight">{{ workflowModelName(workflow) || '-' }}</span>
-          </div>
-          <div class="m-col">
-            <span class="m-lbl">执行步骤</span>
-            <span class="m-val mono">{{ completedStepCount }} / {{ steps.length }}</span>
-          </div>
-          <div class="m-col">
-            <span class="m-lbl">当前节点</span>
-            <span class="m-val">{{ currentNodeDisplay }}</span>
-          </div>
-          <div class="m-col">
-            <span class="m-lbl">开始时间</span>
-            <span class="m-val mono">{{ formatLogDateTime(task.startTime) }}</span>
-          </div>
-        </div>
       </header>
 
       <div class="drawer-tabs-wrap">
@@ -55,35 +55,19 @@
           <el-tab-pane label="运行状态" name="runtime">
             <div class="graph-layout">
               <section class="graph-workspace">
-                <div class="panel-heading">
-                  <div>
-                    <strong>执行拓扑</strong>
-                    <span>{{ steps.length }} 个已创建步骤</span>
-                  </div>
-                </div>
-                <TaskRuntimeGraph v-if="graphReady" class="graph-canvas" :workflow="workflow" :steps="steps" :selected-step-id="selectedStepId" @select-step="selectGraphStep" />
+                <TaskRuntimeGraph
+                  v-if="graphReady"
+                  class="graph-canvas"
+                  :workflow="workflow"
+                  :steps="steps"
+                  :models="models"
+                  :bindings="bindings"
+                  :selected-step-id="selectedStepId"
+                  :active-node-name="selectedGraphNode?.name"
+                  @select-step="selectGraphStep"
+                />
                 <div v-else class="graph-loading"><el-skeleton :rows="5" animated /></div>
               </section>
-              <aside class="graph-detail">
-                <div class="panel-heading">
-                  <div>
-                    <strong>步骤详情</strong>
-                    <span>{{ selectedStep ? (selectedStep.nodeName || `步骤 #${selectedStep.id}`) : '选择节点查看' }}</span>
-                  </div>
-                </div>
-                <div class="graph-detail-scroll">
-                  <TaskStepDetail v-if="selectedStep" :step="selectedStep" />
-                  <div v-else-if="selectedGraphNode" class="waiting-detail">
-                    <div>
-                      <strong>{{ selectedGraphNode.name }}</strong>
-                      <span>{{ nodeTypeLabel(selectedGraphNode) }}</span>
-                    </div>
-                    <span class="status-indicator pending"><span class="dot"></span>等待创建</span>
-                    <p>该节点尚未创建执行步骤。</p>
-                  </div>
-                  <el-empty v-else description="选择流程节点查看详情" :image-size="44" />
-                </div>
-              </aside>
             </div>
           </el-tab-pane>
 
@@ -92,71 +76,78 @@
               <div class="panel-heading">
                 <div>
                   <strong>业务事件</strong>
-                  <span>节点生命周期、接口收发与约束动作</span>
+                  <span>按节点区分生命周期、接口收发与约束动作</span>
                 </div>
                 <small>{{ eventCount }} 条</small>
               </div>
               <div class="log-scroll">
-                <TaskBusinessEventList :logs="logs" />
+                <TaskBusinessEventList :logs="logs" :steps="steps" :workflow="workflow" />
               </div>
             </div>
           </el-tab-pane>
 
-          <el-tab-pane label="绑定与约束" name="resources">
-            <div class="resource-layout">
-              <section class="holistic-section-card">
-                <div class="section-card-head">
-                  <div>
-                    <strong>设备绑定</strong>
-                    <span>任务启动时冻结的节点与实例对应关系</span>
-                  </div>
-                  <small>{{ bindings.length }} 项</small>
-                </div>
-                <div class="section-card-body">
-                  <div v-for="binding in bindings" :key="binding.slotId || binding.nodeName" class="binding-row">
-                    <div>
-                      <strong>{{ binding.nodeName }}</strong>
-                      <span>{{ binding.deviceModelName || binding.deviceModelId || '-' }}</span>
-                    </div>
-                    <span class="binding-to">绑定至</span>
-                    <div>
-                      <strong>{{ binding.instanceName || binding.deviceInstanceName || binding.deviceInstanceId || '待绑定' }}</strong>
-                      <span>设备实例</span>
-                    </div>
-                  </div>
-                  <div v-if="!bindings.length" class="empty-hint">该任务没有设备实例绑定</div>
-                </div>
-              </section>
+          <el-tab-pane label="设备绑定" name="bindings">
+            <div class="table-tab">
+              <el-table :data="bindings" size="small" stripe border class="resource-table" empty-text="该任务没有设备实例绑定">
+                <el-table-column label="流程节点" min-width="160">
+                  <template #default="{ row }">
+                    <button class="btn-link" type="button" @click="jumpToRuntimeNode(row)">{{ row.nodeName || '-' }}</button>
+                  </template>
+                </el-table-column>
+                <el-table-column label="设备模型" min-width="140" show-overflow-tooltip>
+                  <template #default="{ row }">{{ row.deviceModelName || row.deviceModelId || '-' }}</template>
+                </el-table-column>
+                <el-table-column label="绑定设备" min-width="160" show-overflow-tooltip>
+                  <template #default="{ row }">{{ row.instanceName || row.deviceInstanceName || row.deviceInstanceId || '待绑定' }}</template>
+                </el-table-column>
+                <el-table-column label="操作" width="280" fixed="right">
+                  <template #default="{ row }">
+                    <button class="btn-link" type="button" :disabled="!row.deviceInstanceId" @click="openDeviceInstance(row)">设备实例</button>
+                    <router-link
+                      v-if="row.deviceInstanceId"
+                      class="datacenter-link"
+                      :to="`/data-management?instanceId=${row.deviceInstanceId}`"
+                    >前往数据中心查看历史数据 ➔</router-link>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+          </el-tab-pane>
 
-              <section class="holistic-section-card">
-                <div class="section-card-head">
-                  <div>
-                    <strong>约束</strong>
-                    <span>全局级实时生效，任务级启动后固定</span>
-                  </div>
-                </div>
-                <div class="section-card-body constraint-view">
-                  <template v-if="constraints">
-                    <div class="rule-group">
-                      <h4>全局级约束</h4>
-                      <div v-for="rule in constraints.globalConstraints || []" :key="rule.ruleId" class="rule-row">
-                        <strong>{{ rule.ruleName }}</strong>
-                        <code>{{ rule.expression }}</code>
-                      </div>
-                      <div v-if="!constraints.globalConstraints?.length" class="empty-hint">当前没有启用的全局级约束</div>
-                    </div>
-                    <div class="rule-group">
-                      <h4>任务级约束</h4>
-                      <div v-for="rule in constraints.taskConstraints || []" :key="rule.taskRuleIndex" class="rule-row">
-                        <strong>{{ rule.ruleName }}</strong>
-                        <code>{{ rule.expression }}</code>
-                      </div>
-                      <div v-if="!constraints.taskConstraints?.length" class="empty-hint">该任务未配置任务级约束</div>
+          <el-tab-pane label="约束实例" name="constraints">
+            <div class="table-tab">
+              <el-table :data="constraintRows" size="small" stripe border class="resource-table" empty-text="暂无有效约束模型">
+                <el-table-column label="来源" width="90">
+                  <template #default="{ row }">{{ row.scope }}</template>
+                </el-table-column>
+                <el-table-column prop="ruleName" label="规则名称" min-width="140" show-overflow-tooltip />
+                <el-table-column label="业务判定逻辑" min-width="440">
+                  <template #default="{ row }">
+                    <div class="sentence-stream">
+                      <span class="sentence-static">当</span>
+                      <span class="sentence-chip emphasis">{{ sentenceTokens(row).conditionExpr || row.expression || '-' }}</span>
+                      <span class="sentence-static">持续</span>
+                      <span class="sentence-chip">{{ sentenceTokens(row).windowText }}</span>
+                      <span class="sentence-arrow">➔</span>
+                      <span class="sentence-static">执行</span>
+                      <span v-for="(act, idx) in sentenceTokens(row).actionLabels" :key="idx" class="sentence-chip action">
+                        {{ act }}
+                      </span>
                     </div>
                   </template>
-                  <div v-else class="empty-hint">暂无有效约束模型</div>
-                </div>
-              </section>
+                </el-table-column>
+                <el-table-column label="判定窗口" width="95">
+                  <template #default="{ row }">
+                    <span>{{ row.windowSeconds && row.windowSeconds > 0 ? row.windowSeconds + ' 秒' : '瞬时' }}</span>
+                  </template>
+                </el-table-column>
+                <el-table-column label="操作" width="100" fixed="right">
+                  <template #default="{ row }">
+                    <router-link v-if="row.ruleId" class="btn-link" :to="`/constraint-management?ruleId=${row.ruleId}`">查看详情</router-link>
+                    <span v-else class="muted-action">任务内规则</span>
+                  </template>
+                </el-table-column>
+              </el-table>
             </div>
           </el-tab-pane>
         </el-tabs>
@@ -172,20 +163,32 @@
         </div>
       </footer>
     </div>
+
+    <el-drawer
+      v-model="stepDrawerVisible"
+      append-to-body
+      size="480px"
+      class="task-step-detail-drawer"
+      :title="stepDrawerTitle"
+    >
+      <TaskStepDetail :step="selectedStep" :node="stepDetailNode" />
+    </el-drawer>
   </el-drawer>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { Close, CopyDocument } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
-import { workflowModelName } from '../../../../utils/workflowAuthoring.js'
+import { workflowModelDisplayName } from '../../../../utils/workflowAuthoring.js'
 import { formatLogDateTime } from '../../../../utils/formatLogTime.js'
 import { businessExecutionEvents, workflowNodeNameByIdRef } from '../../../../utils/workflowExecution.js'
+import { formatRuleSentenceTokens } from '../../../../utils/constraintExpression.js'
 import TaskBusinessEventList from './TaskBusinessEventList.vue'
 import TaskRuntimeGraph from './TaskRuntimeGraph.vue'
 import TaskStepDetail from './TaskStepDetail.vue'
-import { selectPreferredStepId, statusLabel } from '../taskExecutionPresentation.js'
+import { statusLabel } from '../taskExecutionPresentation.js'
 
 type Item = Record<string, any>
 
@@ -197,6 +200,8 @@ const props = withDefaults(defineProps<{
   logs?: Item[]
   bindings?: Item[]
   constraints?: Item | null
+  models?: Item[]
+  instances?: Item[]
   loading?: boolean
 }>(), {
   task: null,
@@ -205,6 +210,8 @@ const props = withDefaults(defineProps<{
   logs: () => [],
   bindings: () => [],
   constraints: null,
+  models: () => [],
+  instances: () => [],
   loading: false,
 })
 
@@ -215,8 +222,10 @@ const emit = defineEmits<{
   'select-step': [stepId: number | null]
 }>()
 
+const router = useRouter()
 const activeTab = ref('runtime')
 const graphReady = ref(false)
+const stepDrawerVisible = ref(false)
 const selectedStepId = ref<number | null>(null)
 const selectedGraphNode = ref<Item | null>(null)
 const selectedStep = computed(() => {
@@ -228,24 +237,40 @@ const selectedStep = computed(() => {
   const nodeName = fromGraph || fromWorkflow
   return nodeName ? { ...step, nodeName } : step
 })
+const stepDetailNode = computed(() => {
+  if (selectedGraphNode.value) return selectedGraphNode.value
+  const name = selectedStep.value?.nodeName
+  return (props.workflow?.nodesDef || props.workflow?.nodes || []).find((item: Item) => item.name === name) || null
+})
+const stepDrawerTitle = computed(() => selectedGraphNode.value?.name || selectedStep.value?.nodeName || '步骤详情')
 const completedStepCount = computed(() => props.steps.filter(step => step.nodeStatus === 'SUCCEEDED').length)
 const eventCount = computed(() => businessExecutionEvents(props.logs).length)
 const currentNodeDisplay = computed(() => {
-  if (selectedStep.value?.nodeName) return selectedStep.value.nodeName
   const refId = props.task?.currentNodeIdRef
   if (refId == null) return '-'
   return workflowNodeNameByIdRef(props.workflow, refId) || `#${refId}`
 })
+const constraintRows = computed(() => {
+  const globalRows = (props.constraints?.globalConstraints || []).map((rule: Item) => ({
+    ...rule,
+    scope: '全局级',
+  }))
+  const taskRows = (props.constraints?.taskConstraints || []).map((rule: Item) => ({
+    ...rule,
+    scope: '任务级',
+  }))
+  return [...globalRows, ...taskRows]
+})
+
+function sentenceTokens(row: Item) {
+  return formatRuleSentenceTokens(row, props.models, props.instances)
+}
 
 watch(() => props.task?.id, () => {
   activeTab.value = 'runtime'
   selectedGraphNode.value = null
-  selectedStepId.value = selectPreferredStepId(props.steps, null)
-}, { immediate: true })
-
-watch(() => props.steps, current => {
-  if (selectedGraphNode.value && selectedStepId.value == null) return
-  selectedStepId.value = selectPreferredStepId(current, selectedStepId.value)
+  selectedStepId.value = null
+  stepDrawerVisible.value = false
 }, { immediate: true })
 
 function handleDrawerOpening() {
@@ -258,12 +283,14 @@ function handleDrawerOpened() {
 
 function handleDrawerClosed() {
   graphReady.value = false
+  stepDrawerVisible.value = false
 }
 
 function selectGraphStep(stepId: number | null, node: Item) {
   selectedGraphNode.value = node
   const resolved = resolveStepId(stepId, node)
   selectedStepId.value = resolved
+  stepDrawerVisible.value = true
   emit('select-step', resolved)
 }
 
@@ -279,10 +306,17 @@ function resolveStepId(stepId: number | null, node: Item | null) {
   return matched?.id ?? null
 }
 
-function nodeTypeLabel(node: Item) {
-  if (node.nodeType === 'DEV_NODE') return '设备能力节点'
-  if (node.nodeType === 'SUBFLOW_NODE') return '子流程节点'
-  return '功能节点'
+function jumpToRuntimeNode(binding: Item) {
+  activeTab.value = 'runtime'
+  const nodes = props.workflow?.nodesDef || props.workflow?.nodes || []
+  const node = nodes.find((item: Item) => item.name === binding.nodeName)
+    || { name: binding.nodeName, nodeType: 'DEV_NODE', nodeIdRef: binding.nodeIdRef }
+  selectGraphStep(null, node)
+}
+
+function openDeviceInstance(binding: Item) {
+  if (!binding.deviceInstanceId) return
+  router.push({ path: '/device-instance-management', query: { instanceId: String(binding.deviceInstanceId) } })
 }
 
 function statusTone(status: unknown) {
@@ -320,7 +354,7 @@ function copyTaskId() {
   border-bottom: 1px solid var(--sl-border-subtle, #f1f5f9);
   gap: 12px;
 }
-.head-title-wrap { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.head-title-wrap { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
 .inst-type-tag {
   background: var(--sl-primary-light, #eff6ff); color: var(--sl-primary, #2563eb);
   border: 1px solid var(--sl-primary-border, #bfdbfe); padding: 1px 6px;
@@ -342,8 +376,13 @@ function copyTaskId() {
 }
 .close-drawer-btn:hover { background: #f1f5f9; color: var(--sl-text-heading, #0f172a); }
 .drawer-metric-ribbon {
-  height: 35px; padding: 0 16px; display: grid; grid-template-columns: repeat(4, 1fr);
-  gap: 16px; align-items: center; background: #fafbfc;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: baseline;
+  gap: 16px;
+  margin-left: 8px;
+  overflow: hidden;
 }
 .m-col { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
 .m-lbl { font-size: 11px; color: var(--sl-text-secondary, #64748b); flex-shrink: 0; }
@@ -378,12 +417,11 @@ function copyTaskId() {
 .graph-layout {
   height: 100%;
   min-height: 0;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 360px;
+  display: flex;
   overflow: hidden;
   background: var(--sl-bg-surface, #ffffff);
 }
-.graph-workspace { min-width: 0; min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--sl-border-base, #e2e8f0); }
+.graph-workspace { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .panel-heading {
   min-height: 36px;
   display: flex;
@@ -392,7 +430,7 @@ function copyTaskId() {
   gap: 12px;
   padding: 0 12px;
   border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
-  background: #f8fafc;
+  background: #ffffff;
   flex-shrink: 0;
 }
 .panel-heading > div { min-width: 0; display: grid; gap: 1px; }
@@ -401,99 +439,52 @@ function copyTaskId() {
 .graph-canvas { flex: 1; min-height: 0; border: 0; }
 .graph-loading { flex: 1; min-height: 0; padding: 24px; box-sizing: border-box; background: var(--sl-bg-hover, #f8fafc); }
 .graph-workspace :deep(.runtime-graph) { height: 100%; min-height: 0; border: 0; }
-.graph-detail { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--sl-bg-surface, #ffffff); }
-.graph-detail-scroll { flex: 1; min-height: 0; overflow: auto; padding: 12px; }
-.waiting-detail {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: start;
-  gap: 8px;
-  padding: 12px;
-  border: 1px solid var(--sl-border-base, #e2e8f0);
-  border-radius: var(--sl-radius-sm, 6px);
-  background: var(--sl-bg-hover, #f8fafc);
-}
-.waiting-detail > div { display: grid; gap: 3px; }
-.waiting-detail strong { font-size: 12.5px; color: var(--sl-text-heading, #0f172a); }
-.waiting-detail span, .waiting-detail p { color: var(--sl-text-secondary, #64748b); font-size: 12px; }
-.waiting-detail p { grid-column: 1 / -1; margin: 0; }
 
 .log-workbench { height: 100%; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
 .log-scroll { flex: 1; min-height: 0; overflow: auto; }
 
-.resource-layout {
+.table-tab {
   height: 100%;
   min-height: 0;
   overflow: auto;
-  padding: 12px 16px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 12px;
-  align-content: start;
-  background: var(--sl-bg-page, #f1f5f9);
-}
-.holistic-section-card {
-  min-width: 0;
-  border: 1px solid var(--sl-border-base, #e2e8f0);
-  border-radius: var(--sl-radius-sm, 6px);
+  padding: 0;
   background: #ffffff;
+  box-sizing: border-box;
+}
+.resource-table { width: 100%; }
+.sentence-stream {
   display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-.section-card-head {
-  min-height: 40px;
-  padding: 8px 12px;
-  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
-}
-.section-card-head > div { min-width: 0; display: grid; gap: 2px; }
-.section-card-head strong { font-size: 13.5px; font-weight: 700; color: var(--sl-text-heading, #0f172a); }
-.section-card-head span, .section-card-head small { font-size: 12px; color: var(--sl-text-secondary, #64748b); }
-.section-card-body { padding: 10px 12px; display: grid; gap: 8px; }
-.binding-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
-  align-items: center;
-  gap: 12px;
-  padding: 8px 10px;
-  border: 1px solid var(--sl-border-base, #e2e8f0);
-  border-radius: var(--sl-radius-sm, 6px);
-  background: var(--sl-bg-hover, #f8fafc);
-}
-.binding-row > div { display: grid; gap: 2px; min-width: 0; }
-.binding-row strong { font-size: 12.5px; color: var(--sl-text-heading, #0f172a); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.binding-row span { color: var(--sl-text-secondary, #64748b); font-size: 11px; }
-.binding-to { color: var(--sl-text-secondary, #64748b); font-size: 11px; }
-.empty-hint {
-  padding: 20px 4px;
-  color: var(--sl-text-disabled, #94a3b8);
+  gap: 5px;
   font-size: 12.5px;
-  line-height: 20px;
+  line-height: 1.6;
 }
-.constraint-view { gap: 16px; }
-.rule-group { display: grid; gap: 8px; }
-.rule-group h4 { margin: 0; font-size: 12px; font-weight: 600; color: var(--sl-text-heading, #0f172a); }
-.rule-row {
-  display: grid;
-  grid-template-columns: 140px minmax(0, 1fr);
-  gap: 10px;
-  padding: 8px 10px;
-  border: 1px solid var(--sl-border-base, #e2e8f0);
+.sentence-static { color: var(--sl-text-secondary, #64748b); }
+.sentence-chip {
+  padding: 1px 6px;
   border-radius: var(--sl-radius-sm, 6px);
-  background: var(--sl-bg-hover, #f8fafc);
-}
-.rule-row strong { font-size: 12px; color: var(--sl-text-heading, #0f172a); }
-.rule-row code {
+  background: var(--sl-bg-page, #f1f5f9);
+  border: 1px solid var(--sl-border-input, #cbd5e1);
   color: var(--sl-text-body, #334155);
-  font-family: var(--sl-font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-  font-size: 11.5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: 12px;
+  font-weight: 500;
 }
+.sentence-chip.emphasis { font-weight: 600; }
+.sentence-chip.action {
+  background: var(--sl-danger-light, #fef2f2);
+  border-color: var(--sl-danger-border, #fecaca);
+  color: var(--sl-danger, #dc2626);
+}
+.sentence-arrow { color: var(--sl-text-disabled, #94a3b8); margin: 0 2px; }
+.datacenter-link {
+  margin-left: 8px;
+  color: var(--sl-primary, #2563eb);
+  font-size: 12px;
+  text-decoration: none;
+}
+.datacenter-link:hover { text-decoration: underline; }
+.muted-action { color: var(--sl-text-disabled, #94a3b8); font-size: 12px; }
 
 .drawer-footer-bar {
   padding: 10px 16px; background: #ffffff; border-top: 1px solid var(--sl-border-base, #e2e8f0);
@@ -512,17 +503,12 @@ function copyTaskId() {
   font-size: 12.5px; font-weight: 500; cursor: pointer; padding: 2px 4px;
 }
 .btn-link.danger { color: var(--sl-danger, #dc2626); }
-.btn-link:hover { text-decoration: underline; }
+.btn-link:hover:not(:disabled) { text-decoration: underline; }
+.btn-link:disabled { color: var(--sl-text-disabled, #94a3b8); cursor: not-allowed; }
 
 @media (max-width: 1100px) {
-  .graph-layout { grid-template-columns: minmax(0, 1fr) 300px; }
-  .resource-layout { grid-template-columns: 1fr; }
-}
-@media (max-width: 900px) {
-  .graph-layout { grid-template-columns: 1fr; }
-  .graph-workspace { border-right: 0; border-bottom: 1px solid var(--sl-border-base, #e2e8f0); min-height: 320px; }
-  .graph-detail-scroll { max-height: 360px; }
-  .drawer-metric-ribbon { grid-template-columns: repeat(2, 1fr); height: auto; padding: 8px 16px; }
+  .head-top-row { flex-wrap: wrap; }
+  .drawer-metric-ribbon { flex-wrap: wrap; margin-left: 0; }
 }
 </style>
 
@@ -530,5 +516,9 @@ function copyTaskId() {
 .task-execution-drawer .el-drawer__body {
   overflow: hidden !important;
   background: var(--sl-bg-page);
+}
+.task-step-detail-drawer .el-drawer__body {
+  padding: 0;
+  background: #fff;
 }
 </style>

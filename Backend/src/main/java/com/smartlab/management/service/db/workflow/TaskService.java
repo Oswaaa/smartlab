@@ -62,10 +62,11 @@ public class TaskService extends ManagementCrudService<Task> {
         this.eventPublisher = eventPublisher;
     }
 
-    public PageResult<Task> page(long pageNo, long pageSize, String keyword, String status) {
+    public PageResult<Task> page(long pageNo, long pageSize, String keyword, String status, Long flowModelId) {
         var query = Wrappers.<Task>lambdaQuery();
         if (keyword != null && !keyword.isBlank()) query.like(Task::getTaskName, keyword.trim());
         if (status != null && !status.isBlank()) query.eq(Task::getTaskStatus, status.trim());
+        if (flowModelId != null && flowModelId > 0) query.eq(Task::getFlowModelId, flowModelId);
         query.orderByDesc(Task::getId);
         Page<Task> page = taskMapper.selectPage(new Page<>(Math.max(1, pageNo), Math.max(1, pageSize)), query);
         return new PageResult<>(page.getTotal(), page.getCurrent(), page.getSize(), page.getRecords());
@@ -266,6 +267,7 @@ public class TaskService extends ManagementCrudService<Task> {
                     error.getMessage(), "检查任务设备绑定"));
         }
         if (validResources) {
+            addIssues(issues, resourceService.inspectCapabilityParameters(flowModelId, resourceMap));
             addIssues(issues, executionReadinessService.inspect(resourceMap));
             addIssues(issues, taskConstraintService.inspect(flowModelId, taskVariables, resourceMap, taskConstraints));
         }

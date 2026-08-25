@@ -2,15 +2,24 @@ package com.smartlab.engine.workflow.action;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.smartlab.engine.constraint.ConstraintExpressionEvaluator;
+import com.smartlab.engine.workflow.WorkflowExpressionHistoryResolver;
 import com.smartlab.global.util.JsonNodeSupport;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 @Component
 public class UpdateWorkflowActionExecutor implements WorkflowActionExecutor {
-    private final WorkflowValueResolver valueResolver;
+    private final ConstraintExpressionEvaluator expressionEvaluator;
+    private final WorkflowExpressionHistoryResolver historyResolver;
 
-    public UpdateWorkflowActionExecutor(WorkflowValueResolver valueResolver) {
-        this.valueResolver = valueResolver;
+    public UpdateWorkflowActionExecutor(ConstraintExpressionEvaluator expressionEvaluator,
+            WorkflowExpressionHistoryResolver historyResolver) {
+        this.expressionEvaluator = expressionEvaluator;
+        this.historyResolver = historyResolver;
     }
 
     @Override
@@ -35,15 +44,33 @@ public class UpdateWorkflowActionExecutor implements WorkflowActionExecutor {
             value = action.payload().get("value").deepCopy();
         } else {
             String expression = action.payload().path("valueExpression").asText("").trim();
-            value = valueResolver.resolveExpression(expression, context.variables());
+            try {
+                value = resolveExpression(expression, context);
+            } catch (ConstraintExpressionEvaluator.TemporalDataUnavailableException unavailable) {
+                return WorkflowActionResult.awaitExternalSignal(null);
+            }
         }
         JsonNode declaration = declaredVariable(context.node().getInVariables(), variableName);
         if (declaration == null) throw new IllegalArgumentException("UPDATE动作引用的内部变量不存在: " + variableName);
         value = normalizeValue(declaration.path("dataType").asText(""), value);
         requireCompatibleType(variableName, declaration.path("dataType").asText(""), value);
         ObjectNode update = JsonNodeSupport.objectNode();
-        valueResolver.write(update, variableName, value);
+        update.set(variableName, value.deepCopy());
         return WorkflowActionResult.continueWith(update);
+    }
+
+    private JsonNode resolveExpression(String expression, WorkflowActionContext context) {
+        if (expression == null || expression.isBlank()) {
+            throw new IllegalArgumentException("valueExpression不能为空");
+        }
+        Map<String, JsonNode> values = new LinkedHashMap<>();
+        if (context.variables() != null && context.variables().isObject()) {
+            context.variables().fields().forEachRemaining(entry -> values.put(entry.getKey(), entry.getValue()));
+        }
+        Instant now = context.now() == null ? Instant.now() : context.now();
+        return expressionEvaluator.evaluateWorkflowValue(expression, values,
+                historyResolver.histories(context.task(), context.step(), context.node(), expression, values, now),
+                now);
     }
 
     private JsonNode declaredVariable(JsonNode definitions, String variableName) {

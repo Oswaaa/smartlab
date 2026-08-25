@@ -1,0 +1,923 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartLab 2.0 - 约束规则与任务约束弹窗 (方案二细分结构 + 方案一UI风格)</title>
+  <style>
+    :root {
+      --sl-primary: #2563eb;
+      --sl-primary-hover: #1d4ed8;
+      --sl-primary-light: #eff6ff;
+      --sl-primary-border: #bfdbfe;
+      --sl-success: #16a34a;
+      --sl-success-light: #f0fdf4;
+      --sl-danger: #dc2626;
+      --sl-danger-light: #fef2f2;
+      --sl-danger-border: #fecaca;
+      --sl-warning: #d97706;
+      --sl-warning-light: #fffbeb;
+      --sl-text-heading: #0f172a;
+      --sl-text-body: #334155;
+      --sl-text-secondary: #64748b;
+      --sl-text-muted: #94a3b8;
+      --sl-border-base: #e2e8f0;
+      --sl-border-light: #f1f5f9;
+      --sl-bg-page: #0f172a;
+      --sl-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --sl-font-mono: Consolas, Monaco, "Courier New", monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: var(--sl-font-family);
+      background: var(--sl-bg-page);
+      color: var(--sl-text-body);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 顶部导航与方案切换 */
+    .top-scheme-bar {
+      background: #1e293b;
+      border-bottom: 1px solid #334155;
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: #ffffff;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .brand-title {
+      font-size: 15px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-title .badge {
+      font-size: 11px;
+      background: #3b82f6;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-weight: 600;
+    }
+
+    .scheme-tabs {
+      display: flex;
+      background: #0f172a;
+      padding: 4px;
+      border-radius: 8px;
+      gap: 4px;
+      border: 1px solid #334155;
+    }
+
+    .scheme-tab-btn {
+      padding: 6px 14px;
+      border: none;
+      background: transparent;
+      color: #94a3b8;
+      font-size: 12.5px;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .scheme-tab-btn:hover { color: #ffffff; background: #1e293b; }
+    .scheme-tab-btn.active {
+      color: #ffffff;
+      background: var(--sl-primary);
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.4);
+    }
+
+    /* 主舞台 */
+    .preview-stage {
+      flex: 1;
+      padding: 16px 20px;
+      display: flex;
+      gap: 18px;
+      max-width: 1560px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    .scheme-explanation-panel {
+      width: 350px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 10px;
+      padding: 16px;
+      color: #e2e8f0;
+      flex: none;
+    }
+
+    .scheme-explanation-panel h3 {
+      font-size: 15px;
+      color: #ffffff;
+      margin-bottom: 6px;
+    }
+
+    .tag {
+      font-size: 11px;
+      background: rgba(59, 130, 246, 0.2);
+      color: #93c5fd;
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+
+    .scheme-desc {
+      font-size: 12px;
+      color: #94a3b8;
+      line-height: 1.6;
+      margin: 10px 0 14px;
+      border-bottom: 1px solid #334155;
+      padding-bottom: 10px;
+    }
+
+    .feature-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .feature-item {
+      display: flex;
+      gap: 8px;
+      align-items: flex-start;
+    }
+
+    .feature-icon {
+      width: 20px;
+      height: 20px;
+      border-radius: 4px;
+      background: rgba(37, 99, 235, 0.2);
+      color: #60a5fa;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10.5px;
+      font-weight: 700;
+      flex: none;
+    }
+
+    .feature-content h4 {
+      font-size: 12.5px;
+      color: #f1f5f9;
+      margin-bottom: 2px;
+    }
+
+    .feature-content p {
+      font-size: 11px;
+      color: #94a3b8;
+      line-height: 1.45;
+    }
+
+    /* 模拟弹窗外框 (960px 紧凑比例) */
+    .mockup-dialog-container {
+      flex: 1;
+      max-width: 980px;
+      height: 780px;
+      background: #ffffff;
+      border-radius: 10px;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+      border: 1px solid #334155;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* 弹窗顶栏 */
+    .dialog-header {
+      height: 44px;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--sl-border-base);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #ffffff;
+      flex-shrink: 0;
+    }
+
+    .dialog-title {
+      font-size: 14.5px;
+      font-weight: 700;
+      color: var(--sl-text-heading);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .dialog-close-btn {
+      width: 24px;
+      height: 24px;
+      border: none;
+      background: transparent;
+      color: var(--sl-text-muted);
+      cursor: pointer;
+      font-size: 16px;
+      display: grid;
+      place-items: center;
+      border-radius: 4px;
+    }
+    .dialog-close-btn:hover { background: #f1f5f9; color: var(--sl-text-heading); }
+
+    /* 弹窗底部操作条 */
+    .dialog-footer {
+      height: 46px;
+      padding: 0 16px;
+      border-top: 1px solid var(--sl-border-base);
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+      background: #ffffff;
+      flex-shrink: 0;
+    }
+
+    .btn-aliyun {
+      padding: 4px 12px;
+      font-size: 12px;
+      border: 1px solid var(--sl-border-base);
+      background: #ffffff;
+      color: var(--sl-text-body);
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 500;
+      height: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .btn-aliyun:hover { border-color: #cbd5e1; background: #f8fafc; }
+
+    .btn-primary-blue {
+      padding: 4px 14px;
+      font-size: 12px;
+      border: 1px solid var(--sl-primary);
+      background: var(--sl-primary);
+      color: #ffffff;
+      border-radius: 4px;
+      cursor: pointer;
+      font-weight: 600;
+      height: 28px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .btn-primary-blue:hover { background: var(--sl-primary-hover); }
+
+    /* 弹窗内部独立滚动容器 */
+    .dialog-scroll-body {
+      flex: 1;
+      overflow-y: auto;
+      background: #f8fafc;
+      box-sizing: border-box;
+    }
+
+    .dialog-scroll-body::-webkit-scrollbar { width: 6px; }
+    .dialog-scroll-body::-webkit-scrollbar-track { background: #f1f5f9; }
+    .dialog-scroll-body::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+
+    /* 基础表单项 */
+    .form-input-sim {
+      height: 28px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      padding: 0 8px;
+      font-size: 11.5px;
+      width: 100%;
+      background: #ffffff;
+      outline: none;
+      box-sizing: border-box;
+    }
+    .form-input-sim:focus {
+      border-color: var(--sl-primary);
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.15);
+    }
+
+    .form-lbl {
+      font-size: 11.5px;
+      color: var(--sl-text-secondary);
+      text-align: right;
+      white-space: nowrap;
+    }
+    .form-lbl.required::before { content: "* "; color: var(--sl-danger); font-weight: bold; }
+
+    /* 自然语言胶囊解析条 (方案一工业风) */
+    .ali-preview-ribbon {
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      border-radius: 4px;
+      padding: 5px 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11.5px;
+    }
+    .ali-preview-ribbon label { color: var(--sl-primary); font-weight: 700; font-size: 11px; flex-shrink: 0; }
+    .p-chip {
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      font-family: var(--sl-font-mono);
+      font-size: 11px;
+      font-weight: 600;
+      color: #1e293b;
+    }
+    .p-chip.primary { background: #dbeafe; border-color: #93c5fd; color: #1d4ed8; }
+    .p-chip.danger { background: #fee2e2; border-color: #fca5a5; color: #b91c1c; }
+
+    /* 方案一 工业大卡片容器规范 */
+    .ali-modular-card {
+      background: #ffffff;
+      border: 1px solid var(--sl-border-base);
+      border-radius: 6px;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.02);
+      overflow: hidden;
+    }
+    .ali-card-header {
+      padding: 6px 12px;
+      background: #ffffff;
+      border-bottom: 1px solid var(--sl-border-light);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .ali-card-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--sl-text-heading);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .ali-card-title::before {
+      content: "";
+      width: 3px;
+      height: 12px;
+      background: var(--sl-primary);
+      border-radius: 2px;
+      display: inline-block;
+    }
+    .ali-card-body {
+      padding: 8px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    /* 变量绑定行 (细致网格) */
+    .var-binding-row {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 4px;
+      padding: 6px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .var-row-top {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .var-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+      background: #ffffff;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-family: var(--sl-font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--sl-primary);
+      border: 1px solid #cbd5e1;
+    }
+    .var-pill input {
+      border: none;
+      background: transparent;
+      font-family: inherit;
+      font-weight: inherit;
+      color: inherit;
+      width: 65px;
+      font-size: 11px;
+      outline: none;
+    }
+
+    .var-grid-5cols {
+      display: grid;
+      grid-template-columns: 130px 180px 180px 1fr 90px;
+      gap: 6px;
+      align-items: center;
+    }
+
+    /* 公式编辑器整合区 */
+    .composer-box {
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      background: #ffffff;
+      padding: 6px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 5px;
+    }
+    .token-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 4px;
+      font-size: 11px;
+    }
+    .token-lbl { color: var(--sl-text-muted); font-size: 10.5px; width: 50px; flex-shrink: 0; }
+    .btn-token {
+      height: 20px;
+      padding: 0 5px;
+      border: 1px solid #e2e8f0;
+      background: #f8fafc;
+      border-radius: 3px;
+      font-size: 10.5px;
+      cursor: pointer;
+      color: #334155;
+      display: inline-flex;
+      align-items: center;
+    }
+    .btn-token:hover { border-color: var(--sl-primary); color: var(--sl-primary); background: #eff6ff; }
+    .btn-token.tpl { background: #f0fdf4; border-color: #bbf7d0; color: #15803d; font-weight: 600; }
+    .btn-token.fn { background: #faf5ff; border-color: #e9d5ff; color: #7e22ce; font-weight: 600; }
+    .btn-token.var { background: #eff6ff; border-color: #bfdbfe; color: #1d4ed8; font-weight: 700; font-family: var(--sl-font-mono); }
+
+    .formula-input-line {
+      height: 30px;
+      border: 1px solid #94a3b8;
+      border-radius: 4px;
+      padding: 0 8px;
+      font-family: var(--sl-font-mono);
+      font-size: 12px;
+      font-weight: 600;
+      color: #1d4ed8;
+      background: #f8fafc;
+      outline: none;
+    }
+    .formula-meta {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10.5px;
+      color: var(--sl-text-secondary);
+    }
+
+    /* 动作列表 */
+    .action-row-item {
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 4px;
+      padding: 6px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .action-fields-grid {
+      display: grid;
+      grid-template-columns: 100px 140px 140px 1fr auto;
+      gap: 6px;
+      align-items: center;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 顶部方案切换导航 -->
+  <header class="top-scheme-bar">
+    <div class="brand-title">
+      <span>SmartLab 2.0 约束弹窗 UI 效果图 (细分模块 + 方案一工业UI)</span>
+      <span class="badge">细分结构精修</span>
+    </div>
+    <div class="scheme-tabs">
+      <button class="scheme-tab-btn active" onclick="switchScheme('v1')">
+        <span>方案 1：5段式精致大卡片 (推荐·细分结构+工业卡片)</span>
+      </button>
+      <button class="scheme-tab-btn" onclick="switchScheme('v2')">
+        <span>方案 2：分步 Tab 选项卡卡片 (分步切屏·免滚动)</span>
+      </button>
+      <button class="scheme-tab-btn" onclick="switchScheme('v3')">
+        <span>方案 3：吸顶逻辑解析 + 4段式卡片 (实时对照)</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- 主舞台 -->
+  <main class="preview-stage">
+
+    <!-- 方案设计说明与亮点 -->
+    <section class="scheme-explanation-panel" id="explanationPanel">
+      <!-- 动态加载方案说明 -->
+    </section>
+
+    <!-- 弹窗实景模拟器 -->
+    <section class="mockup-dialog-container" id="workspaceContainer">
+      <!-- 动态渲染模拟器内容 -->
+    </section>
+
+  </main>
+
+  <script>
+    const SCHEME_DATA = {
+      v1: {
+        title: '方案 1：5段式精致大卡片 (细分结构 + 方案一工业UI质感) · 推荐 ⭐',
+        tag: '5大细分模块 · 统一工业UI',
+        desc: '完全按照方案二的 5 个细分功能模块（实时逻辑解析、基本属性、变量空间、公式工作台、处置动作）进行独立卡片排布，但统一应用方案一的高级工业 UI 质感（标题蓝色标示条、外围 10px 紧凑收敛、单行紧凑表单），既保证模块独立清晰，又彻底消除粗糙大边距。',
+        features: [
+          {
+            title: '5 大细分功能独立卡片',
+            desc: '① 逻辑解析胶囊条、② 规则基本属性、③ 变量声明与数据源、④ 判定公式点选工作台、⑤ 判定窗口与处置动作。'
+          },
+          {
+            title: '方案一工业级精致质感',
+            desc: '每个卡片标题左侧带有 3px 品牌蓝条，白底微阴影，内部 8px 内边距，排版极度工整。'
+          },
+          {
+            title: '全量保留所有表单细节',
+            desc: '覆盖设备属性/状态/任务/变量 4 种来源、固定阈值、7大公式模板、6大时序函数、多处置动作等全部功能。'
+          }
+        ],
+        render: () => `
+          <div class="dialog-header">
+            <span class="dialog-title">新建约束规则</span>
+            <button class="dialog-close-btn" type="button">✕</button>
+          </div>
+
+          <div class="dialog-scroll-body">
+            <div style="padding:10px 12px; display:flex; flex-direction:column; gap:8px;">
+
+              <!-- 模块 1：实时逻辑解析卡片 (方案一蓝底胶囊) -->
+              <div class="ali-preview-ribbon">
+                <label>判定逻辑解析:</label>
+                <div style="display:flex; flex-wrap:wrap; align-items:center; gap:4px;">
+                  <span>当</span>
+                  <span class="p-chip primary">@temp &gt; @limit</span>
+                  <span>持续</span>
+                  <span class="p-chip">10 秒</span>
+                  <span style="color:#94a3b8;">➔</span>
+                  <span>执行</span>
+                  <span class="p-chip danger">加温反应釜_01.power_off()</span>
+                  <span class="p-chip danger">系统报警(ALERT)</span>
+                </div>
+              </div>
+
+              <!-- 模块 2：基本属性卡片 -->
+              <div class="ali-modular-card">
+                <div class="ali-card-header">
+                  <span class="ali-card-title">1. 基本信息</span>
+                  <div style="display:flex; align-items:center; gap:6px;">
+                    <span style="font-size:11px; color:#64748b;">启用规则</span>
+                    <input type="checkbox" checked style="accent-color:#2563eb; cursor:pointer;" />
+                  </div>
+                </div>
+                <div class="ali-card-body">
+                  <div style="display:grid; grid-template-columns: 70px 1fr 65px 1fr; gap:8px; align-items:center;">
+                    <label class="form-lbl required">规则名称</label>
+                    <input class="form-input-sim" value="反应釜超温防爆保护" placeholder="例如：反应釜超温防爆保护" />
+                    <label class="form-lbl">规则说明</label>
+                    <input class="form-input-sim" value="监控加温釜温度，超过上限持续10秒自动切断电源并告警" placeholder="工艺或安全目的说明（选填）" />
+                  </div>
+                </div>
+              </div>
+
+              <!-- 模块 3：变量声明与数据源卡片 -->
+              <div class="ali-modular-card">
+                <div class="ali-card-header">
+                  <span class="ali-card-title">2. 声明变量与数据源</span>
+                  <div style="display:flex; gap:6px;">
+                    <button class="btn-aliyun" type="button" style="padding:1px 8px; font-size:11px; height:22px;">+ 观测变量</button>
+                    <button class="btn-aliyun" type="button" style="padding:1px 8px; font-size:11px; height:22px;">+ 固定阈值</button>
+                  </div>
+                </div>
+                <div class="ali-card-body">
+                  <!-- 变量 1: 观测测点 -->
+                  <div class="var-binding-row">
+                    <div class="var-row-top">
+                      <div class="var-pill">
+                        <span>@</span>
+                        <input value="temp" title="点击可重命名变量" />
+                      </div>
+                      <div style="display:flex; align-items:center; gap:8px;">
+                        <span style="font-size:10.5px; color:#16a34a; font-weight:600;">● 已在公式中引用</span>
+                        <button class="btn-aliyun" style="padding:0 6px; font-size:10.5px; height:20px; color:#dc2626; border-color:#fecaca;">删除</button>
+                      </div>
+                    </div>
+                    <div class="var-grid-5cols">
+                      <select class="form-input-sim">
+                        <option>设备测点属性</option>
+                        <option>设备功能状态</option>
+                        <option>任务生命周期</option>
+                        <option>节点内部变量</option>
+                      </select>
+                      <select class="form-input-sim"><option>加温反应釜模型 (ID:102)</option></select>
+                      <select class="form-input-sim"><option>全模型实例 (或指定设备)</option></select>
+                      <select class="form-input-sim"><option>实时温度 (temperature)</option></select>
+                      <div style="font-size:11px; font-family:Consolas; color:#2563eb; background:#eff6ff; padding:2px 6px; border-radius:3px; text-align:center;">
+                        DOUBLE
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- 变量 2: 固定阈值 -->
+                  <div class="var-binding-row">
+                    <div class="var-row-top">
+                      <div class="var-pill" style="color:#0f766e;">
+                        <span>@</span>
+                        <input value="limit" />
+                      </div>
+                      <div style="display:flex; align-items:center; gap:8px;">
+                        <span style="font-size:10.5px; color:#16a34a; font-weight:600;">● 已在公式中引用</span>
+                        <button class="btn-aliyun" style="padding:0 6px; font-size:10.5px; height:20px; color:#dc2626; border-color:#fecaca;">删除</button>
+                      </div>
+                    </div>
+                    <div class="var-grid-5cols" style="grid-template-columns: 130px 180px 1fr 90px;">
+                      <select class="form-input-sim"><option>固定值 (LITERAL)</option></select>
+                      <select class="form-input-sim"><option>DOUBLE (浮点数值)</option><option>INTEGER (整数)</option></select>
+                      <input class="form-input-sim" value="85.0" placeholder="请输入固定数值" />
+                      <div style="font-size:11px; font-family:Consolas; color:#0f766e; background:#f0fdf4; padding:2px 6px; border-radius:3px; text-align:center;">
+                        DOUBLE
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 模块 4：判定公式工作台卡片 -->
+              <div class="ali-modular-card">
+                <div class="ali-card-header">
+                  <span class="ali-card-title">3. 判定公式点选与编写</span>
+                  <span style="font-size:11px; color:#64748b;">点选变量与操作符组成布尔表达式</span>
+                </div>
+                <div class="ali-card-body">
+                  <div class="composer-box">
+                    <div class="token-row">
+                      <span class="token-lbl">公式模板:</span>
+                      <button class="btn-token tpl">上限越限</button>
+                      <button class="btn-token tpl">下限越限</button>
+                      <button class="btn-token tpl">区间越限</button>
+                      <button class="btn-token tpl">突变超限</button>
+                      <button class="btn-token tpl">均值超限</button>
+                      <button class="btn-token tpl">速率超限</button>
+                      <button class="btn-token tpl">状态不等</button>
+                    </div>
+                    <div class="token-row">
+                      <span class="token-lbl">时序函数:</span>
+                      <button class="btn-token fn" title="计算每秒变化速率">rate(@temp, 10)</button>
+                      <button class="btn-token fn" title="计算首末差值">delta(@temp, 10)</button>
+                      <button class="btn-token fn" title="计算窗口均值">avg(@temp, 30)</button>
+                      <button class="btn-token fn" title="计算窗口最大值">max(@temp, 30)</button>
+                      <button class="btn-token fn" title="计算窗口最小值">min(@temp, 30)</button>
+                      <button class="btn-token fn" title="计算绝对值">abs()</button>
+                    </div>
+                    <div class="token-row">
+                      <span class="token-lbl">操作符:</span>
+                      <button class="btn-token">&gt;</button>
+                      <button class="btn-token">&lt;</button>
+                      <button class="btn-token">&gt;=</button>
+                      <button class="btn-token">&lt;=</button>
+                      <button class="btn-token">==</button>
+                      <button class="btn-token">!=</button>
+                      <button class="btn-token">+</button>
+                      <button class="btn-token">-</button>
+                      <button class="btn-token">*</button>
+                      <button class="btn-token">/</button>
+                      <button class="btn-token">&amp;&amp;</button>
+                      <button class="btn-token">||</button>
+                      <button class="btn-token">!</button>
+                      <button class="btn-token">(</button>
+                      <button class="btn-token">)</button>
+                      <span style="color:#cbd5e1;">|</span>
+                      <button class="btn-token var">@temp</button>
+                      <button class="btn-token var">@limit</button>
+                    </div>
+
+                    <input class="formula-input-line" value="@temp > @limit" />
+                    
+                    <div class="formula-meta">
+                      <span>执行表达式: <code>temperature &gt; 85.0</code></span>
+                      <span style="color:#16a34a; font-weight:600;">● 语法校验通过 (有效布尔表达式)</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 模块 5：判定窗口与违规处置动作卡片 -->
+              <div class="ali-modular-card">
+                <div class="ali-card-header">
+                  <span class="ali-card-title">4. 判定窗口与违规处置动作</span>
+                  <button class="btn-aliyun" type="button" style="padding:1px 8px; font-size:11px; height:22px;">+ 添加处置动作</button>
+                </div>
+                <div class="ali-card-body">
+                  <!-- 持续判定时间 -->
+                  <div style="display:flex; align-items:center; gap:8px; background:#f8fafc; padding:5px 8px; border-radius:4px; border:1px solid #e2e8f0;">
+                    <label class="form-lbl" style="font-weight:600;">持续判定时间:</label>
+                    <input class="form-input-sim" style="width:65px; text-align:center;" value="10" />
+                    <span style="font-size:11px; color:#64748b;">秒（公式连续成立达到该时间后判定违规，留空为瞬时触发）</span>
+                  </div>
+
+                  <!-- 动作 1: 设备能力调用 (含动态参数配置) -->
+                  <div class="action-row-item">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                      <span style="font-size:11.5px; font-weight:700;">动作 1 · 设备能力联动</span>
+                      <button class="btn-aliyun" style="padding:0 6px; font-size:10.5px; height:20px; color:#dc2626; border-color:#fecaca;">删除</button>
+                    </div>
+                    <div class="action-fields-grid">
+                      <select class="form-input-sim"><option>设备能力</option></select>
+                      <select class="form-input-sim"><option>加温反应釜模型</option></select>
+                      <select class="form-input-sim"><option>与观测同源实例</option></select>
+                      <select class="form-input-sim"><option>power_off (切断加热电源)</option></select>
+                    </div>
+                  </div>
+
+                  <!-- 动作 2: 系统告警动作 -->
+                  <div class="action-row-item">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                      <span style="font-size:11.5px; font-weight:700;">动作 2 · 系统告警通知</span>
+                      <button class="btn-aliyun" style="padding:0 6px; font-size:10.5px; height:20px; color:#dc2626; border-color:#fecaca;">删除</button>
+                    </div>
+                    <div class="action-fields-grid" style="grid-template-columns: 100px 180px 1fr;">
+                      <select class="form-input-sim"><option>系统动作</option></select>
+                      <select class="form-input-sim"><option>ALERT (系统告警与操作台弹窗)</option><option>TERMINATE_TASK (终止当前任务)</option></select>
+                      <span style="font-size:11px; color:#64748b;">触发后将在界面右上角和告警中心实时播报</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+          </div>
+
+          <div class="dialog-footer">
+            <button class="btn-aliyun" type="button">取消</button>
+            <button class="btn-primary-blue" type="button">保存规则</button>
+          </div>
+        `
+      },
+      v2: {
+        title: '方案 2：分步 Tab 选项卡卡片 (分步切屏 · 完全免滚动)',
+        tag: 'Tab 导航分步 · 单屏沉浸',
+        desc: '将细分模块做成顶部 Tab 切换（Tab 1: 规则与变量 ➔ Tab 2: 判定公式 ➔ Tab 3: 处置动作），每个 Tab 页面拥有大卡片 UI，用户无需长距离垂直滚动，单屏沉浸填写。',
+        features: [
+          {
+            title: 'Tab 切换单屏无长滚动',
+            desc: '弹窗高度固定，通过 Tab 切换不同阶段，空间整洁度极高。'
+          }
+        ],
+        render: () => `
+          <div class="dialog-header">
+            <span class="dialog-title">新建约束规则 (Tab 选项卡式)</span>
+            <button class="dialog-close-btn" type="button">✕</button>
+          </div>
+
+          <!-- Tab 分段导航条 -->
+          <div style="background:#ffffff; border-bottom:1px solid #e2e8f0; padding:0 16px; display:flex; gap:16px;">
+            <button style="padding:8px 0; border:none; background:transparent; color:#2563eb; font-weight:700; font-size:12.5px; border-bottom:2px solid #2563eb; cursor:pointer;">1. 基本信息与变量</button>
+            <button style="padding:8px 0; border:none; background:transparent; color:#64748b; font-weight:500; font-size:12.5px; cursor:pointer;">2. 判定公式点选</button>
+            <button style="padding:8px 0; border:none; background:transparent; color:#64748b; font-weight:500; font-size:12.5px; cursor:pointer;">3. 窗口与处置动作</button>
+          </div>
+
+          <div class="dialog-scroll-body">
+            <div style="padding:12px; display:flex; flex-direction:column; gap:10px;">
+              <div class="ali-preview-ribbon">
+                <label>当前逻辑预览:</label>
+                <span>当 <b>@temp &gt; @limit</b> 持续 10秒 ➔ 执行 power_off()</span>
+              </div>
+              <div class="ali-modular-card">
+                <div class="ali-card-header"><span class="ali-card-title">基本信息配置</span></div>
+                <div class="ali-card-body">
+                  <div style="display:grid; grid-template-columns:70px 1fr; gap:8px;">
+                    <label class="form-lbl required">规则名称</label>
+                    <input class="form-input-sim" value="反应釜超温防爆保护" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="dialog-footer">
+            <button class="btn-aliyun" type="button">取消</button>
+            <button class="btn-primary-blue" type="button">下一步: 判定公式 ➔</button>
+          </div>
+        `
+      },
+      v3: {
+        title: '方案 3：吸顶逻辑解析 + 4段式卡片 (实时对照)',
+        tag: '吸顶胶囊横幅 · 动态对照',
+        desc: '顶部的【判定逻辑自然语言预览】作为固定吸顶条（Sticky Top），下方滚动时，4 个细分卡片（基本信息、变量声明、判定公式、处置动作）在下方独立平滑滚动，用户随时可以抬头对照自然语言预览。',
+        features: [
+          {
+            title: '逻辑预览常驻吸顶',
+            desc: '无论滚动到哪里，顶部的逻辑预览胶囊条始终固定在最顶端。'
+          }
+        ],
+        render: () => `
+          <div class="dialog-header">
+            <span class="dialog-title">新建约束规则 (吸顶预览式)</span>
+            <button class="dialog-close-btn" type="button">✕</button>
+          </div>
+
+          <!-- 常驻吸顶预览横幅 -->
+          <div style="background:#eff6ff; border-bottom:1px solid #bfdbfe; padding:8px 16px; display:flex; align-items:center; gap:8px;">
+            <label style="color:#2563eb; font-weight:700; font-size:11.5px;">自然语言解析:</label>
+            <span style="font-size:12px;">当 <b style="color:#2563eb;">@temp &gt; @limit</b> 持续 <b>10秒</b> ➔ 执行 <b style="color:#dc2626;">power_off() + ALERT</b></span>
+          </div>
+
+          <div class="dialog-scroll-body">
+            <div style="padding:10px 12px; display:flex; flex-direction:column; gap:8px;">
+              <div class="ali-modular-card">
+                <div class="ali-card-header"><span class="ali-card-title">1. 基本信息</span></div>
+                <div class="ali-card-body">
+                  <input class="form-input-sim" value="反应釜超温防爆保护" />
+                </div>
+              </div>
+              <div class="ali-modular-card">
+                <div class="ali-card-header"><span class="ali-card-title">2. 变量声明</span></div>
+                <div class="ali-card-body">
+                  <div class="var-binding-row">
+                    <span class="var-pill">@temp</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="dialog-footer">
+            <button class="btn-aliyun" type="button">取消</button>
+            <button class="btn-primary-blue" type="button">保存规则</button>
+          </div>
+        `
+      }
+    };
+
+    function switchScheme(schemeKey) {
+      document.querySelectorAll('.scheme-tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+      });
+      event.currentTarget.classList.add('active');
+
+      const data = SCHEME_DATA[schemeKey];
+      
+      const explanationHtml = `
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+          <h3>${data.title}</h3>
+        </div>
+        <span class="tag">${data.tag}</span>
+        <p class="scheme-desc">${data.desc}</p>
+        <div class="feature-list">
+          ${data.features.map((f, i) => `
+            <div class="feature-item">
+              <div class="feature-icon">0${i+1}</div>
+              <div class="feature-content">
+                <h4>${f.title}</h4>
+                <p>${f.desc}</p>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+      document.getElementById('explanationPanel').innerHTML = explanationHtml;
+      document.getElementById('workspaceContainer').innerHTML = data.render();
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const defaultData = SCHEME_DATA.v1;
+      const explanationHtml = `
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:6px;">
+          <h3>${defaultData.title}</h3>
+        </div>
+        <span class="tag">${defaultData.tag}</span>
+        <p class="scheme-desc">${defaultData.desc}</p>
+        <div class="feature-list">
+          ${defaultData.features.map((f, i) => `
+            <div class="feature-item">
+              <div class="feature-icon">0${i+1}</div>
+              <div class="feature-content">
+                <h4>${f.title}</h4>
+                <p>${f.desc}</p>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+      document.getElementById('explanationPanel').innerHTML = explanationHtml;
+      document.getElementById('workspaceContainer').innerHTML = defaultData.render();
+    });
+  </script>
+</body>
+</html>

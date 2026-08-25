@@ -33,31 +33,41 @@
   box-shadow: 0 0 0 1px var(--sl-primary) inset, 0 0 0 2px var(--sl-primary-light) !important;
 }
 
-/* 3. 弹窗深度优化 (Dialog - 90vh 锁屏与独立内部滚动) */
+/* 3. 弹窗深度优化 (Dialog - 锁屏与纯内部滚动) */
+.el-overlay-dialog {
+  overflow: hidden !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .el-dialog {
   border-radius: var(--sl-radius-md) !important;
   overflow: hidden !important;
   box-shadow: var(--sl-shadow-dialog) !important;
+  margin: 0 auto !important;
+}
+.el-dialog.is-align-center {
+  margin: 0 auto !important;
 }
 .el-dialog__header {
-  padding: 14px 20px !important;
-  margin-right: 0 !important;
-  border-bottom: 1px solid var(--sl-border-base) !important;
-  background: #ffffff !important;
+  padding: 10px 16px;
+  margin-right: 0;
+  border-bottom: 1px solid var(--sl-border-base);
+  background: #ffffff;
 }
 .el-dialog__title {
-  font-size: 15px !important;
-  font-weight: 600 !important;
-  color: var(--sl-text-heading) !important;
+  font-size: 14.5px;
+  font-weight: 600;
+  color: var(--sl-text-heading);
 }
 .el-dialog__body {
-  padding: 16px 20px !important;
-  color: var(--sl-text-body) !important;
+  padding: 12px 16px;
+  color: var(--sl-text-body);
 }
 .el-dialog__footer {
-  padding: 12px 20px !important;
-  border-top: 1px solid var(--sl-border-base) !important;
-  background: #ffffff !important;
+  padding: 8px 16px;
+  border-top: 1px solid var(--sl-border-base);
+  background: #ffffff;
 }
 
 /* 4. 抽屉深度优化 (Drawer - 固定头部与脚部) */

@@ -57,19 +57,18 @@ describe('Task 9 — Full-Chain Copy Regression', () => {
     assert.match(drawer, /TaskResourceBindingCanvas/)
     assert.match(drawer, /TaskConstraintPanel/)
     assert.match(drawer, /发布启用|已发布|可执行流程/)
-    assert.match(bindingCanvas, /VueFlow/)
-    assert.match(bindingCanvas, /TaskBindingWorkflowNode/)
+    assert.match(bindingCanvas, /WorkflowStageGraph/)
     assert.match(bindingCanvas, /selectedRequirement\.slotId/)
   })
 
   test('execution drawer exposes the confirmed runtime views', () => {
     const source = readSource('views/task/TaskList/components/TaskExecutionDrawer.vue')
-    for (const label of ['运行状态', '业务事件', '绑定与约束']) {
+    for (const label of ['运行状态', '业务事件', '设备绑定', '约束实例']) {
       assert.match(source, new RegExp(label))
     }
     assert.match(source, /设备绑定/)
-    assert.match(source, /全局级约束/)
-    assert.match(source, /任务级约束/)
+    assert.match(source, /全局级|任务级/)
+    assert.match(source, /约束实例/)
   })
 
   test('snapshot panel uses canonical fields and no routing envelope', () => {
@@ -77,15 +76,19 @@ describe('Task 9 — Full-Chain Copy Regression', () => {
     assert.match(source, /interfaceName/)
     assert.match(source, /signalName/)
     assert.match(source, /payload/)
+    assert.match(source, /bindingTriggers|绑定触发器|条件摘要/)
+    assert.match(source, /当前信号/)
+    assert.match(source, /触发器绑定列表/)
+    assert.match(source, /触发条件/)
+    assert.match(source, /触发动作/)
     assert.doesNotMatch(source, /messageId|capabilityRef|sourceNodeIdRef|inputSignalName/)
   })
 
   test('runtime graph source uses Vue Flow and emits selected step', () => {
     const source = readSource('views/task/TaskList/components/TaskRuntimeGraph.vue')
-    assert.match(source, /VueFlow/)
+    assert.match(source, /WorkflowStageGraph/)
     assert.match(source, /select-step/)
     assert.match(source, /WAITING/)
-    assert.match(source, /index%2/)
   })
 
   test('task runtime refreshes the opened running task over the live stream', () => {

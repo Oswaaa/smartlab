@@ -417,8 +417,8 @@
     <el-dialog
       v-model="editorVisible"
       :title="editingId ? '编辑约束规则' : '新建约束规则'"
-      width="1080px"
-      top="4vh"
+      width="1040px"
+      align-center
       destroy-on-close
       class="constraint-editor-dialog"
       :close-on-click-modal="false"
@@ -450,6 +450,7 @@
 
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import { Download, Plus, Refresh } from '@element-plus/icons-vue'
@@ -459,6 +460,7 @@ import { toDesignerWorkflow } from '../../utils/workflowAuthoring.js'
 import { formatRuleSentenceTokens, sourceCategoryLabel, instantiateExpression, explainConstraintExpression, describeBindingTarget, formatViolationActionTaken, formatDeviceActionLabel, modelCapabilities } from '../../utils/constraintExpression.js'
 
 const auth = useAuthStore()
+const route = useRoute()
 const canCreate = computed(() => auth.hasPermission('constraint_rule:create'))
 const canEdit = computed(() => auth.hasPermission('constraint_rule:edit'))
 const canDelete = computed(() => auth.hasPermission('constraint_rule:delete'))
@@ -965,6 +967,18 @@ async function openDetail(row: any) {
   fetchLiveTwinState(row)
 }
 
+async function openRuleFromQuery() {
+  const ruleId = route.query.ruleId
+  if (ruleId == null || ruleId === '') return
+  try {
+    const res = await axios.get(`/api/constraint/rule/${ruleId}`)
+    if (!res.data?.success || !res.data.data) throw new Error(res.data?.message || '约束规则不存在')
+    await openDetail(res.data.data)
+  } catch (e: any) {
+    ElMessage.error(e.message || '无法打开约束规则')
+  }
+}
+
 function stopTelemetryTimer() {
   if (telemetryTimer.value) {
     clearInterval(telemetryTimer.value)
@@ -1116,8 +1130,12 @@ function formatActualScalar(value: any) {
 }
 
 onMounted(() => {
-  load()
+  load().then(() => openRuleFromQuery())
   refs().catch((e: any) => ElMessage.error(e.message || '加载约束配置资源失败'))
+})
+
+watch(() => route.query.ruleId, () => {
+  openRuleFromQuery()
 })
 
 onUnmounted(() => {
@@ -1602,40 +1620,53 @@ onUnmounted(() => {
 :deep(.constraint-editor-dialog) {
   display: flex;
   flex-direction: column;
-  max-height: 90vh;
-  margin-top: 5vh !important;
+  max-height: 85vh;
+  margin: 0 auto !important;
   border-radius: var(--sl-radius-md);
   overflow: hidden;
   box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
 }
 
 :deep(.constraint-editor-dialog .el-dialog__header) {
-  padding: 14px 20px;
-  margin-right: 0;
+  padding: 8px 14px !important;
+  margin-right: 0 !important;
   border-bottom: 1px solid var(--sl-border-base);
   background: #ffffff;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
 }
 
 :deep(.constraint-editor-dialog .el-dialog__title) {
-  font-size: 15px;
+  font-size: 13.5px !important;
   font-weight: 700;
   color: var(--sl-text-heading);
+  line-height: 1.2 !important;
+}
+
+:deep(.constraint-editor-dialog .el-dialog__headerbtn) {
+  top: 7px !important;
+  right: 12px !important;
+  font-size: 14px !important;
 }
 
 :deep(.constraint-editor-dialog .el-dialog__body) {
-  padding: 0;
+  padding: 0 !important;
   flex: 1;
   min-height: 0;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  background: #ffffff;
 }
 
 .editor-scroll-container {
-  padding: 16px 20px;
-  max-height: calc(90vh - 128px);
+  padding: 0 !important;
+  max-height: calc(85vh - 76px);
   overflow-y: auto;
   overflow-x: hidden;
   box-sizing: border-box;
+  background: #ffffff;
 }
 
 /* 统一精致细滚动条 (6px) */
@@ -1654,7 +1685,7 @@ onUnmounted(() => {
 }
 
 :deep(.constraint-editor-dialog .el-dialog__footer) {
-  padding: 10px 16px;
+  padding: 5px 14px !important;
   border-top: 1px solid var(--sl-border-base);
   background: #ffffff;
   flex-shrink: 0;
@@ -1663,7 +1694,15 @@ onUnmounted(() => {
 .dialog-custom-footer {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
   gap: 8px;
+}
+
+.dialog-custom-footer .btn-aliyun,
+.dialog-custom-footer .btn-primary-blue {
+  height: 26px !important;
+  font-size: 11.5px !important;
+  padding: 0 12px !important;
 }
 </style>
 

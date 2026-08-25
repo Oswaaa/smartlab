@@ -1,0 +1,1292 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartLab 2.0 - 首页与实验室场景 (3套大厂级无卡片一体化设计方案)</title>
+  <style>
+    :root {
+      /* 色彩体系 (Colors SSOT) */
+      --sl-primary: #2563eb;
+      --sl-primary-hover: #1d4ed8;
+      --sl-primary-active: #1e40af;
+      --sl-primary-light: #eff6ff;
+      --sl-primary-border: #bfdbfe;
+
+      --sl-success: #16a34a;
+      --sl-success-light: #f0fdf4;
+      --sl-success-border: #bbf7d0;
+
+      --sl-danger: #dc2626;
+      --sl-danger-light: #fef2f2;
+      --sl-danger-border: #fecaca;
+
+      --sl-warning: #d97706;
+      --sl-warning-light: #fffbeb;
+      --sl-warning-border: #fde68a;
+
+      /* 文本灰阶 (Slate 冷灰体系) */
+      --sl-text-heading: #0f172a;    /* 碳黑大标题/强调 */
+      --sl-text-body: #334155;       /* 正文/表单/数据 */
+      --sl-text-secondary: #64748b;  /* 辅助说明/次级标签 */
+      --sl-text-disabled: #94a3b8;   /* 占位/禁用提示 */
+
+      /* 背景与边框 */
+      --sl-bg-page: #0f172a;         /* 预览页暗底背景 */
+      --sl-bg-surface: #ffffff;      /* 一体化纯白表面 */
+      --sl-bg-hover: #f8fafc;
+      --sl-bg-active: #eff6ff;
+
+      --sl-border-base: #e2e8f0;     /* 核心分区线 1px */
+      --sl-border-input: #cbd5e1;
+      --sl-border-subtle: #f1f5f9;
+
+      /* 圆角体系 (微圆角 4px/6px) */
+      --sl-radius-sm: 4px;
+      --sl-radius-md: 6px;
+      --sl-radius-lg: 8px;
+
+      /* 字体规范 (带等宽) */
+      --sl-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --sl-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+
+      /* 投影与动效 */
+      --sl-shadow-dialog: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.2);
+      --sl-ease-smooth: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      text-rendering: optimizeLegibility;
+    }
+
+    body {
+      font-family: var(--sl-font-family);
+      background: var(--sl-bg-page);
+      color: var(--sl-text-body);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 16px;
+    }
+
+    /* 顶部控制与方案切换栏 */
+    .top-action-bar {
+      width: 100%;
+      max-width: 1400px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: #ffffff;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+
+    .brand-meta {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 14px;
+      font-weight: 700;
+    }
+
+    .badge-spec {
+      background: rgba(37, 99, 235, 0.25);
+      color: #93c5fd;
+      border: 1px solid rgba(59, 130, 246, 0.4);
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+    }
+
+    .scheme-switcher {
+      display: flex;
+      background: #1e293b;
+      padding: 3px;
+      border-radius: 6px;
+      border: 1px solid #334155;
+      gap: 4px;
+    }
+
+    .scheme-tab-btn {
+      padding: 6px 14px;
+      border: none;
+      background: transparent;
+      color: #94a3b8;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: var(--sl-ease-smooth);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .scheme-tab-btn:hover { color: #f1f5f9; background: rgba(255, 255, 255, 0.05); }
+    .scheme-tab-btn.active {
+      background: var(--sl-primary);
+      color: #ffffff;
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.4);
+    }
+
+    /* 方案描述条 */
+    .scheme-desc-bar {
+      width: 100%;
+      max-width: 1400px;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 6px;
+      padding: 8px 14px;
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: #cbd5e1;
+    }
+    .scheme-desc-bar strong { color: #60a5fa; }
+
+    /* ==========================================================================
+       视口大画卷容器 (100% 拒绝零散卡片孤岛 · 无界一体化大容器)
+       ========================================================================== */
+    .viewport-canvas-shell {
+      width: 100%;
+      max-width: 1400px;
+      height: 820px;
+      background: #ffffff;
+      border-radius: var(--sl-radius-md);
+      box-shadow: var(--sl-shadow-dialog);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      border: 1px solid var(--sl-border-base);
+    }
+
+    /* 统一按钮规范 */
+    .btn-aliyun {
+      height: 26px;
+      padding: 0 10px;
+      font-size: 11.5px;
+      font-weight: 500;
+      color: var(--sl-text-body);
+      background: #ffffff;
+      border: 1px solid var(--sl-border-input);
+      border-radius: var(--sl-radius-sm);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      transition: var(--sl-ease-smooth);
+    }
+    .btn-aliyun:hover { border-color: #94a3b8; background: var(--sl-bg-hover); color: var(--sl-text-heading); }
+
+    .btn-aliyun-cta {
+      height: 26px;
+      padding: 0 10px;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--sl-primary);
+      background: var(--sl-primary-light);
+      border: 1px solid var(--sl-primary-border);
+      border-radius: var(--sl-radius-sm);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      transition: var(--sl-ease-smooth);
+    }
+    .btn-aliyun-cta:hover { background: #dbeafe; border-color: #93c5fd; color: #1d4ed8; }
+
+    .btn-primary-blue {
+      height: 26px;
+      padding: 0 12px;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: #ffffff;
+      background: var(--sl-primary);
+      border: 1px solid var(--sl-primary);
+      border-radius: var(--sl-radius-sm);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: var(--sl-ease-smooth);
+    }
+    .btn-primary-blue:hover { background: var(--sl-primary-hover); border-color: var(--sl-primary-hover); }
+
+    /* 状态圆点与标签 */
+    .status-pill {
+      font-size: 10.5px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 3px;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .status-pill.online { background: var(--sl-success-light); color: var(--sl-success); border: 1px solid var(--sl-success-border); }
+    .status-pill.busy { background: var(--sl-warning-light); color: var(--sl-warning); border: 1px solid var(--sl-warning-border); }
+    .status-pill.offline { background: #f1f5f9; color: #64748b; border: 1px solid #cbd5e1; }
+
+    .pulse-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+
+    /* ==========================================================================
+       方案一：工业数字孪生全景画卷 (AWS IoT TwinMaker + Siemens MindSphere)
+       ========================================================================== */
+    .scheme-view { display: none; height: 100%; flex-direction: column; }
+    .scheme-view.active { display: flex; }
+
+    /* 顶部指标横幅 (紧凑一体，无卡片，仅 1px 底边框) */
+    .banner-metric-strip {
+      height: 48px;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--sl-border-base);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #ffffff;
+      flex-shrink: 0;
+    }
+
+    .scene-meta-selector {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .scene-title-h1 {
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--sl-text-heading);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .scene-select-box {
+      height: 28px;
+      border: 1px solid var(--sl-border-input);
+      border-radius: var(--sl-radius-sm);
+      padding: 0 8px;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--sl-text-heading);
+      background: #ffffff;
+      outline: none;
+    }
+
+    .kpi-inline-group {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+    }
+    .kpi-unit {
+      display: flex;
+      align-items: baseline;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--sl-text-secondary);
+    }
+    .kpi-unit strong {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--sl-text-heading);
+      font-family: var(--sl-font-mono);
+    }
+    .kpi-unit strong.blue { color: var(--sl-primary); }
+    .kpi-unit strong.green { color: var(--sl-success); }
+    .kpi-unit strong.amber { color: var(--sl-warning); }
+
+    /* 方案一主体：中央大画卷 + 右侧选定设备监视器 */
+    .scheme1-workspace {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1fr 320px;
+      min-height: 0;
+      background: #ffffff;
+    }
+
+    /* 实验室场景大画板 (SCENE_MAIN + SCENE_DETAIL + RESOURCE_STRUCTURE) */
+    .scene-stage-canvas {
+      position: relative;
+      background: #f8fafc;
+      background-image: 
+        linear-gradient(rgba(226, 232, 240, 0.6) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(226, 232, 240, 0.6) 1px, transparent 1px);
+      background-size: 24px 24px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      border-right: 1px solid var(--sl-border-base);
+    }
+
+    /* 场景浮动工具栏 */
+    .stage-overlay-bar {
+      position: absolute;
+      top: 12px;
+      left: 14px;
+      z-index: 10;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: rgba(255, 255, 255, 0.94);
+      backdrop-filter: blur(4px);
+      padding: 4px 8px;
+      border-radius: var(--sl-radius-sm);
+      border: 1px solid var(--sl-border-base);
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.04);
+    }
+    .stage-mode-btn {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--sl-text-secondary);
+      border: none;
+      background: transparent;
+      cursor: pointer;
+      padding: 3px 8px;
+      border-radius: 3px;
+    }
+    .stage-mode-btn.active {
+      background: var(--sl-primary-light);
+      color: var(--sl-primary);
+    }
+
+    /* 场景设备节点 (SCENE_DETAIL: POS_X, POS_Y) 与资源结构管线 (RESOURCE_STRUCTURE) */
+    .stage-render-layer {
+      position: relative;
+      flex: 1;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* 模拟设备三维立体卡块 (微拟物工业节点) */
+    .scene-device-anchor {
+      position: absolute;
+      width: 150px;
+      background: #ffffff;
+      border: 1px solid var(--sl-border-base);
+      border-top: 3px solid var(--sl-primary);
+      border-radius: var(--sl-radius-sm);
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+      cursor: pointer;
+      transition: var(--sl-ease-smooth);
+      user-select: none;
+      z-index: 5;
+    }
+    .scene-device-anchor:hover {
+      border-color: var(--sl-primary);
+      transform: translateY(-2px);
+      box-shadow: 0 8px 16px rgba(37, 99, 235, 0.15);
+    }
+    .scene-device-anchor.selected {
+      border-color: var(--sl-primary);
+      box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.25), 0 8px 20px rgba(0, 0, 0, 0.12);
+    }
+
+    .device-node-top {
+      padding: 6px 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--sl-border-subtle);
+    }
+    .device-node-name {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--sl-text-heading);
+    }
+    .device-node-telemetry {
+      padding: 6px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      font-size: 10.5px;
+      background: #fafbfc;
+    }
+    .telemetry-row-item {
+      display: flex;
+      justify-content: space-between;
+      color: var(--sl-text-secondary);
+    }
+    .telemetry-val {
+      font-family: var(--sl-font-mono);
+      font-weight: 600;
+      color: var(--sl-text-heading);
+    }
+
+    /* 拓扑连接管道 SVG (RESOURCE_STRUCTURE) */
+    .scene-svg-connections {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 2;
+    }
+
+    /* 画布底部图例与表结构标识 */
+    .stage-bottom-info {
+      height: 28px;
+      padding: 0 14px;
+      background: rgba(255, 255, 255, 0.94);
+      border-top: 1px solid var(--sl-border-base);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 10.5px;
+      color: var(--sl-text-secondary);
+      z-index: 10;
+    }
+    .table-binding-tag {
+      font-family: var(--sl-font-mono);
+      color: var(--sl-primary);
+      font-weight: 600;
+    }
+
+    /* 右侧检查器 (一体化无缝衔接) */
+    .scheme1-inspector {
+      display: flex;
+      flex-direction: column;
+      background: #ffffff;
+    }
+
+    .inspector-header-bar {
+      height: 38px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--sl-border-base);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12.5px;
+      font-weight: 700;
+      color: var(--sl-text-heading);
+      background: #fafbfc;
+    }
+
+    .inspector-scroll-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .sub-section-title {
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--sl-text-heading);
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .sub-section-title::before {
+      content: "";
+      width: 3px;
+      height: 10px;
+      background: var(--sl-primary);
+      border-radius: 2px;
+    }
+
+    .meta-data-table {
+      width: 100%;
+      font-size: 11px;
+      border-collapse: collapse;
+    }
+    .meta-data-table td {
+      padding: 4px 0;
+      border-bottom: 1px solid var(--sl-border-subtle);
+    }
+    .meta-data-table td.label-col {
+      color: var(--sl-text-secondary);
+      width: 80px;
+    }
+    .meta-data-table td.val-col {
+      color: var(--sl-text-heading);
+      font-weight: 500;
+    }
+
+    /* 底部实时任务流栏 (紧凑固定 140px，1px 分隔) */
+    .scheme1-bottom-dock {
+      height: 150px;
+      border-top: 1px solid var(--sl-border-base);
+      display: grid;
+      grid-template-columns: 1fr 340px;
+      background: #ffffff;
+      flex-shrink: 0;
+    }
+
+    .bottom-task-feed {
+      border-right: 1px solid var(--sl-border-base);
+      display: flex;
+      flex-direction: column;
+    }
+    .feed-header-bar {
+      height: 30px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--sl-border-base);
+      background: #f8fafc;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--sl-text-heading);
+    }
+
+    .industrial-mini-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+      text-align: left;
+    }
+    .industrial-mini-table th {
+      background: #f8fafc;
+      color: var(--sl-text-secondary);
+      padding: 5px 10px;
+      border-bottom: 1px solid var(--sl-border-base);
+      font-weight: 600;
+    }
+    .industrial-mini-table td {
+      padding: 5px 10px;
+      border-bottom: 1px solid var(--sl-border-subtle);
+      color: var(--sl-text-body);
+    }
+
+    /* ==========================================================================
+       方案二：智慧三维实验指挥台 (Palantir Foundry + Tesla Factory OS)
+       ========================================================================== */
+    .scheme2-layout {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      height: 100%;
+      min-height: 0;
+    }
+
+    .scheme2-nav-sidebar {
+      background: #f8fafc;
+      border-right: 1px solid var(--sl-border-base);
+      display: flex;
+      flex-direction: column;
+    }
+
+    .sidebar-brand-block {
+      height: 48px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--sl-border-base);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--sl-text-heading);
+      background: #ffffff;
+    }
+
+    .sidebar-section-list {
+      flex: 1;
+      padding: 10px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .scene-nav-item {
+      padding: 7px 10px;
+      border-radius: var(--sl-radius-sm);
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--sl-text-body);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      transition: var(--sl-ease-smooth);
+    }
+    .scene-nav-item:hover { background: #e2e8f0; color: var(--sl-text-heading); }
+    .scene-nav-item.active {
+      background: var(--sl-primary);
+      color: #ffffff;
+    }
+    .scene-nav-item.active .nav-tag {
+      background: rgba(255, 255, 255, 0.2);
+      color: #ffffff;
+    }
+    .nav-tag {
+      font-size: 10px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: #e2e8f0;
+      color: var(--sl-text-secondary);
+      font-family: var(--sl-font-mono);
+    }
+
+    .scheme2-main-content {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      background: #ffffff;
+    }
+
+    /* 方案二：全息 3D 透视底图画布 */
+    .scheme2-3d-stage {
+      flex: 1;
+      position: relative;
+      background: #0f172a;
+      background-image: 
+        radial-gradient(circle at center, #1e293b 0%, #0f172a 100%),
+        linear-gradient(rgba(51, 65, 85, 0.4) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(51, 65, 85, 0.4) 1px, transparent 1px);
+      background-size: 100% 100%, 32px 32px, 32px 32px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+
+    .hud-header-bar {
+      height: 48px;
+      padding: 0 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      background: rgba(15, 23, 42, 0.7);
+      backdrop-filter: blur(8px);
+      color: #ffffff;
+      z-index: 10;
+    }
+
+    .hud-title {
+      font-size: 13.5px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .hud-metrics {
+      display: flex;
+      gap: 16px;
+      font-size: 11px;
+    }
+    .hud-metrics span { color: #94a3b8; }
+    .hud-metrics b { color: #38bdf8; font-family: var(--sl-font-mono); font-size: 13px; margin-left: 4px; }
+
+    /* 3D 实验台节点与连接 */
+    .spatial-node-3d {
+      position: absolute;
+      background: rgba(30, 41, 59, 0.85);
+      border: 1px solid #38bdf8;
+      border-radius: 6px;
+      padding: 8px 10px;
+      color: #ffffff;
+      font-size: 11px;
+      backdrop-filter: blur(6px);
+      box-shadow: 0 0 15px rgba(56, 189, 248, 0.25);
+      cursor: pointer;
+      transition: var(--sl-ease-smooth);
+      min-width: 140px;
+    }
+    .spatial-node-3d:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 25px rgba(56, 189, 248, 0.5);
+    }
+    .spatial-node-title {
+      font-weight: 700;
+      color: #38bdf8;
+      margin-bottom: 4px;
+      display: flex;
+      justify-content: space-between;
+    }
+
+    /* 方案二底部工业数据条 */
+    .scheme2-bottom-grid {
+      height: 180px;
+      background: #ffffff;
+      border-top: 1px solid var(--sl-border-base);
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+    }
+    .scheme2-col-block {
+      padding: 8px 14px;
+      overflow-y: auto;
+      border-right: 1px solid var(--sl-border-base);
+    }
+    .scheme2-col-block:last-child { border-right: none; }
+
+    /* ==========================================================================
+       方案三：一体化流水线拓扑中枢 (Alibaba Cloud IoT Studio + Honeywell Forge)
+       ========================================================================== */
+    .scheme3-layout {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
+    .scheme3-top-control {
+      height: 44px;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--sl-border-base);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #fafbfc;
+    }
+
+    .scheme3-workspace {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 1.6fr 1fr;
+      min-height: 0;
+    }
+
+    /* 左侧：实验室设备空间与结构拓扑流 */
+    .scheme3-spatial-pane {
+      background: #ffffff;
+      border-right: 1px solid var(--sl-border-base);
+      display: flex;
+      flex-direction: column;
+    }
+    .pane-toolbar {
+      height: 34px;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--sl-border-base);
+      background: #f8fafc;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11.5px;
+      font-weight: 700;
+      color: var(--sl-text-heading);
+    }
+
+    .spatial-viewport-box {
+      flex: 1;
+      background: #f8fafc;
+      background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+      background-size: 20px 20px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    /* 右侧：多维运作中枢 (双段垂直折叠，任务 + 约束) */
+    .scheme3-ops-pane {
+      display: flex;
+      flex-direction: column;
+      background: #ffffff;
+    }
+
+    .ops-half-block {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      border-bottom: 1px solid var(--sl-border-base);
+      min-height: 0;
+    }
+    .ops-half-block:last-child { border-bottom: none; }
+    .ops-scroll-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 12px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 顶部标题与方案切换器 -->
+  <header class="top-action-bar">
+    <div class="brand-meta">
+      <span>SmartLab 2.0 首页 · 实验室场景与数字孪生大画卷</span>
+      <span class="badge-spec">遵循系统 UI 设计规范 · 无卡片一体化</span>
+    </div>
+    <div class="scheme-switcher">
+      <button class="scheme-tab-btn active" onclick="selectScheme(1)">方案 A: 工业数字孪生全景画卷型 (AWS / Siemens 风格)</button>
+      <button class="scheme-tab-btn" onclick="selectScheme(2)">方案 B: 智慧空间全息指挥台型 (Palantir / Tesla 风格)</button>
+      <button class="scheme-tab-btn" onclick="selectScheme(3)">方案 C: 一体化流水线拓扑中枢型 (阿里工业大脑 / 霍尼韦尔风格)</button>
+    </div>
+  </header>
+
+  <!-- 方案设计说明条 -->
+  <div class="scheme-desc-bar" id="schemeDesc">
+    <span>当前方案：<strong>方案 A (工业数字孪生全景画卷型)</strong> —— 顶部纯白细线指标横幅 + 中央超大空间底图与管线拓扑（SCENE_MAIN/DETAIL/STRUCTURE）+ 右侧属性监视器 + 底部固定任务流。</span>
+    <span style="font-family: var(--sl-font-mono); font-size: 11px; color: #94a3b8;">Zero Boxed Cards · 8pt Grid · Pure Chinese Headers</span>
+  </div>
+
+  <!-- 主画布大壳 (Viewport Canvas Shell) -->
+  <main class="viewport-canvas-shell">
+
+    <!-- ========================================================================
+         方案 A：工业数字孪生全景画卷 (AWS IoT TwinMaker / Siemens MindSphere 风格)
+         ======================================================================== -->
+    <section class="scheme-view active" id="scheme1">
+      
+      <!-- 1. 顶部指标横幅 (自然分区 1px 底边框) -->
+      <header class="banner-metric-strip">
+        <div class="scene-meta-selector">
+          <span class="scene-title-h1">
+            <span>实验室场景</span>
+          </span>
+          <select class="scene-select-box">
+            <option selected>高通量分子扩增与合成主实验室 (SCENE_MAIN #1)</option>
+            <option>微流控芯片分析测试车间 (SCENE_MAIN #2)</option>
+            <option>恒温培养与自动化存储中心 (SCENE_MAIN #3)</option>
+          </select>
+          <span class="status-pill online"><i class="pulse-dot"></i> MQTT 遥测已连接</span>
+        </div>
+
+        <div class="kpi-inline-group">
+          <div class="kpi-unit"><span>设备在线率</span><strong class="green">18 / 20</strong></div>
+          <div class="kpi-unit"><span>运行中任务</span><strong class="blue">3</strong></div>
+          <div class="kpi-unit"><span>活跃管线连接</span><strong>12 条</strong></div>
+          <div class="kpi-unit"><span>采样吞吐量</span><strong class="amber">1,240 pt/s</strong></div>
+        </div>
+      </header>
+
+      <!-- 2. 中央主体：超大场景画布 + 右侧设备遥测监视器 -->
+      <div class="scheme1-workspace">
+        
+        <!-- 左侧：实验室场景底图与空间拓扑 (SCENE_MAIN, SCENE_DETAIL, RESOURCE_STRUCTURE) -->
+        <div class="scene-stage-canvas">
+          
+          <!-- 浮动层级控制器 -->
+          <div class="stage-overlay-bar">
+            <span style="font-size: 11px; font-weight: 700; color: var(--sl-text-heading); margin-right: 4px;">图层视图:</span>
+            <button class="stage-mode-btn active">空间布局 (2D/3D)</button>
+            <button class="stage-mode-btn">管线流向拓扑</button>
+            <button class="stage-mode-btn">热力与环境场</button>
+            <span style="color: #cbd5e1;">|</span>
+            <button class="stage-mode-btn">复位视角</button>
+          </div>
+
+          <!-- 场景实体渲染区 -->
+          <div class="stage-render-layer">
+            
+            <!-- SVG 管线流动连接 (RESOURCE_STRUCTURE: 端口连接/ui连接) -->
+            <svg class="scene-svg-connections">
+              <defs>
+                <linearGradient id="pipeGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                  <stop offset="0%" stop-color="#2563eb" stop-opacity="0.8"/>
+                  <stop offset="100%" stop-color="#38bdf8" stop-opacity="0.8"/>
+                </linearGradient>
+              </defs>
+              <!-- 反应釜_01 到 移液臂_A 管道 -->
+              <path d="M 230 140 C 310 140, 320 250, 400 250" fill="none" stroke="url(#pipeGrad)" stroke-width="2.5" stroke-dasharray="6,4"/>
+              <!-- 移液臂_A 到 离心机_01 管道 -->
+              <path d="M 550 250 C 640 250, 650 160, 740 160" fill="none" stroke="#10b981" stroke-width="2" stroke-dasharray="4,4"/>
+              <!-- 离心机_01 到 恒温箱_B 管道 -->
+              <path d="M 740 190 C 740 310, 580 370, 480 370" fill="none" stroke="#64748b" stroke-width="1.8"/>
+            </svg>
+
+            <!-- 设备节点 1 (加温反应釜_01, POS_X: 80, POS_Y: 90) -->
+            <div class="scene-device-anchor selected" style="left: 80px; top: 90px;" onclick="selectDevice('加温反应釜_01', '加温反应釜模型', '192.168.1.101', '349.9°C', 'RUNNING', '0.45 MPa')">
+              <div class="device-node-top">
+                <span class="device-node-name">加温反应釜_01</span>
+                <span class="status-pill busy">运行中</span>
+              </div>
+              <div class="device-node-telemetry">
+                <div class="telemetry-row-item"><span>温度 (temp):</span><span class="telemetry-val" style="color: #d97706;">349.9 °C</span></div>
+                <div class="telemetry-row-item"><span>压力 (press):</span><span class="telemetry-val">0.45 MPa</span></div>
+                <div class="telemetry-row-item"><span>空间坐标:</span><span class="telemetry-val">X:80 Y:90</span></div>
+              </div>
+            </div>
+
+            <!-- 设备节点 2 (移液机械臂_A, POS_X: 400, POS_Y: 200) -->
+            <div class="scene-device-anchor" style="left: 400px; top: 200px;" onclick="selectDevice('移液机械臂_A', '高精度移液臂模型', '192.168.1.105', '50.0 uL', 'ONLINE', '吸液就绪')">
+              <div class="device-node-top">
+                <span class="device-node-name">移液机械臂_A</span>
+                <span class="status-pill online">在线</span>
+              </div>
+              <div class="device-node-telemetry">
+                <div class="telemetry-row-item"><span>吸液容积:</span><span class="telemetry-val">50.0 µL</span></div>
+                <div class="telemetry-row-item"><span>通道状态:</span><span class="telemetry-val" style="color: #16a34a;">就绪</span></div>
+                <div class="telemetry-row-item"><span>空间坐标:</span><span class="telemetry-val">X:400 Y:200</span></div>
+              </div>
+            </div>
+
+            <!-- 设备节点 3 (高速离心机_01, POS_X: 740, POS_Y: 110) -->
+            <div class="scene-device-anchor" style="left: 740px; top: 110px;" onclick="selectDevice('高速离心机_01', '离心机模型', '192.168.1.108', '12,000 RPM', 'RUNNING', '4.0 °C')">
+              <div class="device-node-top">
+                <span class="device-node-name">高速离心机_01</span>
+                <span class="status-pill busy">离心运行</span>
+              </div>
+              <div class="device-node-telemetry">
+                <div class="telemetry-row-item"><span>转速:</span><span class="telemetry-val" style="color: #2563eb;">12,000 RPM</span></div>
+                <div class="telemetry-row-item"><span>腔体温度:</span><span class="telemetry-val">4.0 °C</span></div>
+                <div class="telemetry-row-item"><span>空间坐标:</span><span class="telemetry-val">X:740 Y:110</span></div>
+              </div>
+            </div>
+
+            <!-- 设备节点 4 (恒温培养箱_B, POS_X: 330, POS_Y: 330) -->
+            <div class="scene-device-anchor" style="left: 330px; top: 330px;" onclick="selectDevice('恒温培养箱_B', '培养箱模型', '192.168.1.112', '37.0 °C', 'ONLINE', 'CO2 5.0%')">
+              <div class="device-node-top">
+                <span class="device-node-name">恒温培养箱_B</span>
+                <span class="status-pill online">恒温保持</span>
+              </div>
+              <div class="device-node-telemetry">
+                <div class="telemetry-row-item"><span>箱体温度:</span><span class="telemetry-val">37.0 °C</span></div>
+                <div class="telemetry-row-item"><span>CO2 浓度:</span><span class="telemetry-val">5.0 %</span></div>
+                <div class="telemetry-row-item"><span>空间坐标:</span><span class="telemetry-val">X:330 Y:330</span></div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- 画布底边数据库表绑定与坐标标注 -->
+          <div class="stage-bottom-info">
+            <span>数据源驱动：<span class="table-binding-tag">SCENE_MAIN (ID: 1)</span> ➔ <span class="table-binding-tag">SCENE_DETAIL (4 实体)</span> ➔ <span class="table-binding-tag">RESOURCE_STRUCTURE (3 管线)</span></span>
+            <span>视图模式：三维正交投影 · 缩放 100% · 空间坐标系：GRCh-Lab-XYZ</span>
+          </div>
+
+        </div>
+
+        <!-- 右侧：选中设备数字孪生实时监视器 -->
+        <aside class="scheme1-inspector">
+          <div class="inspector-header-bar">
+            <span>设备实例属性监视</span>
+            <button class="btn-aliyun" type="button">进入设备页</button>
+          </div>
+          <div class="inspector-scroll-content">
+            
+            <div>
+              <div class="sub-section-title">基础实例信息</div>
+              <table class="meta-data-table">
+                <tr><td class="label-col">实例名称</td><td class="val-col" id="inspectDevName">加温反应釜_01</td></tr>
+                <tr><td class="label-col">物模型</td><td class="val-col" id="inspectDevModel">加温反应釜模型 (#102)</td></tr>
+                <tr><td class="label-col">通信 IP</td><td class="val-col" id="inspectDevIp" style="font-family: var(--sl-font-mono);">192.168.1.101</td></tr>
+                <tr><td class="label-col">运行状态</td><td class="val-col" id="inspectDevState"><span class="status-pill busy">RUNNING (执行中)</span></td></tr>
+              </table>
+            </div>
+
+            <div>
+              <div class="sub-section-title">遥测测点实时值</div>
+              <table class="meta-data-table">
+                <tr><td class="label-col">实时温度</td><td class="val-col" id="inspectDevTemp" style="font-family: var(--sl-font-mono); color: #d97706; font-weight: 700;">349.9 °C</td></tr>
+                <tr><td class="label-col">实时压力</td><td class="val-col" id="inspectDevPress" style="font-family: var(--sl-font-mono);">0.45 MPa</td></tr>
+                <tr><td class="label-col">搅拌速率</td><td class="val-col" style="font-family: var(--sl-font-mono);">320 RPM</td></tr>
+                <tr><td class="label-col">变化速率 (rate)</td><td class="val-col" style="font-family: var(--sl-font-mono); color: #2563eb;">-0.014 °C/s (稳态)</td></tr>
+              </table>
+            </div>
+
+            <div>
+              <div class="sub-section-title">关联拓扑管线 (RESOURCE_STRUCTURE)</div>
+              <div style="font-size: 10.5px; color: var(--sl-text-secondary); line-height: 1.6;">
+                <div>● 目标端口: <span style="color: var(--sl-text-heading); font-weight: 600;">移液臂_A.port_in_1</span> (流体管路)</div>
+                <div>● 遥测发布: <span style="color: var(--sl-text-heading); font-weight: 600;">telemetry/reactor_01/temp</span></div>
+              </div>
+            </div>
+
+          </div>
+        </aside>
+
+      </div>
+
+      <!-- 3. 底部任务流与约束快速治理 (自然衔接) -->
+      <footer class="scheme1-bottom-dock">
+        <div class="bottom-task-feed">
+          <div class="feed-header-bar">
+            <span>进行中的实验任务 (3 项活跃)</span>
+            <button class="btn-aliyun" type="button">查看全部任务</button>
+          </div>
+          <table class="industrial-mini-table">
+            <thead>
+              <tr>
+                <th>任务编号</th>
+                <th>任务名称</th>
+                <th>关联流程模型</th>
+                <th>当前执行节点</th>
+                <th>启动时间</th>
+                <th>状态</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td style="font-family: var(--sl-font-mono);">#20260825-01</td>
+                <td><strong>批次 PCR 扩增与恒温反应</strong></td>
+                <td>高精度恒温扩增流程 (v2.1)</td>
+                <td>加温反应釜_01 (加温控制)</td>
+                <td style="font-family: var(--sl-font-mono);">18:33:49</td>
+                <td><span class="status-pill busy">RUNNING</span></td>
+              </tr>
+              <tr>
+                <td style="font-family: var(--sl-font-mono);">#20260825-02</td>
+                <td><strong>连续流微反应合成批次 04</strong></td>
+                <td>连续流微反应合成流程 (v1.0)</td>
+                <td>移液机械臂_A (吸液)</td>
+                <td style="font-family: var(--sl-font-mono);">18:20:12</td>
+                <td><span class="status-pill busy">RUNNING</span></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div style="padding: 10px 14px; background: #fafbfc; display: flex; flex-direction: column; justify-content: space-between;">
+          <div>
+            <div class="sub-section-title">实验室全局约束</div>
+            <div style="font-size: 11px; color: var(--sl-text-secondary); display: flex; justify-content: space-between; margin-bottom: 4px;">
+              <span>最大并发任务数</span>
+              <strong style="color: var(--sl-text-heading);">10 任务</strong>
+            </div>
+            <div style="font-size: 11px; color: var(--sl-text-secondary); display: flex; justify-content: space-between;">
+              <span>夜间自动化执行</span>
+              <span class="status-pill online">允许</span>
+            </div>
+          </div>
+          <button class="btn-aliyun-cta" style="width: 100%;" type="button">+ 新建实验任务</button>
+        </div>
+      </footer>
+
+    </section>
+
+
+    <!-- ========================================================================
+         方案 B：智慧空间全息指挥台 (Palantir Foundry / Tesla Factory OS 风格)
+         ======================================================================== -->
+    <section class="scheme-view" id="scheme2">
+      <div class="scheme2-layout">
+        
+        <!-- 左侧：多场景导航与资产结构树 -->
+        <aside class="scheme2-nav-sidebar">
+          <div class="sidebar-brand-block">
+            <span>场景主目录</span>
+            <span class="nav-tag">SCENE_MAIN</span>
+          </div>
+          <div class="sidebar-section-list">
+            <div class="scene-nav-item active">
+              <span>PCR 扩增合成主场景</span>
+              <span class="nav-tag">4 设备</span>
+            </div>
+            <div class="scene-nav-item">
+              <span>微流控纯化车间</span>
+              <span class="nav-tag">6 设备</span>
+            </div>
+            <div class="scene-nav-item">
+              <span>细胞冷链暂存间</span>
+              <span class="nav-tag">8 设备</span>
+            </div>
+            <div class="scene-nav-item">
+              <span>质量分析质谱室</span>
+              <span class="nav-tag">3 设备</span>
+            </div>
+          </div>
+
+          <div style="padding: 12px; border-top: 1px solid var(--sl-border-base); font-size: 11px; color: var(--sl-text-secondary); background: #ffffff;">
+            <div>空间资源结构：<b style="color: var(--sl-text-heading);">3 条有效链路</b></div>
+            <div>数据库驱动：<b style="color: var(--sl-primary);">自动同步</b></div>
+          </div>
+        </aside>
+
+        <!-- 右侧：全息 3D 透视底图与综合监控屏 -->
+        <div class="scheme2-main-content">
+          
+          <div class="scheme2-3d-stage">
+            <div class="hud-header-bar">
+              <div class="hud-title">
+                <span>PCR 扩增合成主场景 · 全息数字孪生底图</span>
+                <span style="font-size: 10px; background: rgba(56, 189, 248, 0.2); color: #38bdf8; border: 1px solid #38bdf8; padding: 1px 6px; border-radius: 3px;">3D MESH READY</span>
+              </div>
+              <div class="hud-metrics">
+                <span>设备在线: <b>18/20</b></span>
+                <span>环境温度: <b>22.4 °C</b></span>
+                <span>洁净度: <b>Class 100</b></span>
+                <span>总能耗: <b>3.4 kW</b></span>
+              </div>
+            </div>
+
+            <!-- 3D 浮动设备节点 (基于 POS_X, POS_Y, POS_Z) -->
+            <div style="position: relative; flex: 1;">
+              
+              <div class="spatial-node-3d" style="left: 120px; top: 80px;">
+                <div class="spatial-node-title">
+                  <span>加温反应釜_01</span>
+                  <span style="color: #f59e0b;">349.9°C</span>
+                </div>
+                <div style="font-size: 10px; color: #94a3b8;">POS: (120, 80, 0)</div>
+                <div style="font-size: 10px; color: #38bdf8;">状态: 升温恒温中</div>
+              </div>
+
+              <div class="spatial-node-3d" style="left: 450px; top: 180px;">
+                <div class="spatial-node-title">
+                  <span>移液机械臂_A</span>
+                  <span style="color: #10b981;">在线</span>
+                </div>
+                <div style="font-size: 10px; color: #94a3b8;">POS: (450, 180, 10)</div>
+                <div style="font-size: 10px; color: #94a3b8;">通道 1-8 正常</div>
+              </div>
+
+              <div class="spatial-node-3d" style="left: 780px; top: 100px;">
+                <div class="spatial-node-title">
+                  <span>高速离心机_01</span>
+                  <span style="color: #38bdf8;">12,000 RPM</span>
+                </div>
+                <div style="font-size: 10px; color: #94a3b8;">POS: (780, 100, 0)</div>
+                <div style="font-size: 10px; color: #94a3b8;">温控 4.0°C 稳定</div>
+              </div>
+
+            </div>
+
+            <div style="height: 26px; padding: 0 16px; background: rgba(15, 23, 42, 0.8); border-top: 1px solid rgba(255, 255, 255, 0.1); display: flex; align-items: center; justify-content: space-between; font-size: 10.5px; color: #94a3b8;">
+              <span>底图文件 (SCENE_PICTURE): /assets/scenes/lab_pcr_main_3d.gltf</span>
+              <span>坐标映射引擎: Three.js WebGL Core v2.4</span>
+            </div>
+          </div>
+
+          <!-- 方案二底部双分栏明细 -->
+          <div class="scheme2-bottom-grid">
+            <div class="scheme2-col-block">
+              <div class="sub-section-title">实时任务运行队列</div>
+              <table class="industrial-mini-table">
+                <thead><tr><th>任务名称</th><th>执行步骤</th><th>耗时</th><th>状态</th></tr></thead>
+                <tbody>
+                  <tr><td>批次 PCR 扩增</td><td>加温反应釜_01.heat</td><td>42s</td><td><span class="status-pill busy">RUNNING</span></td></tr>
+                  <tr><td>微反应合成 04</td><td>移液机械臂_A.aspirate</td><td>18s</td><td><span class="status-pill busy">RUNNING</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="scheme2-col-block">
+              <div class="sub-section-title">设备报警与约束监视</div>
+              <div style="font-size: 11px; color: var(--sl-text-secondary); line-height: 1.8;">
+                <div>✓ 反应釜温度上限保护：<span style="color: #16a34a; font-weight: 600;">正常 (当前 349.9 &lt; 380.0)</span></div>
+                <div>✓ 机械臂气压安全区间：<span style="color: #16a34a; font-weight: 600;">正常 (0.45 MPa)</span></div>
+                <div>✓ 离心机防震联锁：<span style="color: #16a34a; font-weight: 600;">已就绪</span></div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+
+    <!-- ========================================================================
+         方案 C：一体化流水线拓扑中枢 (Alibaba Cloud IoT / Honeywell Forge 风格)
+         ======================================================================== -->
+    <section class="scheme-view" id="scheme3">
+      <div class="scheme3-layout">
+        
+        <header class="scheme3-top-control">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <strong style="font-size: 13.5px; color: var(--sl-text-heading);">实验室全域资源拓扑与流向中枢</strong>
+            <span class="status-pill online">SCENE_MAIN #1</span>
+          </div>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn-aliyun" type="button">切换场景配置</button>
+            <button class="btn-primary-blue" type="button">+ 启动工作流任务</button>
+          </div>
+        </header>
+
+        <div class="scheme3-workspace">
+          
+          <!-- 左侧：空间拓扑网格 + 管线连接图 -->
+          <div class="scheme3-spatial-pane">
+            <div class="pane-toolbar">
+              <span>空间拓扑布局 (SCENE_DETAIL + RESOURCE_STRUCTURE)</span>
+              <span style="font-size: 10.5px; color: var(--sl-text-secondary);">支持设备拖拽定位与管道连线编辑</span>
+            </div>
+            <div class="spatial-viewport-box">
+              
+              <!-- 设备拓扑卡块 -->
+              <div style="position: absolute; left: 60px; top: 120px; width: 180px; background: #ffffff; border: 1px solid var(--sl-border-base); border-radius: 4px; padding: 8px;">
+                <div style="font-size: 12px; font-weight: 700; color: var(--sl-text-heading); display: flex; justify-content: space-between;">
+                  <span>加温反应釜_01</span>
+                  <span class="status-pill busy">349.9°C</span>
+                </div>
+                <div style="font-size: 10px; color: var(--sl-text-secondary); margin-top: 4px;">端口 out_1 ➔ 移液臂_A.in_1</div>
+              </div>
+
+              <div style="position: absolute; left: 340px; top: 120px; width: 180px; background: #ffffff; border: 1px solid var(--sl-border-base); border-radius: 4px; padding: 8px;">
+                <div style="font-size: 12px; font-weight: 700; color: var(--sl-text-heading); display: flex; justify-content: space-between;">
+                  <span>移液机械臂_A</span>
+                  <span class="status-pill online">在线</span>
+                </div>
+                <div style="font-size: 10px; color: var(--sl-text-secondary); margin-top: 4px;">端口 out_2 ➔ 离心机_01.in_1</div>
+              </div>
+
+            </div>
+          </div>
+
+          <!-- 右侧：任务与约束实时中枢 -->
+          <div class="scheme3-ops-pane">
+            <div class="ops-half-block">
+              <div class="pane-toolbar"><span>活跃运行任务队列</span></div>
+              <div class="ops-scroll-body">
+                <table class="industrial-mini-table">
+                  <thead><tr><th>任务</th><th>流程</th><th>状态</th></tr></thead>
+                  <tbody>
+                    <tr><td>批次 PCR 扩增</td><td>恒温扩增 v2.1</td><td><span class="status-pill busy">执行中</span></td></tr>
+                    <tr><td>微反应合成 04</td><td>微反应合成 v1.0</td><td><span class="status-pill busy">执行中</span></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div class="ops-half-block">
+              <div class="pane-toolbar"><span>实时数据流与全局治理</span></div>
+              <div class="ops-scroll-body">
+                <div style="font-size: 11px; color: var(--sl-text-secondary); display: flex; flex-direction: column; gap: 8px;">
+                  <div>● 并发任务承载: <b style="color: var(--sl-text-heading);">2 / 10 个</b></div>
+                  <div>● 测点数据吞吐: <b style="color: var(--sl-primary);">1,240 样本/秒</b></div>
+                  <div>● 结构表已连接: <b style="color: var(--sl-success);">3 组流体与UI通道</b></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <script>
+    function selectScheme(num) {
+      document.querySelectorAll('.scheme-tab-btn').forEach((btn, idx) => {
+        btn.classList.toggle('active', idx === num - 1);
+      });
+
+      document.querySelectorAll('.scheme-view').forEach((view, idx) => {
+        view.classList.toggle('active', idx === num - 1);
+      });
+
+      const descEl = document.getElementById('schemeDesc');
+      if (num === 1) {
+        descEl.innerHTML = `<span>当前方案：<strong>方案 A (工业数字孪生全景画卷型 · 推荐)</strong> —— 顶部纯白细线指标横幅 + 中央超大空间底图与管线拓扑（SCENE_MAIN/DETAIL/STRUCTURE）+ 右侧属性监视器 + 底部固定任务流。</span><span style="font-family: var(--sl-font-mono); font-size: 11px; color: #94a3b8;">Zero Boxed Cards · 8pt Grid · Pure Chinese Headers</span>`;
+      } else if (num === 2) {
+        descEl.innerHTML = `<span>当前方案：<strong>方案 B (智慧空间全息指挥台型)</strong> —— 左侧场景主表导航 + 中央深色 3D 网格全息底图与空间坐标节点 + 底部双分栏任务与报警监视。</span><span style="font-family: var(--sl-font-mono); font-size: 11px; color: #94a3b8;">Palantir / Tesla Dark Mode · 3D Spatial Layout</span>`;
+      } else {
+        descEl.innerHTML = `<span>当前方案：<strong>方案 C (一体化流水线拓扑中枢型)</strong> —— 顶部操作控制条 + 左侧流水线设备连接流向图 (65%) + 右侧任务队列与全局约束上下折叠中枢 (35%)。</span><span style="font-family: var(--sl-font-mono); font-size: 11px; color: #94a3b8;">Alibaba IoT Studio Style · Split Canvas</span>`;
+      }
+    }
+
+    function selectDevice(name, model, ip, temp, state, press) {
+      document.getElementById('inspectDevName').innerText = name;
+      document.getElementById('inspectDevModel').innerText = model;
+      document.getElementById('inspectDevIp').innerText = ip;
+      document.getElementById('inspectDevTemp').innerText = temp;
+      document.getElementById('inspectDevPress').innerText = press;
+      document.getElementById('inspectDevState').innerHTML = `<span class="status-pill ${state === 'RUNNING' ? 'busy' : 'online'}">${state}</span>`;
+      
+      document.querySelectorAll('.scene-device-anchor').forEach(el => {
+        el.classList.toggle('selected', el.querySelector('.device-node-name').innerText === name);
+      });
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,785 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartLab 2.0 - 流程属性与建模检查（常驻右侧面板）三版设计方案</title>
+  <style>
+    :root {
+      --sl-primary: #2563eb;
+      --sl-primary-hover: #1d4ed8;
+      --sl-primary-light: #eff6ff;
+      --sl-danger: #dc2626;
+      --sl-danger-light: #fef2f2;
+      --sl-success: #16a34a;
+      --sl-success-light: #f0fdf4;
+      --sl-warning: #d97706;
+      --sl-text-heading: #0f172a;
+      --sl-text-body: #334155;
+      --sl-text-secondary: #64748b;
+      --sl-text-muted: #94a3b8;
+      --sl-border-base: #e2e8f0;
+      --sl-border-subtle: #f1f5f9;
+      --sl-bg-page: #f8fafc;
+      --sl-bg-card: #ffffff;
+      --sl-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --sl-font-mono: Consolas, Monaco, "Courier New", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: var(--sl-font-family);
+      background: #0f172a;
+      color: #334155;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 顶部切换条 */
+    .top-bar {
+      background: #1e293b;
+      border-bottom: 1px solid #334155;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: #ffffff;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .brand-title {
+      font-size: 15px;
+      font-weight: 700;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .brand-title .badge {
+      font-size: 11px;
+      background: #3b82f6;
+      padding: 2px 8px;
+      border-radius: 12px;
+      font-weight: 600;
+    }
+
+    .scheme-tabs {
+      display: flex;
+      background: #0f172a;
+      padding: 4px;
+      border-radius: 8px;
+      gap: 4px;
+      border: 1px solid #334155;
+    }
+
+    .scheme-tab-btn {
+      padding: 7px 16px;
+      border: none;
+      background: transparent;
+      color: #94a3b8;
+      font-size: 13px;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .scheme-tab-btn:hover {
+      color: #ffffff;
+      background: #1e293b;
+    }
+
+    .scheme-tab-btn.active {
+      color: #ffffff;
+      background: var(--sl-primary);
+      box-shadow: 0 2px 8px rgba(37, 99, 235, 0.4);
+    }
+
+    /* 主展示舞台 */
+    .preview-stage {
+      flex: 1;
+      padding: 24px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      gap: 28px;
+      max-width: 1440px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    .explanation-panel {
+      flex: 1;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      padding: 24px;
+      color: #e2e8f0;
+      max-width: 460px;
+    }
+
+    .explanation-panel h3 {
+      font-size: 17px;
+      color: #ffffff;
+      margin-bottom: 8px;
+    }
+
+    .tag {
+      font-size: 11px;
+      background: rgba(59, 130, 246, 0.2);
+      color: #93c5fd;
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+
+    .desc {
+      font-size: 13px;
+      color: #94a3b8;
+      line-height: 1.6;
+      margin: 14px 0 20px;
+      border-bottom: 1px solid #334155;
+      padding-bottom: 14px;
+    }
+
+    .feature-list {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .feature-item {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+
+    .feature-icon {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      background: rgba(37, 99, 235, 0.2);
+      color: #60a5fa;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      flex: none;
+    }
+
+    .feature-content h4 {
+      font-size: 13.5px;
+      color: #f1f5f9;
+      margin-bottom: 2px;
+    }
+
+    .feature-content p {
+      font-size: 12px;
+      color: #94a3b8;
+      line-height: 1.5;
+    }
+
+    /* 右侧常驻抽屉模拟容器 (宽度 310px) */
+    .drawer-container {
+      width: 310px;
+      height: 720px;
+      background: #ffffff;
+      border-radius: 10px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+      border: 1px solid #334155;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* ==========================================================================
+       方案一：阿里云云原生工控风格 (推荐)
+       ========================================================================== */
+    .scheme-1 {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      background: #ffffff;
+    }
+
+    .s1-titlebar {
+      height: 38px;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--sl-border-base);
+      background: #ffffff;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .s1-title-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .s1-title-left strong {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--sl-text-heading);
+    }
+
+    .s1-status-pill {
+      font-size: 10.5px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: #f1f5f9;
+      color: #475569;
+      font-weight: 500;
+    }
+
+    .s1-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    /* 卡片通用样式 */
+    .s1-card {
+      border: 1px solid var(--sl-border-base);
+      border-radius: 6px;
+      background: #ffffff;
+      overflow: hidden;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.02);
+    }
+
+    .s1-card-head {
+      padding: 8px 12px;
+      background: #f8fafc;
+      border-bottom: 1px solid var(--sl-border-base);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .s1-card-head strong {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--sl-text-heading);
+    }
+
+    .s1-card-head span {
+      font-size: 11px;
+      color: var(--sl-text-secondary);
+    }
+
+    .s1-card-body {
+      padding: 10px 12px;
+    }
+
+    /* 单行轻量流统计条 (替代 0 节点 4 个大方块) */
+    .s1-flow-stats-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 6px 10px;
+      background: #f8fafc;
+      border: 1px solid var(--sl-border-base);
+      border-radius: 6px;
+      font-size: 11.5px;
+      color: #334155;
+      font-family: var(--sl-font-mono);
+    }
+
+    .s1-stat-item {
+      display: flex;
+      align-items: baseline;
+      gap: 3px;
+    }
+
+    .s1-stat-item b {
+      color: var(--sl-primary);
+      font-weight: 700;
+      font-size: 12.5px;
+    }
+
+    .s1-stat-item span {
+      color: var(--sl-text-secondary);
+      font-size: 11px;
+      font-family: var(--sl-font-family);
+    }
+
+    .s1-stat-divider {
+      color: #cbd5e1;
+      font-size: 11px;
+    }
+
+    /* 表单项 */
+    .form-group {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      margin-bottom: 10px;
+    }
+
+    .form-group:last-child {
+      margin-bottom: 0;
+    }
+
+    .form-group label {
+      font-size: 11.5px;
+      font-weight: 500;
+      color: var(--sl-text-secondary);
+    }
+
+    .form-input {
+      width: 100%;
+      height: 28px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      padding: 0 8px;
+      font-size: 12px;
+      color: var(--sl-text-heading);
+      outline: none;
+      transition: all 0.15s;
+    }
+
+    .form-input:focus {
+      border-color: var(--sl-primary);
+      box-shadow: 0 0 0 1.5px rgba(37, 99, 235, 0.15);
+    }
+
+    .form-textarea {
+      width: 100%;
+      height: 60px;
+      border: 1px solid #cbd5e1;
+      border-radius: 4px;
+      padding: 6px 8px;
+      font-size: 11.5px;
+      color: var(--sl-text-heading);
+      resize: vertical;
+      outline: none;
+      font-family: inherit;
+    }
+
+    .form-textarea:focus {
+      border-color: var(--sl-primary);
+      box-shadow: 0 0 0 1.5px rgba(37, 99, 235, 0.15);
+    }
+
+    /* 检查结果与问题列表 */
+    .check-pass-box {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px;
+      background: var(--sl-success-light);
+      border: 1px solid #bbf7d0;
+      border-radius: 4px;
+      color: var(--sl-success);
+      font-size: 11.5px;
+    }
+
+    .check-issue-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 6px;
+      padding: 8px;
+      border: 1px solid #fecaca;
+      border-radius: 4px;
+      background: var(--sl-danger-light);
+      margin-bottom: 6px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .check-issue-item:hover {
+      border-color: #f87171;
+      background: #fee2e2;
+    }
+
+    .issue-tag {
+      font-size: 9.5px;
+      font-weight: 700;
+      background: var(--sl-danger);
+      color: #fff;
+      padding: 1px 4px;
+      border-radius: 3px;
+      flex: none;
+      margin-top: 1px;
+    }
+
+    .issue-text {
+      flex: 1;
+      font-size: 11px;
+      color: #991b1b;
+      line-height: 1.4;
+    }
+
+    /* ==========================================================================
+       方案二：飞书 / Coze 现代轻量流式风格
+       ========================================================================== */
+    .scheme-2 {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      background: #f8fafc;
+    }
+
+    .s2-header {
+      padding: 14px 14px 10px;
+      background: #ffffff;
+      border-bottom: 1px solid var(--sl-border-base);
+    }
+
+    .s2-flow-tag-strip {
+      display: flex;
+      gap: 4px;
+      margin-top: 8px;
+    }
+
+    .s2-pill {
+      font-size: 10.5px;
+      font-family: var(--sl-font-mono);
+      background: #eff6ff;
+      color: var(--sl-primary);
+      border: 1px solid #bfdbfe;
+      padding: 2px 6px;
+      border-radius: 12px;
+      font-weight: 600;
+    }
+
+    .s2-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .s2-section {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 12px;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+    }
+
+    /* ==========================================================================
+       方案三：华为云 ROMA / AWS 严谨控制台风格
+       ========================================================================== */
+    .scheme-3 {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      background: #ffffff;
+    }
+
+    .s3-top {
+      background: #0f172a;
+      color: #ffffff;
+      padding: 10px 12px;
+      border-bottom: 2px solid var(--sl-primary);
+    }
+
+    .s3-meta-line {
+      display: flex;
+      justify-content: space-between;
+      font-size: 10.5px;
+      color: #94a3b8;
+      font-family: var(--sl-font-mono);
+    }
+
+    .s3-matrix-bar {
+      display: flex;
+      background: #f1f5f9;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 6px 12px;
+      font-size: 11px;
+      color: #475569;
+      justify-content: space-between;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 顶部方案切换条 -->
+  <header class="top-bar">
+    <div class="brand-title">
+      <span>流程属性与建模检查（右侧常驻面板）设计评审</span>
+      <span class="badge">UI 优化与规范适配</span>
+    </div>
+    <div class="scheme-tabs">
+      <button class="scheme-tab-btn active" onclick="switchScheme('s1')">
+        <span>方案一：阿里云云原生工控卡片 (推荐)</span>
+      </button>
+      <button class="scheme-tab-btn" onclick="switchScheme('s2')">
+        <span>方案二：飞书 / Coze 现代轻量流式</span>
+      </button>
+      <button class="scheme-tab-btn" onclick="switchScheme('s3')">
+        <span>方案三：华为云 / AWS 严谨矩阵控制台</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- 主内容舞台 -->
+  <main class="preview-stage">
+
+    <!-- 方案设计说明与亮点 -->
+    <section class="explanation-panel" id="explanationPanel">
+      <!-- 动态加载 -->
+    </section>
+
+    <!-- 右侧常驻抽屉 UI 实景模拟器 -->
+    <section class="drawer-container" id="drawerContainer">
+      <!-- 动态渲染 -->
+    </section>
+
+  </main>
+
+  <script>
+    const SCHEMES = {
+      s1: {
+        title: '方案一：阿里云云原生工控卡片风格（官方推荐）',
+        tag: '紧凑自洽 · 彻底消除大方块',
+        desc: '参考阿里云 DataWorks 流程属性规范，彻底废除原本笨重的 4 个竖排大方块卡片（0 节点/0 执行连接等），升级为精致紧凑的单行统计条：【5 节点 / 4 执行流 / 2 数据流 / 1 设备】，与基本信息卡片、建模检查卡片形成统一严密的层级。',
+        features: [
+          {
+            title: '单行流式拓扑统计条 (Compact Metric Strip)',
+            desc: '采用 `5 节点 / 4 执行流 / 2 数据流 / 1 设备` 的单行紧凑排布，数字粗体等宽蓝字呈现，只占用 28px 高度，极大释放垂向空间。'
+          },
+          {
+            title: '规范化卡片容器 (Clean Unified Cards)',
+            desc: '流程基本信息（名称、描述）与静态建模检查采用浅灰微标题（32px）+ 纯白内容卡片，与左侧组件库和节点抽屉风格 100% 统一。'
+          },
+          {
+            title: '智能建模健康指示器 (Health Indicator)',
+            desc: '无错误时显示绿盾【拓扑检查全部通过】，有错误时以红色精简项罗列，点击可一键定位画布节点。'
+          }
+        ],
+        render: () => `
+          <div class="scheme-1">
+            <!-- 顶栏 -->
+            <div class="s1-titlebar">
+              <div class="s1-title-left">
+                <strong>流程属性</strong>
+                <span class="s1-status-pill">草稿 V1</span>
+              </div>
+              <span style="font-size:10.5px; color:#16a34a; font-weight:600;">● 就绪</span>
+            </div>
+
+            <!-- 主内容滚动区 -->
+            <div class="s1-content">
+
+              <!-- 1. 拓扑概览统计条 (替代 4 个大方块) -->
+              <div class="s1-flow-stats-bar">
+                <div class="s1-stat-item"><b>5</b><span>节点</span></div>
+                <div class="s1-stat-divider">/</div>
+                <div class="s1-stat-item"><b>4</b><span>执行流</span></div>
+                <div class="s1-stat-divider">/</div>
+                <div class="s1-stat-item"><b>2</b><span>数据流</span></div>
+                <div class="s1-stat-divider">/</div>
+                <div class="s1-stat-item"><b>1</b><span>设备</span></div>
+              </div>
+
+              <!-- 2. 基本信息卡片 -->
+              <div class="s1-card">
+                <div class="s1-card-head">
+                  <strong>基本配置</strong>
+                  <span>身份与描述</span>
+                </div>
+                <div class="s1-card-body">
+                  <div class="form-group">
+                    <label>流程名称</label>
+                    <input class="form-input" value="恒温反应实验流程" placeholder="例如：恒温反应实验流程" />
+                  </div>
+                  <div class="form-group">
+                    <label>流程描述</label>
+                    <textarea class="form-textarea" placeholder="说明前置条件、执行目标和适用范围">基于温度传感器与加温设备，实现 60℃ 恒温自动化控制与告警。</textarea>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 3. 静态建模检查卡片 -->
+              <div class="s1-card">
+                <div class="s1-card-head">
+                  <strong>建模检查</strong>
+                  <span style="font-size:10.5px; color:#dc2626; font-weight:600;">1 错误 · 0 提醒</span>
+                </div>
+                <div class="s1-card-body">
+                  <!-- 错误列表 -->
+                  <div class="check-issue-item">
+                    <span class="issue-tag">错误</span>
+                    <div class="issue-text">
+                      <strong>温控分支节点：</strong>未匹配的内部变量：temp1
+                    </div>
+                  </div>
+
+                  <!-- 正常通过状态 (示意) -->
+                  <!--
+                  <div class="check-pass-box">
+                    <span>✓ 拓扑检查通过，节点契约完整</span>
+                  </div>
+                  -->
+                </div>
+              </div>
+
+            </div>
+          </div>
+        `
+      },
+      s2: {
+        title: '方案二：飞书 / Coze 现代轻量流式风格',
+        tag: '胶囊聚合 · 清爽呼吸感',
+        desc: '参考飞书 Flow 与字节 Coze 属性面板设计，顶部直接集成流程名称大输入框与彩色胶囊标签条（5 节点 / 4 执行流 / 2 数据流），下方以无边框卡片展示检查项。',
+        features: [
+          {
+            title: '胶囊标签流 (Badge Stream)',
+            desc: '以独立的圆角微胶囊展示各个流维度的数量统计。'
+          },
+          {
+            title: '大输入框与弱化边框',
+            desc: '流程名称直接大字展示，表单内边距更充裕。'
+          }
+        ],
+        render: () => `
+          <div class="scheme-2">
+            <div class="s2-header">
+              <div style="font-size:11px; color:#64748b; margin-bottom:4px;">流程属性与配置</div>
+              <input class="form-input" style="font-size:13px; font-weight:700; height:30px;" value="恒温反应实验流程" />
+              <div class="s2-flow-tag-strip">
+                <span class="s2-pill">5 节点</span>
+                <span class="s2-pill">4 执行流</span>
+                <span class="s2-pill">2 数据流</span>
+              </div>
+            </div>
+            <div class="s2-body">
+              <div class="s2-section">
+                <div style="font-size:11.5px; font-weight:600; color:#0f172a; margin-bottom:6px;">流程描述</div>
+                <textarea class="form-textarea" style="height:50px;">基于温度传感器的恒温自动化控制流程。</textarea>
+              </div>
+
+              <div class="s2-section">
+                <div style="font-size:11.5px; font-weight:600; color:#0f172a; margin-bottom:8px; display:flex; justify-content:space-between;">
+                  <span>建模检查</span>
+                  <span style="color:#16a34a; font-size:10.5px;">全部通过</span>
+                </div>
+                <div class="check-pass-box">
+                  <span>✓ 当前暂无拓扑或变量错误</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        `
+      },
+      s3: {
+        title: '方案三：华为云 ROMA / AWS 严谨矩阵控制台风格',
+        tag: '工控矩阵 · 严格分栏',
+        desc: '参考华为云 ROMA 与 AWS Step Functions 现代控制台属性栏，顶部深色显示流程元数据，中间为等宽网格统计矩阵，严谨呈现各项参数。',
+        features: [
+          {
+            title: '深色元数据头 (Dark Metadata Header)',
+            desc: '呈现流程版本、ID 与工作流类型。'
+          },
+          {
+            title: '全景属性矩阵 (Property Matrix)',
+            desc: '5 节点 / 4 执行流 / 2 数据流 在深灰单行条中居中等宽展示。'
+          }
+        ],
+        render: () => `
+          <div class="scheme-3">
+            <div class="s3-top">
+              <div class="s3-meta-line">
+                <span>WORKFLOW_MODEL</span>
+                <span>V1.0</span>
+              </div>
+              <div style="font-size:13px; font-weight:700; color:#fff; margin-top:2px;">恒温反应实验流程</div>
+            </div>
+            <div class="s3-matrix-bar">
+              <span><b>5</b> 节点</span>
+              <span>|</span>
+              <span><b>4</b> 执行流</span>
+              <span>|</span>
+              <span><b>2</b> 数据流</span>
+            </div>
+            <div style="padding:12px; display:flex; flex-direction:column; gap:10px;">
+              <div class="form-group">
+                <label>流程描述</label>
+                <textarea class="form-textarea" style="height:55px;">说明前置条件、执行目标和适用范围</textarea>
+              </div>
+              <div class="s1-card">
+                <div class="s1-card-head">
+                  <strong>诊断报告</strong>
+                </div>
+                <div class="s1-card-body" style="padding:8px;">
+                  <div class="check-issue-item">
+                    <span class="issue-tag">错误</span>
+                    <div class="issue-text">温控分支：temp1 变量不存在</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        `
+      }
+    };
+
+    function switchScheme(key) {
+      document.querySelectorAll('.scheme-tab-btn').forEach(btn => btn.classList.remove('active'));
+      event.currentTarget.classList.add('active');
+
+      const data = SCHEMES[key];
+      document.getElementById('explanationPanel').innerHTML = `
+        <h3>${data.title}</h3>
+        <span class="tag">${data.tag}</span>
+        <p class="desc">${data.desc}</p>
+        <div class="feature-list">
+          ${data.features.map((f, i) => `
+            <div class="feature-item">
+              <div class="feature-icon">0${i+1}</div>
+              <div class="feature-content">
+                <h4>${f.title}</h4>
+                <p>${f.desc}</p>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+      document.getElementById('drawerContainer').innerHTML = data.render();
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      const defaultData = SCHEMES.s1;
+      document.getElementById('explanationPanel').innerHTML = `
+        <h3>${defaultData.title}</h3>
+        <span class="tag">${defaultData.tag}</span>
+        <p class="desc">${defaultData.desc}</p>
+        <div class="feature-list">
+          ${defaultData.features.map((f, i) => `
+            <div class="feature-item">
+              <div class="feature-icon">0${i+1}</div>
+              <div class="feature-content">
+                <h4>${f.title}</h4>
+                <p>${f.desc}</p>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+      document.getElementById('drawerContainer').innerHTML = defaultData.render();
+    });
+  </script>
+</body>
+</html>

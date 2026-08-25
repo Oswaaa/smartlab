@@ -1,50 +1,52 @@
 <template>
   <div class="constraint-editor">
-    <!-- 顶部实时业务逻辑解析预览 -->
-    <div class="preview-banner">
-      <div class="preview-banner-title">判定逻辑预览</div>
 
-      <div class="preview-sentence">
+    <!-- 1. 实时业务逻辑解析预览条 (纯净字阶 · 纯蓝字/纯红字直接呈现 · 无胶囊) -->
+    <div class="logic-preview-bar">
+      <span class="logic-preview-label">判定逻辑解析:</span>
+      <div class="logic-preview-content">
         <span class="preview-static">当</span>
-        <span class="preview-chip emphasis">{{ previewData.conditionExpr }}</span>
+        <span class="text-blue-var">{{ previewData.conditionExpr }}</span>
         <span class="preview-static">持续</span>
-        <span class="preview-chip">{{ previewData.windowText }}</span>
+        <span class="text-duration-val">{{ previewData.windowText }}</span>
         <span class="preview-arrow">➔</span>
         <span class="preview-static">执行</span>
-        <span v-for="(act, idx) in previewData.actionLabels" :key="idx" class="preview-chip action">
-          {{ act }}
-        </span>
+        <template v-for="(act, idx) in previewData.actionLabels" :key="idx">
+          <span v-if="idx > 0" class="action-separator">、</span>
+          <span class="text-danger-act">{{ act }}</span>
+        </template>
       </div>
     </div>
 
-
-    <!-- 1. 规则基本信息 -->
-    <div class="editor-section">
-      <div class="rule-info-head">
-        <el-form-item label="规则名称" required class="rule-name-item">
-          <el-input v-model="form.ruleName" placeholder="例如：反应釜超温防爆保护" />
-        </el-form-item>
+    <!-- 2. 规则基本信息分段 -->
+    <div class="card-section-block">
+      <div class="section-head-bar">
+        <span class="section-title">1. 基本信息</span>
         <div class="enable-inline">
-          <span class="enable-label">启用</span>
-          <el-switch v-model="form.isEnabled" />
+          <span class="enable-label">启用规则</span>
+          <el-switch v-model="form.isEnabled" size="small" />
         </div>
       </div>
-      <el-form-item label="规则说明" class="rule-desc-item">
-        <el-input v-model="form.description" type="textarea" :rows="2" placeholder="简要说明该约束规则的工艺或安全防护目的（选填）" />
-      </el-form-item>
+      <div class="rule-info-grid">
+        <div class="form-field-row">
+          <label class="form-lbl-compact required">规则名称</label>
+          <el-input v-model="form.ruleName" placeholder="例如：反应釜超温防爆保护" class="form-control-28" />
+        </div>
+        <div class="form-field-row">
+          <label class="form-lbl-compact">规则说明</label>
+          <el-input v-model="form.description" placeholder="简要说明该约束规则的工艺或安全防护目的（选填）" class="form-control-28" />
+        </div>
+      </div>
     </div>
 
-    <!-- 2. 判定公式 = 变量绑定 + 表达式点选 (对齐功能节点 Expression Editor) -->
-    <div class="editor-section">
-      <div class="section-title">
-        <span>判定公式</span>
-        <span class="section-hint">先绑定观测变量与阈值，再点选变量与操作符组成判定式</span>
-      </div>
-
-      <div class="binding-toolbar">
-        <span class="binding-toolbar-label">变量声明</span>
-        <button class="btn-aliyun" type="button" @click="addObservable">+ 观测变量</button>
-        <button class="btn-aliyun" type="button" @click="addLiteral">+ 固定阈值</button>
+    <!-- 3. 声明变量与数据源分段 -->
+    <div class="card-section-block">
+      <div class="section-head-bar">
+        <span class="section-title">2. 声明变量与数据源</span>
+        <div class="section-actions">
+          <button class="btn-aliyun small" type="button" @click="addObservable">+ 观测变量</button>
+          <button class="btn-aliyun small" type="button" @click="addLiteral">+ 固定阈值</button>
+        </div>
       </div>
 
       <div v-if="!form.bindings.length" class="binding-guide">
@@ -54,31 +56,33 @@
         <span>绑定数据源后，点选已声明变量组成判定式</span>
       </div>
 
-      <div v-for="item in form.bindings" :key="item._key" class="binding-card" :class="{ unused: !isVarUsed(item.name) }">
-        <div class="binding-card-head">
-          <div class="identifier-pill">
+      <div v-for="item in form.bindings" :key="item._key" class="var-decl-row" :class="{ unused: !isVarUsed(item.name) }">
+        <div class="var-decl-head">
+          <div class="var-name-ident">
             <span class="at-prefix">@</span>
             <el-input
               :key="item._key + '-' + (item._nameRev || 0)"
               :model-value="item.name"
               size="small"
-              class="var-name-input"
+              class="var-name-input-clean"
               placeholder="变量名"
               @change="(val) => renameBinding(item, val)"
             />
             <span class="identifier-type-desc">{{ item.bindingType === 'OBSERVABLE' ? '观测数据' : '固定阈值' }}</span>
-            <span v-if="!isVarUsed(item.name)" class="unused-hint">未写入公式</span>
+            <span v-if="!isVarUsed(item.name)" class="unused-hint">● 未写入公式</span>
+            <span v-else class="used-hint">● 已在公式中引用</span>
           </div>
           <div class="binding-head-actions">
             <el-radio-group v-model="item.bindingType" size="small" @change="onBindingTypeChange(item)">
               <el-radio-button value="OBSERVABLE">观测数据</el-radio-button>
               <el-radio-button value="LITERAL">固定值</el-radio-button>
             </el-radio-group>
-            <button class="btn-link danger" type="button" @click="removeBinding(item.name)">删除</button>
+            <button class="btn-link-danger" type="button" @click="removeBinding(item.name)">删除</button>
           </div>
         </div>
 
-        <div v-if="item.bindingType === 'LITERAL'" class="binding-literal-row">
+        <!-- LITERAL 固定值 -->
+        <div v-if="item.bindingType === 'LITERAL'" class="literal-row-flex">
           <div class="field field-type">
             <span class="field-label">数据类型</span>
             <el-select v-model="item.dataType" size="small">
@@ -96,79 +100,40 @@
           </div>
         </div>
 
-        <div v-else class="binding-observable">
-          <div class="obs-row">
-            <div class="field field-source">
-              <span class="field-label">观测来源</span>
-              <el-select v-model="item.sourceType" size="small" @change="resetSource(item)">
-                <el-option v-for="type in availableSourceTypes" :key="type" :label="sourceLabel(type)" :value="type" />
-              </el-select>
-            </div>
-
-            <template v-if="isDeviceSource(item.sourceType)">
-              <template v-if="taskMode">
-                <div class="field field-grow">
-                  <span class="field-label">任务设备</span>
-                  <el-select v-model="item.resourceKey" size="small" @change="selectTaskResource(item)">
-                    <el-option v-for="res in taskResources" :key="res.bindingKey" :label="resourceLabel(res)" :value="res.bindingKey" />
-                  </el-select>
-                </div>
-              </template>
-              <template v-else>
-                <div class="field field-grow">
-                  <span class="field-label">设备模型</span>
-                  <el-select v-model="item.deviceModelId" size="small" filterable placeholder="选择设备模型" @change="resetDevice(item)">
-                    <el-option v-for="m in models" :key="m.id" :label="m.modelName" :value="m.id" />
-                  </el-select>
-                </div>
-                <div class="field field-grow">
-                  <span class="field-label">设备实例</span>
-                  <el-select v-model="item.deviceInstanceId" size="small" clearable placeholder="全模型实例">
-                    <el-option v-for="inst in instancesFor(item.deviceModelId)" :key="inst.id" :label="inst.instanceName || ('实例' + inst.id)" :value="inst.id" />
-                  </el-select>
-                </div>
-              </template>
-            </template>
-
-            <template v-else-if="item.sourceType === 'TASK_LIFECYCLE_STATE'">
-              <div v-if="taskMode" class="task-mode-hint">自动绑定当前执行任务的状态</div>
-              <template v-else>
-                <div class="field field-grow">
-                  <span class="field-label">工作流</span>
-                  <el-select v-model="item.workflowTemplateId" size="small" filterable placeholder="选择工作流模板" @change="item.taskId = null">
-                    <el-option v-for="flow in availableWorkflows" :key="flow.id" :label="workflowModelName(flow) || ('流程' + flow.id)" :value="flow.id" />
-                  </el-select>
-                </div>
-                <div class="field field-grow">
-                  <span class="field-label">目标任务（可选）</span>
-                  <el-select v-model="item.taskId" size="small" filterable clearable placeholder="全任务实例">
-                    <el-option v-for="task in tasksFor(item.workflowTemplateId)" :key="task.id" :label="(task.taskName || '任务') + ' #' + task.id" :value="task.id" />
-                  </el-select>
-                </div>
-              </template>
-            </template>
-
-            <template v-else-if="isNodeSource(item.sourceType)">
-              <div class="field field-grow">
-                <span class="field-label">工作流</span>
-                <el-select v-model="item.workflowTemplateId" size="small" @change="item.nodeName='';item.variableName=''">
-                  <el-option v-for="flow in availableWorkflows" :key="flow.id" :label="workflowModelName(flow)" :value="flow.id" />
-                </el-select>
-              </div>
-              <div class="field field-grow">
-                <span class="field-label">节点</span>
-                <el-select v-model="item.nodeName" size="small" filterable @change="item.variableName=''">
-                  <el-option v-for="node in nodesFor(item.workflowTemplateId)" :key="node.name" :label="node.name" :value="node.name" />
-                </el-select>
-              </div>
-            </template>
-            <div v-if="!needsSecondObsRow(item)" class="field field-type">
-              <span class="field-label">数据类型</span>
-              <div class="resolved-type-value">{{ dataTypeLabel(observableDataType(item)) }}</div>
-            </div>
+        <!-- OBSERVABLE 观测数据 -->
+        <div v-else class="var-grid-layout">
+          <!-- 来源类型 -->
+          <div class="field field-source">
+            <span class="field-label">观测来源</span>
+            <el-select v-model="item.sourceType" size="small" @change="resetSource(item)">
+              <el-option v-for="type in availableSourceTypes" :key="type" :label="sourceLabel(type)" :value="type" />
+            </el-select>
           </div>
 
-          <div v-if="needsSecondObsRow(item)" class="obs-row">
+          <!-- 设备来源 -->
+          <template v-if="isDeviceSource(item.sourceType)">
+            <template v-if="taskMode">
+              <div class="field field-grow">
+                <span class="field-label">任务设备</span>
+                <el-select v-model="item.resourceKey" size="small" @change="selectTaskResource(item)">
+                  <el-option v-for="res in taskResources" :key="res.bindingKey" :label="resourceLabel(res)" :value="res.bindingKey" />
+                </el-select>
+              </div>
+            </template>
+            <template v-else>
+              <div class="field field-grow">
+                <span class="field-label">设备模型</span>
+                <el-select v-model="item.deviceModelId" size="small" filterable placeholder="选择设备模型" @change="resetDevice(item)">
+                  <el-option v-for="m in models" :key="m.id" :label="m.modelName" :value="m.id" />
+                </el-select>
+              </div>
+              <div class="field field-grow">
+                <span class="field-label">设备实例</span>
+                <el-select v-model="item.deviceInstanceId" size="small" clearable placeholder="全模型实例">
+                  <el-option v-for="inst in instancesFor(item.deviceModelId)" :key="inst.id" :label="inst.instanceName || ('实例' + inst.id)" :value="inst.id" />
+                </el-select>
+              </div>
+            </template>
             <div v-if="item.sourceType === 'DEVICE_ATTRIBUTE'" class="field field-attr">
               <span class="field-label">监测属性</span>
               <el-select v-model="item.targetName" size="small" filterable placeholder="选择监测物理属性">
@@ -181,29 +146,77 @@
                 <el-option v-for="region in operationRegions(item.deviceModelId)" :key="region.regionName" :label="region.regionName" :value="region.regionName" />
               </el-select>
             </div>
-            <div v-else-if="item.sourceType === 'NODE_INTERNAL_VARIABLE'" class="field field-grow">
+          </template>
+
+          <!-- 任务生命周期 -->
+          <template v-else-if="item.sourceType === 'TASK_LIFECYCLE_STATE'">
+            <div v-if="taskMode" class="task-mode-hint field-grow">自动绑定当前执行任务的状态</div>
+            <template v-else>
+              <div class="field field-grow">
+                <span class="field-label">工作流</span>
+                <el-select v-model="item.workflowTemplateId" size="small" filterable placeholder="选择工作流模板" @change="item.taskId = null">
+                  <el-option v-for="flow in availableWorkflows" :key="flow.id" :label="workflowModelName(flow) || ('流程' + flow.id)" :value="flow.id" />
+                </el-select>
+              </div>
+              <div class="field field-grow">
+                <span class="field-label">目标任务（可选）</span>
+                <el-select v-model="item.taskId" size="small" filterable clearable placeholder="全任务实例">
+                  <el-option v-for="task in tasksFor(item.workflowTemplateId)" :key="task.id" :label="(task.taskName || '任务') + ' #' + task.id" :value="task.id" />
+                </el-select>
+              </div>
+            </template>
+          </template>
+
+          <!-- 节点来源 -->
+          <template v-else-if="isNodeSource(item.sourceType)">
+            <div class="field field-grow">
+              <span class="field-label">工作流</span>
+              <el-select v-model="item.workflowTemplateId" size="small" @change="item.nodeName='';item.variableName=''">
+                <el-option v-for="flow in availableWorkflows" :key="flow.id" :label="workflowModelName(flow)" :value="flow.id" />
+              </el-select>
+            </div>
+            <div class="field field-grow">
+              <span class="field-label">节点</span>
+              <el-select v-model="item.nodeName" size="small" filterable @change="item.variableName=''">
+                <el-option v-for="node in nodesFor(item.workflowTemplateId)" :key="node.name" :label="node.name" :value="node.name" />
+              </el-select>
+            </div>
+            <div v-if="item.sourceType === 'NODE_INTERNAL_VARIABLE'" class="field field-grow">
               <span class="field-label">内部变量</span>
               <el-select v-model="item.variableName" size="small" filterable>
                 <el-option v-for="v in internalVariablesFor(item)" :key="v.name" :label="v.name + ' (' + v.dataType + ')'" :value="v.name" />
               </el-select>
             </div>
-            <div class="field field-type">
-              <span class="field-label">数据类型</span>
-              <div class="resolved-type-value">{{ dataTypeLabel(observableDataType(item)) }}</div>
-            </div>
+          </template>
+
+          <!-- 数据类型纯文字显示 (一直占位展示列，未选择属性时显示短横线，去掉灰底框) -->
+          <div class="field field-type-view">
+            <span class="field-label">数据类型</span>
+            <div class="data-type-cell">{{ observableDataType(item) ? dataTypeLabel(observableDataType(item)) : '-' }}</div>
           </div>
         </div>
       </div>
+    </div>
 
-      <div class="expression-toolbar">
-        <div class="toolbar-row">
-          <span class="toolbar-label">公式模板</span>
-          <button v-for="tpl in formulaTemplates" :key="tpl.name" type="button" class="tool-btn tpl" @click="applyTemplate(tpl)">
+    <!-- 4. 判定公式点选与编写分段 -->
+    <div class="card-section-block">
+      <div class="section-head-bar">
+        <span class="section-title">3. 判定公式点选与编写</span>
+        <span class="section-desc-hint">先声明变量与阈值，再点选组成判定布尔式</span>
+      </div>
+
+      <div class="composer-plain-box">
+        <!-- 1行：公式模板 (浅蓝底浅蓝字) -->
+        <div class="token-line">
+          <span class="token-line-lbl">公式模板:</span>
+          <button v-for="tpl in formulaTemplates" :key="tpl.name" type="button" class="btn-token-blue" @click="applyTemplate(tpl)">
             {{ tpl.name }}
           </button>
         </div>
-        <div class="toolbar-row">
-          <span class="toolbar-label">时序函数</span>
+
+        <!-- 2行：时序函数 (浅蓝底浅蓝字) -->
+        <div class="token-line">
+          <span class="token-line-lbl">时序函数:</span>
           <el-tooltip v-for="fn in temporalFunctions" :key="fn.key" placement="top" :show-after="200">
             <template #content>
               <div class="fn-tooltip">
@@ -212,30 +225,33 @@
                 <code>{{ fn.example }}</code>
               </div>
             </template>
-            <button type="button" class="tool-btn fn" @click="insertFunction(fn)">{{ fn.name }}</button>
+            <button type="button" class="btn-token-blue fn" @click="insertFunction(fn)">{{ fn.name }}</button>
           </el-tooltip>
           <span class="picker-empty">返回数值，需再比较；窗口秒数插入后可改</span>
         </div>
-        <div class="toolbar-row">
-          <span class="toolbar-label">操作符</span>
-          <button v-for="op in operatorTokens" :key="op" type="button" class="tool-btn op" @click="insertText(op)">
+
+        <!-- 3行：操作符 (白底黑字) -->
+        <div class="token-line">
+          <span class="token-line-lbl">操作符:</span>
+          <button v-for="op in operatorTokens" :key="op" type="button" class="btn-token-plain op" @click="insertText(op)">
             {{ op.trim() }}
           </button>
         </div>
-        <div class="toolbar-row">
-          <span class="toolbar-label">已绑定</span>
+
+        <!-- 4行：已声明变量 (独立新的一行，浅蓝底蓝字) -->
+        <div class="token-line">
+          <span class="token-line-lbl">已声明:</span>
           <button
             v-for="item in form.bindings"
             :key="'chip-' + item.name"
             type="button"
-            class="tool-btn var"
+            class="btn-token-blue var"
             @click="insertText('@' + item.name + ' ')"
           >@{{ item.name }}</button>
-          <span v-if="!form.bindings.length" class="picker-empty">请先绑定变量</span>
+          <span v-if="!form.bindings.length" class="picker-empty">请先在上方声明变量</span>
         </div>
-      </div>
 
-      <div class="formula-composer">
+        <!-- 双层高亮输入框 -->
         <div class="formula-input-shell">
           <div class="formula-input-highlight" aria-hidden="true">
             <div class="formula-input-highlight-content" :style="{ marginLeft: `-${inputScrollLeft}px` }">
@@ -254,6 +270,7 @@
             @scroll="syncHighlightScroll"
           />
         </div>
+
         <div class="formula-meta-bar">
           <span>执行表达式：<code>{{ backendExpression || '等待输入' }}</code></span>
           <span v-if="undeclaredVars.length" class="syntax-error">● 暂无引用绑定关系：{{ undeclaredVars.map(n => '@' + n).join(' ') }}</span>
@@ -263,108 +280,115 @@
       </div>
     </div>
 
-    <!-- 4. 判定持续时间与违规处置动作 -->
-    <div class="editor-section">
-      <div class="section-title">
-        <span>判定窗口与处置动作</span>
-        <span class="section-hint">配置连续触发时间及判定成立后的处置动作组合</span>
+    <!-- 5. 判定窗口与处置动作分段 -->
+    <div class="card-section-block">
+      <div class="section-head-bar">
+        <span class="section-title">4. 判定窗口与违规处置动作</span>
+        <button class="btn-aliyun small" type="button" @click="addAction">+ 添加处置动作</button>
       </div>
 
-      <el-form-item label="持续判定时间">
-        <div style="display: flex; align-items: center; gap: 8px;">
-          <el-input-number v-model="form.windowSeconds" size="small" :controls="false" :min="1" placeholder="留空为瞬时触发" style="width: 140px;" />
-          <span style="font-size: 12.5px; color: #64748b;">秒（公式连续成立达到该时间后判定违规，为空表示瞬时触发）</span>
-        </div>
-      </el-form-item>
+      <!-- 持续判定时间 -->
+      <div class="window-duration-row">
+        <label class="form-lbl-compact" style="font-weight:600;">持续判定时间:</label>
+        <el-input-number v-model="form.windowSeconds" size="small" :controls="false" :min="1" placeholder="留空为瞬时" style="width: 100px;" />
+        <span class="window-hint">秒（公式连续成立达到该时间后判定违规，为空表示瞬时触发）</span>
+      </div>
 
-      <div style="margin-top: 14px;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-          <span style="font-size: 13px; font-weight: 600; color: var(--sl-text-heading);">违规处置动作列表</span>
-          <button class="btn-aliyun" type="button" @click="addAction">+ 添加处置动作</button>
-        </div>
-
-        <div v-for="(act, index) in form.actions" :key="act.key" class="action-card">
-          <div class="action-card-head">
-            <span style="font-weight: 600; font-size: 13px;">动作 {{ index + 1 }}</span>
-            <div style="display: flex; align-items: center; gap: 12px;">
-              <el-radio-group v-model="act.actionType" size="small" @change="resetAction(act)">
-                <el-radio-button value="DEVICE_CAPABILITY">设备能力</el-radio-button>
-                <el-radio-button value="SYSTEM">系统动作</el-radio-button>
-              </el-radio-group>
-              <button v-if="canRemoveAction" class="btn-link danger" type="button" @click="form.actions.splice(index, 1)">删除</button>
-            </div>
+      <!-- 动作列表 -->
+      <div v-for="(act, index) in form.actions" :key="act.key" class="action-decl-row">
+        <div class="action-decl-head">
+          <span class="action-idx-title">动作 {{ index + 1 }}</span>
+          <div style="display: flex; align-items: center; gap: 10px;">
+            <el-radio-group v-model="act.actionType" size="small" @change="resetAction(act)">
+              <el-radio-button value="DEVICE_CAPABILITY">设备能力</el-radio-button>
+              <el-radio-button value="SYSTEM">系统动作</el-radio-button>
+            </el-radio-group>
+            <button v-if="canRemoveAction" class="btn-link-danger" type="button" @click="form.actions.splice(index, 1)">删除</button>
           </div>
+        </div>
 
-
-          <div v-if="act.actionType === 'DEVICE_CAPABILITY'" class="action-device-block">
-            <div class="action-inputs-grid action-row-targets">
-              <template v-if="taskMode">
-                <el-form-item label="任务设备" style="margin-bottom: 0;">
-                  <el-select v-model="act.resourceKey" size="small" @change="selectActionResource(act)">
-                    <el-option v-for="res in taskResources" :key="res.bindingKey" :label="resourceLabel(res)" :value="res.bindingKey" />
-                  </el-select>
-                </el-form-item>
-              </template>
-              <template v-else>
-                <el-form-item label="设备模型" style="margin-bottom: 0;">
-                  <el-select v-model="act.deviceModelId" size="small" filterable @change="resetActionDevice(act)">
-                    <el-option v-for="m in models" :key="m.id" :label="m.modelName" :value="m.id" />
-                  </el-select>
-                </el-form-item>
-                <el-form-item :label="deviceBindingsAreModelWide ? '执行实例（可选）' : '设备实例'" style="margin-bottom: 0;">
-                  <el-select
-                    v-model="act.deviceInstanceId"
-                    size="small"
-                    :clearable="deviceBindingsAreModelWide"
-                    :placeholder="deviceBindingsAreModelWide ? '与观测同源' : '选择执行实例'"
-                  >
-                    <el-option v-for="inst in instancesFor(act.deviceModelId)" :key="inst.id" :label="inst.instanceName || ('实例' + inst.id)" :value="inst.id" />
-                  </el-select>
-                </el-form-item>
-              </template>
-            </div>
-
-            <div class="action-inputs-grid action-row-capability">
-              <el-form-item label="执行能力" style="margin-bottom: 0;">
-                <el-select v-model="act.capabilityName" size="small" filterable @change="initParameters(act)">
-                  <el-option v-for="cap in capabilitiesFor(act.deviceModelId)" :key="cap.capabilityName" :label="cap.displayName || cap.capabilityName" :value="cap.capabilityName" />
+        <!-- 设备能力 (两行结构：第一行目标与能力，第二行参数) -->
+        <div v-if="act.actionType === 'DEVICE_CAPABILITY'" class="action-device-block">
+          <div class="action-device-main-row">
+            <template v-if="taskMode">
+              <div class="field field-grow">
+                <span class="field-label">任务设备</span>
+                <el-select v-model="act.resourceKey" size="small" @change="selectActionResource(act)">
+                  <el-option v-for="res in taskResources" :key="res.bindingKey" :label="resourceLabel(res)" :value="res.bindingKey" />
                 </el-select>
-              </el-form-item>
+              </div>
+            </template>
+            <template v-else>
+              <div class="field field-grow">
+                <span class="field-label">设备模型</span>
+                <el-select v-model="act.deviceModelId" size="small" filterable @change="resetActionDevice(act)">
+                  <el-option v-for="m in models" :key="m.id" :label="m.modelName" :value="m.id" />
+                </el-select>
+              </div>
+              <div class="field field-grow">
+                <span class="field-label">{{ deviceBindingsAreModelWide ? '执行实例（可选）' : '设备实例' }}</span>
+                <el-select
+                  v-model="act.deviceInstanceId"
+                  size="small"
+                  :clearable="deviceBindingsAreModelWide"
+                  :placeholder="deviceBindingsAreModelWide ? '与观测同源' : '选择执行实例'"
+                >
+                  <el-option v-for="inst in instancesFor(act.deviceModelId)" :key="inst.id" :label="inst.instanceName || ('实例' + inst.id)" :value="inst.id" />
+                </el-select>
+              </div>
+            </template>
 
-              <template v-if="parameterDefinitions(act).length">
-                <el-form-item v-for="param in parameterDefinitions(act)" :key="param.name" :label="param.displayName" style="margin-bottom: 0;">
-                  <el-select v-if="param.dataType === 'BOOLEAN'" v-model="act.parameters[param.name]" size="small">
-                    <el-option label="true" :value="true" />
-                    <el-option label="false" :value="false" />
-                  </el-select>
-                  <el-input-number v-else-if="isNumeric(param.dataType)" v-model="act.parameters[param.name]" size="small" :controls="false" />
-                  <el-input v-else v-model="act.parameters[param.name]" size="small" />
-                </el-form-item>
-              </template>
+            <div class="field field-grow">
+              <span class="field-label">执行能力</span>
+              <el-select v-model="act.capabilityName" size="small" filterable @change="initParameters(act)">
+                <el-option v-for="cap in capabilitiesFor(act.deviceModelId)" :key="cap.capabilityName" :label="cap.displayName || cap.capabilityName" :value="cap.capabilityName" />
+              </el-select>
             </div>
           </div>
 
-          <!-- 系统动作 -->
-          <div v-else class="action-inputs-grid" style="grid-template-columns: 180px 1fr;">
-            <el-form-item label="系统处置" style="margin-bottom: 0;">
-              <el-select v-model="act.action" size="small">
-                <el-option label="终止当前任务" value="ABORT" />
-                <el-option label="暂停当前任务" value="PAUSE" />
-                <el-option label="发布系统告警" value="ALERT" />
+          <!-- 第二行：执行能力参数 -->
+          <div v-if="parameterDefinitions(act).length" class="action-device-params-row">
+            <div v-for="param in parameterDefinitions(act)" :key="param.name" class="field field-param">
+              <span class="field-label">{{ param.displayName }}</span>
+              <el-select v-if="param.dataType === 'BOOLEAN'" v-model="act.parameters[param.name]" size="small">
+                <el-option label="true" :value="true" />
+                <el-option label="false" :value="false" />
               </el-select>
-            </el-form-item>
-            <el-form-item v-if="!taskMode && act.action !== 'ALERT'" :label="taskBindingsAreTemplateWide ? '目标任务（可选）' : '目标任务'" style="margin-bottom: 0;">
-              <el-select
-                v-model="act.targetTaskId"
-                size="small"
-                filterable
-                :clearable="taskBindingsAreTemplateWide"
-                :placeholder="taskBindingsAreTemplateWide ? '与观测同源' : '指定触发违规的目标任务'"
-              >
-                <el-option v-for="task in tasks" :key="task.id" :label="(task.taskName || '任务') + ' #' + task.id" :value="task.id" />
-              </el-select>
-            </el-form-item>
-            <div v-else class="task-mode-hint">系统动作将自动作用于触发违规的当前任务</div>
+              <el-input-number v-else-if="isNumeric(param.dataType)" v-model="act.parameters[param.name]" size="small" :controls="false" />
+              <el-input v-else v-model="act.parameters[param.name]" size="small" />
+            </div>
+          </div>
+        </div>
+
+        <!-- 系统动作 (比例均衡、无偏移排布) -->
+        <div v-else class="action-system-row">
+          <div class="field field-sys">
+            <span class="field-label">系统处置</span>
+            <el-select v-model="act.action" size="small">
+              <el-option label="终止当前任务 (ABORT)" value="ABORT" />
+              <el-option label="暂停当前任务 (PAUSE)" value="PAUSE" />
+              <el-option label="发布系统告警 (ALERT)" value="ALERT" />
+            </el-select>
+          </div>
+          <div v-if="!taskMode && act.action !== 'ALERT'" class="field field-task">
+            <span class="field-label">{{ taskBindingsAreTemplateWide ? '目标任务（可选）' : '目标任务' }}</span>
+            <el-select
+              v-model="act.targetTaskId"
+              size="small"
+              filterable
+              :clearable="taskBindingsAreTemplateWide"
+              :placeholder="taskBindingsAreTemplateWide ? '与观测同源' : '指定触发违规的目标任务'"
+            >
+              <el-option v-for="task in tasks" :key="task.id" :label="(task.taskName || '任务') + ' #' + task.id" :value="task.id" />
+            </el-select>
+          </div>
+          <div v-else-if="act.action === 'ALERT'" class="field field-desc">
+            <span class="field-label">处置说明</span>
+            <div class="action-hint-cell">触发违规时将在系统告警中心与顶部通知栏实时播报</div>
+          </div>
+          <div v-else class="field field-desc">
+            <span class="field-label">处置说明</span>
+            <div class="action-hint-cell">系统处置动作将自动作用于触发违规的当前任务</div>
           </div>
         </div>
       </div>
@@ -670,14 +694,21 @@ function internalVariablesFor(item: any) {
 
 function observableDataType(item: any) {
   if (item.sourceType === 'DEVICE_ATTRIBUTE') {
-    return attributesFor(item.deviceModelId).find((x: any) => x.attributeName === item.targetName)?.dataType || 'DOUBLE'
+    if (!item.targetName) return ''
+    return attributesFor(item.deviceModelId).find((x: any) => x.attributeName === item.targetName)?.dataType || ''
   }
-  if (item.sourceType === 'DEVICE_OPERATION_STATE') return 'JSON'
-  if (item.sourceType === 'DEVICE_COMMAND_LIFECYCLE' || item.sourceType === 'TASK_LIFECYCLE_STATE' || item.sourceType === 'NODE_LIFECYCLE_STATE') return 'STRING'
+  if (item.sourceType === 'DEVICE_OPERATION_STATE') {
+    if (!item.regionName) return ''
+    return 'JSON'
+  }
+  if (item.sourceType === 'DEVICE_COMMAND_LIFECYCLE' || item.sourceType === 'TASK_LIFECYCLE_STATE' || item.sourceType === 'NODE_LIFECYCLE_STATE') {
+    return 'STRING'
+  }
   if (item.sourceType === 'NODE_INTERNAL_VARIABLE') {
-    return internalVariablesFor(item).find((v: any) => v.name === item.variableName)?.dataType || 'STRING'
+    if (!item.variableName) return ''
+    return internalVariablesFor(item).find((v: any) => v.name === item.variableName)?.dataType || ''
   }
-  return 'STRING'
+  return ''
 }
 
 function resetSource(item: any) {
@@ -876,11 +907,18 @@ function actionPayload(act: any) {
   if (!act.deviceInstanceId && (props.taskMode || !deviceBindingsAreModelWide.value)) {
     throw Error('设备能力动作必须选择具体执行实例')
   }
+  const parameters = act.parameters || {}
+  for (const param of parameterDefinitions(act)) {
+    const value = parameters[param.name]
+    if (value === null || value === undefined || value === '') {
+      throw Error(`设备能力参数「${param.displayName || param.name}」不能为空`)
+    }
+  }
   const payload: Record<string, any> = {
     actionType: 'DEVICE_CAPABILITY',
     deviceModelId: Number(act.deviceModelId),
     capabilityName: act.capabilityName,
-    parameters: act.parameters || {}
+    parameters
   }
   if (act.deviceInstanceId) payload.deviceInstanceId = act.deviceInstanceId
   return payload
@@ -979,292 +1017,489 @@ defineExpose({ validateAndBuild, loadRule })
 </script>
 
 <style scoped>
+/* 全局防毛边与抗锯齿渲染 (整框大卡片一体化，去除冗余嵌套卡片和外边距) */
 .constraint-editor {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  background: #ffffff;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
-.preview-banner {
-  background: var(--sl-primary-light);
-  border: 1px solid var(--sl-primary-border);
-  border-left: 3px solid var(--sl-primary);
-  border-radius: var(--sl-radius-sm);
-  padding: 12px 16px;
-}
-.preview-banner-title {
+/* 1. 实时业务逻辑解析预览条 (纯净字阶 · 无胶囊 · 纯蓝字/纯红字直接呈现) */
+.logic-preview-bar {
+  background: var(--sl-bg-hover, #f8fafc);
+  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+  padding: 6px 14px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 12px;
-  font-weight: 600;
-  color: var(--sl-primary);
-  margin-bottom: 6px;
+  line-height: 1.4;
 }
-.preview-sentence {
+
+.logic-preview-label {
+  color: var(--sl-primary, #2563eb);
+  font-weight: 700;
+  font-size: 11.5px;
+  flex-shrink: 0;
+}
+
+.logic-preview-content {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
-  line-height: 1.6;
+  font-size: 12px;
 }
-.preview-static { color: var(--sl-text-secondary); }
-.preview-chip {
-  padding: 2px 7px;
-  border-radius: var(--sl-radius-sm);
-  background: #ffffff;
-  border: 1px solid var(--sl-border-input);
-  color: var(--sl-text-heading);
-  font-size: 12.5px;
-  font-weight: 500;
-}
-.preview-chip.emphasis { font-weight: 600; }
-.preview-chip.action {
-  background: var(--sl-danger-light);
-  border-color: var(--sl-danger-border);
-  color: var(--sl-danger);
-}
-.preview-arrow { color: var(--sl-text-disabled); margin: 0 2px; }
 
-.editor-section {
-  background: #ffffff;
-  border: 1px solid var(--sl-border-base);
-  border-radius: var(--sl-radius-sm);
-  padding: 16px;
+.preview-static {
+  color: var(--sl-text-secondary, #64748b);
 }
-.section-title {
-  font-size: 13.5px;
-  font-weight: 600;
-  color: var(--sl-text-heading);
-  margin-bottom: 12px;
+
+.preview-arrow {
+  color: var(--sl-text-disabled, #94a3b8);
+  margin: 0 2px;
+}
+
+.action-separator {
+  color: var(--sl-text-secondary, #64748b);
+}
+
+.text-blue-var {
+  color: var(--sl-primary, #2563eb);
+  font-family: var(--sl-font-mono);
+  font-weight: 700;
+}
+
+.text-danger-act {
+  color: var(--sl-danger, #dc2626);
+  font-family: var(--sl-font-mono);
+  font-weight: 700;
+}
+
+.text-duration-val {
+  color: var(--sl-text-heading, #0f172a);
+  font-family: var(--sl-font-mono);
+  font-weight: 700;
+}
+
+/* 章节分段块 (边到边排布，无多余空白) */
+.card-section-block {
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--sl-border-subtle, #f1f5f9);
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 5px;
+}
+.card-section-block:last-child {
+  border-bottom: none;
+}
+
+.section-head-bar {
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.section-title {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--sl-text-heading, #0f172a);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.section-title::before {
+  content: "";
+  width: 3px;
+  height: 12px;
+  background: var(--sl-primary, #2563eb);
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.section-desc-hint {
+  font-size: 11px;
+  color: var(--sl-text-secondary, #64748b);
+  font-weight: normal;
+}
+
+.section-actions {
+  display: flex;
+  gap: 6px;
+}
+
+/* 按钮规范 */
+.btn-aliyun {
+  height: 28px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--sl-text-body, #334155);
+  background: #ffffff;
+  border: 1px solid var(--sl-border-input, #cbd5e1);
+  border-radius: var(--sl-radius-sm, 4px);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--sl-ease-smooth, all 0.18s ease);
+}
+.btn-aliyun:hover {
+  border-color: #94a3b8;
+  background: var(--sl-bg-hover, #f8fafc);
+  color: var(--sl-text-heading, #0f172a);
+}
+
+.btn-aliyun.small {
+  height: 24px;
+  padding: 0 8px;
+  font-size: 11px;
+}
+
+.btn-link-danger {
+  border: none;
+  background: transparent;
+  color: var(--sl-danger, #dc2626);
+  font-size: 11px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  transition: var(--sl-ease-smooth, all 0.18s ease);
+}
+.btn-link-danger:hover {
+  text-decoration: underline;
+}
+
+/* 28px 高密度表单控件 */
+.form-control-28 :deep(.el-input__wrapper) {
+  height: 28px;
+  padding: 0 8px;
+  font-size: 11.5px;
+  box-shadow: 0 0 0 1px var(--sl-border-input, #cbd5e1) inset;
+  border-radius: var(--sl-radius-sm, 4px);
+}
+.form-control-28 :deep(.el-input__wrapper.is-focus) {
+  box-shadow: 0 0 0 1px var(--sl-primary, #2563eb) inset;
+}
+
+.form-lbl-compact {
+  font-size: 11.5px;
+  color: var(--sl-text-secondary, #64748b);
+  white-space: nowrap;
+}
+.form-lbl-compact.required::before {
+  content: "* ";
+  color: var(--sl-danger, #dc2626);
+  font-weight: bold;
+}
+
+.rule-info-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
   gap: 12px;
 }
-.section-hint {
-  font-size: 12px;
-  font-weight: 400;
-  color: var(--sl-text-secondary);
+
+.form-field-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.form-field-row .form-lbl-compact {
+  width: 60px;
+  text-align: right;
+  flex-shrink: 0;
+}
+.form-field-row .form-control-28 {
+  flex: 1;
 }
 
-.rule-info-head {
-  display: flex;
-  align-items: flex-end;
-  gap: 16px;
-  margin-bottom: 10px;
-}
-.rule-name-item {
-  flex: 1;
-  min-width: 0;
-  margin-bottom: 0;
-}
-.rule-desc-item { margin-bottom: 0; }
 .enable-inline {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding-bottom: 4px;
-  flex-shrink: 0;
+  gap: 6px;
 }
 .enable-label {
-  font-size: 13px;
-  color: var(--sl-text-body);
+  font-size: 11px;
+  color: var(--sl-text-secondary, #64748b);
 }
 
-.binding-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-.binding-toolbar-label {
-  font-size: 12px;
-  color: var(--sl-text-secondary);
-  margin-right: 4px;
-}
+/* 变量引导提示 */
 .binding-guide {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px 10px;
-  margin-bottom: 12px;
-  padding: 8px 12px;
-  background: var(--sl-primary-light);
-  border: 1px dashed var(--sl-primary-border);
-  border-radius: var(--sl-radius-sm);
-  font-size: 12.5px;
-  color: var(--sl-text-body);
-  line-height: 1.4;
+  gap: 6px 10px;
+  padding: 6px 10px;
+  background: #ffffff;
+  border: 1px dashed var(--sl-border-input, #cbd5e1);
+  border-radius: var(--sl-radius-sm, 4px);
+  font-size: 11.5px;
+  color: var(--sl-text-body, #334155);
 }
 .guide-step {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  background: var(--sl-primary);
+  background: var(--sl-primary, #2563eb);
   color: #ffffff;
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 700;
   flex-shrink: 0;
 }
 
-.binding-card {
-  background: var(--sl-bg-hover);
-  border: 1px solid var(--sl-border-base);
-  border-radius: var(--sl-radius-sm);
-  padding: 12px 14px;
-  margin-bottom: 10px;
+/* 变量声明行 (纯白底 · 无灰色底块) */
+.var-decl-row {
+  background: #ffffff;
+  border: 1px solid var(--sl-border-base, #e2e8f0);
+  border-radius: var(--sl-radius-sm, 4px);
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
 }
-.binding-card.unused { border-style: dashed; }
-.binding-card:last-of-type { margin-bottom: 12px; }
-.binding-card-head {
+.var-decl-row.unused {
+  border-style: dashed;
+}
+
+.var-decl-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 10px;
   flex-wrap: wrap;
 }
-.identifier-pill {
+
+.var-name-ident {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
 }
 .at-prefix {
   font-family: var(--sl-font-mono);
   font-weight: 700;
-  font-size: 13px;
-  color: var(--sl-primary);
+  font-size: 12px;
+  color: var(--sl-primary, #2563eb);
 }
-.var-name-input {
-  width: 120px;
+.var-name-input-clean {
+  width: 100px;
 }
-.var-name-input :deep(.el-input__wrapper) {
-  padding: 0 8px;
+.var-name-input-clean :deep(.el-input__wrapper) {
+  padding: 0 6px;
+  height: 24px;
   font-family: var(--sl-font-mono);
   font-weight: 600;
+  font-size: 11.5px;
 }
-.identifier-type-desc { font-size: 12px; color: var(--sl-text-secondary); }
-.unused-hint { font-size: 11px; color: var(--sl-text-disabled); }
+.identifier-type-desc {
+  font-size: 11px;
+  color: var(--sl-text-secondary, #64748b);
+  margin-left: 4px;
+}
+.unused-hint {
+  font-size: 10.5px;
+  color: var(--sl-text-disabled, #94a3b8);
+}
+.used-hint {
+  font-size: 10.5px;
+  color: var(--sl-success, #16a34a);
+  font-weight: 600;
+}
+
 .binding-head-actions {
   display: flex;
   align-items: center;
   gap: 8px;
 }
 
+/* 观测变量自适应对齐布局 (Flex + 统一 field 结构，杜绝垂直偏移) */
+.var-grid-layout {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  width: 100%;
+}
+.var-grid-layout .field-source {
+  width: 130px;
+  flex-shrink: 0;
+}
+.var-grid-layout .field-grow {
+  flex: 1;
+  min-width: 120px;
+}
+.var-grid-layout .field-attr {
+  flex: 1.2;
+  min-width: 130px;
+}
+.var-grid-layout .field-type-view {
+  width: 70px;
+  flex-shrink: 0;
+}
+
+/* 固定值单行紧凑布局 (固定宽度，不无限向右拉伸) */
+.literal-row-flex {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  width: 100%;
+}
+.literal-row-flex .field-type {
+  width: 130px;
+  flex-shrink: 0;
+}
+.literal-row-flex .field-value {
+  width: 180px;
+  flex-shrink: 0;
+}
+
 .field {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
 }
 .field-label {
-  font-size: 12px;
-  color: var(--sl-text-secondary);
-  line-height: 16px;
+  font-size: 11px;
+  color: var(--sl-text-secondary, #64748b);
+  line-height: 14px;
 }
 .field :deep(.el-select),
 .field :deep(.el-input),
 .field :deep(.el-input-number) {
   width: 100%;
 }
-.field-type { width: 140px; flex-shrink: 0; }
-.field-value { width: 200px; }
-.field-source { min-width: 200px; flex: 1.1; }
-.field-grow { flex: 1; min-width: 160px; }
-.field-attr { width: 220px; flex: 0 0 220px; }
+.field :deep(.el-input__wrapper),
+.field :deep(.el-select__wrapper) {
+  height: 28px;
+  font-size: 11.5px;
+}
 
-.binding-literal-row,
-.obs-row {
+/* 数据类型纯文本展示 (高度严格 28px 与输入框水平绝对对齐，与上方标题严格左对齐) */
+.data-type-cell {
+  height: 28px;
   display: flex;
-  align-items: flex-end;
-  gap: 10px;
-  flex-wrap: wrap;
-}
-.obs-row + .obs-row { margin-top: 10px; }
-
-.resolved-type-value {
-  height: 24px;
-  display: inline-flex;
   align-items: center;
-  padding: 0 10px;
-  border: 1px solid var(--sl-border-base);
-  border-radius: var(--sl-radius-sm);
-  background: #ffffff;
-  color: var(--sl-text-heading);
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 24px;
-  white-space: nowrap;
+  justify-content: flex-start;
+  font-size: 11.5px;
+  font-family: var(--sl-font-mono);
+  font-weight: 600;
+  color: var(--sl-text-secondary, #64748b);
+  background: transparent;
+  border: none;
+  padding: 0 2px;
+  box-sizing: border-box;
 }
 
-.expression-toolbar {
-  border: 1px solid var(--sl-border-base);
-  border-bottom: none;
-  border-radius: var(--sl-radius-sm) var(--sl-radius-sm) 0 0;
-  background: var(--sl-bg-hover);
-  padding: 8px 12px;
+/* 公式工作台 */
+.composer-plain-box {
+  border: 1px solid var(--sl-border-input, #cbd5e1);
+  border-radius: var(--sl-radius-sm, 4px);
+  background: #ffffff;
+  padding: 8px 10px;
   display: flex;
   flex-direction: column;
   gap: 6px;
 }
-.toolbar-row {
+
+.token-line {
   display: flex;
-  align-items: center;
-  gap: 6px;
   flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
 }
-.toolbar-label {
-  font-size: 11.5px;
-  color: var(--sl-text-secondary);
-  width: 54px;
+.token-line-lbl {
+  color: var(--sl-text-secondary, #64748b);
+  font-size: 10.5px;
+  width: 52px;
   flex-shrink: 0;
 }
-.tool-btn {
-  height: 24px;
-  padding: 0 8px;
-  border-radius: var(--sl-radius-sm);
-  border: 1px solid var(--sl-border-input);
-  background: #ffffff;
-  color: var(--sl-text-body);
-  font-size: 12px;
-  cursor: pointer;
-  transition: var(--sl-ease-smooth);
-}
-.tool-btn:hover {
-  border-color: var(--sl-primary);
-  color: var(--sl-primary);
-}
-.tool-btn.fn {
-  color: var(--sl-primary);
-  background: var(--sl-primary-light);
-  border-color: var(--sl-primary-border);
-  font-family: var(--sl-font-mono);
-}
-.tool-btn.op {
+
+/* 浅蓝底浅蓝字：公式模板、时序函数、已声明变量 */
+.btn-token-blue {
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 3px;
+  border: 1px solid var(--sl-primary-border, #bfdbfe);
+  background: var(--sl-primary-light, #eff6ff);
+  color: var(--sl-primary, #2563eb);
+  font-size: 11px;
   font-family: var(--sl-font-mono);
   font-weight: 600;
-  min-width: 28px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  transition: var(--sl-ease-smooth, all 0.18s ease);
 }
-.tool-btn.var {
-  border-color: var(--sl-primary-border);
-  background: var(--sl-primary-light);
-  color: var(--sl-primary);
-  font-family: var(--sl-font-mono);
+.btn-token-blue:hover {
+  background: #dbeafe;
+  border-color: #93c5fd;
+  color: #1d4ed8;
 }
-.picker-empty { font-size: 11.5px; color: var(--sl-text-disabled); }
-.fn-tooltip { display: grid; gap: 4px; max-width: 260px; }
-.fn-tooltip strong { font-size: 12px; }
-.fn-tooltip span { font-size: 11.5px; line-height: 1.5; }
-.fn-tooltip code { font-family: var(--sl-font-mono); font-size: 11px; color: #93c5fd; }
+.btn-token-blue.fn {
+  font-weight: 600;
+}
+.btn-token-blue.var {
+  font-weight: 700;
+}
 
-.formula-composer { display: flex; flex-direction: column; gap: 6px; }
+/* 白底黑字：操作符 */
+.btn-token-plain {
+  height: 22px;
+  padding: 0 6px;
+  border-radius: 3px;
+  border: 1px solid var(--sl-border-input, #cbd5e1);
+  background: #ffffff;
+  color: var(--sl-text-heading, #0f172a);
+  font-size: 11px;
+  font-family: var(--sl-font-mono);
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  transition: var(--sl-ease-smooth, all 0.18s ease);
+}
+.btn-token-plain:hover {
+  border-color: var(--sl-primary, #2563eb);
+  color: var(--sl-primary, #2563eb);
+  background: var(--sl-bg-hover, #f8fafc);
+}
+
+.picker-empty {
+  font-size: 11px;
+  color: var(--sl-text-disabled, #94a3b8);
+}
+.fn-tooltip {
+  display: grid;
+  gap: 4px;
+  max-width: 260px;
+}
+.fn-tooltip strong {
+  font-size: 12px;
+}
+.fn-tooltip span {
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+.fn-tooltip code {
+  font-family: var(--sl-font-mono);
+  font-size: 11px;
+  color: #93c5fd;
+}
+
+/* 高亮输入框 */
 .formula-input-shell {
   position: relative;
-  height: 36px;
-  border: 1px solid var(--sl-border-input);
-  border-radius: 0 0 var(--sl-radius-sm) var(--sl-radius-sm);
+  height: 32px;
+  border: 1px solid var(--sl-border-input, #cbd5e1);
+  border-radius: var(--sl-radius-sm, 4px);
   background: #ffffff;
 }
 .formula-input-highlight {
@@ -1278,109 +1513,161 @@ defineExpose({ validateAndBuild, loadRule })
   width: max-content;
   min-width: 100%;
   box-sizing: border-box;
-  padding: 7px 10px;
-  color: var(--sl-text-heading);
+  padding: 5px 8px;
+  color: var(--sl-text-heading, #0f172a);
   font-family: var(--sl-font-mono);
-  font-size: 13px;
+  font-size: 12px;
   line-height: 20px;
   white-space: pre;
   text-rendering: geometricPrecision;
 }
 .formula-input-token {
-  border-radius: 3px;
-  background: var(--sl-primary-light);
-  box-shadow: 0 0 0 2px var(--sl-primary-light);
-  color: var(--sl-primary);
-  font-weight: 600;
+  color: var(--sl-primary, #2563eb);
+  font-weight: 700;
 }
 .formula-input-unbound {
-  border-radius: 3px;
-  background: var(--sl-danger-light);
-  box-shadow: 0 0 0 2px var(--sl-danger-light);
-  color: var(--sl-danger);
-  font-weight: 600;
+  color: var(--sl-danger, #dc2626);
+  font-weight: 700;
+  text-decoration: underline;
 }
 .formula-plain-input {
   position: relative;
   z-index: 2;
   width: 100%;
-  height: 34px;
+  height: 30px;
   box-sizing: border-box;
-  padding: 7px 10px;
+  padding: 5px 8px;
   border: 0;
   background: transparent;
   color: transparent;
   -webkit-text-fill-color: transparent;
-  caret-color: var(--sl-text-heading);
+  caret-color: var(--sl-text-heading, #0f172a);
   font-family: var(--sl-font-mono);
-  font-size: 13px;
+  font-size: 12px;
   line-height: 20px;
   outline: 0;
 }
 .formula-plain-input::placeholder {
-  color: var(--sl-text-disabled);
-  -webkit-text-fill-color: var(--sl-text-disabled);
+  color: var(--sl-text-disabled, #94a3b8);
+  -webkit-text-fill-color: var(--sl-text-disabled, #94a3b8);
 }
 .formula-input-shell:focus-within {
-  border-color: var(--sl-primary);
-  box-shadow: 0 0 0 1px var(--sl-primary);
+  border-color: var(--sl-primary, #2563eb);
+  box-shadow: 0 0 0 1px var(--sl-primary, #2563eb);
 }
 
 .formula-meta-bar {
-  font-size: 12px;
-  color: var(--sl-text-secondary);
+  font-size: 11px;
+  color: var(--sl-text-secondary, #64748b);
   display: flex;
   justify-content: space-between;
   align-items: center;
+  padding-top: 2px;
 }
-.formula-meta-bar code { color: var(--sl-primary); font-family: var(--sl-font-mono); }
-.syntax-valid { color: var(--sl-success); font-size: 12px; }
-.syntax-error { color: var(--sl-danger); font-size: 12px; }
+.formula-meta-bar code {
+  color: var(--sl-primary, #2563eb);
+  font-family: var(--sl-font-mono);
+}
+.syntax-valid {
+  color: var(--sl-success, #16a34a);
+  font-size: 11px;
+  font-weight: 600;
+}
+.syntax-error {
+  color: var(--sl-danger, #dc2626);
+  font-size: 11px;
+  font-weight: 600;
+}
 
-.action-card {
-  background: var(--sl-bg-hover);
-  border: 1px solid var(--sl-border-base);
-  border-radius: var(--sl-radius-sm);
-  padding: 12px 14px;
-  margin-bottom: 10px;
+/* 判定窗口与处置动作 (纯白底 · 无灰色底块) */
+.window-duration-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #ffffff;
+  padding: 6px 10px;
+  border-radius: var(--sl-radius-sm, 4px);
+  border: 1px solid var(--sl-border-base, #e2e8f0);
 }
-.action-card:last-child { margin-bottom: 0; }
-.action-card-head {
+.window-hint {
+  font-size: 11px;
+  color: var(--sl-text-secondary, #64748b);
+}
+
+.action-decl-row {
+  background: #ffffff;
+  border: 1px solid var(--sl-border-base, #e2e8f0);
+  border-radius: var(--sl-radius-sm, 4px);
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 6px;
+}
+.action-decl-head {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 10px;
 }
+.action-idx-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--sl-text-heading, #0f172a);
+}
+
+/* 动作两行结构 */
 .action-device-block {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 6px;
 }
-.action-inputs-grid {
+.action-device-main-row {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 8px;
   align-items: center;
 }
-.action-row-targets,
-.action-row-capability {
-  grid-template-columns: minmax(180px, 1fr) minmax(240px, 1.4fr);
-}
-.action-row-targets :deep(.el-select),
-.action-row-capability :deep(.el-select) {
-  width: 100%;
-}
-.action-row-targets :deep(.el-select__placeholder) {
-  overflow: visible;
-  text-overflow: clip;
+.action-device-params-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 8px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--sl-border-base, #e2e8f0);
+  margin-top: 2px;
 }
 
-.task-mode-hint {
-  font-size: 12px;
-  color: var(--sl-text-secondary);
-  padding: 6px 8px;
-  background: #ffffff;
-  border: 1px solid var(--sl-border-base);
-  border-radius: var(--sl-radius-sm);
+/* 系统动作两列/三列平衡排布 (无偏移、对称对齐) */
+.action-system-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  width: 100%;
+}
+.action-system-row .field-sys {
+  width: 220px;
+  flex-shrink: 0;
+}
+.action-system-row .field-task {
+  width: 240px;
+  flex-shrink: 0;
+}
+.action-system-row .field-desc {
+  flex: 1;
+  min-width: 200px;
+}
+.action-hint-cell {
+  height: 28px;
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  font-size: 11.5px;
+  color: var(--sl-text-secondary, #64748b);
+  background: var(--sl-bg-hover, #f8fafc);
+  border: 1px solid var(--sl-border-base, #e2e8f0);
+  border-radius: var(--sl-radius-sm, 4px);
+  box-sizing: border-box;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 </style>

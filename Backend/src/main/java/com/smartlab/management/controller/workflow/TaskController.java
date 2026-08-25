@@ -43,8 +43,9 @@ public class TaskController {
     public ApiResponse<PageResult<Task>> page(@RequestParam(defaultValue = "1") long pageNo,
                                               @RequestParam(defaultValue = "20") long pageSize,
                                               @RequestParam(required = false) String keyword,
-                                              @RequestParam(required = false) String status) {
-        return ApiResponse.ok(taskService.page(pageNo, pageSize, keyword, status));
+                                              @RequestParam(required = false) String status,
+                                              @RequestParam(required = false) Long flowModelId) {
+        return ApiResponse.ok(taskService.page(pageNo, pageSize, keyword, status, flowModelId));
     }
 
     @GetMapping("/summary")

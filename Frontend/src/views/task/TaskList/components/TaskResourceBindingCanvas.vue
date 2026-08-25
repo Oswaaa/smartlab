@@ -1,19 +1,5 @@
 <template>
   <section class="resource-binding-panel">
-    <header class="binding-summary">
-      <div>
-        <strong>绑定进度</strong>
-        <span>在流程图中选择设备节点并绑定实际设备</span>
-      </div>
-      <div class="summary-actions">
-        <div class="summary-counts">
-          <el-tag type="success" effect="plain">已绑定 {{ boundCount }}</el-tag>
-          <el-tag :type="unboundCount ? 'warning' : 'info'" effect="plain">待绑定 {{ unboundCount }}</el-tag>
-        </div>
-        <el-button v-if="unboundCount" class="btn-aliyun" size="small" @click="locateNextUnbound">定位待绑定节点</el-button>
-      </div>
-    </header>
-
     <el-alert v-if="view.errors.length" type="error" :closable="false" title="流程图与设备绑定要求不一致">
       <template #default><div v-for="error in view.errors" :key="error">{{ error }}</div></template>
     </el-alert>
@@ -30,38 +16,37 @@
           >{{ group.flowName }}</button>
         </nav>
 
-        <div v-if="currentGroup" class="graph-stage">
-          <VueFlow
+        <div v-if="currentGroup && canvasReady" class="graph-stage">
+          <WorkflowStageGraph
             :key="currentGroup.groupKey"
-            :nodes="flowNodes"
-            :edges="flowEdges"
-            :nodes-draggable="false"
-            :nodes-connectable="false"
-            :elements-selectable="true"
-            fit-view-on-init
+            :nodes="currentGroup.nodes"
+            :interface-connections="currentGroup.interfaceConnections"
+            :port-connections="currentGroup.portConnections"
+            :selected-node-name="selectedNodeName"
             :min-zoom="0.45"
             :max-zoom="1.35"
+            :overlay-for="bindingOverlay"
+            :capabilities-for="capabilitiesFor"
+            :issues-for="issuesFor"
+            :legend-items="legendItems"
             @node-click="handleNodeClick"
-          >
-            <Background pattern-color="#dfe5ec" :gap="18" />
-            <Controls :show-interactive="false" />
-            <template #node-binding="{ data }">
-              <TaskBindingWorkflowNode :data="data" />
-            </template>
-          </VueFlow>
-          <div class="graph-legend">
-            <span><i class="device"></i>设备节点可绑定</span>
-            <span><i class="subflow"></i>点击进入子流程</span>
-            <span><i class="logic"></i>功能节点仅展示</span>
-          </div>
+          />
         </div>
+        <div v-else-if="currentGroup" class="graph-empty">正在加载流程图</div>
         <div v-else class="graph-empty">当前流程没有可显示的节点</div>
       </section>
 
       <aside class="binding-editor">
+        <div class="binding-progress">
+          <span>绑定进度　<b>已绑定 {{ boundCount }}</b> · 待绑定 {{ unboundCount }}</span>
+          <button v-if="unboundCount" class="btn-link" type="button" @click="locateNextUnbound">定位待绑定</button>
+        </div>
         <template v-if="selectedRequirement">
           <header class="editor-header">
-            <div><strong>{{ selectedRequirement.nodeName }}</strong><span>{{ selectedRequirement.occurrencePath }}</span></div>
+            <div>
+              <strong>{{ selectedRequirement.nodeName }}</strong>
+              <span>{{ selectedRequirement.occurrencePath }}</span>
+            </div>
             <el-tag :type="modelValue[selectedRequirement.slotId] ? 'success' : 'warning'" effect="plain">
               {{ modelValue[selectedRequirement.slotId] ? '已绑定' : '待绑定' }}
             </el-tag>
@@ -69,11 +54,29 @@
 
           <dl class="binding-details">
             <div><dt>设备模型</dt><dd>{{ modelName(selectedRequirement.deviceModelId) }}</dd></div>
-            <div><dt>设备能力</dt><dd>{{ selectedRequirement.capabilityName || '未指定' }}</dd></div>
+            <div><dt>设备能力</dt><dd>{{ capabilityLabel(selectedRequirement) }}</dd></div>
           </dl>
 
+          <div v-if="selectedParameters.length" class="parameter-field">
+            <label>能力参数</label>
+            <div v-for="parameter in selectedParameters" :key="parameter.name" class="parameter-row">
+              <div class="parameter-label">
+                <strong>{{ parameter.displayName || parameter.name }}</strong>
+                <span>{{ parameter.hole ? '创建任务时填写' : '流程已写死' }}</span>
+              </div>
+              <WorkflowTypedValueInput
+                :model-value="parameterDisplayValue(parameter)"
+                :disabled="!parameter.hole"
+                :nullable="parameter.hole"
+                :data-type="parameter.dataType || 'STRING'"
+                :options="parameter.allowedValues || parameter.enumValues || parameter.options || []"
+                @update:model-value="setParameter(parameter.name, $event)"
+              />
+            </div>
+          </div>
+
           <div class="instance-field">
-            <label>执行设备</label>
+            <label>绑定设备</label>
             <el-select
               :model-value="modelValue[selectedRequirement.slotId]"
               filterable
@@ -92,19 +95,16 @@
               </el-option>
             </el-select>
             <small v-if="!selectedInstances.length" class="field-warning">没有兼容且可用的设备实例</small>
+            <p v-if="modelValue[selectedRequirement.slotId] && sameModelUnboundCount" class="sync-hint">
+              还有 {{ sameModelUnboundCount }} 个使用同一设备模型的节点尚未选择实例，可以把当前这台设备一并填入。
+              <button class="btn-link" type="button" @click="applyToSameModel">同步到其余节点</button>
+            </p>
           </div>
-
-          <el-button
-            v-if="modelValue[selectedRequirement.slotId] && sameModelUnboundCount"
-            class="btn-aliyun"
-            plain
-            @click="applyToSameModel"
-          >应用到其他同模型节点</el-button>
         </template>
 
         <div v-else class="editor-empty">
-          <span>选择设备节点</span>
-          <p>点击流程图中的设备能力节点，在此选择实际执行设备。</p>
+          <span>选择流程图中的设备节点</span>
+          <p>在此绑定实例并填写能力参数。</p>
         </div>
       </aside>
     </div>
@@ -113,14 +113,9 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { Background } from '@vue-flow/background'
-import { Controls } from '@vue-flow/controls'
-import { VueFlow } from '@vue-flow/core'
-import '@vue-flow/core/dist/style.css'
-import '@vue-flow/core/dist/theme-default.css'
-import '@vue-flow/controls/dist/style.css'
-import { buildBindingWorkflowView, compatibleInstances } from '../../../../utils/taskResourceBindings.js'
-import TaskBindingWorkflowNode from './TaskBindingWorkflowNode.vue'
+import { buildBindingWorkflowView, compatibleInstances, presentCapabilityDisplayName } from '../../../../utils/taskResourceBindings.js'
+import WorkflowStageGraph from '../../components/WorkflowStageGraph.vue'
+import WorkflowTypedValueInput from '../../WorkflowDesigner/components/inspector/WorkflowTypedValueInput.vue'
 
 type Item = Record<string, any>
 const props = withDefaults(defineProps<{
@@ -128,23 +123,39 @@ const props = withDefaults(defineProps<{
   groups?: Item[]
   errors?: string[]
   modelValue: Record<string, number | null>
+  parameterBindings?: Record<string, Record<string, unknown>>
   instances?: Item[]
   models?: Item[]
-}>(), { requirements: () => [], groups: () => [], errors: () => [], instances: () => [], models: () => [] })
+  canvasReady?: boolean
+}>(), { requirements: () => [], groups: () => [], errors: () => [], parameterBindings: () => ({}), instances: () => [], models: () => [], canvasReady: true })
 
-const emit = defineEmits<{ 'update:modelValue': [value: Record<string, number | null>] }>()
+const emit = defineEmits<{
+  'update:modelValue': [value: Record<string, number | null>]
+  'update:parameterBindings': [value: Record<string, Record<string, unknown>>]
+}>()
 const activeGroupKey = ref('root')
 const selectedSlotId = ref('')
 const view = computed(() => buildBindingWorkflowView({ groups: props.groups, errors: props.errors }, props.requirements))
 const groupsByKey = computed(() => new Map(view.value.groups.map(group => [group.groupKey, group])))
 const currentGroup = computed(() => groupsByKey.value.get(activeGroupKey.value) || view.value.groups[0] || null)
 const selectedRequirement = computed(() => props.requirements.find(requirement => String(requirement.slotId) === selectedSlotId.value) || null)
+const selectedNodeName = computed(() => {
+  const node = (currentGroup.value?.nodes || []).find((item: Item) => item.slotId != null && String(item.slotId) === selectedSlotId.value)
+  return node?.name || null
+})
+const selectedParameters = computed(() => selectedRequirement.value?.capabilityParameters || [])
 const boundCount = computed(() => props.requirements.filter(requirement => props.modelValue[requirement.slotId]).length)
 const unboundCount = computed(() => props.requirements.length - boundCount.value)
 const selectedInstances = computed(() => selectedRequirement.value ? compatibleInstances(selectedRequirement.value, props.instances, props.models) : [])
 const sameModelUnboundCount = computed(() => selectedRequirement.value == null ? 0 : props.requirements.filter(requirement =>
   Number(requirement.deviceModelId) === Number(selectedRequirement.value.deviceModelId) && !props.modelValue[requirement.slotId]
 ).length)
+const legendItems = [
+  { label: '执行流', className: 'workflow' },
+  { label: '数据流', className: 'data' },
+  { label: '设备节点可绑定', className: 'device' },
+  { label: '点击进入子流程', className: 'subflow' },
+]
 const groupTrail = computed(() => {
   const trail: Item[] = []
   let group = currentGroup.value
@@ -154,41 +165,33 @@ const groupTrail = computed(() => {
   }
   return trail
 })
-const flowNodes = computed(() => (currentGroup.value?.nodes || []).map((node: Item, index: number) => ({
-  id: nodeId(currentGroup.value.groupKey, node.name),
-  type: 'binding',
-  position: node.position || { x: 70 + (index % 3) * 300, y: 70 + Math.floor(index / 3) * 150 },
-  draggable: false,
-  selectable: true,
-  data: {
-    ...node,
-    selected: node.slotId != null && String(node.slotId) === selectedSlotId.value,
-    bound: node.slotId != null && Boolean(props.modelValue[node.slotId]),
-    boundInstanceName: node.slotId == null ? '' : instanceNameById(props.modelValue[node.slotId])
-  }
-})))
-const flowEdges = computed(() => (currentGroup.value?.interfaceConnections || []).map((connection: Item, index: number) => ({
-  id: `binding-edge:${currentGroup.value.groupKey}:${index}`,
-  source: nodeId(currentGroup.value.groupKey, connection.source?.nodeName),
-  target: nodeId(currentGroup.value.groupKey, connection.target?.nodeName),
-  type: 'smoothstep',
-  pathOptions: { offset: 26, borderRadius: 6 },
-  style: { stroke: '#7890ad', strokeWidth: 1.8 }
-})))
 
 watch(() => props.groups, groups => {
   if (!groups.some(group => group.groupKey === activeGroupKey.value)) activeGroupKey.value = groups[0]?.groupKey || 'root'
   if (!props.requirements.some(requirement => String(requirement.slotId) === selectedSlotId.value)) selectedSlotId.value = ''
 }, { immediate: true, deep: true })
 
-function nodeId(groupKey: string, nodeName: string) {
-  return `task-binding:${encodeURIComponent(groupKey)}:${encodeURIComponent(nodeName || '')}`
+function bindingOverlay(node: Item) {
+  if (node.nodeType !== 'DEV_NODE') return { mode: 'binding' }
+  return {
+    mode: 'binding',
+    bound: node.slotId != null && Boolean(props.modelValue[node.slotId]),
+    boundLabel: node.slotId == null ? '' : instanceNameById(props.modelValue[node.slotId]),
+  }
 }
 
-function handleNodeClick({ node }: { node: Item }) {
-  const data = node.data || {}
-  if (data.nodeType === 'DEV_NODE' && data.slotId && !data.bindingInvalid) selectedSlotId.value = String(data.slotId)
-  if (data.nodeType === 'SUBFLOW_NODE') enterChildFlow(data)
+function capabilitiesFor(node: Item) {
+  if (node?.nodeType !== 'DEV_NODE') return []
+  return props.models.find(model => Number(model.id ?? model.modelId) === Number(node.deviceModelId))?.capabilities || []
+}
+
+function issuesFor(node: Item) {
+  return node.bindingInvalid ? [{ message: '流程图与设备绑定要求不一致' }] : []
+}
+
+function handleNodeClick(node: Item) {
+  if (node.nodeType === 'DEV_NODE' && node.slotId && !node.bindingInvalid) selectedSlotId.value = String(node.slotId)
+  if (node.nodeType === 'SUBFLOW_NODE') enterChildFlow(node)
 }
 
 function enterChildFlow(node: Item) {
@@ -215,6 +218,11 @@ function modelName(id: unknown) {
   return props.models.find(model => Number(model.id ?? model.modelId) === Number(id))?.modelName || `设备模型 #${id}`
 }
 
+function capabilityLabel(requirement: Item) {
+  const node = (currentGroup.value?.nodes || []).find((item: Item) => String(item.slotId) === String(requirement.slotId))
+  return presentCapabilityDisplayName(requirement, props.models, node)
+}
+
 function instanceName(instance: Item) {
   return instance.instanceName || instance.deviceName || `设备实例 #${instance.id}`
 }
@@ -234,6 +242,23 @@ function setBinding(value: number | null) {
   emit('update:modelValue', { ...props.modelValue, [selectedRequirement.value.slotId]: value == null ? null : Number(value) })
 }
 
+function parameterDisplayValue(parameter: Item) {
+  if (!parameter.hole) return parameter.modelValue
+  return props.parameterBindings[selectedRequirement.value?.slotId]?.[parameter.name]
+}
+
+function setParameter(name: string, value: unknown) {
+  if (!selectedRequirement.value) return
+  const slotId = selectedRequirement.value.slotId
+  emit('update:parameterBindings', {
+    ...props.parameterBindings,
+    [slotId]: {
+      ...(props.parameterBindings[slotId] || {}),
+      [name]: value
+    }
+  })
+}
+
 function applyToSameModel() {
   if (!selectedRequirement.value) return
   const instanceId = props.modelValue[selectedRequirement.value.slotId]
@@ -247,5 +272,231 @@ function applyToSameModel() {
 </script>
 
 <style scoped>
-.resource-binding-panel{overflow:hidden;border:1px solid #dfe4ea;border-radius:6px;background:#fff}.binding-summary{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:58px;padding:10px 14px;border-bottom:1px solid #e5e9ef;background:#fafbfc;box-sizing:border-box}.binding-summary>div:first-child{display:grid;gap:3px}.binding-summary strong{color:#1f2329;font-size:13px}.binding-summary span{color:#7b8494;font-size:10px}.summary-actions,.summary-counts{display:flex;align-items:center;gap:7px}.resource-binding-panel>.el-alert{margin:12px;width:auto}.binding-workspace{display:grid;grid-template-columns:minmax(0,1fr) 286px;min-height:500px}.graph-panel{min-width:0;border-right:1px solid #e5e9ef;background:#f7f9fc}.flow-breadcrumb{height:42px;display:flex;align-items:center;gap:0;padding:0 12px;border-bottom:1px solid #e5e9ef;background:#fff}.flow-breadcrumb button{position:relative;padding:0 20px 0 6px;border:0;background:transparent;color:#687487;font-size:11px;cursor:pointer}.flow-breadcrumb button::after{content:'›';position:absolute;right:7px;color:#a0a8b4}.flow-breadcrumb button:last-child::after{display:none}.flow-breadcrumb button.current{color:#1f2937;font-weight:600;cursor:default}.graph-stage{position:relative;height:458px}.graph-stage :deep(.vue-flow){height:100%}.graph-stage :deep(.vue-flow__pane){cursor:default}.graph-stage :deep(.vue-flow__controls){border:1px solid #d8dee7;border-radius:4px;box-shadow:0 2px 7px rgba(31,45,61,.08)}.graph-stage :deep(.vue-flow__edge-path){stroke:#7890ad;stroke-width:1.8}.graph-stage :deep(.vue-flow__edge.selected .vue-flow__edge-path){stroke:#1677ff;stroke-width:2.2}.graph-legend{position:absolute;right:10px;bottom:10px;z-index:4;display:flex;align-items:center;gap:11px;padding:6px 8px;border:1px solid #dfe4ea;border-radius:4px;background:rgba(255,255,255,.94);color:#7c8796;font-size:9px}.graph-legend span{display:flex;align-items:center;gap:4px}.graph-legend i{width:7px;height:7px;border-radius:2px;background:#aeb7c4}.graph-legend i.device{background:#1677ff}.graph-legend i.subflow{background:#7053b3}.graph-empty{height:458px;display:grid;place-items:center;color:#8a94a3;font-size:11px}.binding-editor{padding:15px;background:#fff}.editor-header{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding-bottom:13px;border-bottom:1px solid #edf0f3}.editor-header>div{display:grid;gap:4px;min-width:0}.editor-header strong{overflow:hidden;color:#1f2937;font-size:13px;text-overflow:ellipsis;white-space:nowrap}.editor-header span{color:#8a94a3;font-size:9px;line-height:1.5}.binding-details{display:grid;margin:0;border-bottom:1px solid #edf0f3}.binding-details>div{display:grid;grid-template-columns:66px 1fr;gap:9px;padding:10px 0}.binding-details dt,.binding-details dd{margin:0;font-size:10px}.binding-details dt{color:#8a94a3}.binding-details dd{color:#354052}.instance-field{display:grid;gap:7px;padding:14px 0}.instance-field label{color:#4f5d70;font-size:10px;font-weight:600}.instance-field :deep(.el-select){width:100%}.instance-status{float:right;margin-left:16px;color:#8a94a3}.field-warning{color:#d97706;font-size:9px}.binding-editor>.el-button{width:100%;margin-top:4px}.editor-empty{height:100%;display:grid;align-content:center;justify-items:center;padding:24px;text-align:center;box-sizing:border-box}.editor-empty span{color:#4d596a;font-size:12px;font-weight:600}.editor-empty p{max-width:210px;margin:7px 0 0;color:#8a94a3;font-size:10px;line-height:1.6}@media(max-width:1050px){.binding-workspace{grid-template-columns:1fr}.graph-panel{border-right:0;border-bottom:1px solid #e5e9ef}.binding-editor{min-height:190px}.editor-empty{min-height:150px}}@media(max-width:760px){.binding-summary{align-items:flex-start;flex-direction:column}.summary-actions{width:100%;justify-content:space-between}.graph-stage,.graph-empty{height:390px}.graph-legend{display:none}}
+.resource-binding-panel {
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.resource-binding-panel > .el-alert {
+  margin: 8px 14px;
+  width: auto;
+}
+
+.binding-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  min-height: 480px;
+}
+
+.graph-panel {
+  min-width: 0;
+  border-right: 1px solid var(--sl-border-base, #e2e8f0);
+}
+
+.flow-breadcrumb {
+  height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+  background: #ffffff;
+}
+.flow-breadcrumb button {
+  position: relative;
+  padding: 0 18px 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--sl-text-secondary, #64748b);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.flow-breadcrumb button::after {
+  content: '›';
+  position: absolute;
+  right: 6px;
+  color: var(--sl-text-disabled, #94a3b8);
+}
+.flow-breadcrumb button:last-child::after {
+  display: none;
+}
+.flow-breadcrumb button.current {
+  color: var(--sl-text-heading, #0f172a);
+  font-weight: 600;
+  cursor: default;
+}
+
+.graph-stage {
+  position: relative;
+  height: 446px;
+}
+.graph-empty {
+  height: 446px;
+  display: grid;
+  place-items: center;
+  color: var(--sl-text-disabled, #94a3b8);
+  font-size: 11.5px;
+}
+
+.binding-editor {
+  padding: 12px 14px;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.binding-progress {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--sl-text-secondary, #64748b);
+}
+.binding-progress b {
+  color: var(--sl-text-heading, #0f172a);
+  font-weight: 650;
+}
+
+.editor-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+}
+.editor-header > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.editor-header strong {
+  overflow: hidden;
+  color: var(--sl-text-heading, #0f172a);
+  font-size: 12.5px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.editor-header span {
+  color: var(--sl-text-secondary, #64748b);
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.binding-details {
+  display: grid;
+  margin: 0;
+}
+.binding-details > div {
+  display: grid;
+  grid-template-columns: 64px 1fr;
+  gap: 8px;
+  padding: 3px 0;
+  font-size: 11.5px;
+}
+.binding-details dt {
+  color: var(--sl-text-secondary, #64748b);
+  margin: 0;
+}
+.binding-details dd {
+  color: var(--sl-text-heading, #0f172a);
+  font-weight: 500;
+  margin: 0;
+}
+
+.instance-field,
+.parameter-field {
+  display: grid;
+  gap: 6px;
+}
+.instance-field label,
+.parameter-field > label {
+  color: var(--sl-text-secondary, #64748b);
+  font-size: 11px;
+  font-weight: 600;
+}
+.instance-field :deep(.el-select) {
+  width: 100%;
+}
+.instance-status {
+  float: right;
+  margin-left: 12px;
+  color: var(--sl-text-secondary, #64748b);
+}
+.field-warning {
+  color: var(--sl-warning, #d97706);
+  font-size: 10px;
+}
+.sync-hint {
+  margin: 2px 0 0;
+  color: var(--sl-text-secondary, #64748b);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.parameter-row {
+  display: grid;
+  gap: 4px;
+}
+.parameter-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.parameter-label strong {
+  color: var(--sl-text-heading, #0f172a);
+  font-size: 11px;
+}
+.parameter-label span {
+  color: var(--sl-text-secondary, #64748b);
+  font-size: 9.5px;
+}
+
+.editor-empty {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 8px;
+  text-align: center;
+  box-sizing: border-box;
+}
+.editor-empty span {
+  color: var(--sl-text-heading, #0f172a);
+  font-size: 12px;
+  font-weight: 600;
+}
+.editor-empty p {
+  max-width: 220px;
+  margin: 4px 0 0;
+  color: var(--sl-text-secondary, #64748b);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+@media (max-width: 1050px) {
+  .binding-workspace {
+    grid-template-columns: 1fr;
+  }
+  .graph-panel {
+    border-right: 0;
+    border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+  }
+  .binding-editor {
+    min-height: 190px;
+  }
+  .editor-empty {
+    min-height: 150px;
+  }
+}
+
+@media (max-width: 760px) {
+  .graph-stage, .graph-empty {
+    height: 390px;
+  }
+}
 </style>

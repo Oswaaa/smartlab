@@ -1,5 +1,5 @@
 <template>
-  <section class="task-summary-strip" aria-label="任务状态概览">
+  <section class="task-summary-strip" :class="{ compact }" aria-label="任务状态概览">
     <button
       v-for="item in items"
       :key="item.status"
@@ -21,7 +21,9 @@
 import { computed } from 'vue'
 
 type Summary = { total: number, pending: number, running: number, succeeded: number, failed: number, terminated: number }
-const props = defineProps<{ summary: Summary, activeStatus: string }>()
+const props = withDefaults(defineProps<{ summary: Summary, activeStatus: string, compact?: boolean }>(), {
+  compact: false,
+})
 const emit = defineEmits<{ 'select-status': [status: string] }>()
 
 const items = computed(() => [
@@ -47,6 +49,20 @@ const items = computed(() => [
   box-sizing: border-box;
 }
 
+.task-summary-strip.compact {
+  height: auto;
+  min-height: 0;
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: baseline;
+  padding: 0;
+  gap: 14px;
+  border-bottom: none;
+  background: transparent;
+  overflow: hidden;
+}
+
 .task-summary-strip > button {
   min-width: 0;
   height: 100%;
@@ -59,6 +75,11 @@ const items = computed(() => [
   text-align: left;
   background: transparent;
   cursor: pointer;
+}
+
+.task-summary-strip.compact > button {
+  height: auto;
+  flex: 0 1 auto;
 }
 
 .task-summary-strip > button.active .m-val {
@@ -106,8 +127,11 @@ const items = computed(() => [
 .summary-dot.danger { background: var(--sl-danger, #dc2626); }
 
 @media (max-width: 900px) {
-  .task-summary-strip {
+  .task-summary-strip:not(.compact) {
     grid-template-columns: repeat(5, minmax(120px, 1fr));
+    overflow-x: auto;
+  }
+  .task-summary-strip.compact {
     overflow-x: auto;
   }
 }

@@ -75,4 +75,19 @@ class TaskControllerTest {
         org.junit.jupiter.api.Assertions.assertEquals("slot-a", captor.getValue().deviceBindings().get(0).slotId());
         org.junit.jupiter.api.Assertions.assertEquals(7L, captor.getValue().deviceBindings().get(0).deviceInstanceId());
     }
+
+    @Test
+    void pageForwardsFlowModelIdFilter() throws Exception {
+        TaskService service = mock(TaskService.class);
+        when(service.page(1L, 20L, null, null, 11L)).thenReturn(new com.smartlab.management.dto.common.PageResult<>(0, 1, 20, java.util.List.of()));
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new TaskController(service,
+                mock(WorkflowTaskControlService.class), mock(TaskExecutionViewService.class),
+                mock(TaskExecutionSseHub.class))).build();
+
+        mvc.perform(get("/api/task/page").param("flowModelId", "11"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+
+        verify(service).page(1L, 20L, null, null, 11L);
+    }
 }

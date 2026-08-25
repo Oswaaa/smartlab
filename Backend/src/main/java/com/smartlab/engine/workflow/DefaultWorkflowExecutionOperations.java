@@ -80,6 +80,11 @@ public class DefaultWorkflowExecutionOperations implements WorkflowExecutionOper
     }
 
     @Override
+    public JsonNode resolveCapabilityParameters(Task task, TaskStep step, FlowNode node) {
+        return taskResourceService.resolveCapabilityParameters(task, step, node);
+    }
+
+    @Override
     public String ensureMessageId(TaskStep step, long deviceInstanceId, String capabilityName) {
         String seed = "workflow:" + step.getTaskId() + ":" + step.getId() + ":"
                 + deviceInstanceId + ":" + capabilityName;

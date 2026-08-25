@@ -1,4 +1,5 @@
 const ISSUE_TITLES = {
+  TASK_NAME_MISSING: '任务名称未填写',
   TASK_BINDING_MISSING: '设备未全部绑定',
   TASK_BINDING_REQUIREMENTS_INVALID: '流程设备配置无效',
   TASK_BINDING_INVALID: '设备绑定无效',
@@ -9,6 +10,7 @@ const ISSUE_TITLES = {
 }
 
 const ISSUE_DETAILS = {
+  TASK_NAME_MISSING: '请先在基础配置中填写任务名称，再执行创建前检查',
   TASK_BINDING_MISSING: '请为所有设备节点选择可用的设备实例'
 }
 

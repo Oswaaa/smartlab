@@ -3,6 +3,7 @@
     <div class="sub-section-head">
       <span class="head-title">归档遥测数据集</span>
       <span class="head-desc">已为该设备实例创建的时序存储与采样数据表</span>
+      <router-link :to="datacenterRedirectUrl" class="datacenter-link">前往数据中心查看历史数据 ➔</router-link>
     </div>
     <div v-if="canCreate" class="dataset-create-toolbar">
       <div class="dataset-form-inline">
@@ -29,13 +30,16 @@
       <el-table-column prop="createTime" label="创建时间" min-width="160">
         <template #default="{ row }"><span class="mono">{{ row.createTime ? new Date(row.createTime).toLocaleString() : '-' }}</span></template>
       </el-table-column>
-      <el-table-column v-if="canDelete" label="操作" width="90" align="center" fixed="right">
+      <el-table-column label="操作" :width="canDelete ? 160 : 90" align="center" fixed="right">
         <template #default="{ row }">
-          <el-popconfirm title="确认注销该归档数据表？物理存储将被清空。" @confirm="deleteInstanceDataSet(row)">
-            <template #reference>
-              <button class="btn-link danger" type="button">删除</button>
-            </template>
-          </el-popconfirm>
+          <div class="row-actions">
+            <router-link class="btn-link" :to="datasetRedirectUrl(row)">查看数据表</router-link>
+            <el-popconfirm v-if="canDelete" title="确认注销该归档数据表？物理存储将被清空。" @confirm="deleteInstanceDataSet(row)">
+              <template #reference>
+                <button class="btn-link danger" type="button">删除</button>
+              </template>
+            </el-popconfirm>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -62,6 +66,19 @@ const loadingDataSets = ref(false)
 const dataTemplates = ref<any[]>([])
 const creatingDataSet = ref(false)
 const datasetCreateForm = ref({ templateId: '', dataDesc: '' })
+
+const datacenterRedirectUrl = computed(() => {
+  const id = props.instance?.instanceId
+  return id ? `/data-management?instanceId=${id}` : '/data-management'
+})
+
+function datasetRedirectUrl(row: any) {
+  const instanceId = props.instance?.instanceId
+  const datasetId = row?.id || row?.dataIndexId
+  if (datasetId && instanceId) return `/data-management?instanceId=${instanceId}&datasetId=${datasetId}`
+  if (instanceId) return `/data-management?instanceId=${instanceId}`
+  return '/data-management'
+}
 
 const availableDataTemplates = computed(() => {
   const modelId = props.instance.modelId
@@ -163,7 +180,16 @@ const deleteInstanceDataSet = async (row: any) => {
   gap: 10px;
 }
 .sub-section-head .head-title { font-size: 12.5px; font-weight: 700; color: var(--sl-text-heading); }
-.sub-section-head .head-desc { font-size: 11px; color: var(--sl-text-secondary); }
+.sub-section-head .head-desc { font-size: 11px; color: var(--sl-text-secondary); margin-right: auto; }
+.datacenter-link {
+  color: var(--sl-primary);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.datacenter-link:hover { text-decoration: underline; }
+.row-actions { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
 .dataset-create-toolbar {
   padding: 8px 12px;
   background: #ffffff;

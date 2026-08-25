@@ -22,15 +22,21 @@ test('task creation binds devices by clicking nodes in the workflow graph while 
 
   assert.match(drawer, /:requirements="requirements"/)
   assert.match(drawer, /:groups="groups"/)
-  assert.match(drawer, /设备实例绑定/)
-  assert.match(bindingPanel, /<VueFlow/)
-  assert.match(bindingPanel, /TaskBindingWorkflowNode/)
+  assert.match(drawer, /流程与设备绑定/)
+  assert.match(bindingPanel, /WorkflowStageGraph/)
   assert.match(bindingPanel, /@node-click="handleNodeClick"/)
-  assert.match(bindingPanel, /进入子流程|enterChildFlow/)
+  assert.match(bindingPanel, /enterChildFlow/)
   assert.match(bindingPanel, /modelValue\[selectedRequirement\.slotId\]/)
   assert.match(taskList, /:groups="selectedWorkflowGroups"/)
   assert.match(taskList, /buildBindingWorkflowView\(expanded, requirements\)\.errors/)
   assert.doesNotMatch(taskList, /bindRequirementsToExpandedWorkflow/)
+})
+
+test('create-task preflight labels the first run as check and later as recheck', () => {
+  const drawer = readSource('views/task/TaskList/components/TaskCreateDrawer.vue')
+  const panel = readSource('views/task/TaskList/components/TaskPreflightPanel.vue')
+  assert.match(panel, /result \? '重新检查' : '检查'/)
+  assert.match(drawer, /preflightResult \? '重新检查' : '检查'/)
 })
 
 test('changing device bindings preserves rules and marks only affected rules for review', () => {

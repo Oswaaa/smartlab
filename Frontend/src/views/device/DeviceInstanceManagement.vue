@@ -85,7 +85,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { Plus, Refresh, Search } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useAuthStore } from '../../stores/authStore'
@@ -99,6 +100,7 @@ import { normalizeInstance, normalizeModel } from './components/deviceInstance/n
 import type { AdapterOption, DeviceInstance, DeviceModel } from './components/deviceInstance/types'
 
 const authStore = useAuthStore()
+const route = useRoute()
 
 const models = ref<DeviceModel[]>([])
 const modelOptions = ref<DeviceModel[]>([])
@@ -245,6 +247,28 @@ const viewDetails = (instance: DeviceInstance) => {
   drawerVisible.value = true
 }
 
+async function openInstanceFromQuery() {
+  const instanceId = route.query.instanceId
+  if (instanceId == null || instanceId === '') return
+  instanceLifecycleFilter.value = ''
+  try {
+    const data = await api.listInstances()
+    const records = data?.success ? (data.data || []) : []
+    const raw = records.find((item: any) => String(item.instanceId || item.id) === String(instanceId))
+    if (!raw) {
+      ElMessage.warning('未找到对应设备实例')
+      return
+    }
+    const instance = normalizeInstance(raw)
+    selectedModelId.value = String(instance.modelId || '')
+    instancePageNo.value = 1
+    await loadInstances()
+    viewDetails(instance)
+  } catch (err: any) {
+    ElMessage.error(err.response?.data?.message || err.message || '打开设备实例失败')
+  }
+}
+
 const confirmRetireInstance = async (row: DeviceInstance) => {
   try {
     await ElMessageBox.confirm(
@@ -264,9 +288,14 @@ const confirmRetireInstance = async (row: DeviceInstance) => {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   loadProtocolMetadata().catch(() => {})
-  loadData()
+  await loadData()
+  await openInstanceFromQuery()
+})
+
+watch(() => route.query.instanceId, () => {
+  openInstanceFromQuery()
 })
 
 onUnmounted(() => {

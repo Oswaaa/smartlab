@@ -26,7 +26,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from 'vue'
+import { computed, inject, onBeforeUnmount, ref } from 'vue'
 import { BaseEdge, EdgeLabelRenderer, useVueFlow } from '@vue-flow/core'
 import { workflowOrthogonalPath, workflowOrthogonalPoints } from '../../../../utils/workflowCanvas.js'
 
@@ -59,7 +59,8 @@ const props = withDefaults(defineProps<{
   hideTooltips: false,
 })
 
-const flow = useVueFlow()
+const flowId = inject<string | null>('smartlabWorkflowFlowId', null)
+const flow = flowId ? useVueFlow({ id: flowId }) : useVueFlow()
 const hovered = ref(false)
 const tooltipArmed = ref(false)
 let tooltipTimer: ReturnType<typeof setTimeout> | null = null
@@ -97,6 +98,7 @@ const edgePath = computed(() => workflowOrthogonalPath(routeParams.value))
 const tooltipText = computed(() => String(props.data?.tooltip || ''))
 const tooltipVisible = computed(() => tooltipArmed.value && !props.hideTooltips && Boolean(tooltipText.value))
 const connectionKind = computed(() => String(props.data?.connectionKind || 'INTERFACE'))
+const used = computed(() => Boolean(props.data?.used))
 
 const labelStyle = computed(() => {
   const points = workflowOrthogonalPoints(routeParams.value)
@@ -115,11 +117,15 @@ const pathStyle = computed(() => {
   const style = { ...(props.style || {}) }
   const active = props.selected || hovered.value
   const isData = connectionKind.value === 'PORT'
+  let stroke = '#7c93b8'
+  if (isData) stroke = active ? '#7a5fc0' : '#9a8ab5'
+  else if (used.value) stroke = active ? '#3d9c1f' : '#52c41a'
+  else if (active) stroke = '#3b6fd4'
   return {
     ...style,
     fill: 'none',
-    stroke: isData ? (active ? '#7a5fc0' : '#9a8ab5') : (active ? '#3b6fd4' : '#7c93b8'),
-    strokeWidth: active ? 2.2 : (style.strokeWidth || 1.8),
+    stroke,
+    strokeWidth: used.value && !isData ? (active ? 2.6 : 2.3) : (active ? 2.2 : (style.strokeWidth || 1.8)),
   }
 })
 

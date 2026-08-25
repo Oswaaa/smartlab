@@ -5,6 +5,7 @@ import {
   indexWorkflowIssues,
   toDesignerWorkflow,
   toWorkflowModelDocument,
+  workflowModelDisplayName,
   workflowModelName,
   workflowNodes,
 } from '../src/utils/workflowAuthoring.js'
@@ -81,4 +82,10 @@ test('workflow display helpers read unified flowModelName', () => {
   assert.equal(workflowModelName({ name: 'C' }), 'C')
   assert.equal(workflowNodes({ nodes: [{ name: 'n' }] })[0].name, 'n')
   assert.equal(workflowNodes({ nodesDef: [{ name: 'n2' }] })[0].name, 'n2')
+})
+
+test('workflow display name includes the version when it is known', () => {
+  assert.equal(workflowModelDisplayName({ name: '恒温反应', version: 3 }), '恒温反应 v3')
+  assert.equal(workflowModelDisplayName({ name: '恒温反应', version: 0 }), '恒温反应')
+  assert.equal(workflowModelDisplayName({ flowModelName: '流程' }), '流程')
 })

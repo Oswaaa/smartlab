@@ -5,9 +5,15 @@ import {
   buildRuntimeGraph,
   buildStepTree,
   businessExecutionEvents,
+  groupBusinessExecutionEvents,
   filterExecutableWorkflows,
+  formatSnapshotScalar,
   isExecutableWorkflow,
+  interfaceDefinitionForSnapshot,
+  isWorkflowTriggerFired,
   normalizeInterfaceSnapshot,
+  normalizePortSnapshot,
+  triggerStatesOf,
   visibleVariableEntries,
 } from '../src/utils/workflowExecution.js'
 
@@ -37,6 +43,9 @@ test('normalizes only canonical interface snapshot arrays', () => {
 
 test('hides engine trigger state from user variables', () => {
   assert.deepEqual(visibleVariableEntries({ temp: 20, _triggerStates: { a: true } }), [['temp', 20]])
+  assert.deepEqual(triggerStatesOf({ temp: 20, _triggerStates: { 'out::abc::0': true } }), { 'out::abc::0': true })
+  assert.equal(isWorkflowTriggerFired({ 'Interface_workflow_out::abc::0': true, 'Interface_workflow_out::def::0': false }, 'Interface_workflow_out', 0), true)
+  assert.equal(isWorkflowTriggerFired({ 'Interface_workflow_out::abc::0': true, 'Interface_workflow_out::def::0': false }, 'Interface_workflow_out', 1), false)
 })
 
 test('builds nested subflow steps inside the same task', () => {
@@ -109,6 +118,69 @@ test('runtime graph marks only connections whose target interface accepted a sig
   assert.equal(graph.edges[1].used, false)
 })
 
+test('runtime graph lays nodes out left to right like the designer canvas', () => {
+  const graph = buildRuntimeGraph({
+    nodesDef: [
+      { name: 'start1', functionType: 'START', interfaces: [{ name: 'Interface_workflow_out', direction: 'OUT', interfaceType: 'WORKFLOW' }] },
+      { name: 'device1', nodeType: 'DEV_NODE', interfaces: [
+        { name: 'Interface_workflow_in', direction: 'IN', interfaceType: 'WORKFLOW' },
+        { name: 'Interface_workflow_out', direction: 'OUT', interfaceType: 'WORKFLOW' },
+      ] },
+      { name: 'end1', functionType: 'END', interfaces: [{ name: 'Interface_workflow_in', direction: 'IN', interfaceType: 'WORKFLOW' }] },
+    ],
+    interfaceConnections: [
+      { connectionType: 'NODE_TO_NODE', source: { nodeName: 'start1', interfaceName: 'Interface_workflow_out' }, target: { nodeName: 'device1', interfaceName: 'Interface_workflow_in' } },
+      { connectionType: 'NODE_TO_NODE', source: { nodeName: 'device1', interfaceName: 'Interface_workflow_out' }, target: { nodeName: 'end1', interfaceName: 'Interface_workflow_in' } },
+    ],
+  }, [])
+  const byName = Object.fromEntries(graph.nodes.map(node => [node.name, node.position.x]))
+  assert.ok(byName.start1 < byName.device1)
+  assert.ok(byName.device1 < byName.end1)
+})
+
+test('runtime graph ignores device bindings when collecting node-to-node edges', () => {
+  const graph = buildRuntimeGraph({
+    nodesDef: [
+      { name: 'device1', nodeType: 'DEV_NODE' },
+      { name: 'device2', nodeType: 'DEV_NODE' },
+    ],
+    interfaceConnections: [
+      { connectionType: 'NODE_TO_DEVICE', source: { nodeName: 'device1', interfaceName: 'Interface_state_out' }, target: { deviceModelId: 20, interfaceName: 'Interface_workflow_in' } },
+      { connectionType: 'NODE_TO_NODE', source: { nodeName: 'device1', interfaceName: 'Interface_workflow_out' }, target: { nodeName: 'device2', interfaceName: 'Interface_workflow_in' } },
+    ],
+  }, [])
+  assert.deepEqual(graph.edges.map(edge => [edge.source, edge.target]), [['device1', 'device2']])
+})
+
+test('runtime graph marks port edges used when the target port has a value', () => {
+  const graph = buildRuntimeGraph({
+    nodesDef: [
+      { name: 'source', ports: [{ name: 'port1', direction: 'OUT' }] },
+      { name: 'target', ports: [{ name: 'port1', direction: 'IN' }] },
+    ],
+    portConnections: [
+      { source: { nodeName: 'source', portName: 'port1' }, target: { nodeName: 'target', portName: 'port1' } },
+    ],
+  }, [{
+    id: 8,
+    nodeName: 'target',
+    nodeStatus: 'RUNNING',
+    portInSnapshot: [{ portName: 'port1', value: 349.99 }],
+  }])
+  assert.equal(graph.edges[0].kind, 'PORT')
+  assert.equal(graph.edges[0].used, true)
+})
+
+test('normalizes port snapshots and scalar display', () => {
+  assert.deepEqual(normalizePortSnapshot([{ portName: 'port1', value: 349.99 }], 'OUT'), [
+    { direction: 'OUT', portName: 'port1', value: 349.99 },
+  ])
+  assert.equal(formatSnapshotScalar(null), '—')
+  assert.equal(formatSnapshotScalar(0), '0')
+  assert.equal(formatSnapshotScalar(false), 'false')
+  assert.throws(() => normalizePortSnapshot({ port1: 1 }, 'IN'), /端口快照/)
+})
+
 test('business events exclude engine polling and scheduler diagnostics', () => {
   const events = businessExecutionEvents([
     { id: 1, sourceType: 'TASK', logInfo: '节点开始执行: 4' },
@@ -124,4 +196,32 @@ test('runtime graph groups child steps under the parent subflow step', () => {
     { id: 11, nodeName: 'child', nodeStatus: 'RUNNING', parentStepId: 10, stepDepth: 1 },
   ])
   assert.equal(graph.nodes[0].children[0].id, 11)
+})
+
+test('matches snapshot rows to workflow interface definitions by name and direction', () => {
+  const node = {
+    interfaces: [
+      { name: 'high', direction: 'OUT', bindingTriggers: [{ action: { actionName: 'EMIT' } }] },
+      { name: 'state-in', direction: 'IN', bindingTriggers: [] },
+    ],
+  }
+  assert.equal(interfaceDefinitionForSnapshot(node, { interfaceName: 'high', direction: 'OUT' }).direction, 'OUT')
+  assert.equal(interfaceDefinitionForSnapshot(node, { interfaceName: 'state-in', direction: 'IN' }).name, 'state-in')
+  assert.equal(interfaceDefinitionForSnapshot(node, { interfaceName: 'missing', direction: 'IN' }), null)
+})
+
+test('business events are grouped by node name from log text or step id', () => {
+  const groups = groupBusinessExecutionEvents([
+    { id: 1, sourceType: 'NODE', logInfo: '节点 heater (#2) 生命周期 PENDING → RUNNING', logTime: '2026-01-01T00:00:00Z' },
+    { id: 2, sourceType: 'NODE', logInfo: '节点 heater (#2) 接口 out 发出信号 ACTIVE', logTime: '2026-01-01T00:00:01Z' },
+    { id: 3, sourceType: 'NODE', taskStepId: 12, logInfo: '节点已创建: cooler (#3)', logTime: '2026-01-01T00:00:02Z' },
+    { id: 4, sourceType: 'CONSTRAINT', logInfo: '触发超温保护', logTime: '2026-01-01T00:00:03Z' },
+    { id: 5, sourceType: 'SYSTEM', logInfo: '心跳', logTime: '2026-01-01T00:00:04Z' },
+  ], [{ id: 12, nodeName: 'cooler' }])
+  assert.deepEqual(groups.map(group => [group.label, group.events.length]), [
+    ['heater', 2],
+    ['cooler', 1],
+    ['任务约束', 1],
+  ])
+  assert.equal(businessExecutionEvents([{ sourceType: 'SYSTEM', logInfo: '心跳' }]).length, 0)
 })

@@ -1,115 +1,208 @@
 <template>
-  <section v-if="step" class="step-detail">
-    <div class="detail-head">
-      <div>
-        <strong>{{ step.nodeName || `节点 ${step.nodeIdRef ?? '-'}` }}</strong>
-        <span>层级 {{ step.stepDepth ?? 0 }}<template v-if="step.parentStepId != null"> · 父步骤 #{{ step.parentStepId }}</template></span>
-      </div>
-      <span :class="['status-indicator', statusTone(step.nodeStatus)]">
-        <span class="dot"></span>{{ nodeStatusLabel(step.nodeStatus) }}
-      </span>
-    </div>
-    <dl class="meta-grid">
-      <div><dt>开始时间</dt><dd class="mono">{{ formatLogDateTime(step.startTime) }}</dd></div>
-      <div><dt>结束时间</dt><dd class="mono">{{ formatLogDateTime(step.endTime) }}</dd></div>
-      <div><dt>耗时</dt><dd class="mono">{{ step.durationMs == null ? '-' : `${step.durationMs} ms` }}</dd></div>
-      <div><dt>步骤深度</dt><dd>{{ step.stepDepth ?? 0 }}</dd></div>
-    </dl>
-    <div class="detail-section">
-      <h4>接口快照</h4>
-      <InterfaceSnapshotPanel :input-snapshot="step.interfaceInSnapshot" :output-snapshot="step.interfaceOutSnapshot" />
-    </div>
-    <div class="detail-section">
-      <h4>变量空间</h4>
-      <div v-if="variables.length" class="variable-grid">
-        <div v-for="[name, value] in variables" :key="name">
-          <strong>{{ name }}</strong>
-          <WorkflowJsonValue :value="value" />
-        </div>
-      </div>
-      <div v-else class="empty-hint">暂无用户变量</div>
-    </div>
-    <div class="detail-section">
-      <h4>数据端口</h4>
-      <div class="port-grid">
-        <div><span>输入</span><WorkflowJsonValue :value="step.portInSnapshot || {}" /></div>
-        <div><span>输出</span><WorkflowJsonValue :value="step.portOutSnapshot || {}" /></div>
-      </div>
-    </div>
-  </section>
-  <el-empty v-else description="请选择一个已创建的执行步骤" :image-size="52" />
+  <div class="step-detail">
+    <section class="detail-card">
+      <header>
+        <strong>节点信息</strong>
+        <span>{{ node?.name || step?.nodeName || '未选择节点' }}</span>
+      </header>
+      <table class="detail-table">
+        <tbody>
+          <tr v-for="row in nodeInfoRows" :key="row.label">
+            <th>{{ row.label }}</th>
+            <td :class="{ mono: row.mono }">{{ row.value }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section class="detail-card">
+      <header>
+        <strong>接口快照</strong>
+        <span>{{ interfaceCount }} 个接口</span>
+      </header>
+      <p class="summary-hint">{{ conditionSummaryHint }}</p>
+      <InterfaceSnapshotPanel
+        v-if="step"
+        :input-snapshot="step.interfaceInSnapshot"
+        :output-snapshot="step.interfaceOutSnapshot"
+        :node="node"
+        :trigger-states="triggerStates"
+      />
+      <div v-else class="empty-hint">该节点尚未创建执行步骤，暂无接口快照</div>
+    </section>
+
+    <section class="detail-card">
+      <header>
+        <strong>变量空间</strong>
+        <span>{{ variables.length }} 项</span>
+      </header>
+      <table v-if="variables.length" class="detail-table">
+        <tbody>
+          <tr v-for="[name, value] in variables" :key="name">
+            <th>{{ name }}</th>
+            <td><RuntimeStructuredValue :value="value" /></td>
+          </tr>
+        </tbody>
+      </table>
+      <div v-else class="empty-hint">{{ step ? '暂无用户变量' : '该节点尚未创建执行步骤' }}</div>
+    </section>
+
+    <section class="detail-card">
+      <header>
+        <strong>数据端口</strong>
+        <span>{{ portCount }} 个端口</span>
+      </header>
+      <div v-if="portState.error" class="empty-hint">{{ portState.error }}</div>
+      <template v-else>
+        <h5 class="port-group-title">输入类</h5>
+        <table v-if="portState.inputs.length" class="detail-table">
+          <tbody>
+            <tr v-for="row in portState.inputs" :key="`in-${row.portName}`">
+              <th>{{ row.portName }}</th>
+              <td><RuntimeStructuredValue :value="row.value" /></td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-else class="empty-hint nested">暂无输入端口</div>
+        <h5 class="port-group-title">输出类</h5>
+        <table v-if="portState.outputs.length" class="detail-table">
+          <tbody>
+            <tr v-for="row in portState.outputs" :key="`out-${row.portName}`">
+              <th>{{ row.portName }}</th>
+              <td><RuntimeStructuredValue :value="row.value" /></td>
+            </tr>
+          </tbody>
+        </table>
+        <div v-else class="empty-hint nested">暂无输出端口</div>
+      </template>
+    </section>
+  </div>
 </template>
 <script setup lang="ts">
 import { computed } from 'vue'
-import WorkflowJsonValue from '../../components/WorkflowJsonValue.vue'
 import InterfaceSnapshotPanel from './InterfaceSnapshotPanel.vue'
+import RuntimeStructuredValue from './RuntimeStructuredValue.vue'
 import { formatLogDateTime } from '../../../../utils/formatLogTime.js'
-import { visibleVariableEntries } from '../../../../utils/workflowExecution.js'
+import { WORKFLOW_TRIGGER_CONDITION_SUMMARY_HINT } from '../../../../utils/workflowCanvas.js'
+import { normalizeInterfaceSnapshot, normalizePortSnapshot, triggerStatesOf, visibleVariableEntries } from '../../../../utils/workflowExecution.js'
 import { nodeStatusLabel } from '../taskExecutionPresentation.js'
 type Item = Record<string, any>
-const props = defineProps<{ step?: Item | null }>()
+const props = defineProps<{ step?: Item | null, node?: Item | null }>()
+const conditionSummaryHint = WORKFLOW_TRIGGER_CONDITION_SUMMARY_HINT
 const variables = computed(() => visibleVariableEntries(props.step?.variableSpace))
-function statusTone(status: string) {
-  const value = String(status || '').toLowerCase()
-  if (value === 'running') return 'running'
-  if (value === 'succeeded') return 'success'
-  if (value === 'failed') return 'danger'
-  if (value === 'terminating' || value === 'terminated') return 'warning'
-  return 'pending'
-}
+const triggerStates = computed(() => triggerStatesOf(props.step?.variableSpace))
+const interfaceCount = computed(() => {
+  if (!props.step) return 0
+  try {
+    return normalizeInterfaceSnapshot(props.step.interfaceInSnapshot, 'IN').length
+      + normalizeInterfaceSnapshot(props.step.interfaceOutSnapshot, 'OUT').length
+  } catch {
+    return 0
+  }
+})
+const portState = computed(() => {
+  if (!props.step) return { inputs: [], outputs: [], error: '' }
+  try {
+    return {
+      inputs: normalizePortSnapshot(props.step.portInSnapshot, 'IN'),
+      outputs: normalizePortSnapshot(props.step.portOutSnapshot, 'OUT'),
+      error: '',
+    }
+  } catch (error: any) {
+    return { inputs: [], outputs: [], error: error.message || '端口快照格式错误' }
+  }
+})
+const portCount = computed(() => portState.value.inputs.length + portState.value.outputs.length)
+const nodeInfoRows = computed(() => {
+  const node = props.node || {}
+  const step = props.step
+  const typeLabel = node.nodeType === 'DEV_NODE'
+    ? '设备能力节点'
+    : node.nodeType === 'SUBFLOW_NODE'
+      ? '子流程节点'
+      : node.functionType === 'START'
+        ? '开始节点'
+        : node.functionType === 'END'
+          ? '结束节点'
+          : node.functionType === 'BRANCH'
+            ? '分支节点'
+            : '功能节点'
+  return [
+    { label: '节点名称', value: node.name || step?.nodeName || '-' },
+    { label: '节点类型', value: typeLabel },
+    { label: '运行状态', value: step ? nodeStatusLabel(step.nodeStatus) : '等待创建' },
+    { label: '开始时间', value: step ? formatLogDateTime(step.startTime) : '-', mono: true },
+    { label: '结束时间', value: step ? formatLogDateTime(step.endTime) : '-', mono: true },
+    { label: '耗时', value: step?.durationMs == null ? '-' : `${step.durationMs} ms`, mono: true },
+    { label: '步骤深度', value: String(step?.stepDepth ?? node.depth ?? 0) },
+    { label: '步骤编号', value: step?.id == null ? '尚未创建' : `#${step.id}`, mono: true },
+  ]
+})
 </script>
 <style scoped>
-.step-detail { display: grid; gap: 12px; }
-.detail-head {
+.step-detail {
+  overflow: hidden;
+  border: 1px solid var(--sl-border-base, #e2e8f0);
+  background: #fff;
+}
+.detail-card {
+  overflow: hidden;
+  border: 0;
+  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+  background: #fff;
+}
+.detail-card:nth-child(even) { background: #f8fafc; }
+.detail-card:last-child { border-bottom: 0; }
+.detail-card > header {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
   gap: 8px;
-  padding: 8px 0 0;
-}
-.detail-head > div { display: grid; gap: 2px; min-width: 0; }
-.detail-head strong { font-size: 13px; font-weight: 700; color: var(--sl-text-heading, #0f172a); }
-.detail-head > div span { color: var(--sl-text-secondary, #64748b); font-size: 11px; }
-.status-indicator { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; flex-shrink: 0; }
-.status-indicator .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--sl-text-disabled, #94a3b8); }
-.status-indicator.pending { color: var(--sl-text-secondary, #64748b); }
-.status-indicator.running { color: var(--sl-primary, #2563eb); }
-.status-indicator.running .dot { background: var(--sl-primary, #2563eb); box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.2); }
-.status-indicator.success { color: var(--sl-success, #16a34a); }
-.status-indicator.success .dot { background: var(--sl-success, #16a34a); }
-.status-indicator.danger { color: var(--sl-danger, #dc2626); }
-.status-indicator.danger .dot { background: var(--sl-danger, #dc2626); }
-.status-indicator.warning { color: var(--sl-warning, #d97706); }
-.status-indicator.warning .dot { background: var(--sl-warning, #d97706); }
-.meta-grid {
-  margin: 0;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  border: 1px solid var(--sl-border-base, #e2e8f0);
-  border-radius: var(--sl-radius-sm, 6px);
-  overflow: hidden;
-}
-.meta-grid > div {
-  display: grid;
-  gap: 2px;
-  padding: 8px 10px;
-  border-right: 1px solid var(--sl-border-base, #e2e8f0);
+  padding: 8px 12px;
   border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+  background: inherit;
 }
-.meta-grid > div:nth-child(2n) { border-right: 0; }
-.meta-grid dt { margin: 0; font-size: 11px; color: var(--sl-text-secondary, #64748b); }
-.meta-grid dd { margin: 0; font-size: 12px; color: var(--sl-text-heading, #0f172a); }
+.detail-card > header strong { color: var(--sl-text-heading, #0f172a); font-size: 12.5px; font-weight: 700; }
+.detail-card > header span { color: var(--sl-text-secondary, #64748b); font-size: 11px; }
+.summary-hint {
+  margin: 0;
+  padding: 8px 12px 0;
+  color: var(--sl-text-secondary, #64748b);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.detail-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.detail-table th,
+.detail-table td {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--sl-border-subtle, #f1f5f9);
+  text-align: left;
+  vertical-align: top;
+  font-size: 12px;
+}
+.detail-table tr:last-child th,
+.detail-table tr:last-child td { border-bottom: 0; }
+.detail-table th {
+  width: 108px;
+  color: var(--sl-text-secondary, #64748b);
+  font-weight: 600;
+}
+.detail-table td { color: var(--sl-text-heading, #0f172a); word-break: break-all; }
 .mono { font-family: var(--sl-font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace); }
-.detail-section { display: grid; gap: 8px; }
-.detail-section h4 { margin: 0; color: var(--sl-text-heading, #0f172a); font-size: 12px; font-weight: 600; }
-.variable-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-.variable-grid > div { display: grid; gap: 4px; }
-.variable-grid strong, .port-grid span { color: var(--sl-text-secondary, #64748b); font-size: 11px; }
-.port-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.port-grid > div { display: grid; gap: 4px; }
-.empty-hint { color: var(--sl-text-disabled, #94a3b8); font-size: 12px; }
-@media (max-width: 760px) {
-  .variable-grid, .port-grid, .meta-grid { grid-template-columns: 1fr; }
-  .meta-grid > div { border-right: 0; }
+.port-group-title {
+  margin: 0;
+  padding: 8px 12px 0;
+  color: var(--sl-text-secondary, #64748b);
+  font-size: 11px;
+  font-weight: 600;
 }
+.empty-hint {
+  padding: 12px;
+  color: var(--sl-text-disabled, #94a3b8);
+  font-size: 12px;
+}
+.empty-hint.nested { padding-top: 6px; }
 </style>

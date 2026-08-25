@@ -4,9 +4,13 @@ import {
   applyInheritedBinding,
   bindingKeyFromSegments,
   buildBindingWorkflowView,
+  buildDeviceBindings,
   buildTaskCreatePayload,
   expandWorkflowDefinition,
-  groupRequirementsByOccurrencePath
+  groupRequirementsByOccurrencePath,
+  isParameterHole,
+  presentCapabilityDisplayName,
+  missingHoleCount
 } from '../src/utils/taskResourceBindings.js'
 
 const definitions = {
@@ -127,4 +131,81 @@ test('reports incomplete device connections without exposing transport connectio
   const expanded = await expandWorkflowDefinition(8, async () => invalid)
 
   assert.deepEqual(expanded.errors, ['加热流程 / 加热节点的设备状态接口连接不完整或设备模型不一致'])
+})
+
+test('treats 0 and false as filled hole values and omits model-filled parameters from the create payload', () => {
+  const requirements = [{
+    slotId: '1:1',
+    capabilityParameters: [
+      { name: 'duration', hole: false, modelValue: 30 },
+      { name: 'target', hole: true },
+      { name: 'enabled', hole: true }
+    ]
+  }]
+  const form = {
+    taskName: '升温任务',
+    flowModelId: 1,
+    resourceBindings: { '1:1': 101 },
+    parameterBindings: { '1:1': { target: 0, enabled: false, duration: 99 } },
+    taskConstraints: []
+  }
+
+  assert.equal(isParameterHole(0), false)
+  assert.equal(isParameterHole(false), false)
+  assert.equal(isParameterHole(null), true)
+  assert.equal(missingHoleCount(requirements, { '1:1': { target: 0, enabled: false } }), 0)
+  assert.equal(missingHoleCount(requirements, { '1:1': { target: 0 } }), 1)
+  assert.deepEqual(buildDeviceBindings(requirements, form.resourceBindings, form.parameterBindings), [
+    { slotId: '1:1', deviceInstanceId: 101, capabilityParameters: { target: 0, enabled: false } }
+  ])
+  assert.deepEqual(buildTaskCreatePayload(form, requirements).deviceBindings[0].capabilityParameters, {
+    target: 0,
+    enabled: false
+  })
+})
+
+test('copies data port connections onto each flow group for the shared canvas', async () => {
+  const expanded = await expandWorkflowDefinition(8, async () => ({
+    name: '加热流程',
+    nodeIdRefs: [{ nodeIdRef: 3, nodeName: '加热节点' }],
+    nodesDef: [{
+      name: '加热节点',
+      nodeType: 'DEV_NODE',
+      deviceModelId: 20,
+      ports: [{ name: 'temp', direction: 'OUT' }]
+    }],
+    interfaceConnections: [
+      { connectionType: 'NODE_TO_DEVICE', source: { nodeName: '加热节点', interfaceName: 'Interface_state_out' }, target: { deviceModelId: 20, interfaceName: 'Interface_workflow_in' } },
+      { connectionType: 'DEVICE_TO_NODE', source: { deviceModelId: 20, interfaceName: 'Interface_state_out' }, target: { nodeName: '加热节点', interfaceName: 'Interface_state_in' } }
+    ],
+    portConnections: [{ source: { nodeName: '加热节点', portName: 'temp' }, target: { nodeName: '加热节点', portName: 'temp' } }]
+  }))
+  assert.equal(expanded.groups[0].portConnections.length, 1)
+  assert.equal(expanded.groups[0].interfaceConnections.length, 0)
+})
+
+test('keeps node-to-node connections even when connectionType is omitted', async () => {
+  const expanded = await expandWorkflowDefinition(9, async () => ({
+    name: '连线流程',
+    nodesDef: [
+      { name: 'start1', nodeType: 'FUNC_NODE', functionType: 'START' },
+      { name: 'end1', nodeType: 'FUNC_NODE', functionType: 'END' },
+    ],
+    interfaceConnections: [
+      { source: { nodeName: 'start1', interfaceName: 'Interface_workflow_out' }, target: { nodeName: 'end1', interfaceName: 'Interface_workflow_in' } },
+      { connectionType: 'NODE_TO_DEVICE', source: { nodeName: 'start1' }, target: { deviceModelId: 20, interfaceName: 'in' } },
+    ],
+  }))
+  assert.equal(expanded.groups[0].interfaceConnections.length, 1)
+  assert.equal(expanded.groups[0].interfaceConnections[0].source.nodeName, 'start1')
+  assert.equal(expanded.groups[0].interfaceConnections[0].connectionType, 'NODE_TO_NODE')
+})
+
+test('presents capability displayName from the requirement, then the device model', () => {
+  assert.equal(presentCapabilityDisplayName({ capabilityName: 'HEAT', capabilityDisplayName: '恒温加热' }), '恒温加热')
+  assert.equal(presentCapabilityDisplayName(
+    { capabilityName: 'HEAT', deviceModelId: 7 },
+    [{ id: 7, capabilities: [{ capabilityName: 'HEAT', displayName: '恒温加热' }] }]
+  ), '恒温加热')
+  assert.equal(presentCapabilityDisplayName({ capabilityName: 'HEAT' }), 'HEAT')
 })

@@ -19,6 +19,7 @@ import { buildRuntimeGraph, runtimeNodeToNodeConnections } from '../../../../uti
 import {
   nodeNameFromEditorId,
   parseHandleId,
+  workflowInterfaceEdgeTooltip,
   workflowPortEdgeTooltip,
 } from '../../../../utils/workflowCanvas.js'
 import WorkflowStageGraph from '../../components/WorkflowStageGraph.vue'
@@ -28,14 +29,15 @@ type Item = Record<string, any>
 const props = withDefaults(defineProps<{
   workflow?: Item | null
   steps?: Item[]
+  parentStepId?: number | string | null
   selectedStepId?: number | null
   activeNodeName?: string | null
   models?: Item[]
   bindings?: Item[]
-}>(), { workflow: null, steps: () => [], selectedStepId: null, activeNodeName: null, models: () => [], bindings: () => [] })
+}>(), { workflow: null, steps: () => [], parentStepId: null, selectedStepId: null, activeNodeName: null, models: () => [], bindings: () => [] })
 const emit = defineEmits<{ 'select-step': [stepId: number | null, node: Item] }>()
 
-const graph = computed(() => buildRuntimeGraph(props.workflow || {}, props.steps))
+const graph = computed(() => buildRuntimeGraph(props.workflow || {}, props.steps, { parentStepId: props.parentStepId }))
 const interfaceConnections = computed(() => runtimeNodeToNodeConnections(props.workflow?.interfaceConnections))
 const resolvedSelectedName = computed(() => {
   const byStep = graph.value.nodes.find((node: Item) => props.selectedStepId != null && node.stepId === props.selectedStepId)
@@ -45,6 +47,7 @@ const legendItems = [
   { label: '执行流', className: 'workflow' },
   { label: '数据流', className: 'data' },
   { label: '已走过', className: 'used' },
+  { label: '子流程可进入内部', className: 'subflow' },
   { label: nodeStatusLabel('WAITING'), className: 'status-waiting' },
   { label: nodeStatusLabel('RUNNING'), className: 'status-running' },
   { label: nodeStatusLabel('SUCCEEDED'), className: 'status-succeeded' },
@@ -84,33 +87,36 @@ function decorateRuntimeEdge(edge: Item, nodesByName: Map<string, Item>) {
   const sourceName = nodeNameFromEditorId(edge.source)
   const targetName = nodeNameFromEditorId(edge.target)
   const target = nodesByName.get(targetName)
+  const source = nodesByName.get(sourceName)
   let used = false
   let tooltip = edge.data?.tooltip
   let targetHandle
+  let sourceHandle
   try {
     targetHandle = parseHandleId(edge.targetHandle)
+    sourceHandle = parseHandleId(edge.sourceHandle)
   } catch {
     return edge
   }
+  const connection = {
+    source: { nodeName: sourceName, interfaceName: sourceHandle.kind === 'INTERFACE' ? sourceHandle.name : undefined, portName: sourceHandle.kind === 'PORT' ? sourceHandle.name : undefined },
+    target: { nodeName: targetName, interfaceName: targetHandle.kind === 'INTERFACE' ? targetHandle.name : undefined, portName: targetHandle.kind === 'PORT' ? targetHandle.name : undefined },
+  }
   if (targetHandle.kind === 'INTERFACE') {
     const snapshot = Array.isArray(target?.step?.interfaceInSnapshot) ? target.step.interfaceInSnapshot : []
+    const outSnapshot = Array.isArray(source?.step?.interfaceOutSnapshot) ? source.step.interfaceOutSnapshot : []
     const accepted = snapshot.find((item: Item) => item?.interfaceName === targetHandle.name)
+      || outSnapshot.find((item: Item) => item?.interfaceName === sourceHandle.name)
     used = typeof accepted?.signalName === 'string' && accepted.signalName.length > 0
-    if (used) tooltip = `${sourceName} → ${targetName} · ${accepted.signalName}`
+    tooltip = workflowInterfaceEdgeTooltip(connection, graph.value.nodes, {
+      signalName: accepted?.signalName ?? null,
+      payload: accepted?.payload,
+    })
   } else {
     const snapshot = Array.isArray(target?.step?.portInSnapshot) ? target.step.portInSnapshot : []
     const accepted = snapshot.find((item: Item) => item?.portName === targetHandle.name)
     used = accepted != null && accepted.value !== null && accepted.value !== undefined
-    let sourceHandle
-    try {
-      sourceHandle = parseHandleId(edge.sourceHandle)
-    } catch {
-      sourceHandle = { kind: 'PORT', name: '' }
-    }
-    tooltip = workflowPortEdgeTooltip({
-      source: { nodeName: sourceName, portName: sourceHandle.name },
-      target: { nodeName: targetName, portName: targetHandle.name },
-    }, graph.value.nodes, accepted?.value)
+    tooltip = workflowPortEdgeTooltip(connection, graph.value.nodes, used ? accepted.value : null)
   }
   return {
     ...edge,

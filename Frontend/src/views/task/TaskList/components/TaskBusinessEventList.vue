@@ -1,7 +1,15 @@
 <template>
   <section class="business-events">
     <div v-for="group in groups" :key="group.key" class="event-group">
-      <h4>{{ group.label }}</h4>
+      <header class="event-group-head">
+        <h4>{{ group.label }}</h4>
+        <button
+          v-if="group.childGroupKey"
+          class="btn-link"
+          type="button"
+          @click="emit('enter-subflow', group)"
+        >查看子流程日志</button>
+      </header>
       <div v-for="event in group.events" :key="event.id" class="event-row">
         <span class="event-time mono">{{ formatLogDateTime(event.logTime) }}</span>
         <span class="event-source">{{ sourceLabel(event.sourceType) }}</span>
@@ -9,7 +17,7 @@
         <span class="event-text">{{ event.logInfo }}</span>
       </div>
     </div>
-    <div v-if="!groups.length" class="events-empty">暂无业务事件</div>
+    <div v-if="!groups.length" class="events-empty">暂无任务日志</div>
   </section>
 </template>
 <script setup lang="ts">
@@ -17,25 +25,45 @@ import { computed } from 'vue'
 import { formatLogDateTime } from '../../../../utils/formatLogTime.js'
 import { groupBusinessExecutionEvents } from '../../../../utils/workflowExecution.js'
 type Item = Record<string, any>
-const props = withDefaults(defineProps<{ logs: Item[], steps?: Item[], workflow?: Item | null }>(), {
+const props = withDefaults(defineProps<{
+  logs: Item[]
+  steps?: Item[]
+  workflow?: Item | null
+  parentStepId?: number | string | null
+}>(), {
   steps: () => [],
   workflow: null,
+  parentStepId: null,
 })
-const groups = computed(() => groupBusinessExecutionEvents(props.logs, props.steps, props.workflow))
+const emit = defineEmits<{ 'enter-subflow': [group: Item] }>()
+const groups = computed(() => groupBusinessExecutionEvents(props.logs, props.steps, props.workflow, {
+  parentStepId: props.parentStepId,
+  nodes: props.workflow?.nodesDef || props.workflow?.nodes || [],
+}))
 function sourceLabel(source: string) {
   return ({ TASK: '任务', MANUAL: '人工操作', CONSTRAINT: '任务约束', ADAPTER: '设备适配' } as Record<string, string>)[source] || '节点'
 }
 </script>
 <style scoped>
 .business-events { min-height: 100%; }
-.event-group h4 {
-  margin: 0;
+.event-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 10px 16px 6px;
+  background: #fafbfc;
+  border-bottom: 1px solid var(--sl-border-subtle, #f1f5f9);
+}
+.event-group-head h4 {
+  margin: 0;
   color: var(--sl-text-heading, #0f172a);
   font-size: 12px;
   font-weight: 700;
-  background: #fafbfc;
-  border-bottom: 1px solid var(--sl-border-subtle, #f1f5f9);
+}
+.event-group-head .btn-link {
+  flex: none;
+  font-size: 12px;
 }
 .event-row {
   display: grid;

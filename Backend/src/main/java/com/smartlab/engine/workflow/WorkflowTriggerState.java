@@ -32,6 +32,35 @@ public final class WorkflowTriggerState {
         return interfaceName + "::" + fingerprint + "::" + duplicateOrdinal;
     }
 
+    /** UI 按当前 bindingTriggers 下标读取；一旦为 true 就不再清掉，表示曾经触发过。 */
+    static String indexKey(String interfaceName, int index) {
+        return interfaceName + "::__i::" + index;
+    }
+
+    static boolean rememberIndexFired(ObjectNode states, String interfaceName, int index, boolean currentlyHeld) {
+        if (states == null || !currentlyHeld) return false;
+        String key = indexKey(interfaceName, index);
+        if (states.path(key).asBoolean(false)) return false;
+        states.put(key, true);
+        return true;
+    }
+
+    static boolean pruneIndexKeys(ObjectNode states, String interfaceName, int count) {
+        if (states == null) return false;
+        String prefix = interfaceName + "::__i::";
+        List<String> remove = new ArrayList<>();
+        states.fieldNames().forEachRemaining(name -> {
+            if (!name.startsWith(prefix)) return;
+            try {
+                if (Integer.parseInt(name.substring(prefix.length())) >= count) remove.add(name);
+            } catch (NumberFormatException ignored) {
+                remove.add(name);
+            }
+        });
+        remove.forEach(states::remove);
+        return !remove.isEmpty();
+    }
+
     public static List<JsonNode> actions(JsonNode trigger) {
         if (trigger == null || !trigger.isObject()) return List.of();
         JsonNode actions = trigger.path("actions");

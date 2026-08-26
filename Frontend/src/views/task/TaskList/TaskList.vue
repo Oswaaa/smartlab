@@ -184,7 +184,7 @@
       </template>
     </el-dialog>
 
-    <TaskExecutionDrawer v-model="monitorDrawerVisible" :task="activeTask" :workflow="activeWorkflowDefinition" :steps="nodeSnapshots" :logs="executionLogs" :bindings="activeDeviceRoutes" :constraints="effectiveConstraintView" :models="deviceModels" :instances="deviceInstances" :loading="loadingDetails" @refresh="fetchLogsAndSnapshots()" @terminate="activeTask && abortTask(activeTask.id)" />
+    <TaskExecutionDrawer v-model="monitorDrawerVisible" :task="activeTask" :workflow="activeWorkflowDefinition" :groups="activeWorkflowGroups" :steps="nodeSnapshots" :logs="executionLogs" :bindings="activeDeviceRoutes" :constraints="effectiveConstraintView" :models="deviceModels" :instances="deviceInstances" :loading="loadingDetails" @refresh="fetchLogsAndSnapshots()" @terminate="activeTask && abortTask(activeTask.id)" />
   </div>
 </template>
 
@@ -330,6 +330,7 @@ const activeDeviceRoutes = computed(() => activeTask.value == null ? [] : (workf
   return { ...requirement, bindingKey: requirement.slotId, deviceInstanceId, instanceName: getInstanceName(deviceInstanceId), deviceModelName: getModelName(requirement.deviceModelId) }
 }))
 const activeWorkflowDefinition = computed(() => activeTask.value == null ? null : workflowDefinitions.value[String(activeTask.value.flowModelId)] || null)
+const activeWorkflowGroups = computed(() => activeTask.value == null ? [] : workflowGroups.value[String(activeTask.value.flowModelId)] || [])
 const selectedTaskResources = computed(() => {
   const seen = new Set()
   return selectedWorkflowRequirements.value

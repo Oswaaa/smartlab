@@ -93,14 +93,36 @@ export function workflowPortEdgeTooltip(connection = {}, nodes = [], runtimeValu
   const node = (nodes || []).find(item => item.name === connection?.source?.nodeName)
   const port = (node?.ports || []).find(item => item.name === connection?.source?.portName)
   const name = port?.internalVariableName || '未绑定变量'
-  return `${name} · ${formatEdgeValue(runtimeValue)}`
+  const value = runtimeValue !== undefined
+    ? runtimeValue
+    : (() => {
+      const variable = (node?.internalVariables || []).find(item => item.name === port?.internalVariableName)
+      return variable && Object.hasOwn(variable, 'initialValue') ? variable.initialValue : undefined
+    })()
+  return `${name} · ${formatEdgeValue(value)}`
 }
 
-export function workflowInterfaceEdgeTooltip(connection = {}) {
-  const source = connection?.source?.nodeName
-  const target = connection?.target?.nodeName
-  if (source && target) return `${source} → ${target}`
-  return '执行流'
+export function workflowInterfaceEdgeTooltip(connection = {}, nodes = [], runtime) {
+  const sourceNodeName = connection?.source?.nodeName
+  const targetNodeName = connection?.target?.nodeName
+  const sourceIface = connection?.source?.interfaceName
+  const targetIface = connection?.target?.interfaceName
+  const route = sourceIface && targetIface
+    ? `${sourceNodeName || '?'}.${sourceIface} → ${targetNodeName || '?'}.${targetIface}`
+    : (sourceNodeName && targetNodeName ? `${sourceNodeName} → ${targetNodeName}` : '执行流')
+  const signalName = runtime && typeof runtime === 'object' ? runtime.signalName : undefined
+  if (typeof signalName === 'string' && signalName) {
+    const payload = hasEdgePayload(runtime.payload) ? ` ${formatEdgeValue(runtime.payload)}` : ''
+    return `${route} · ${signalName}${payload}`
+  }
+  if (runtime && typeof runtime === 'object' && Object.hasOwn(runtime, 'signalName')) {
+    return `${route} · 尚未传输`
+  }
+  const sourceNode = (nodes || []).find(item => item.name === sourceNodeName)
+  const iface = (sourceNode?.interfaces || []).find(item => item.name === sourceIface)
+  const allowed = (iface?.allowedSignals || []).filter(item => typeof item === 'string' && item)
+  if (allowed.length) return `${route} · 可传 ${allowed.join(' / ')}`
+  return route
 }
 
 function formatEdgeValue(value) {
@@ -113,6 +135,15 @@ function formatEdgeValue(value) {
     }
   }
   return String(value)
+}
+
+function hasEdgePayload(value) {
+  if (value == null) return false
+  if (typeof value === 'object') {
+    if (Array.isArray(value)) return value.length > 0
+    return Object.keys(value).length > 0
+  }
+  return true
 }
 
 export function workflowDeviceCapabilityPresentation(node = {}, capabilities = []) {
@@ -149,12 +180,13 @@ const TRIGGER_OBJECT_LABELS = {
 }
 
 const TRIGGER_OPERATOR_LABELS = {
-  '=': '=',
-  '!=': '≠',
+  '=': '==',
+  '==': '==',
+  '!=': '!=',
   '>': '>',
   '<': '<',
-  '>=': '≥',
-  '<=': '≤',
+  '>=': '>=',
+  '<=': '<=',
   IN: '属于',
 }
 
@@ -171,8 +203,6 @@ export function formatWorkflowValue(value) {
   }
   return String(value)
 }
-
-export const WORKFLOW_TRIGGER_CONDITION_SUMMARY_HINT = '条件摘要会展开同一触发器下的全部判定，用“且”连接；变量等业务条件排在节点/任务生命周期和信号之前。'
 
 export function formatWorkflowTriggerConditionText(trigger = {}) {
   const systemObjects = new Set(['nodeLifecycleState', 'taskLifecycleState', 'signalName', 'payload.stateName'])
@@ -198,26 +228,31 @@ function triggerActionPayload(action = {}) {
     : action
 }
 
-export function formatWorkflowTriggerActionText(action = {}) {
+export function formatWorkflowTriggerActionParts(action = {}) {
   const name = action.actionName || action.actionType || 'ACTION'
   const payload = triggerActionPayload(action)
   if (name === 'EMIT') {
-    const signal = payload.signalName ? `信号 ${payload.signalName}` : '信号（未指定）'
-    return payload.targetInterfaceName
-      ? `发出接口 ${payload.targetInterfaceName}，${signal}`
-      : `发出${signal}`
+    return { verb: 'EMIT', rest: payload.signalName || '（未指定）' }
   }
   if (name === 'UPDATE') {
-    const target = payload.targetName || '（未指定目标）'
-    if (payload.updateType === 'NODE_LIFECYCLE') return `UPDATE 节点生命周期 → ${target}`
-    const valueText = Object.hasOwn(payload, 'valueExpression') && payload.valueExpression
-      ? `表达式 ${payload.valueExpression}`
-      : Object.hasOwn(payload, 'value')
-        ? formatWorkflowValue(payload.value)
-        : '（未指定目标值）'
-    return `UPDATE ${target} → ${valueText}`
+    const target = payload.updateType === 'NODE_LIFECYCLE'
+      ? '节点生命周期'
+      : (payload.targetName || '（未指定目标）')
+    const valueText = payload.updateType === 'NODE_LIFECYCLE'
+      ? (payload.targetName || '（未指定目标）')
+      : Object.hasOwn(payload, 'valueExpression') && payload.valueExpression
+        ? `表达式 ${payload.valueExpression}`
+        : Object.hasOwn(payload, 'value')
+          ? formatWorkflowValue(payload.value)
+          : '（未指定目标值）'
+    return { verb: 'UPDATE', rest: `${target}为 ${valueText}` }
   }
-  return name
+  return { verb: name, rest: '' }
+}
+
+export function formatWorkflowTriggerActionText(action = {}) {
+  const { verb, rest } = formatWorkflowTriggerActionParts(action)
+  return rest ? `${verb} ${rest}` : verb
 }
 
 export function formatWorkflowTriggerActionLabel(trigger = {}) {
@@ -230,6 +265,7 @@ export function workflowTriggerSummaries(interfaceItem = {}, previewCount = 2) {
   const items = (interfaceItem.bindingTriggers || []).map((trigger, index) => ({
     index,
     title: `${index + 1}#`,
+    actionParts: workflowTriggerActions(trigger).map(formatWorkflowTriggerActionParts),
     actionLabel: formatWorkflowTriggerActionLabel(trigger),
     conditionText: formatWorkflowTriggerConditionText(trigger) || '未配置条件',
   }))
@@ -1000,7 +1036,7 @@ export function buildFlowEdges(interfaceConnections = [], portConnections = [], 
       type: 'workflow',
       class: 'execution-edge',
       markerEnd: 'arrowclosed',
-      data: { connectionKind: 'INTERFACE', tooltip: workflowInterfaceEdgeTooltip(connection) },
+      data: { connectionKind: 'INTERFACE', tooltip: workflowInterfaceEdgeTooltip(connection, nodes) },
       style: { stroke: '#7c93b8', strokeWidth: 1.8 }
     }))
   const portEdges = portConnections

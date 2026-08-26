@@ -159,6 +159,9 @@ class WorkflowEngineExecutionTest {
 
         lifecycleEngine.processTask(task);
         assertThat(executionOrder).containsExactly("UPDATE", "EMIT");
+        com.fasterxml.jackson.databind.JsonNode states = step.getVariableSpace().path("_triggerStates");
+        assertThat(states.path(WorkflowTriggerState.indexKey("workflow-out", 0)).asBoolean()).isTrue();
+        assertThat(states.path(WorkflowTriggerState.indexKey("workflow-out", 1)).asBoolean()).isTrue();
     }
 
     @Test
@@ -776,6 +779,41 @@ class WorkflowEngineExecutionTest {
         engine.processTask(task);
 
         assertThat(executionOrder).isEmpty();
+    }
+
+    @Test
+    void persistsFiredFlagsAlignedWithBindingTriggerOrder() {
+        Task task = pollingTask();
+        TaskStep step = pollingStep("RUNNING");
+        ObjectNode output = JsonNodeSupport.objectNode();
+        output.put("name", "out");
+        output.put("direction", "OUT");
+        output.put("interfaceType", "WORKFLOW");
+        ArrayNode triggers = output.putArray("bindingTriggers");
+        ObjectNode terminating = triggers.addObject();
+        terminating.putObject("condition").put("object", "nodeLifecycleState")
+                .put("operator", "=").put("threshold", "TERMINATING");
+        terminating.putObject("action").put("actionName", "UPDATE").putObject("payload")
+                .put("updateType", "INTERNAL_VARIABLE").put("targetName", "ready").put("value", true);
+        ObjectNode running = triggers.addObject();
+        running.putObject("condition").put("object", "ready").put("operator", "=").put("threshold", true);
+        running.putObject("action").put("actionName", "UPDATE").putObject("payload")
+                .put("updateType", "INTERNAL_VARIABLE").put("targetName", "ready").put("value", true);
+        FlowNode node = pollingNode(List.of(output));
+        stubPoll(task, step, node);
+        doAnswer(invocation -> {
+            ObjectNode merged = step.getVariableSpace() == null
+                    ? JsonNodeSupport.objectNode() : (ObjectNode) step.getVariableSpace().deepCopy();
+            merge(merged, invocation.getArgument(1));
+            step.setVariableSpace(merged);
+            return null;
+        }).when(runtime).mergeVariableSpace(eq(step), org.mockito.ArgumentMatchers.any());
+
+        engine.processTask(task);
+
+        com.fasterxml.jackson.databind.JsonNode states = step.getVariableSpace().path("_triggerStates");
+        assertThat(states.path(WorkflowTriggerState.indexKey("out", 0)).asBoolean()).isFalse();
+        assertThat(states.path(WorkflowTriggerState.indexKey("out", 1)).asBoolean()).isTrue();
     }
 
     @Test

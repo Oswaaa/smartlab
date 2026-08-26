@@ -13,8 +13,14 @@ import {
   isWorkflowTriggerFired,
   normalizeInterfaceSnapshot,
   normalizePortSnapshot,
+  runtimeParentStepId,
+  runtimeTrailLabel,
+  stepsForLayer,
   triggerStatesOf,
+  UNSTARTED_PARENT_STEP_ID,
   visibleVariableEntries,
+  workflowDocumentFromGroup,
+  workflowTriggerIndexKey,
 } from '../src/utils/workflowExecution.js'
 
 test('task creation exposes only ACTIVE workflows', () => {
@@ -44,8 +50,16 @@ test('normalizes only canonical interface snapshot arrays', () => {
 test('hides engine trigger state from user variables', () => {
   assert.deepEqual(visibleVariableEntries({ temp: 20, _triggerStates: { a: true } }), [['temp', 20]])
   assert.deepEqual(triggerStatesOf({ temp: 20, _triggerStates: { 'out::abc::0': true } }), { 'out::abc::0': true })
-  assert.equal(isWorkflowTriggerFired({ 'Interface_workflow_out::abc::0': true, 'Interface_workflow_out::def::0': false }, 'Interface_workflow_out', 0), true)
-  assert.equal(isWorkflowTriggerFired({ 'Interface_workflow_out::abc::0': true, 'Interface_workflow_out::def::0': false }, 'Interface_workflow_out', 1), false)
+})
+
+test('maps fired state by binding order index, not Object.keys insertion order', () => {
+  const states = {
+    [workflowTriggerIndexKey('Interface_workflow_in', 2)]: true,
+    [workflowTriggerIndexKey('Interface_workflow_in', 0)]: false,
+  }
+  assert.equal(isWorkflowTriggerFired(states, 'Interface_workflow_in', 0), false)
+  assert.equal(isWorkflowTriggerFired(states, 'Interface_workflow_in', 1), false)
+  assert.equal(isWorkflowTriggerFired(states, 'Interface_workflow_in', 2), true)
 })
 
 test('builds nested subflow steps inside the same task', () => {
@@ -198,6 +212,74 @@ test('runtime graph groups child steps under the parent subflow step', () => {
   assert.equal(graph.nodes[0].children[0].id, 11)
 })
 
+test('runtime graph does not attach child-layer snapshots to the parent subflow node', () => {
+  const steps = [
+    { id: 10, nodeName: 'subflow1', nodeIdRef: 3, nodeStatus: 'RUNNING', parentStepId: null },
+    {
+      id: 11,
+      nodeName: 'branch1',
+      nodeIdRef: 3,
+      nodeStatus: 'SUCCEEDED',
+      parentStepId: 10,
+      interfaceOutSnapshot: [
+        { interfaceName: 'Interface_workflow_out_1', signalName: 'ACTIVE' },
+        { interfaceName: 'Interface_workflow_out_2', signalName: null },
+        { interfaceName: 'Interface_workflow_out_3', signalName: null },
+      ],
+    },
+  ]
+  const parentGraph = buildRuntimeGraph({
+    nodesDef: [{
+      name: 'subflow1',
+      nodeType: 'SUBFLOW_NODE',
+      nodeIdRef: 3,
+      interfaces: [
+        { name: 'Interface_workflow_in', direction: 'IN' },
+        { name: 'Interface_workflow_out', direction: 'OUT' },
+      ],
+    }],
+    interfaceConnections: [],
+  }, steps)
+  assert.equal(parentGraph.nodes[0].stepId, 10)
+  assert.equal(parentGraph.nodes[0].step.interfaceOutSnapshot, undefined)
+
+  const childGraph = buildRuntimeGraph({
+    nodesDef: [{ name: 'branch1', nodeType: 'FUNC_NODE', functionType: 'BRANCH', nodeIdRef: 3 }],
+    interfaceConnections: [],
+  }, steps, { parentStepId: 10 })
+  assert.equal(childGraph.nodes[0].stepId, 11)
+  assert.equal(childGraph.nodes[0].step.interfaceOutSnapshot[0].interfaceName, 'Interface_workflow_out_1')
+})
+
+test('runtime layer helpers resolve nested group parent steps', () => {
+  const groups = [
+    {
+      groupKey: 'root',
+      parentGroupKey: null,
+      flowName: '测试',
+      nodes: [{ name: 'subflow1', nodeType: 'SUBFLOW_NODE', nodeIdRef: 3, childGroupKey: '58:3' }],
+    },
+    {
+      groupKey: '58:3',
+      parentGroupKey: 'root',
+      flowName: '子流程A',
+      occurrencePath: '测试 / subflow1',
+      nodes: [{ name: 'branch1', nodeIdRef: 3 }],
+    },
+  ]
+  const steps = [
+    { id: 10, nodeName: 'subflow1', nodeIdRef: 3, parentStepId: null },
+    { id: 11, nodeName: 'branch1', nodeIdRef: 3, parentStepId: 10 },
+  ]
+  assert.equal(runtimeParentStepId(groups, steps, 'root'), null)
+  assert.equal(runtimeParentStepId(groups, steps, '58:3'), 10)
+  assert.equal(runtimeParentStepId(groups, steps, 'missing'), null)
+  assert.deepEqual(stepsForLayer(steps, null).map(step => step.id), [10])
+  assert.equal(runtimeTrailLabel(groups[1], 1), 'subflow1')
+  assert.equal(workflowDocumentFromGroup(groups[1]).nodesDef[0].name, 'branch1')
+  assert.equal(runtimeParentStepId(groups, [{ id: 10, nodeName: 'other', parentStepId: null }], '58:3'), UNSTARTED_PARENT_STEP_ID)
+})
+
 test('matches snapshot rows to workflow interface definitions by name and direction', () => {
   const node = {
     interfaces: [
@@ -224,4 +306,27 @@ test('business events are grouped by node name from log text or step id', () => 
     ['任务约束', 1],
   ])
   assert.equal(businessExecutionEvents([{ sourceType: 'SYSTEM', logInfo: '心跳' }]).length, 0)
+})
+
+test('task logs stay on the current workflow layer and expose subflow entry', () => {
+  const logs = [
+    { id: 1, taskStepId: 10, sourceType: 'TASK', logInfo: '节点已创建: subflow1 (#3)' },
+    { id: 2, taskStepId: 10, sourceType: 'TASK', logInfo: '节点 subflow1 (#3) 接口 Interface_workflow_in 收到信号 ACTIVE' },
+    { id: 3, taskStepId: 11, sourceType: 'TASK', logInfo: '节点已创建: branch1 (#3)' },
+    { id: 4, taskStepId: 11, sourceType: 'TASK', logInfo: '节点 branch1 (#3) 接口 Interface_workflow_out_3 发出信号 ACTIVE' },
+  ]
+  const steps = [
+    { id: 10, nodeName: 'subflow1', nodeIdRef: 3, parentStepId: null },
+    { id: 11, nodeName: 'branch1', nodeIdRef: 3, parentStepId: 10 },
+  ]
+  const root = groupBusinessExecutionEvents(logs, steps, {
+    nodesDef: [{ name: 'subflow1', nodeType: 'SUBFLOW_NODE', childGroupKey: '58:3' }],
+  }, { parentStepId: null })
+  assert.deepEqual(root.map(group => [group.label, group.events.length, group.childGroupKey]), [
+    ['subflow1', 2, '58:3'],
+  ])
+  const child = groupBusinessExecutionEvents(logs, steps, {
+    nodesDef: [{ name: 'branch1', nodeType: 'FUNC_NODE', functionType: 'BRANCH' }],
+  }, { parentStepId: 10 })
+  assert.deepEqual(child.map(group => [group.label, group.events.length]), [['branch1', 2]])
 })

@@ -55,11 +55,22 @@
           <el-tab-pane label="运行状态" name="runtime">
             <div class="graph-layout">
               <section class="graph-workspace">
+                <nav v-if="groupTrail.length" class="flow-breadcrumb" aria-label="流程路径">
+                  <button
+                    v-for="(group, index) in groupTrail"
+                    :key="group.groupKey"
+                    type="button"
+                    :class="{ current: index === groupTrail.length - 1 }"
+                    @click="openRuntimeGroup(group.groupKey)"
+                  >{{ runtimeTrailLabel(group, index) }}</button>
+                </nav>
                 <TaskRuntimeGraph
                   v-if="graphReady"
+                  :key="currentGroup?.groupKey || 'root'"
                   class="graph-canvas"
-                  :workflow="workflow"
+                  :workflow="layerWorkflow"
                   :steps="steps"
+                  :parent-step-id="parentStepId"
                   :models="models"
                   :bindings="bindings"
                   :selected-step-id="selectedStepId"
@@ -71,17 +82,29 @@
             </div>
           </el-tab-pane>
 
-          <el-tab-pane label="业务事件" name="events">
+          <el-tab-pane label="任务日志" name="events">
             <div class="log-workbench">
+              <nav v-if="groupTrail.length" class="flow-breadcrumb" aria-label="流程路径">
+                <button
+                  v-for="(group, index) in groupTrail"
+                  :key="group.groupKey"
+                  type="button"
+                  :class="{ current: index === groupTrail.length - 1 }"
+                  @click="openRuntimeGroup(group.groupKey)"
+                >{{ runtimeTrailLabel(group, index) }}</button>
+              </nav>
               <div class="panel-heading">
-                <div>
-                  <strong>业务事件</strong>
-                  <span>按节点区分生命周期、接口收发与约束动作</span>
-                </div>
+                <strong>任务日志</strong>
                 <small>{{ eventCount }} 条</small>
               </div>
               <div class="log-scroll">
-                <TaskBusinessEventList :logs="logs" :steps="steps" :workflow="workflow" />
+                <TaskBusinessEventList
+                  :logs="logs"
+                  :steps="steps"
+                  :workflow="layerWorkflow"
+                  :parent-step-id="parentStepId"
+                  @enter-subflow="enterSubflowFromLog"
+                />
               </div>
             </div>
           </el-tab-pane>
@@ -171,7 +194,12 @@
       class="task-step-detail-drawer"
       :title="stepDrawerTitle"
     >
-      <TaskStepDetail :step="selectedStep" :node="stepDetailNode" />
+      <TaskStepDetail
+        :step="selectedStep"
+        :node="stepDetailNode"
+        :can-enter-subflow="Boolean(stepDetailNode?.childGroupKey)"
+        @enter-subflow="enterSubflow(stepDetailNode)"
+      />
     </el-drawer>
   </el-drawer>
 </template>
@@ -183,7 +211,16 @@ import { Close, CopyDocument } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { workflowModelDisplayName } from '../../../../utils/workflowAuthoring.js'
 import { formatLogDateTime } from '../../../../utils/formatLogTime.js'
-import { businessExecutionEvents, workflowNodeNameByIdRef } from '../../../../utils/workflowExecution.js'
+import {
+  groupBusinessExecutionEvents,
+  matchLayerStep,
+  runtimeGroupTrail,
+  runtimeParentStepId,
+  runtimeTrailLabel,
+  stepsForLayer,
+  workflowDocumentFromGroup,
+  workflowNodeNameByIdRef,
+} from '../../../../utils/workflowExecution.js'
 import { formatRuleSentenceTokens } from '../../../../utils/constraintExpression.js'
 import TaskBusinessEventList from './TaskBusinessEventList.vue'
 import TaskRuntimeGraph from './TaskRuntimeGraph.vue'
@@ -196,6 +233,7 @@ const props = withDefaults(defineProps<{
   modelValue: boolean
   task?: Item | null
   workflow?: Item | null
+  groups?: Item[]
   steps?: Item[]
   logs?: Item[]
   bindings?: Item[]
@@ -206,6 +244,7 @@ const props = withDefaults(defineProps<{
 }>(), {
   task: null,
   workflow: null,
+  groups: () => [],
   steps: () => [],
   logs: () => [],
   bindings: () => [],
@@ -228,23 +267,32 @@ const graphReady = ref(false)
 const stepDrawerVisible = ref(false)
 const selectedStepId = ref<number | null>(null)
 const selectedGraphNode = ref<Item | null>(null)
+const activeGroupKey = ref('root')
+const groupsByKey = computed(() => new Map((props.groups || []).map(group => [group.groupKey, group])))
+const currentGroup = computed(() => groupsByKey.value.get(activeGroupKey.value) || props.groups?.[0] || null)
+const groupTrail = computed(() => runtimeGroupTrail(props.groups, currentGroup.value?.groupKey || activeGroupKey.value))
+const parentStepId = computed(() => runtimeParentStepId(props.groups, props.steps, currentGroup.value?.groupKey || 'root'))
+const layerWorkflow = computed(() => currentGroup.value ? workflowDocumentFromGroup(currentGroup.value) : (props.workflow || {}))
 const selectedStep = computed(() => {
   const step = props.steps.find(item => item.id === selectedStepId.value) || null
   if (!step) return null
   if (step.nodeName) return step
   const fromGraph = selectedGraphNode.value?.name
-  const fromWorkflow = workflowNodeNameByIdRef(props.workflow, step.nodeIdRef)
+  const fromWorkflow = workflowNodeNameByIdRef(layerWorkflow.value, step.nodeIdRef)
   const nodeName = fromGraph || fromWorkflow
   return nodeName ? { ...step, nodeName } : step
 })
 const stepDetailNode = computed(() => {
   if (selectedGraphNode.value) return selectedGraphNode.value
   const name = selectedStep.value?.nodeName
-  return (props.workflow?.nodesDef || props.workflow?.nodes || []).find((item: Item) => item.name === name) || null
+  return (layerWorkflow.value?.nodesDef || []).find((item: Item) => item.name === name) || null
 })
 const stepDrawerTitle = computed(() => selectedGraphNode.value?.name || selectedStep.value?.nodeName || '步骤详情')
 const completedStepCount = computed(() => props.steps.filter(step => step.nodeStatus === 'SUCCEEDED').length)
-const eventCount = computed(() => businessExecutionEvents(props.logs).length)
+const eventCount = computed(() => groupBusinessExecutionEvents(props.logs, props.steps, layerWorkflow.value, {
+  parentStepId: parentStepId.value,
+  nodes: layerWorkflow.value?.nodesDef || [],
+}).reduce((sum, group) => sum + group.events.length, 0))
 const currentNodeDisplay = computed(() => {
   const refId = props.task?.currentNodeIdRef
   if (refId == null) return '-'
@@ -268,10 +316,17 @@ function sentenceTokens(row: Item) {
 
 watch(() => props.task?.id, () => {
   activeTab.value = 'runtime'
+  activeGroupKey.value = 'root'
   selectedGraphNode.value = null
   selectedStepId.value = null
   stepDrawerVisible.value = false
 }, { immediate: true })
+
+watch(() => props.groups, groups => {
+  if (!groups?.some(group => group.groupKey === activeGroupKey.value)) {
+    activeGroupKey.value = groups?.[0]?.groupKey || 'root'
+  }
+})
 
 function handleDrawerOpening() {
   graphReady.value = false
@@ -286,6 +341,28 @@ function handleDrawerClosed() {
   stepDrawerVisible.value = false
 }
 
+function openRuntimeGroup(groupKey: string) {
+  if (!groupsByKey.value.has(groupKey) && groupKey !== 'root') return
+  activeGroupKey.value = groupKey
+  selectedGraphNode.value = null
+  selectedStepId.value = null
+  stepDrawerVisible.value = false
+}
+
+function enterSubflow(node: Item | null) {
+  if (!node?.childGroupKey || !groupsByKey.value.has(node.childGroupKey)) return
+  activeGroupKey.value = node.childGroupKey
+  selectedGraphNode.value = null
+  selectedStepId.value = null
+  stepDrawerVisible.value = false
+}
+
+function enterSubflowFromLog(group: Item) {
+  const node = (currentGroup.value?.nodes || []).find((item: Item) => item.name === group.nodeName)
+    || { name: group.nodeName, childGroupKey: group.childGroupKey, stepId: group.stepId }
+  enterSubflow(node)
+}
+
 function selectGraphStep(stepId: number | null, node: Item) {
   selectedGraphNode.value = node
   const resolved = resolveStepId(stepId, node)
@@ -295,21 +372,21 @@ function selectGraphStep(stepId: number | null, node: Item) {
 }
 
 function resolveStepId(stepId: number | null, node: Item | null) {
-  if (stepId != null && props.steps.some(step => step.id === stepId)) return stepId
-  if (node?.stepId != null && props.steps.some(step => step.id === node.stepId)) return node.stepId
-  const name = node?.name
-  const idRef = node?.nodeIdRef ?? node?.idRef
-  const matched = props.steps.find(step => {
-    if (name && (step.nodeName === name || step.flowNodeName === name)) return true
-    return idRef != null && step.nodeIdRef != null && String(step.nodeIdRef) === String(idRef)
-  })
-  return matched?.id ?? null
+  const layerSteps = stepsForLayer(props.steps, parentStepId.value)
+  if (stepId != null && layerSteps.some(step => step.id === stepId)) return stepId
+  if (node?.stepId != null && layerSteps.some(step => step.id === node.stepId)) return node.stepId
+  return matchLayerStep(node, layerSteps)?.id ?? null
 }
 
 function jumpToRuntimeNode(binding: Item) {
   activeTab.value = 'runtime'
-  const nodes = props.workflow?.nodesDef || props.workflow?.nodes || []
-  const node = nodes.find((item: Item) => item.name === binding.nodeName)
+  const slot = binding.slotId || binding.bindingKey
+  const group = (props.groups || []).find(item =>
+    (item.nodes || []).some((node: Item) => node.bindingKey === slot || (node.name === binding.nodeName && node.nodeType === 'DEV_NODE'))
+  )
+  if (group?.groupKey) activeGroupKey.value = group.groupKey
+  const nodes = group?.nodes || layerWorkflow.value?.nodesDef || []
+  const node = nodes.find((item: Item) => item.bindingKey === slot || item.name === binding.nodeName)
     || { name: binding.nodeName, nodeType: 'DEV_NODE', nodeIdRef: binding.nodeIdRef }
   selectGraphStep(null, node)
 }
@@ -422,6 +499,38 @@ function copyTaskId() {
   background: var(--sl-bg-surface, #ffffff);
 }
 .graph-workspace { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.flow-breadcrumb {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+  background: #ffffff;
+  flex-shrink: 0;
+}
+.flow-breadcrumb button {
+  position: relative;
+  padding: 0 18px 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--sl-text-secondary, #64748b);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.flow-breadcrumb button::after {
+  content: '›';
+  position: absolute;
+  right: 6px;
+  color: var(--sl-text-disabled, #94a3b8);
+}
+.flow-breadcrumb button:last-child::after {
+  display: none;
+}
+.flow-breadcrumb button.current {
+  color: var(--sl-text-heading, #0f172a);
+  font-weight: 600;
+  cursor: default;
+}
 .panel-heading {
   min-height: 36px;
   display: flex;

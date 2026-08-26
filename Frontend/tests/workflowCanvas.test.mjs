@@ -105,7 +105,21 @@ test('连接点悬停信息包含方向、完整名称和内部变量名', () =>
       source: { nodeName: 'device1', interfaceName: 'out' },
       target: { nodeName: 'branch1', interfaceName: 'in' },
     }),
-    'device1 → branch1',
+    'device1.out → branch1.in',
+  )
+  assert.equal(
+    workflowInterfaceEdgeTooltip({
+      source: { nodeName: 'device1', interfaceName: 'out' },
+      target: { nodeName: 'branch1', interfaceName: 'in' },
+    }, [{ name: 'device1', interfaces: [{ name: 'out', allowedSignals: ['ACTIVE', 'DONE'] }] }]),
+    'device1.out → branch1.in · 可传 ACTIVE / DONE',
+  )
+  assert.equal(
+    workflowInterfaceEdgeTooltip({
+      source: { nodeName: 'device1', interfaceName: 'out' },
+      target: { nodeName: 'branch1', interfaceName: 'in' },
+    }, [], { signalName: 'ACTIVE', payload: { n: 1 } }),
+    'device1.out → branch1.in · ACTIVE {"n":1}',
   )
 })
 
@@ -169,7 +183,7 @@ test('trigger text summarizes output-interface conditions for branch rows', () =
         { object: 'retryCount', operator: '>=', threshold: 3 },
       ] },
     }],
-  }), 'retryCount ≥ 3 且 接收信号 = DONE')
+  }), 'retryCount >= 3 且 接收信号 == DONE')
 })
 
 test('trigger summaries keep action labels and fold extra triggers', () => {
@@ -181,13 +195,16 @@ test('trigger summaries keep action labels and fold extra triggers', () => {
     ],
   }
   const summaries = workflowTriggerSummaries(iface, 2)
-  assert.equal(formatWorkflowTriggerActionLabel(iface.bindingTriggers[1]), '发出信号 ACTIVE')
+  assert.equal(formatWorkflowTriggerActionLabel(iface.bindingTriggers[1]), 'EMIT ACTIVE')
+  assert.equal(formatWorkflowTriggerActionLabel({
+    action: { actionName: 'EMIT', payload: { targetInterfaceName: 'Interface_state_out', signalName: 'WF_EXECUTE_ABORT' } },
+  }), 'EMIT WF_EXECUTE_ABORT')
   assert.equal(formatWorkflowTriggerActionLabel({
     action: { actionName: 'UPDATE', payload: { updateType: 'INTERNAL_VARIABLE', targetName: 'temp', value: 36.5 } },
-  }), 'UPDATE temp → 36.5')
+  }), 'UPDATE temp为 36.5')
   assert.equal(formatWorkflowTriggerActionLabel({
-    action: { actionName: 'UPDATE', payload: { updateType: 'NODE_LIFECYCLE', targetName: 'SUCCEEDED' } },
-  }), 'UPDATE 节点生命周期 → SUCCEEDED')
+    action: { actionName: 'UPDATE', payload: { updateType: 'NODE_LIFECYCLE', targetName: 'FAILED' } },
+  }), 'UPDATE 节点生命周期为 FAILED')
   assert.equal(summaries.items.length, 3)
   assert.equal(summaries.items[0].title, '1#')
   assert.equal(summaries.items[1].title, '2#')
@@ -410,7 +427,7 @@ test('renders only node-to-node interface connections as flow edges', () => {
   assert.equal(edges[0].target, 'workflow-node:device1')
   assert.equal(edges[0].sourceHandle, 'interface:Interface_workflow_out')
   assert.equal(edges[0].targetHandle, 'interface:Interface_workflow_in')
-  assert.equal(edges[0].data.tooltip, 'start1 → device1')
+  assert.equal(edges[0].data.tooltip, 'start1.Interface_workflow_out → device1.Interface_workflow_in')
 })
 
 test('间距足够的接口连线仍走简单折线', () => {

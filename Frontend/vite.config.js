@@ -10,6 +10,7 @@ export default defineConfig({
         target: 'http://localhost:8080',
         changeOrigin: true,
         timeout: 0,
+        proxyTimeout: 0,
         configure: (proxy) => {
           proxy.on('proxyRes', (proxyRes, req) => {
             if (String(req.url || '').includes('/stream')) {

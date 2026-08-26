@@ -55,7 +55,7 @@
           </section>
 
           <!-- 章节 02：流程与设备绑定 -->
-          <section v-if="form.flowModelId" class="card-section-block">
+          <section class="card-section-block">
             <div class="section-card-head">
               <div class="section-card-title">
                 <span class="sec-idx-badge">02</span>
@@ -90,7 +90,7 @@
           </section>
           
           <!-- 章节 04：创建前检查 -->
-          <section v-if="form.flowModelId" class="card-section-block">
+          <section class="card-section-block">
             <TaskPreflightPanel
               :result="preflightResult"
               :loading="preflighting"

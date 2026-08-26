@@ -250,9 +250,9 @@
                   size="small"
                   class="industrial-fullbleed-table"
                 >
-                  <el-table-column label="指令名称" width="140">
+                  <el-table-column label="指令名称" min-width="220">
                     <template #default="{ row }">
-                      <strong class="text-primary mono-text">{{ row.name || row.commandName }}</strong>
+                      <strong class="text-primary mono-text command-name">{{ row.name || row.commandName }}</strong>
                     </template>
                   </el-table-column>
                   <el-table-column label="指令说明" min-width="160">
@@ -664,7 +664,7 @@
                 </div>
 
                 <!-- 1. 遥测属性 -->
-                <section class="flat-table-section" style="margin-top: 12px;">
+                <section class="flat-table-section">
                   <div class="section-title-bar">
                     <span class="section-title">遥测属性</span>
                     <span class="section-sub">共 {{ asArray(currentReviewCategory.deviceTemplate?.attributes).length }} 项</span>
@@ -694,7 +694,7 @@
                 </section>
 
                 <!-- 2. 设备指令 -->
-                <section class="flat-table-section" style="margin-top: 12px;">
+                <section class="flat-table-section">
                   <div class="section-title-bar">
                     <span class="section-title">设备指令</span>
                     <span class="section-sub">共 {{ asArray(currentReviewCategory.deviceTemplate?.commands).length }} 项</span>
@@ -705,9 +705,9 @@
                     size="small"
                     class="industrial-fullbleed-table"
                   >
-                    <el-table-column label="指令名称" width="140">
+                    <el-table-column label="指令名称" min-width="220">
                       <template #default="{ row }">
-                        <strong class="text-primary mono-text">{{ row.name || row.commandName }}</strong>
+                        <strong class="text-primary mono-text command-name">{{ row.name || row.commandName }}</strong>
                       </template>
                     </el-table-column>
                     <el-table-column label="指令说明" min-width="160">
@@ -731,7 +731,7 @@
                 </section>
 
                 <!-- 3. 返回事件 -->
-                <section class="flat-table-section" style="margin-top: 12px;">
+                <section class="flat-table-section">
                   <div class="section-title-bar">
                     <span class="section-title">返回事件</span>
                     <span class="section-sub">共 {{ eventList(currentReviewCategory.deviceTemplate?.events).length }} 项</span>
@@ -763,7 +763,7 @@
                 </section>
 
                 <!-- 4. 物理点位通道 -->
-                <section class="flat-table-section" style="margin-top: 12px;">
+                <section class="flat-table-section">
                   <div class="section-title-bar">
                     <span class="section-title">物理点位通道</span>
                     <span class="section-sub">共 {{ asArray(currentReviewCategory.devicePoints).length }} 个点位</span>
@@ -1649,6 +1649,11 @@ onUnmounted(() => {
   width: 100%;
   border-radius: 0;
 }
+.industrial-fullbleed-table :deep(.el-table__inner-wrapper),
+.industrial-fullbleed-table :deep(.el-table__header-wrapper),
+.industrial-fullbleed-table :deep(.el-table__body-wrapper) {
+  border-radius: 0 !important;
+}
 .industrial-fullbleed-table :deep(.el-table__inner-wrapper::before) {
   display: none;
 }
@@ -1665,6 +1670,9 @@ onUnmounted(() => {
   border-bottom: 1px solid var(--sl-border-subtle, #f1f5f9) !important;
   color: var(--sl-text-body, #334155) !important;
   font-size: 12px !important;
+}
+.command-name {
+  white-space: nowrap;
 }
 
 .instance-bind-cell {
@@ -2091,15 +2099,17 @@ onUnmounted(() => {
   border: 1px solid var(--sl-border-base, #e2e8f0);
   border-radius: var(--sl-radius-sm, 6px);
   background: #ffffff;
-  padding: 12px;
+  padding: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
 .review-category-info-bar {
-  padding: 10px 12px;
+  padding: 10px 16px;
   background: #f8fafc;
-  border: 1px solid var(--sl-border-base, #e2e8f0);
-  border-radius: var(--sl-radius-sm, 6px);
+  border: 0;
+  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+  border-radius: 0;
   display: flex;
   flex-direction: column;
   gap: 6px;

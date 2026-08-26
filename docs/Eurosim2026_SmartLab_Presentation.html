@@ -1,0 +1,1382 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartLab 2.0: 任务导向型可执行建模体系与技术架构演进</title>
+  <!-- KaTeX 数学公式渲染 -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.css">
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/katex.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.9/dist/contrib/auto-render.min.js"
+          onload="renderMathInElement(document.body, {delimiters: [{left: '$$', right: '$$', display: true}, {left: '$', right: '$', display: false}]});"></script>
+  <!-- Lucide 图标库 -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    :root {
+      --bg-dark: #080c14;
+      --bg-surface: #0f172a;
+      --bg-card: #182234;
+      --bg-card-hover: #1f2d45;
+      --primary: #38bdf8;
+      --primary-glow: rgba(56, 189, 248, 0.2);
+      --secondary: #818cf8;
+      --secondary-glow: rgba(129, 140, 248, 0.2);
+      --accent-cyan: #06b6d4;
+      --accent-emerald: #10b981;
+      --accent-amber: #f59e0b;
+      --accent-rose: #f43f5e;
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --border-color: rgba(255, 255, 255, 0.08);
+      --border-highlight: rgba(56, 189, 248, 0.35);
+      --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-main);
+      font-family: var(--font-family);
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      user-select: none;
+    }
+
+    /* Presentation Container */
+    #presentation {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+      background: radial-gradient(circle at 50% 10%, rgba(30, 58, 138, 0.18), transparent 60%),
+                  radial-gradient(circle at 90% 80%, rgba(14, 116, 144, 0.12), transparent 50%),
+                  radial-gradient(circle at 10% 90%, rgba(99, 102, 241, 0.1), transparent 50%);
+    }
+
+    .slide {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0;
+      visibility: hidden;
+      transform: scale(0.98) translateY(12px);
+      transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+      padding: 2.5rem 4rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      overflow-y: auto;
+    }
+
+    .slide.active {
+      opacity: 1;
+      visibility: visible;
+      transform: scale(1) translateY(0);
+    }
+
+    /* Slide Header */
+    .slide-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      padding-bottom: 1rem;
+      border-bottom: 1px solid var(--border-color);
+      margin-bottom: 1.25rem;
+      flex-shrink: 0;
+    }
+
+    .slide-header .tag-wrapper {
+      display: flex;
+      align-items: center;
+      gap: 0.65rem;
+      margin-bottom: 0.35rem;
+    }
+
+    .badge {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 0.2rem 0.6rem;
+      border-radius: 9999px;
+      background: rgba(56, 189, 248, 0.12);
+      color: var(--primary);
+      border: 1px solid rgba(56, 189, 248, 0.3);
+    }
+
+    .badge.theory {
+      background: rgba(129, 140, 248, 0.15);
+      color: #a5b4fc;
+      border-color: rgba(129, 140, 248, 0.4);
+    }
+
+    .badge.engineering {
+      background: rgba(16, 185, 129, 0.15);
+      color: #6ee7b7;
+      border-color: rgba(16, 185, 129, 0.4);
+    }
+
+    .badge.case {
+      background: rgba(245, 158, 11, 0.15);
+      color: #fcd34d;
+      border-color: rgba(245, 158, 11, 0.4);
+    }
+
+    .slide-title {
+      font-size: 1.75rem;
+      font-weight: 700;
+      color: #ffffff;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      letter-spacing: -0.02em;
+    }
+
+    .slide-subtitle {
+      font-size: 0.92rem;
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+
+    /* Narrative Section: 大段文字描述本页 PPT 要讲的核心理念与逻辑 */
+    .narrative-box {
+      background: linear-gradient(135deg, rgba(30, 41, 59, 0.7), rgba(15, 23, 42, 0.85));
+      border: 1px solid rgba(56, 189, 248, 0.25);
+      border-left: 4px solid var(--primary);
+      border-radius: 10px;
+      padding: 1.1rem 1.4rem;
+      margin-bottom: 1.35rem;
+      position: relative;
+      flex-shrink: 0;
+    }
+
+    .narrative-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.85rem;
+      font-weight: 700;
+      color: var(--primary);
+      margin-bottom: 0.45rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .narrative-text {
+      font-size: 0.95rem;
+      line-height: 1.65;
+      color: #e2e8f0;
+      text-align: justify;
+    }
+
+    .narrative-text strong {
+      color: #ffffff;
+      font-weight: 600;
+    }
+
+    .narrative-text em {
+      color: #38bdf8;
+      font-style: normal;
+    }
+
+    /* Slide Content Layouts */
+    .slide-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 1.15rem;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.25rem;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1.15rem;
+    }
+
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 1rem;
+    }
+
+    /* Cards */
+    .card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 1.2rem;
+      display: flex;
+      flex-direction: column;
+      transition: all 0.25s ease;
+    }
+
+    .card:hover {
+      border-color: var(--border-highlight);
+      background: var(--bg-card-hover);
+      box-shadow: 0 8px 24px -6px rgba(0, 0, 0, 0.5);
+    }
+
+    .card.highlight {
+      border-color: rgba(56, 189, 248, 0.4);
+      background: linear-gradient(135deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.95));
+      box-shadow: 0 0 20px rgba(56, 189, 248, 0.08);
+    }
+
+    .card-title {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--primary);
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .card-title.purple { color: #c084fc; }
+    .card-title.emerald { color: #34d399; }
+    .card-title.amber { color: #fbbf24; }
+    .card-title.rose { color: #fb7185; }
+
+    /* Bullet List */
+    ul.feature-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      font-size: 0.9rem;
+      color: #cbd5e1;
+      line-height: 1.5;
+    }
+
+    ul.feature-list li {
+      position: relative;
+      padding-left: 1.2rem;
+    }
+
+    ul.feature-list li::before {
+      content: "•";
+      color: var(--primary);
+      font-weight: bold;
+      font-size: 1.1rem;
+      position: absolute;
+      left: 0;
+      top: -0.15rem;
+    }
+
+    ul.feature-list li strong {
+      color: #ffffff;
+    }
+
+    /* Math Box & Code Box */
+    .math-box {
+      background: rgba(15, 23, 42, 0.7);
+      border: 1px solid rgba(129, 140, 248, 0.25);
+      border-radius: 8px;
+      padding: 0.85rem 1rem;
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
+      color: #e0e7ff;
+      margin-bottom: 0.75rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Comparison Table */
+    .compare-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.88rem;
+    }
+
+    .compare-table th {
+      background: rgba(30, 41, 59, 0.9);
+      color: var(--primary);
+      padding: 0.75rem 1rem;
+      text-align: left;
+      border-bottom: 2px solid var(--border-color);
+      font-weight: 600;
+    }
+
+    .compare-table td {
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border-color);
+      color: #cbd5e1;
+      vertical-align: middle;
+    }
+
+    .compare-table tr:hover td {
+      background: rgba(255, 255, 255, 0.02);
+    }
+
+    /* Pipeline & Flow Visuals */
+    .pipeline {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px dashed rgba(56, 189, 248, 0.3);
+      border-radius: 10px;
+    }
+
+    .pipe-step {
+      flex: 1;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      padding: 0.75rem 0.5rem;
+      text-align: center;
+      font-size: 0.82rem;
+      color: #f1f5f9;
+      position: relative;
+    }
+
+    .pipe-step.active {
+      border-color: var(--primary);
+      box-shadow: 0 0 12px rgba(56, 189, 248, 0.3);
+      background: rgba(56, 189, 248, 0.1);
+    }
+
+    .pipe-arrow {
+      color: var(--primary);
+      font-weight: bold;
+      font-size: 1.1rem;
+    }
+
+    /* Bottom Controller Bar */
+    #controls {
+      height: 56px;
+      background: var(--bg-surface);
+      border-top: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0 2rem;
+      z-index: 100;
+      flex-shrink: 0;
+    }
+
+    .ctrl-group {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+
+    .btn {
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      color: var(--text-main);
+      padding: 0.4rem 0.85rem;
+      border-radius: 6px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      transition: all 0.2s ease;
+    }
+
+    .btn:hover {
+      background: var(--bg-card-hover);
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+
+    .btn:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      border-color: var(--border-color);
+      color: var(--text-muted);
+    }
+
+    .progress-bar-container {
+      flex: 1;
+      max-width: 380px;
+      height: 6px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 3px;
+      margin: 0 1.5rem;
+      overflow: hidden;
+    }
+
+    .progress-bar {
+      height: 100%;
+      background: linear-gradient(90deg, var(--secondary), var(--primary));
+      width: 0%;
+      transition: width 0.3s ease;
+    }
+
+    .slide-counter {
+      font-size: 0.85rem;
+      font-family: var(--font-mono);
+      color: var(--text-muted);
+      min-width: 60px;
+      text-align: center;
+    }
+
+    /* Quick Overview Drawer */
+    #drawer {
+      position: fixed;
+      bottom: 56px;
+      left: 0;
+      width: 100%;
+      height: 220px;
+      background: rgba(15, 23, 42, 0.95);
+      backdrop-filter: blur(16px);
+      border-top: 1px solid var(--border-color);
+      transform: translateY(100%);
+      transition: transform 0.3s ease;
+      z-index: 99;
+      display: flex;
+      flex-direction: column;
+      padding: 1rem 2rem;
+    }
+
+    #drawer.open {
+      transform: translateY(0);
+    }
+
+    .drawer-title {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--primary);
+      margin-bottom: 0.75rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .thumbnails {
+      display: flex;
+      gap: 1rem;
+      overflow-x: auto;
+      padding-bottom: 0.5rem;
+    }
+
+    .thumb {
+      flex: 0 0 160px;
+      height: 110px;
+      background: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 6px;
+      padding: 0.6rem;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .thumb:hover, .thumb.active {
+      border-color: var(--primary);
+      background: var(--bg-card-hover);
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.2);
+    }
+
+    .thumb-num {
+      font-size: 0.75rem;
+      font-family: var(--font-mono);
+      color: var(--primary);
+    }
+
+    .thumb-name {
+      font-size: 0.78rem;
+      font-weight: 500;
+      color: #f1f5f9;
+      line-height: 1.3;
+    }
+
+    /* Cover Slide Specific */
+    .cover-container {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      text-align: center;
+      padding: 2rem;
+    }
+
+    .cover-title {
+      font-size: 2.85rem;
+      font-weight: 800;
+      background: linear-gradient(135deg, #ffffff 30%, #38bdf8 70%, #818cf8 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 1rem;
+      letter-spacing: -0.03em;
+      line-height: 1.2;
+    }
+
+    .cover-subtitle {
+      font-size: 1.25rem;
+      color: var(--text-muted);
+      max-width: 860px;
+      margin-bottom: 2rem;
+      line-height: 1.6;
+    }
+
+    .cover-meta {
+      display: flex;
+      gap: 2rem;
+      padding: 1rem 2rem;
+      background: rgba(30, 41, 59, 0.6);
+      border: 1px solid var(--border-color);
+      border-radius: 9999px;
+      font-size: 0.88rem;
+      color: #94a3b8;
+    }
+
+    .cover-meta span strong {
+      color: #f8fafc;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="presentation">
+
+    <!-- ==================== SLIDE 1: 封面与宏观愿景 ==================== -->
+    <div class="slide active" data-slide="1">
+      <div class="cover-container">
+        <div style="display: flex; gap: 0.5rem; margin-bottom: 1.25rem;">
+          <span class="badge theory">Eurosim 2026 理论奠基</span>
+          <span class="badge engineering">SmartLab 2.0 工业级架构</span>
+        </div>
+        <h1 class="cover-title">任务导向型可执行建模体系<br>与智能实验室技术架构演进</h1>
+        <p class="cover-subtitle">
+          从形式化四元组 $\mathcal{L} = \langle \mathcal{R}, \mathcal{F}, \mathcal{C}, \Pi \rangle$ 到高内聚解耦的工业级运行时控制系统
+        </p>
+
+        <div class="narrative-box" style="max-width: 960px; text-align: left; margin: 1.5rem 0;">
+          <div class="narrative-header"><i data-lucide="mic"></i> 本页导读与演说主线 (Narrative & Overview)</div>
+          <div class="narrative-text">
+            本场报告系统性阐述<strong>SmartLab 2.0 智能实验室系统</strong>的顶层架构哲学及其与 <em>Eurosim 2026</em> 学术论文之间的深度映射。我们不再将实验室自动化视为孤立的仪器脚本拼凑或扁平的业务流程图，而是将其形式化定义为一个由<strong>静态资源层、动态工作流切片、多维约束层与全局协议规约</strong>构成的完整可执行系统。通过理论与工程的相互呼应，本报告将贯通“形式化建模—双状态空间—正交连接通道—分层安全联锁—全链路闭环”的完整技术脉络。
+          </div>
+        </div>
+
+        <div class="cover-meta">
+          <span><strong>论文出处:</strong> Eurosim 2026 / Procedia Computer Science</span>
+          <span><strong>系统实现:</strong> SmartLab 2.0 (Spring Boot 3 + Vue 3 + MQTT)</span>
+          <span><strong>核心主题:</strong> 理论四元组、执行切片、状态锁存、正交通道</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== SLIDE 2: 行业痛点与范式危机 ==================== -->
+    <div class="slide" data-slide="2">
+      <div class="slide-header">
+        <div>
+          <div class="tag-wrapper">
+            <span class="badge theory">背景与动机</span>
+            <span class="badge">范式危机</span>
+          </div>
+          <div class="slide-title"><i data-lucide="alert-triangle" style="color: var(--accent-amber);"></i> 现有实验室自动化范式的三大割裂鸿沟</div>
+        </div>
+        <div class="slide-subtitle">为什么传统的脚本与工作流无法支撑复杂、自洽的智能实验系统？</div>
+      </div>
+
+      <div class="narrative-box">
+        <div class="narrative-header"><i data-lucide="mic"></i> 本页演说与概念导读 (Slide Narrative)</div>
+        <div class="narrative-text">
+          在智能化学与材料实验室的快速演进中，业界普遍面临着三大根本性矛盾：<strong>脚本驱动的“黑盒孤岛”</strong>导致状态与约束被深埋在代码中，系统不可观测且脆弱；<strong>传统工作流的“语义缺失”</strong>将节点视作简单的动作包装器（Command Wrapper），无法感知设备的真实物理状态与数据契约；<strong>静态数字孪生的“脱离执行”</strong>仅能描述宏观资源，却无法为具体实验任务投影出可执行的逻辑上下文。这三大割裂使得实验流程极易出现状态死锁、安全越界与逻辑幽灵。SmartLab 2.0 的核心使命就是用自洽的模型消除这种割裂。
+        </div>
+      </div>
+
+      <div class="slide-content">
+        <div class="grid-3">
+          <div class="card">
+            <div class="card-title rose"><i data-lucide="code-2"></i> 1. 脚本驱动的逻辑黑盒</div>
+            <ul class="feature-list">
+              <li><strong>控制逻辑碎片化:</strong> 设备通信、时序等待与状态判断混杂在 Python / 厂商脚本中，缺乏顶层模型。</li>
+              <li><strong>无法全局协同:</strong> 脚本之间缺乏统一的数据与事件总线，难以实现多设备复杂联锁。</li>
+              <li><strong>维护成本极高:</strong> 任何实验参数调整或硬件变更都需要侵入修改代码，缺乏工程复用性。</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <div class="card-title amber"><i data-lucide="git-merge"></i> 2. 传统工作流的语义贫血</div>
+            <ul class="feature-list">
+              <li><strong>纯过程导向:</strong> 将工作流节点视为简单的“无状态动作包装器”，忽略设备的真实物理演化。</li>
+              <li><strong>数据控制混杂:</strong> 信号流、控制流与数据流共用一条连线，导致竞态条件与数据污染。</li>
+              <li><strong>异常收敛缺失:</strong> 任务中止时缺乏严密的状态机协同，极易造成硬件失控与指令挂死。</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <div class="card-title purple"><i data-lucide="box"></i> 3. 静态数字孪生脱离任务</div>
+            <ul class="feature-list">
+              <li><strong>宏观描述有余:</strong> 能够建立实验室拓扑与设备三维模型，但无法按任务需求动态组装。</li>
+              <li><strong>执行语义脱节:</strong> 缺乏将静态资产模型动态投影为“任务特定执行实例”的桥梁。</li>
+              <li><strong>安全约束滞后:</strong> 静态约束无法跟随实验阶段（任务目标）动态切换监控策略。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== SLIDE 3: 论文理论基石：系统形式化四元组 ==================== -->
+    <div class="slide" data-slide="3">
+      <div class="slide-header">
+        <div>
+          <div class="tag-wrapper">
+            <span class="badge theory">Eurosim 2026 理论</span>
+            <span class="badge">形式化建模</span>
+          </div>
+          <div class="slide-title"><i data-lucide="book-open" style="color: var(--secondary);"></i> 理论基石：系统抽象四元组 $\mathcal{L} = \langle \mathcal{R}, \mathcal{F}, \mathcal{C}, \Pi \rangle$</div>
+        </div>
+        <div class="slide-subtitle">为实验任务执行建立完备的数学与概念形式化表达体系</div>
+      </div>
+
+      <div class="narrative-box">
+        <div class="narrative-header"><i data-lucide="mic"></i> 本页演说与概念导读 (Slide Narrative)</div>
+        <div class="narrative-text">
+          论文在形式化层面上提出了一个宏大的四元组定义：智能实验室系统 $\mathcal{L}$ 由<strong>静态资源层 $\mathcal{R}$</strong>、<strong>动态工作流层 $\mathcal{F}$</strong>、<strong>多维约束层 $\mathcal{C}$</strong> 以及穿透各层的<strong>全局协议规约 $\Pi$</strong> 构成。这里埋下了一个贯穿全篇的核心伏笔：<em>工作流并非独立于资源的流程图，而是整个实验室系统在特定任务下的“可执行投影切片（Execution Slice）”</em>。四元组从数学语义上解耦了物理资产、过程编排与安全边界，为后续工程架构的微内核设计提供了绝对自洽的理论源头。
+        </div>
+      </div>
+
+      <div class="slide-content">
+        <div class="math-box">
+          $$\mathcal{L} = \langle \mathcal{R}, \mathcal{F}, \mathcal{C}, \Pi \rangle \quad \Longrightarrow \quad \begin{cases} 
+          \mathcal{R} = \langle V_D, G_C \rangle & \text{静态资源与设备物模型网络} \\ 
+          \mathcal{F} = \langle V_F, E_I, E_P \rangle & \text{任务动态执行切片与正交通道} \\ 
+          \mathcal{C} = \langle BC, Obs, VH, TC \rangle & \text{全局基线与任务动态约束体系} \\ 
+          \Pi = \langle \text{Signals}, \text{Payloads}, \text{Topics} \rangle & \text{统一通信与协议字典规约} 
+          \end{cases}$$
+        </div>
+
+        <div class="grid-4">
+          <div class="card">
+            <div class="card-title"><i data-lucide="cpu"></i> 静态资源层 $\mathcal{R}$</div>
+            <p style="font-size: 0.85rem; color: #94a3b8; line-height: 1.5;">
+              将物理设备抽象为可执行对象模型 $D = \langle Cap_D, SM_D \rangle$，彻底分离静态能力定义与动态状态机。
+            </p>
+          </div>
+
+          <div class="card">
+            <div class="card-title emerald"><i data-lucide="git-commit"></i> 动态工作流层 $\mathcal{F}$</div>
+            <p style="font-size: 0.85rem; color: #94a3b8; line-height: 1.5;">
+              定义任务执行切片，通过节点能力映射 $Map = \langle D, op \rangle$ 将设备能力实例化，并分离信号活边 $E_I$ 与数据端口 $E_P$。
+            </p>
+          </div>
+
+          <div class="card">
+            <div class="card-title rose"><i data-lucide="shield-check"></i> 多维约束层 $\mathcal{C}$</div>
+            <p style="font-size: 0.85rem; color: #94a3b8; line-height: 1.5;">
+              基于可观测对象空间 $Obs = Obs_R \cup Obs_F$，提供全域基线约束 $BC$ 与任务特定约束包 $TC_\tau$ 的双重安全监护。
+            </p>
+          </div>
+
+          <div class="card">
+            <div class="card-title amber"><i data-lucide="file-code"></i> 全局协议规约 $\Pi$</div>
+            <p style="font-size: 0.85rem; color: #94a3b8; line-height: 1.5;">
+              统一定义标准信号集、报文信封格式与 MQTT 主题模板，消除异构系统通信的语义歧义。
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== SLIDE 4: 架构映射：从理论四元组到工程五大支柱 ==================== -->
+    <div class="slide" data-slide="4">
+      <div class="slide-header">
+        <div>
+          <div class="tag-wrapper">
+            <span class="badge engineering">系统总体架构</span>
+            <span class="badge">理论与工程呼应</span>
+          </div>
+          <div class="slide-title"><i data-lucide="layers" style="color: var(--accent-cyan);"></i> 理论到工程的同构映射：五大核心支柱</div>
+        </div>
+        <div class="slide-subtitle">学术形式化概念在 SmartLab 2.0 工业级运行时微内核中的精准落地</div>
+      </div>
+
+      <div class="narrative-box">
+        <div class="narrative-header"><i data-lucide="mic"></i> 本页演说与概念导读 (Slide Narrative)</div>
+        <div class="narrative-text">
+          在工程落地中，SmartLab 2.0 严格秉持<strong>“统一自洽、杜绝特例代码”</strong>的哲学，将论文的理论四元组映射为<strong>五大独立解耦的运行时引擎与中枢体系</strong>。我们构建了<em>设备状态机引擎</em>来承载 $\mathcal{R}$ 中的数字孪生演化；构建了<em>工作流引擎</em>来驱动 $\mathcal{F}$ 的执行推进；构建了<em>约束引擎</em>来实施 $\mathcal{C}$ 的旁路安全监护；构建了<em>统一可观测空间</em>作为全系统共享的权威内存快照；并通过<em>四层标准适配器体系</em>实现了软硬件的无缝咬合。所有引擎互不直连、正交自治。
+        </div>
+      </div>
+
+      <div class="slide-content">
+        <table class="compare-table">
+          <thead>
+            <tr>
+              <th style="width: 22%;">Eurosim 2026 理论概念</th>
+              <th style="width: 28%;">SmartLab 2.0 工程核心实现</th>
+              <th style="width: 25%;">系统分工与职责边界</th>
+              <th style="width: 25%;">设计哲学与解耦机制</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>静态资源与状态机 $\mathcal{R}$</strong></td>
+              <td><code>StateMachineEngine</code> + 设备物模型</td>
+              <td>驱动设备实例数字孪生，管理命令与业务双状态空间</td>
+              <td>按物理实例严格隔离，实例间零共享状态</td>
+            </tr>
+            <tr>
+              <td><strong>动态工作流切片 $\mathcal{F}$</strong></td>
+              <td><code>WorkflowEngine</code> + 活边转发器</td>
+              <td>负责任务生命周期调度、步骤推进与条件上升沿求值</td>
+              <td>通过能力映射动态实例化，不硬编码设备物理逻辑</td>
+            </tr>
+            <tr>
+              <td><strong>多维约束体系 $\mathcal{C}$</strong></td>
+              <td><code>ConstraintEngine</code> + 协调器</td>
+              <td>纯逻辑旁路计算引擎，多维对象时序监控与联动处置</td>
+              <td>不侵入主控流程，通过事件总线与标准信号联动</td>
+            </tr>
+            <tr>
+              <td><strong>可观测对象空间 $Obs$</strong></td>
+              <td><code>Observation Space</code> (权威内存快照)</td>
+              <td>统一维护设备属性、状态机状态与工作流变量快照</td>
+              <td>只读纳秒级并发访问，彻底解耦数据生产者与消费者</td>
+            </tr>
+            <tr>
+              <td><strong>协议规约 $\Pi$ 与适配器</strong></td>
+              <td><code>Edge Adapter</code> (4层体系) + MQTT</td>
+              <td>异构硬件指令翻译、数据上报与标准信封封装</td>
+              <td>北向标准化 MQTT 信封，南向屏蔽物理总线杂质</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ==================== SLIDE 5: 资源抽象与状态空间：双状态空间哲学 ==================== -->
+    <div class="slide" data-slide="5">
+      <div class="slide-header">
+        <div>
+          <div class="tag-wrapper">
+            <span class="badge engineering">设备状态机引擎</span>
+            <span class="badge theory">双状态空间</span>
+          </div>
+          <div class="slide-title"><i data-lucide="activity" style="color: var(--primary);"></i> 资源抽象与状态双轨制：物模型解耦哲学</div>
+        </div>
+        <div class="slide-subtitle">彻底区分“指令调度生命周期”与“物理运行业务状态”的双状态空间设计</div>
+      </div>
+
+      <div class="narrative-box">
+        <div class="narrative-header"><i data-lucide="mic"></i> 本页演说与概念导读 (Slide Narrative)</div>
+        <div class="narrative-text">
+          传统系统常犯的致命错误是将“下发命令的执行过程”与“设备当前的物理工作状态”混为一谈。在论文模型 $Cap_D = \langle Attr, Ops, Adpt, Port_D, Constr_D \rangle$ 与 $SM_D$ 的指导下，SmartLab 2.0 创新性地提出了<strong>双状态空间（Dual-State Space）双轨调度制</strong>：
+          <strong>CMD 空间</strong>严格管理指令执行生命周期（<code>IDLE $\to$ SENT $\to$ RUNNING $\to$ COMPLETED</code>）；
+          <strong>OP 空间</strong>管理设备物理业务状态（<code>OPERATIONAL</code> 互斥单状态区与 <code>EXCEPTION</code> 多异常集合区）。
+          此外，针对急停与中断场景，架构实现了<em>普通指令、附属终止指令与可插队终止能力</em>的正交调度，彻底根除了指令槽挂死与状态冲突。
+        </div>
+      </div>
+
+      <div class="slide-content">
+        <div class="grid-2">
+          <div class="card">
+            <div class="card-title"><i data-lucide="terminal"></i> CMD 状态空间：指令生命周期闭环</div>
+            <ul class="feature-list">
+              <li><strong>普通指令单轨排他:</strong> 同一设备实例在同一时刻仅允许一个活动普通指令，处于 <code>RUNNING</code> 时拒绝新指令进入。</li>
+              <li><strong>附属终止机制 (Attached Abort):</strong> 普通指令执行中收到中止信号时，根据能力契约派生附属终止指令，生成独立 <code>messageId</code> 执行安全平稳降级。</li>
+              <li><strong>可插队终止能力:</strong> 急停（E-Stop）等高危安全能力具备最高优先级，不受普通指令状态限制，立即可插队下发。</li>
+              <li><strong>作用域自动收敛:</strong> 终止指令完成后，自动结清其声明覆盖范围（<code>scope</code>）内的普通指令为 <code>ABORTED</code>。</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <div class="card-title emerald"><i data-lucide="thermometer"></i> OP 状态空间：物理运行与异常锁存</div>
+            <ul class="feature-list">
+              <li><strong>OPERATIONAL 分区:</strong> 互斥单状态区（如 <code>Idle</code>, <code>Heating</code>, <code>Holding</code>），由物理事件驱动普通状态转移。</li>
+              <li><strong>EXCEPTION 分区 (多活动状态集):</strong> 专门容纳设备异常状态，独立于常规转移路径，不因单次事件被意外覆盖。</li>
+              <li><strong>内置约束硬件级锁存 (Latch):</strong> 物理传感器一旦越过 $Constr_D$ 阈值，异常状态立即触发并强力锁存；<strong>即使物理指标恢复正常，也绝不自动解除</strong>。</li>
+              <li><strong>人工安全解锁闭环:</strong> 必须由人工介入发起复位，状态机重新全量核算所有内置约束均合规后方可移出异常。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== SLIDE 6: 动态工作流切片：从被动编排到系统投影 ==================== -->
+    <div class="slide" data-slide="6">
+      <div class="slide-header">
+        <div>
+          <div class="tag-wrapper">
+            <span class="badge theory">动态工作流层</span>
+            <span class="badge">执行切片</span>
+          </div>
+          <div class="slide-title"><i data-lucide="share-2" style="color: var(--secondary);"></i> 工作流即执行切片：从被动编排到系统投影</div>
+        </div>
+        <div class="slide-subtitle">工作流不是简单的操作序列，而是物理实验室在特定任务上下文下的动态时空切片</div>
+      </div>
+
+      <div class="narrative-box">
+        <div class="narrative-header"><i data-lucide="mic"></i> 本页演说与概念导读 (Slide Narrative)</div>
+        <div class="narrative-text">
+          论文最具突破性的理论洞见在于将工作流重新定义为<strong>“实验室系统的任务特定执行切片（Task-specific Execution Slice）”</strong>。在这一理念下，工作流节点不再是外挂的脚本触发器，而是通过<em>能力映射（Capability Mapping: $Map = \langle D, op \rangle$）</em>将静态物模型中的原子能力投影到任务拓扑中。节点自身拥有私有的变量空间 $Var$、独立的生命周期状态机 $St$ 以及严格的触发条件集。工作流引擎通过 100ms 周期性冻结快照与上升沿求值，确保在并发环境下每一次状态推进与信号派发都具备数学确定性。
+        </div>
+      </div>
+
+      <div class="slide-content">
+        <div class="grid-3">
+          <div class="card">
+            <div class="card-title purple"><i data-lucide="box"></i> 节点能力映射 (Capability Mapping)</div>
+            <ul class="feature-list">
+              <li><strong>语义绑定而非代码实现:</strong> 流程节点直接绑定设备物模型标识与能力名，继承底层的参数校验与契约。</li>
+              <li><strong>物理资源动态注入:</strong> 静态设计期面向“抽象设备模型”，运行期通过资源映射表（Resource Map）动态绑定物理设备实例。</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <div class="card-title emerald"><i data-lucide="workflow"></i> 三类正交节点调度语义</div>
+            <ul class="feature-list">
+              <li><strong>DEV_NODE (设备节点):</strong> 具备完整生命周期，通过 <code>EMIT</code> 发送指令，等待设备状态机回传 <code>CMD_STATE</code> 推进终态。</li>
+              <li><strong>FUNC_NODE (控制节点):</strong> 无生命周期，承载分支、聚合、算术赋值与子流程结清。</li>
+              <li><strong>SUBFLOW_NODE (子流程):</strong> 递归嵌套实例化，维护层级调用深度与上下文隔离。</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <div class="card-title"><i data-lucide="clock"></i> 上升沿触发与确定性演化</div>
+            <ul class="feature-list">
+              <li><strong>时序快照隔离:</strong> 轮询起始时冻结节点快照，消除同一周期内多触发器相互干扰的竞态。</li>
+              <li><strong>严格上升沿激活:</strong> 条件由 <code>false $\to$ true</code> 的瞬间方可触发动作，彻底杜绝高电平持续导致的重复触发。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== SLIDE 7: 通道体系：控制流与数据流的正交分离 ==================== -->
+    <div class="slide" data-slide="7">
+      <div class="slide-header">
+        <div>
+          <div class="tag-wrapper">
+            <span class="badge engineering">连接通道体系</span>
+            <span class="badge">正交解耦</span>
+          </div>
+          <div class="slide-title"><i data-lucide="git-fork" style="color: var(--accent-cyan);"></i> 连接通道体系：控制流与数据流的正交隔离</div>
+        </div>
+        <div class="slide-subtitle">接口连接（控制信号路由）与端口连接（数据按需拉取）的正交分离设计</div>
+      </div>
+
+      <div class="narrative-box">
+        <div class="narrative-header"><i data-lucide="mic"></i> 本页演说与概念导读 (Slide Narrative)</div>
+        <div class="narrative-text">
+          在复杂自动化控制中，“信号什么时候到达”与“数据如何流转消费”是两套完全不同的物理维度。如果将二者混在同一条连线上，极易产生上游数据被下游意外覆写或竞态消费的灾难。SmartLab 2.0 严格遵循论文的 $E_I$ 与 $E_P$ 拓扑定义，实现了<strong>控制流与数据流的彻底正交分离</strong>：
+          <strong>接口连接（Interface Connection）</strong>负责控制信号的高速实时路由，在内存中动态维护带任务上下文的“活边（Live Edge）”；
+          <strong>端口连接（Port Connection）</strong>则采用下游单向拉取模式，上游终态数据绝对冻结，从根本上保证了数据拓扑的纯粹性与不可篡改性。
+        </div>
+      </div>
+
+      <div class="slide-content">
+        <div class="grid-2">
+          <div class="card highlight">
+            <div class="card-title"><i data-lucide="zap"></i> 1. 接口连接 (Interface Connection —— 信号控制流)</div>
+            <div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 0.6rem;">
+              承载系统激活、中止与状态通知信号：<code>ACTIVE</code>, <code>WF_EXECUTE_START</code>, <code>CMD_STATE</code>
+            </div>
+            <ul class="feature-list">
+              <li><strong>动态活边机制 (Live Edge):</strong> 静态声明于模型中，运行期由转发器实例化为携带 <code>taskId</code>、<code>stepId</code> 与 <code>instanceId</code> 的高亮路由活边。</li>
+              <li><strong>即时转发零排队:</strong> 信号产生后直接写入 OUT 快照并通过活边投递目标 IN 接口，不引入消息队列积压。</li>
+              <li><strong>原路回程拓扑:</strong> 设备状态变更沿占用中的活边精准写回发起节点，杜绝广播污染。</li>
+            </ul>
+          </div>
+
+          <div class="card highlight">
+            <div class="card-title emerald"><i data-lucide="database"></i> 2. 端口连接 (Port Connection —— 数据与物料流)</div>
+            <div style="font-size: 0.85rem; color: #94a3b8; margin-bottom: 0.6rem;">
+              承载传感器测量值、实验参数与物料上下文：<code>PORT_OUT $\to$ PORT_IN</code>
+            </div>
+            <ul class="feature-list">
+              <li><strong>下游活跃主动拉取:</strong> 仅当下游节点进入 <code>PENDING</code> 或 <code>RUNNING</code> 活跃期时，拉取器才按拓扑关系抽取上游端口数据。</li>
+              <li><strong>上游终态绝对冻结:</strong> 拉取操作仅修改下游私有变量空间，<strong>绝不逆向污染源步骤的数据</strong>。</li>
+              <li><strong>物料流与时序数据对齐:</strong> 支持将物理流体流转与数值参数在拓扑图中形成直观映射。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== SLIDE 8: 安全防线：多层防御与约束锁存体系 ==================== -->
+    <div class="slide" data-slide="8">
+      <div class="slide-header">
+        <div>
+          <div class="tag-wrapper">
+            <span class="badge engineering">约束引擎</span>
+            <span class="badge theory">安全联锁</span>
+          </div>
+          <div class="slide-title"><i data-lucide="shield-alert" style="color: var(--accent-rose);"></i> 多层安全防线：局部内置约束与全局约束协同</div>
+        </div>
+        <div class="slide-subtitle">物理级硬件硬保护与系统级逻辑软监控的纵深防御体系</div>
+      </div>
+
+      <div class="narrative-box">
+        <div class="narrative-header"><i data-lucide="mic"></i> 本页演说与概念导读 (Slide Narrative)</div>
+        <div class="narrative-text">
+          化学与材料实验室的自动化绝容不得半点失控。SmartLab 2.0 建立了<strong>双层互补的安全防御大厦</strong>：
+          在<strong>局部物理层</strong>，设备内置约束 $Constr_D$ 嵌入状态机内部，直接对传感器原始属性进行毫秒级监测，越限即刻锁存进入 <code>EXCEPTION</code> 状态并切断动作；
+          在<strong>全局系统层</strong>，独立的约束引擎旁路监听全域可观测空间 $Obs$，基于全局基线约束 $BC$ 与任务特定约束 $TC_\tau$ 进行时序窗口防抖判定。一旦违规，自动触发从系统级优雅终止（<code>SYSTEM: ABORT</code>）到设备级保护能力（<code>CONSTRAINT_EXECUTE</code>）的闭环处置，并将现场完整快照记入审计日志。
+        </div>
+      </div>
+
+      <div class="slide-content">
+        <div class="grid-3">
+          <div class="card">
+            <div class="card-title rose"><i data-lucide="alert-octagon"></i> 1. 局部物理内置约束 ($Constr_D$)</div>
+            <ul class="feature-list">
+              <li><strong>设备级硬约束:</strong> 与具体任务无关的底层安全底线（如反应釜温度上限 $\le 500^\circ\text{C}$）。</li>
+              <li><strong>独立高速轮询:</strong> 状态机内置监测器直接对接传感器快照，毫秒级快速响应。</li>
+              <li><strong>异常状态强力锁存:</strong> 杜绝“物理指标短暂回落便误判安全”的安全死角。</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <div class="card-title amber"><i data-lucide="eye"></i> 2. 统一可观测空间 ($Obs$)</div>
+            <ul class="feature-list">
+              <li><strong>六维全景对象:</strong> 设备属性、OP业务状态、CMD生命周期、节点状态、内部变量与任务状态。</li>
+              <li><strong>权威内存快照:</strong> 纳秒级只读访问，基于递增版本号与有界时序历史（History Store）。</li>
+              <li><strong>事件+定时双轨唤醒:</strong> 变量变更即刻唤醒求值，周期时钟兜底防漏。</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <div class="card-title purple"><i data-lucide="activity"></i> 3. 全局动态约束与处置闭环</div>
+            <ul class="feature-list">
+              <li><strong>时序窗口防抖:</strong> 持续越限超过设定时间窗口方才触发，有效过滤瞬态毛刺。</li>
+              <li><strong>系统级优雅终止:</strong> 触发标准 5 步优雅终止，有序降级所有活动设备。</li>
+              <li><strong>全息审计存证:</strong> 捕获违规瞬间完整的变量快照，入库 <code>VIOLATION_LOG</code> 供追溯。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== SLIDE 9: 端到端闭环链路：从设计到底层物理执行 ==================== -->
+    <div class="slide" data-slide="9">
+      <div class="slide-header">
+        <div>
+          <div class="tag-wrapper">
+            <span class="badge engineering">端到端链路</span>
+            <span class="badge">闭环追溯</span>
+          </div>
+          <div class="slide-title"><i data-lucide="repeat" style="color: var(--primary);"></i> 端到端执行链路：强追踪与严密状态收敛</div>
+        </div>
+        <div class="slide-subtitle">全链路 messageId 穿透、不可变状态流转与任务优雅收敛机制</div>
+      </div>
+
+      <div class="narrative-box">
+        <div class="narrative-header"><i data-lucide="mic"></i> 本页演说与概念导读 (Slide Narrative)</div>
+        <div class="narrative-text">
+          在分布式实验系统中，指令丢失与状态不一致是导致灾难的根源。SmartLab 2.0 构建了<strong>严密的端到端闭环追踪体系</strong>。每一个从工作流发起的控制请求，都会被赋予全局唯一的 <code>messageId</code>，穿透状态机、MQTT Broker、边缘适配器直至物理硬件，并原路随事件报文回传。整个系统形成了从“工作流求值 $\to$ 活边转发 $\to$ 状态机下发 $\to$ 协议转换 $\to$ 硬件执行 $\to$ 遥测回传 $\to$ 观测更新 $\to$ 约束判定 $\to$ 节点流转”的<strong>无死角十大闭环步骤</strong>，确保每一步操作都有因可循、有果可查。
+        </div>
+      </div>
+
+      <div class="slide-content">
+        <div class="pipeline">
+          <div class="pipe-step active">
+            <strong>1. 工作流求值</strong><br>
+            <span style="font-size: 0.72rem; color: #94a3b8;">触发器上升沿激发</span>
+          </div>
+          <span class="pipe-arrow">→</span>
+          <div class="pipe-step">
+            <strong>2. 活边转发</strong><br>
+            <span style="font-size: 0.72rem; color: #94a3b8;">投递 WF_START</span>
+          </div>
+          <span class="pipe-arrow">→</span>
+          <div class="pipe-step active">
+            <strong>3. 状态机下发</strong><br>
+            <span style="font-size: 0.72rem; color: #94a3b8;">生成 messageId</span>
+          </div>
+          <span class="pipe-arrow">→</span>
+          <div class="pipe-step">
+            <strong>4. MQTT 信封</strong><br>
+            <span style="font-size: 0.72rem; color: #94a3b8;">标准 Command 主题</span>
+          </div>
+          <span class="pipe-arrow">→</span>
+          <div class="pipe-step active">
+            <strong>5. 边缘适配器</strong><br>
+            <span style="font-size: 0.72rem; color: #94a3b8;">4层翻译/协议控制</span>
+          </div>
+          <span class="pipe-arrow">→</span>
+          <div class="pipe-step">
+            <strong>6. 物理仪器</strong><br>
+            <span style="font-size: 0.72rem; color: #94a3b8;">PLC / 传感器动作</span>
+          </div>
+          <span class="pipe-arrow">→</span>
+          <div class="pipe-step active">
+            <strong>7. 事件回传</strong><br>
+            <span style="font-size: 0.72rem; color: #94a3b8;">带 messageId ACK</span>
+          </div>
+          <span class="pipe-arrow">→</span>
+          <div class="pipe-step">
+            <strong>8. 观测空间更新</strong><br>
+            <span style="font-size: 0.72rem; color: #94a3b8;">快照与时序历史</span>
+          </div>
+          <span class="pipe-arrow">→</span>
+          <div class="pipe-step active">
+            <strong>9. 约束旁路监护</strong><br>
+            <span style="font-size: 0.72rem; color: #94a3b8;">安全联锁判定</span>
+          </div>
+          <span class="pipe-arrow">→</span>
+          <div class="pipe-step">
+            <strong>10. 节点终态推进</strong><br>
+            <span style="font-size: 0.72rem; color: #94a3b8;">激活下游活边</span>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top: 0.5rem;">
+          <div class="card-title emerald"><i data-lucide="check-circle-2"></i> 优雅收敛：标准 5 步任务终止机制 (Task Termination Convergence)</div>
+          <div class="grid-2" style="font-size: 0.85rem; color: #cbd5e1; gap: 1rem;">
+            <div>
+              1. <strong>状态标记:</strong> 任务状态置为 <code>TERMINATING</code>，冻结后续新节点调度。<br>
+              2. <strong>节点收敛:</strong> <code>PENDING</code> 节点直转 <code>TERMINATED</code>，<code>RUNNING</code> 设备节点发送 <code>WF_EXECUTE_ABORT</code>。<br>
+              3. <strong>状态机中止:</strong> 设备状态机转入 <code>ABORTING</code>，派生附属终止指令下发硬件。
+            </div>
+            <div>
+              4. <strong>终态确认:</strong> 适配器上报终止成功事件，状态机转为 <code>ABORTED</code> 并广播通知。<br>
+              5. <strong>全局结清:</strong> 所有活跃步骤收敛为终态后，整个任务正式收敛结清为 <code>TERMINATED</code>，安全释放设备锁。
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== SLIDE 10: 边缘适配哲学：契约化解耦与四层模型 ==================== -->
+    <div class="slide" data-slide="10">
+      <div class="slide-header">
+        <div>
+          <div class="tag-wrapper">
+            <span class="badge engineering">边缘驱动层</span>
+            <span class="badge">四层解耦</span>
+          </div>
+          <div class="slide-title"><i data-lucide="cpu" style="color: var(--secondary);"></i> 边缘适配哲学：契约化接入与四层解耦模型</div>
+        </div>
+        <div class="slide-subtitle">将千奇百怪的底层硬件物理协议收敛为统一标准物模型能力</div>
+      </div>
+
+      <div class="narrative-box">
+        <div class="narrative-header"><i data-lucide="mic"></i> 本页演说与概念导读 (Slide Narrative)</div>
+        <div class="narrative-text">
+          边缘适配器（Edge Adapter）是连接数字孪生世界与物理仪器装备的关键跳板。为了避免硬件通信杂质污染上层核心引擎，SmartLab 2.0 制定了<strong>严格的四层适配器标准架构</strong>：<code>runtime</code> 负责进程与配置管理、<code>northbound</code> 负责标准 MQTT 信封、<code>core</code> 负责语义转换与命令状态追踪、<code>southbound</code> 负责纯粹的物理总线协议。同时，我们通过<strong>内部参数注入机制（<code>internal=true</code>）</strong>，在上层物模型中对用户完全隐藏 PLC 站号、寄存器地址等物理细节，由 Adapter 在边缘端根据点位配置动态补全控制帧，实现了真正的即插即用。
+        </div>
+      </div>
+
+      <div class="slide-content">
+        <div class="grid-4">
+          <div class="card">
+            <div class="card-title"><i data-lucide="play-circle"></i> 1. runtime 层</div>
+            <p style="font-size: 0.82rem; color: #94a3b8; line-height: 1.45;">
+              <strong>生命周期管理:</strong> 进程启动、热重载配置校验、优雅退出编排以及看门狗心跳上报（<code>heartbeat</code>）。
+            </p>
+          </div>
+
+          <div class="card">
+            <div class="card-title emerald"><i data-lucide="radio"></i> 2. northbound 层</div>
+            <p style="font-size: 0.82rem; color: #94a3b8; line-height: 1.45;">
+              <strong>北向通信隔离:</strong> 仅负责 MQTT 订阅与发布，封装标准信封，<strong>严禁包含任何硬件协议与寄存器逻辑</strong>。
+            </p>
+          </div>
+
+          <div class="card">
+            <div class="card-title amber"><i data-lucide="cpu"></i> 3. core 层</div>
+            <p style="font-size: 0.82rem; color: #94a3b8; line-height: 1.45;">
+              <strong>语义与状态转换:</strong> 负责业务命令向设备操作的语义翻译、参数校验、内部参数动态注入与指令状态跟踪。
+            </p>
+          </div>
+
+          <div class="card">
+            <div class="card-title rose"><i data-lucide="cable"></i> 4. southbound 层</div>
+            <p style="font-size: 0.82rem; color: #94a3b8; line-height: 1.45;">
+              <strong>南向硬件总线:</strong> 专职处理 Modbus-TCP、串口 RS485、CAN、DLL 或厂商专有 SDK 通信，<strong>零感知平台协议</strong>。
+            </p>
+          </div>
+        </div>
+
+        <div class="card" style="background: rgba(15, 23, 42, 0.7); border: 1px dashed var(--border-highlight);">
+          <div class="card-title" style="font-size: 0.95rem;"><i data-lucide="key"></i> 契约化划分与内部参数注入机制 (Internal Parameter Injection)</div>
+          <p style="font-size: 0.86rem; color: #cbd5e1; line-height: 1.5;">
+            <strong>adapterconfig.ini (对外能力契约):</strong> 声明公开业务参数，启动时原文上传系统自动生成物模型；<br>
+            <strong>setup.ini (本地部署私有配置):</strong> 存储 Modbus 站号、IP、端口、串口波特率等内部参数，<strong>严禁上传</strong>；系统下发业务指令时，由 Adapter <code>core</code> 模块自动从本地配置中匹配 <code>sourceField</code> 注入物理报文，实现软硬件安全解耦。
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== SLIDE 11: 典型案例演绎：反应釜加热与多层联锁 ==================== -->
+    <div class="slide" data-slide="11">
+      <div class="slide-header">
+        <div>
+          <div class="tag-wrapper">
+            <span class="badge case">Eurosim 2026 案例</span>
+            <span class="badge">实证演绎</span>
+          </div>
+          <div class="slide-title"><i data-lucide="flame" style="color: var(--accent-amber);"></i> 典型案例演绎：反应釜加热与多层联锁协同</div>
+        </div>
+        <div class="slide-subtitle">论文代表性加热案例在三层协同架构下的全景动态演化验证</div>
+      </div>
+
+      <div class="narrative-box">
+        <div class="narrative-header"><i data-lucide="mic"></i> 本页演说与概念导读 (Slide Narrative)</div>
+        <div class="narrative-text">
+          论文与工程系统通过一个经典<strong>反应釜恒温加热任务（Reactor Heating Task）</strong>完成了理论与架构的闭环实证：
+          在<strong>静态资源层</strong>，物理反应釜被实例化为包含温度属性、加热能力、内置硬约束（$\le 500^\circ\text{C}$）及双状态机的物模型；
+          在<strong>动态工作流层</strong>，加热节点通过能力绑定投影为执行切片，数据端口实时映射温度；
+          在<strong>约束层</strong>，叠加实验工艺目标与温度软边界（$\le 120^\circ\text{C}$）。
+          该案例完整展现了正常推进时的状态跃迁，以及在出现超温异常时，局部锁存与全局约束协同触发告警与平稳降级的全过程，完美验证了系统的可实例化性与可执行性。
+        </div>
+      </div>
+
+      <div class="slide-content">
+        <div class="grid-3">
+          <div class="card">
+            <div class="card-title"><i data-lucide="box"></i> 1. 静态资源层建模</div>
+            <ul class="feature-list">
+              <li><strong>物模型:</strong> 反应釜 $D_{reactor}$，暴露 <code>Heat</code> 操作与 <code>temperature</code> 遥测属性。</li>
+              <li><strong>内置约束:</strong> $\langle temperature, \le, 500^\circ\text{C}, Abnormal \rangle$ 硬件级物理防烧毁底线。</li>
+              <li><strong>状态机:</strong> CMD 空间管理 <code>HeatCmd</code> 生命周期，OP 空间呈现 <code>Idle/Heating/Abnormal</code>。</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <div class="card-title emerald"><i data-lucide="git-branch"></i> 2. 动态工作流切片</div>
+            <ul class="feature-list">
+              <li><strong>节点绑定:</strong> 加热节点 $Map = \langle D_{reactor}, Heat \rangle$，注入目标温度参数。</li>
+              <li><strong>端口连接:</strong> 反应釜实时温度通过数据端口 $E_P$ 持续供给下游监测节点，数据不可篡改。</li>
+              <li><strong>活边激活:</strong> 上游完成信号到达，触发加热指令下发并推进节点进入 <code>RUNNING</code>。</li>
+            </ul>
+          </div>
+
+          <div class="card">
+            <div class="card-title rose"><i data-lucide="shield-check"></i> 3. 约束双重监护与联锁</div>
+            <ul class="feature-list">
+              <li><strong>任务特定约束:</strong> 工艺要求温度 $\le 120^\circ\text{C}$，越限时由约束引擎发送 <code>SYSTEM: STOP</code>。</li>
+              <li><strong>局部内置越限:</strong> 若温度突破 $500^\circ\text{C}$，状态机立即将 OP 空间切换为 <code>Abnormal</code> 并锁存。</li>
+              <li><strong>全链路联动:</strong> 约束违规触发 <code>CONSTRAINT_EXECUTE</code> 下发冷却保护，平稳收敛任务。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== SLIDE 12: 总结与展望：迈向自驱动智能实验室 ==================== -->
+    <div class="slide" data-slide="12">
+      <div class="slide-header">
+        <div>
+          <div class="tag-wrapper">
+            <span class="badge theory">总结与展望</span>
+            <span class="badge engineering">SDL 2.0</span>
+          </div>
+          <div class="slide-title"><i data-lucide="sparkles" style="color: var(--primary);"></i> 体系升华与未来演进：迈向自驱动科学发现</div>
+        </div>
+        <div class="slide-subtitle">从“自动化执行”迈向“模型可解释、策略自演化、物理绝对安全”的自驱动实验室（SDL）</div>
+      </div>
+
+      <div class="narrative-box">
+        <div class="narrative-header"><i data-lucide="mic"></i> 本页演说与概念导读 (Slide Narrative)</div>
+        <div class="narrative-text">
+          SmartLab 2.0 成功将 <em>Eurosim 2026</em> 论文提出的任务导向型形式化建模体系转化为坚实的工业级系统底座。通过<strong>形式化可解释性</strong>、<strong>微内核高内聚正交性</strong>以及<strong>双状态空间与分层安全防线</strong>，系统彻底摆脱了脚本拼凑的初级自动化阶段。面向未来，该架构将为<strong>自驱动实验室（Self-Driving Laboratories 2.0）</strong>与 <strong>AI 驱动的闭环科学发现（AI for Science）</strong>提供天然的执行语义层支撑——让大语言模型与优化算法生成的复杂实验配方，能够在一个透明、安全、可预测的数字孪生世界中直接实例化并自洽执行。
+        </div>
+      </div>
+
+      <div class="slide-content">
+        <div class="grid-2">
+          <div class="card highlight">
+            <div class="card-title"><i data-lucide="award"></i> SmartLab 2.0 架构核心里程碑</div>
+            <ul class="feature-list">
+              <li><strong>理论与工程深度统一:</strong> 形式化四元组 $\mathcal{L} = \langle \mathcal{R}, \mathcal{F}, \mathcal{C}, \Pi \rangle$ 在 Spring Boot 微内核与 MQTT 边缘端完美同构映射。</li>
+              <li><strong>状态与能力彻底解耦:</strong> CMD 与 OP 双状态空间消除了所有状态死锁与指令挂死隐患。</li>
+              <li><strong>正交通道与数据纯粹性:</strong> 接口活边控制与端口下游拉取保障了并发实验过程中的数据确定性。</li>
+              <li><strong>纵深防御与锁存安全:</strong> 物理内置硬约束锁存 + 全局逻辑软约束旁路监护，为无人化高危实验保驾护航。</li>
+            </ul>
+          </div>
+
+          <div class="card highlight">
+            <div class="card-title purple"><i data-lucide="compass"></i> 面向自驱动实验室 (SDL 2.0) 的演进路线</div>
+            <ul class="feature-list">
+              <li><strong>AI Agent 驱动的动态切片生成:</strong> 结合大模型直接将化学文献与合成路线编译为标准工作流模型与约束包。</li>
+              <li><strong>虚实仿真一体化协同 (Digital Twin in the Loop):</strong> 在向物理仪器下发前，在状态机沙箱与动力学仿真环境中进行安全性预演。</li>
+              <li><strong>多设备点位大规模弹性并发:</strong> 进一步优化分布式拓扑索引与消息总线，支撑百台级仪器集群的毫秒级高并发联调。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- 底部交互控制栏 -->
+  <div id="controls">
+    <div class="ctrl-group">
+      <button class="btn" id="prevBtn" onclick="changeSlide(-1)"><i data-lucide="chevron-left"></i> 上一页</button>
+      <button class="btn" id="nextBtn" onclick="changeSlide(1)">下一页 <i data-lucide="chevron-right"></i></button>
+      <button class="btn" id="drawerBtn" onclick="toggleDrawer()"><i data-lucide="layout-grid"></i> 目录大纲</button>
+    </div>
+
+    <div class="progress-bar-container">
+      <div class="progress-bar" id="progressBar"></div>
+    </div>
+
+    <div class="ctrl-group">
+      <div class="slide-counter" id="slideCounter">1 / 12</div>
+      <button class="btn" onclick="toggleFullScreen()"><i data-lucide="maximize"></i> 全屏</button>
+    </div>
+  </div>
+
+  <!-- 幻灯片大纲抽屉 -->
+  <div id="drawer">
+    <div class="drawer-title">
+      <span><i data-lucide="list"></i> 演示文稿全景目录大纲 (Overview)</span>
+      <button class="btn" style="padding: 0.2rem 0.5rem;" onclick="toggleDrawer()"><i data-lucide="x"></i> 关闭</button>
+    </div>
+    <div class="thumbnails" id="thumbnails"></div>
+  </div>
+
+  <script>
+    // 幻灯片元数据定义
+    const slidesData = [
+      { id: 1, title: "封面与宏观愿景", desc: "任务导向型可执行建模体系与技术架构演进" },
+      { id: 2, title: "行业痛点与范式危机", desc: "现有实验室自动化范式的三大割裂鸿沟" },
+      { id: 3, title: "理论基石：系统形式化四元组", desc: "L = <R, F, C, Π> 完备形式化表达" },
+      { id: 4, title: "总体架构映射：理论到五大支柱", desc: "形式化四元组在工程微内核中的同构落地" },
+      { id: 5, title: "资源抽象与状态双轨制", desc: "物模型解耦与 CMD / OP 双状态空间哲学" },
+      { id: 6, title: "动态工作流切片", desc: "工作流即执行切片：从被动编排到系统投影" },
+      { id: 7, title: "连接通道体系", desc: "接口控制流活边与端口数据流的正交分离" },
+      { id: 8, title: "多层安全防线", desc: "局部物理内置约束与全局约束协同体系" },
+      { id: 9, title: "端到端闭环链路", desc: "messageId 全程穿透与任务优雅终止收敛" },
+      { id: 10, title: "边缘适配哲学", desc: "契约化解耦、四层标准模型与内部参数注入" },
+      { id: 11, title: "典型案例演绎", desc: "反应釜加热与多层联锁协同全景实证" },
+      { id: 12, title: "总结与未来展望", desc: "迈向自驱动智能实验室 (SDL 2.0)" }
+    ];
+
+    let currentSlide = 1;
+    const totalSlides = slidesData.length;
+
+    // 初始化渲染缩略图
+    function initThumbnails() {
+      const container = document.getElementById('thumbnails');
+      container.innerHTML = '';
+      slidesData.forEach((s) => {
+        const div = document.createElement('div');
+        div.className = `thumb ${s.id === currentSlide ? 'active' : ''}`;
+        div.onclick = () => {
+          goToSlide(s.id);
+          toggleDrawer();
+        };
+        div.innerHTML = `
+          <div class="thumb-num">P.${String(s.id).padStart(2, '0')}</div>
+          <div class="thumb-name">${s.title}</div>
+        `;
+        container.appendChild(div);
+      });
+    }
+
+    // 更新界面状态
+    function updatePresentation() {
+      const slides = document.querySelectorAll('.slide');
+      slides.forEach((s, idx) => {
+        if (idx + 1 === currentSlide) {
+          s.classList.add('active');
+        } else {
+          s.classList.remove('active');
+        }
+      });
+
+      // 更新页码计数与进度条
+      document.getElementById('slideCounter').textContent = `${currentSlide} / ${totalSlides}`;
+      const progressPercent = ((currentSlide - 1) / (totalSlides - 1)) * 100;
+      document.getElementById('progressBar').style.width = `${progressPercent}%`;
+
+      // 更新按钮状态
+      document.getElementById('prevBtn').disabled = currentSlide === 1;
+      document.getElementById('nextBtn').disabled = currentSlide === totalSlides;
+
+      // 更新抽屉缩略图激活状态
+      const thumbs = document.querySelectorAll('.thumb');
+      thumbs.forEach((t, idx) => {
+        if (idx + 1 === currentSlide) {
+          t.classList.add('active');
+        } else {
+          t.classList.remove('active');
+        }
+      });
+
+      // 重新渲染图标与公式（若有动态更新）
+      lucide.createIcons();
+    }
+
+    function changeSlide(direction) {
+      const target = currentSlide + direction;
+      if (target >= 1 && target <= totalSlides) {
+        currentSlide = target;
+        updatePresentation();
+      }
+    }
+
+    function goToSlide(slideNum) {
+      if (slideNum >= 1 && slideNum <= totalSlides) {
+        currentSlide = slideNum;
+        updatePresentation();
+      }
+    }
+
+    function toggleDrawer() {
+      const drawer = document.getElementById('drawer');
+      drawer.classList.toggle('open');
+    }
+
+    function toggleFullScreen() {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+          console.error(`Error attempting to enable full-screen mode: ${err.message}`);
+        });
+      } else {
+        if (document.exitFullscreen) {
+          document.exitFullscreen();
+        }
+      }
+    }
+
+    // 键盘导航快捷键
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') {
+        changeSlide(1);
+      } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
+        changeSlide(-1);
+      } else if (e.key === 'Home') {
+        goToSlide(1);
+      } else if (e.key === 'End') {
+        goToSlide(totalSlides);
+      } else if (e.key === 'Escape') {
+        const drawer = document.getElementById('drawer');
+        if (drawer.classList.contains('open')) {
+          drawer.classList.remove('open');
+        }
+      } else if (e.key.toLowerCase() === 'f') {
+        toggleFullScreen();
+      } else if (e.key.toLowerCase() === 'o') {
+        toggleDrawer();
+      }
+    });
+
+    // 页面初始化
+    window.addEventListener('DOMContentLoaded', () => {
+      initThumbnails();
+      updatePresentation();
+      lucide.createIcons();
+    });
+  </script>
+</body>
+</html>

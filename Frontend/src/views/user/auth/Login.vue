@@ -48,9 +48,7 @@ const handleLogin = async () => {
         authObjects: user.authObjects
       })
       ElMessage.success('登录成功')
-      router.push(authStore.firstVisiblePath()).then(() => {
-        window.location.reload()
-      })
+      await router.push(authStore.firstVisiblePath())
     } else {
       ElMessage.error(res.data.message || '登录失败')
     }

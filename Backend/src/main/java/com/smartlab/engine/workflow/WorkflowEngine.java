@@ -288,11 +288,12 @@ public class WorkflowEngine implements WorkflowTaskPollScheduler {
         for (JsonNode interfaceNode : orderedInterfaces) {
             ObjectNode interfaceSnapshot = interfaceVariables(step, interfaceNode, frozenSnapshot);
             Map<String, Integer> duplicateOrdinals = new java.util.HashMap<>();
+            String interfaceName = interfaceNode.path("name").asText("");
+            int triggerIndex = 0;
             for (JsonNode trigger : iterable(interfaceNode.path("bindingTriggers"))) {
                 String fingerprint = WorkflowTriggerState.fingerprint(trigger);
                 int duplicateOrdinal = duplicateOrdinals.merge(fingerprint, 1, Integer::sum) - 1;
-                String key = WorkflowTriggerState.key(
-                        interfaceNode.path("name").asText(""), fingerprint, duplicateOrdinal);
+                String key = WorkflowTriggerState.key(interfaceName, fingerprint, duplicateOrdinal);
                 boolean previous = triggerStates.path(key).asBoolean(false);
                 boolean current = conditionEvaluator.evaluate(trigger.path("condition"), interfaceSnapshot);
                 if (current && !previous) {
@@ -315,6 +316,14 @@ public class WorkflowEngine implements WorkflowTaskPollScheduler {
                     triggerStates.put(key, false);
                     statesChanged = true;
                 }
+                boolean stored = triggerStates.path(key).asBoolean(false);
+                if (WorkflowTriggerState.rememberIndexFired(triggerStates, interfaceName, triggerIndex, stored)) {
+                    statesChanged = true;
+                }
+                triggerIndex++;
+            }
+            if (WorkflowTriggerState.pruneIndexKeys(triggerStates, interfaceName, triggerIndex)) {
+                statesChanged = true;
             }
         }
         if (statesChanged) persistTriggerStates(step, triggerStates);

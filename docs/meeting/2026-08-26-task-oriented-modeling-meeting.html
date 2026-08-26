@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>任务导向的可执行建模：从论文方法论到系统落地</title>
+  <style>
+    :root {
+      --paper: #ebe4d6;
+      --stage: #fbf8f1;
+      --ink: #1b2430;
+      --muted: #5d6670;
+      --faint: #8b928a;
+      --line: #ddd4c4;
+      --theory: #3b4a86;
+      --theory-soft: #e7eaf4;
+      --eng: #0f6e66;
+      --eng-soft: #dceeea;
+      --echo: #9a4a12;
+      --echo-soft: #f3e6d4;
+      --danger: #8f2d3a;
+      --danger-soft: #f3dce0;
+      --chip: #f3eee4;
+      --white: #fffcf7;
+      --shadow: 0 1px 0 rgba(27, 36, 48, 0.04);
+      --font: "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+      --serif: "Source Han Serif SC", "Noto Serif SC", "Songti SC", "SimSun", serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body {
+      height: 100%;
+      background: var(--paper);
+      color: var(--ink);
+      font-family: var(--font);
+      overflow: hidden;
+    }
+    body { display: flex; flex-direction: column; }
+    #app { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+    #stage-wrap {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 18px 18px 0;
+    }
+    #stage {
+      width: 1600px;
+      height: 900px;
+      background: var(--stage);
+      transform-origin: center center;
+      position: relative;
+      overflow: hidden;
+      border: 1px solid #d7ccb8;
+    }
+    .slide {
+      position: absolute;
+      inset: 0;
+      padding: 48px 64px 56px;
+      display: none;
+      flex-direction: column;
+    }
+    .slide.on { display: flex; }
+    .kicker {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+    .tags { display: flex; gap: 8px; align-items: center; }
+    .tag {
+      font-size: 12px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      padding: 4px 10px;
+      border: 1px solid var(--line);
+      background: var(--chip);
+      color: var(--muted);
+    }
+    .tag.theory { color: var(--theory); background: var(--theory-soft); border-color: #c9d0e6; }
+    .tag.eng { color: var(--eng); background: var(--eng-soft); border-color: #b7d8d2; }
+    .tag.echo { color: var(--echo); background: var(--echo-soft); border-color: #e4c9a8; }
+    .pg { font-size: 13px; color: var(--faint); letter-spacing: 0.08em; font-variant-numeric: tabular-nums; }
+    h1 {
+      font-family: var(--serif);
+      font-size: 40px;
+      font-weight: 650;
+      line-height: 1.25;
+      letter-spacing: 0.01em;
+      margin-bottom: 10px;
+    }
+    .lead {
+      font-size: 18px;
+      color: var(--muted);
+      line-height: 1.55;
+      max-width: 1280px;
+      margin-bottom: 28px;
+    }
+    .math {
+      font-family: var(--serif);
+      font-style: italic;
+      letter-spacing: 0.02em;
+    }
+    .grid { display: grid; gap: 16px; }
+    .g2 { grid-template-columns: 1fr 1fr; }
+    .g3 { grid-template-columns: 1fr 1fr 1fr; }
+    .g4 { grid-template-columns: 1fr 1fr 1fr 1fr; }
+    .g5 { grid-template-columns: repeat(5, 1fr); }
+    .card {
+      background: var(--white);
+      border: 1px solid var(--line);
+      padding: 20px 22px;
+      min-height: 0;
+    }
+    .card h3 {
+      font-size: 17px;
+      font-weight: 650;
+      margin-bottom: 8px;
+    }
+    .card p, .card li { font-size: 15px; line-height: 1.55; color: #3a4350; }
+    .card ul { padding-left: 18px; }
+    .card li + li { margin-top: 6px; }
+    .card.theory { border-top: 3px solid var(--theory); }
+    .card.eng { border-top: 3px solid var(--eng); }
+    .card.echo { border-top: 3px solid var(--echo); }
+    .card.danger { border-top: 3px solid var(--danger); }
+    .foot-claim {
+      margin-top: auto;
+      padding: 14px 18px;
+      background: var(--ink);
+      color: #f4efe6;
+      font-size: 16px;
+      line-height: 1.5;
+    }
+    .foot-claim strong { color: #f0d7a8; font-weight: 650; }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip {
+      font-size: 13px;
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      background: var(--chip);
+      color: var(--ink);
+    }
+    .chip.on { background: var(--echo-soft); border-color: #e0b888; color: var(--echo); }
+    .row { display: flex; gap: 16px; align-items: stretch; }
+    .grow { flex: 1; }
+    .arrow {
+      display: flex;
+      align-items: center;
+      color: var(--faint);
+      font-size: 22px;
+      padding: 0 4px;
+    }
+    .seq {
+      display: grid;
+      grid-template-columns: repeat(6, 1fr);
+      gap: 10px;
+    }
+    .beat {
+      background: var(--white);
+      border: 1px solid var(--line);
+      padding: 14px 12px 16px;
+      min-height: 168px;
+    }
+    .beat .n {
+      font-size: 11px;
+      letter-spacing: 0.14em;
+      color: var(--faint);
+      margin-bottom: 8px;
+    }
+    .beat h4 { font-size: 16px; margin-bottom: 8px; }
+    .beat p { font-size: 13px; line-height: 1.45; color: #4a5360; }
+    .beat.theory { border-top: 3px solid var(--theory); }
+    .beat.eng { border-top: 3px solid var(--eng); }
+    table.map {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--white);
+      font-size: 15px;
+    }
+    table.map th, table.map td {
+      text-align: left;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--line);
+      vertical-align: top;
+      line-height: 1.5;
+    }
+    table.map th {
+      font-size: 13px;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      font-weight: 650;
+      background: var(--chip);
+    }
+    table.map td:first-child { color: var(--theory); font-weight: 650; width: 28%; }
+    table.map td:nth-child(2) { color: var(--eng); width: 36%; }
+    .layers {
+      display: grid;
+      grid-template-rows: auto auto auto;
+      gap: 10px;
+    }
+    .layer {
+      border: 1px solid var(--line);
+      background: var(--white);
+      padding: 14px 18px;
+    }
+    .layer h3 { font-size: 15px; margin-bottom: 6px; }
+    .layer p { font-size: 14px; color: #445; line-height: 1.45; }
+    .cover {
+      justify-content: center;
+      padding: 72px 88px;
+      background:
+        linear-gradient(180deg, #fbf8f1 0%, #fbf8f1 58%, #eef2ea 100%);
+    }
+    .cover .rule {
+      width: 72px;
+      height: 3px;
+      background: var(--theory);
+      margin: 22px 0 28px;
+    }
+    .cover h1 { font-size: 52px; max-width: 1100px; margin-bottom: 18px; }
+    .cover .sub { font-size: 22px; color: var(--muted); max-width: 980px; line-height: 1.5; }
+    .meta { margin-top: 48px; display: flex; gap: 36px; color: var(--muted); font-size: 15px; }
+    .meta b { color: var(--ink); font-weight: 650; display: block; margin-bottom: 4px; font-size: 12px; letter-spacing: 0.12em; }
+    .split { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; flex: 1; min-height: 0; }
+    .col-title { font-size: 13px; letter-spacing: 0.14em; color: var(--muted); margin-bottom: 12px; }
+    ol.clean { padding-left: 22px; }
+    ol.clean li { margin: 8px 0; font-size: 16px; line-height: 1.5; color: #333c48; }
+    .big-two { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; flex: 1; }
+    .claim {
+      background: var(--white);
+      border: 1px solid var(--line);
+      padding: 32px 28px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+    }
+    .claim .idx { font-size: 12px; letter-spacing: 0.16em; color: var(--faint); margin-bottom: 16px; }
+    .claim h2 { font-family: var(--serif); font-size: 28px; line-height: 1.35; margin-bottom: 16px; }
+    .claim p { font-size: 16px; color: #4a5360; line-height: 1.55; }
+    .device-split { display: grid; grid-template-columns: 1.15fr 0.1fr 1.15fr; gap: 8px; align-items: stretch; flex: 1; }
+    .vs {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--faint);
+      font-size: 13px;
+      letter-spacing: 0.12em;
+      writing-mode: vertical-rl;
+    }
+    .ports {
+      display: flex;
+      gap: 8px;
+      margin-top: 14px;
+      flex-wrap: wrap;
+    }
+    .port {
+      font-size: 12px;
+      padding: 4px 8px;
+      border: 1px dashed #b7c0ce;
+      color: var(--muted);
+    }
+    .node-diagram {
+      position: relative;
+      height: 340px;
+      background: var(--white);
+      border: 1px solid var(--line);
+      margin-top: 8px;
+    }
+    svg.fig { width: 100%; height: 100%; }
+    #bar {
+      height: 52px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 18px 8px;
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    #bar button {
+      font-family: inherit;
+      background: transparent;
+      border: 1px solid #cfc4b0;
+      color: var(--ink);
+      padding: 6px 12px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    #bar button:hover { background: #f3eee4; }
+    #bar button:disabled { opacity: 0.35; cursor: default; }
+    .prog {
+      flex: 1;
+      height: 3px;
+      background: #d7ccb8;
+      overflow: hidden;
+    }
+    .prog > i { display: block; height: 100%; background: var(--theory); width: 0; }
+    .hint { font-size: 12px; color: #7a7368; min-width: 280px; text-align: right; }
+    #notes {
+      display: none;
+      height: 250px;
+      background: #1b2430;
+      color: #e8e2d6;
+      padding: 16px 22px 18px;
+      overflow: auto;
+      flex-shrink: 0;
+      border-top: 1px solid #2c3644;
+    }
+    body.notes-on #notes { display: block; }
+    #notes h4 {
+      font-size: 11px;
+      letter-spacing: 0.16em;
+      color: #c4a574;
+      margin-bottom: 6px;
+    }
+    #notes .cols { display: grid; grid-template-columns: 1.1fr 1.1fr 0.9fr; gap: 22px; }
+    #notes p, #notes li { font-size: 13px; line-height: 1.5; color: #d5cfc3; }
+    #notes ol { padding-left: 18px; }
+    #notes li + li { margin-top: 4px; }
+    #overview {
+      display: none;
+      position: absolute;
+      inset: 0;
+      background: rgba(27, 36, 48, 0.92);
+      z-index: 20;
+      padding: 28px;
+      overflow: auto;
+    }
+    body.overview-on #overview { display: block; }
+    #overview h2 { color: #f4efe6; font-size: 16px; margin-bottom: 16px; letter-spacing: 0.08em; }
+    .thumbs { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+    .thumb {
+      background: #fbf8f1;
+      color: var(--ink);
+      padding: 12px;
+      cursor: pointer;
+      min-height: 92px;
+      border: 1px solid transparent;
+      text-align: left;
+    }
+    .thumb:hover, .thumb.now { border-color: #c4a574; }
+    .thumb b { display: block; font-size: 11px; color: #7a7368; margin-bottom: 6px; }
+    .thumb span { font-size: 13px; line-height: 1.35; }
+    .ring-wrap { display: grid; grid-template-columns: 1.15fr 0.85fr; gap: 24px; flex: 1; align-items: center; }
+    .quiet { color: var(--muted); font-size: 14px; line-height: 1.5; }
+    em.mark { font-style: normal; color: var(--echo); }
+  </style>
+</head>
+<body>
+<div id="app">
+  <div id="stage-wrap">
+    <div id="stage">
+      <div id="overview">
+        <h2>总览 · 点击跳转 · Esc 返回</h2>
+        <div class="thumbs" id="thumbs"></div>
+      </div>
+
+      <!-- 1 -->
+      <section class="slide cover on" data-i="0">
+        <div class="tags">
+          <span class="tag theory">Eurosim 2026</span>
+          <span class="tag eng">组会</span>
+        </div>
+        <h1>任务导向的可执行建模</h1>
+        <div class="rule"></div>
+        <p class="sub">从论文方法论到实验室系统落地<br />先立一套共同的词，再用同一套词看系统如何长出来。</p>
+        <div class="meta">
+          <div><b>论文</b>A Task-Oriented Executable Modeling Framework<br />for Smart Chemical Laboratory</div>
+          <div><b>作者</b>Tao Yu, Chun Zhao<br />北京信息科技大学</div>
+          <div><b>讲法</b>方法论在前 · 工程回声在后<br />概念层对照，不进入实现细节</div>
+        </div>
+        <aside class="notes-src" hidden>
+          <div><h4>设计思路</h4><p>先亮身份：这不是功能巡演，也不是逐页念论文。封面把“方法”和“落地”并置，让听众预期一场对照讲。不放架构爆炸图。</p></div>
+          <div><h4>内容框架</h4><ol><li>论文在回答什么：任务级可执行表示</li><li>系统把同一套概念做成可运行对象</li><li>交代结构：先方法，后回声</li></ol></div>
+          <div><h4>口播与过渡</h4><p>今天先把论文的方法论讲清楚，再用同一套概念看我们的系统。请先看整场怎么走。</p></div>
+        </aside>
+      </section>
+
+      <!-- 2 -->
+      <section class="slide" data-i="1">
+        <div class="kicker">
+          <div class="tags"><span class="tag">结构</span><span class="tag echo">伏笔目录</span></div>
+          <div class="pg">02 / 22</div>
+        </div>
+        <h1>上半场立词，下半场用原词回收</h1>
+        <p class="lead">如果只记住结构：前面听懂四个字母 <span class="math">R, F, C, Π</span>；后面看它们如何变成可设计、可执行、可监护的对象。</p>
+        <div class="split">
+          <div>
+            <div class="col-title" style="color:var(--theory)">方法 · 论文</div>
+            <div class="card theory" style="margin-bottom:12px"><h3>缺口 → 主张</h3><p>三类既有路径各管一块。工作流被重新定义为实验室的任务切片；节点是能力映射。</p></div>
+            <div class="card theory" style="margin-bottom:12px"><h3>四元组逐层展开</h3><p>资源、工作流、约束、协议。每一层只多引进一个词。</p></div>
+            <div class="card theory"><h3>加热案例收束</h3><p>用论文中的反应釜加热，把三层装进同一次切片，并留下一条跨层时序。</p></div>
+          </div>
+          <div>
+            <div class="col-title" style="color:var(--eng)">落地 · 系统</div>
+            <div class="card eng" style="margin-bottom:12px"><h3>转折：不另起词汇表</h3><p>系统只让这些模型元素变成可配置、可执行、可检查的对象。</p></div>
+            <div class="card eng" style="margin-bottom:12px"><h3>五次回声</h3><p>资源 · 工作流与任务 · 通道与状态机 · 约束与观测 · 协议与边缘。</p></div>
+            <div class="card eng"><h3>同一条时序回放</h3><p>工程闭环不是另一个故事，是案例时间线的回声。</p></div>
+          </div>
+        </div>
+        <div style="margin-top:18px">
+          <div class="col-title">随后会反复点亮的词</div>
+          <div class="chips">
+            <span class="chip">F1 切片</span><span class="chip">F2 能力映射</span><span class="chip">F3 能力≠状态</span><span class="chip">F4 正交两边</span>
+            <span class="chip">F5 两套生命周期</span><span class="chip">F6 两级约束</span><span class="chip">F7 协议是语言</span><span class="chip">F8 同一条时序</span>
+          </div>
+        </div>
+        <aside class="notes-src" hidden>
+          <div><h4>设计思路</h4><p>给听众一张地图，避免前面公式、后面突然跳到系统。六至八枚伏笔芯片在此亮相。本页既是目录，也是伏笔目录。</p></div>
+          <div><h4>内容框架</h4><ol><li>左：问题、主张、三层、案例</li><li>右：转折、五次回声、时序回放</li><li>底：F1–F8 只点名，不展开</li></ol></div>
+          <div><h4>口播与过渡</h4><p>这里先记住这些词，后面系统会原样出现。先看论文认为缺的是什么。</p></div>
+        </aside>
+      </section>
+
+      <!-- 3 -->
+      <section class="slide" data-i="2">
+        <div class="kicker">
+          <div class="tags"><span class="tag theory">§2 相关工作</span></div>
+          <div class="pg">03 / 22</div>
+        </div>
+        <h1>缺的不是自动化，是任务级模型</h1>
+        <p class="lead">现有路径分别解决设备调用、过程编排与资产描述。没有一条把能力、运行状态、数据依赖与执行边界，组织进同一次任务表示。</p>
+        <div class="grid g3" style="flex:1">
+          <div class="card">
+            <h3>脚本与设备接口</h3>
+            <p>对集成和发令有效。设备状态、数据传播、约束处理往往散落在脚本、适配与控制代码里，而不是任务级模型。</p>
+          </div>
+          <div class="card">
+            <h3>常规工作流编排</h3>
+            <p>能说清步骤如何组织、执行如何推进。节点仍被当作动作或服务，并不携带设备状态、数据依赖与约束语义。</p>
+          </div>
+          <div class="card">
+            <h3>资产级系统模型</h3>
+            <p>能描述实验室资源与行为关系。通常不说明：如何按任务选出能力，并把状态、数据、信号、约束组装成一次可执行表示。</p>
+          </div>
+        </div>
+        <div class="foot-claim">剩余缺口：一个<strong>任务级</strong>模型，使能力、状态、数据依赖与执行约束成为同一切片里的协调元素。</div>
+        <aside class="notes-src" hidden>
+          <div><h4>设计思路</h4><p>严格按论文三条线，不攻击具体系统。缺口咬在“任务级模型缺失”，不要滑向“我们功能更多”。为下一页主张铺路。</p></div>
+          <div><h4>内容框架</h4><ol><li>脚本：集成有效，语义碎在代码里</li><li>工作流：会推进，节点仍是动作</li><li>孪生/MBSE：会描述资产，不会按任务组装执行</li></ol></div>
+          <div><h4>口播与过渡</h4><p>论文不是说前人没做自动化，而是说这三件事一直被分开对待。下一页给出重新定义。</p></div>
+        </aside>
+      </section>
+
+      <!-- 4 -->
+      <section class="slide" data-i="3">
+        <div class="kicker">
+          <div class="tags"><span class="tag theory">核心主张</span><span class="tag echo">F1 · F2</span></div>
+          <div class="pg">04 / 22</div>
+        </div>
+        <h1>两个定义，撑起整篇方法</h1>
+        <p class="lead">实验任务执行不是顺序调用设备命令，而是实验室系统在特定任务上下文中的整体动态演化。</p>
+        <div class="big-two">
+          <div class="claim" style="border-top:4px solid var(--theory)">
+            <div>
+              <div class="idx">F1 · EXECUTION SLICE</div>
+              <h2>工作流是实验室系统的任务切片</h2>
+              <p>它不是外挂在设备之上的流程图，而是从实验室整体中切出本次任务所需的能力、关系与边界，形成可执行的系统表示。</p>
+            </div>
+            <p class="quiet">后面所谓创建任务，就是切出这一片，并落到具体设备上。</p>
+          </div>
+          <div class="claim" style="border-top:4px solid var(--echo)">
+            <div>
+              <div class="idx">F2 · CAPABILITY MAPPING</div>
+              <h2>节点是设备能力的过程层映射</h2>
+              <p>节点不是命令包装器。它带着明确的状态、数据与信号语义，引用设备对象上的一项能力，而不是在流程里重写该能力。</p>
+            </div>
+            <p class="quiet">记住两个词就够往下听：切片、映射。</p>
+          </div>
+        </div>
+        <aside class="notes-src" hidden>
+          <div><h4>设计思路</h4><p>全场最重要的一页。两个主张要大、要短。F1、F2 在此命名。不展开四元组。</p></div>
+          <div><h4>内容框架</h4><ol><li>任务执行=整体演化</li><li>切片：只切进本次需要的元素</li><li>映射：节点携带语义</li><li>口头伏笔：创建任务=切片实例化</li></ol></div>
+          <div><h4>口播与过渡</h4><p>如果节点只是发一条命令，框架就退化成普通编排。下面用四元组把切片展开。</p></div>
+        </aside>
+      </section>
+
+      <!-- 5 -->
+      <section class="slide" data-i="4">
+        <div class="kicker">
+          <div class="tags"><span class="tag theory">§3.1 系统抽象</span></div>
+          <div class="pg">05 / 22</div>
+        </div>
+        <h1>实验室被写成一个四元组</h1>
+        <p class="lead"><span class="math">L = ⟨ R, F, C, Π ⟩</span>　资源提供可执行对象，工作流按任务组织它们，约束看守边界，协议是三层共用的语言——不是第四台执行引擎。</p>
+        <div class="grid g4" style="flex:1">
+          <div class="card theory">
+            <h3>R 静态资源</h3>
+            <p>设备资产及其连接。每个设备是可执行对象：能力定义 + 状态机。</p>
+          </div>
+          <div class="card theory">
+            <h3>F 动态工作流</h3>
+            <p>任务切片。组织被选中的能力，以及它们的时间、控制与数据关系。</p>
+          </div>
+          <div class="card theory">
+            <h3>C 约束</h3>
+            <p>实验室范围的基线，与仅在本任务期间生效的边界。监护而不是编排。</p>
+          </div>
+          <div class="card echo">
+            <h3>Π 协议</h3>
+            <p>信号格式与交互约定。让三层协调，而不去改对方的内部状态。</p>
+          </div>
+        </div>
+        <div class="foot-claim">随后四页按 <strong>R → F → C → Π</strong> 逐层多引进一个词。工程部分将按同一顺序回收。</div>
+        <aside class="notes-src" hidden>
+          <div><h4>设计思路</h4><p>论文 3.1 总图。务必讲清 Π 不是第四台引擎，否则适配器会被听成又一层业务逻辑。四块卡片是 6–11 页目录。</p></div>
+          <div><h4>内容框架</h4><ol><li>R 对象化设备</li><li>F 按任务切片</li><li>C 看守边界</li><li>Π 共享语言</li></ol></div>
+          <div><h4>口播与过渡</h4><p>先有共同语言，三层才能协调。先看资源层如何把物理装置变成可执行对象。</p></div>
+        </aside>
+      </section>
+
+      <!-- 6 -->
+      <section class="slide" data-i="5">
+        <div class="kicker">
+          <div class="tags"><span class="tag theory">§3.2 资源层</span><span class="tag echo">F3</span></div>
+          <div class="pg">06 / 22</div>
+        </div>
+        <h1>能力描述能做什么，状态机描述正在发生什么</h1>
+        <p class="lead">设备对象 <span class="math">D = ⟨ Cap<sub>D</sub>, SM<sub>D</sub> ⟩</span>。能力模型是静态语义基，不主动执行；属性可直接观测，不必绕过状态机。</p>
+        <div class="device-split">
+          <div class="card theory">
+            <h3>Cap　能力模型</h3>
+            <p style="margin-bottom:12px"><span class="math">⟨ Attr, Ops, Adpt, Port, Constr<sub>D</sub> ⟩</span></p>
+            <ul>
+              <li>属性空间：连续或离散的可观测量</li>
+              <li>操作能力：对外暴露的可执行操作</li>
+              <li>适配契约：命令模板、事件与反馈的登记</li>
+              <li>端口：属性级数据端点</li>
+              <li>内置约束：与任务无关的本地边界</li>
+            </ul>
+          </div>
+          <div class="vs">分离</div>
+          <div class="card echo">
+            <h3>SM　状态机</h3>
+            <p style="margin-bottom:12px">执行交互与状态转移的行为中枢</p>
+            <ul>
+              <li>接收控制信号后发生转移</li>
+              <li>向适配器发出操作，再接收反馈</li>
+              <li>对外公布设备状态</li>
+              <li>按内置约束监视属性，越限进入异常</li>
+            </ul>
+            <p class="quiet" style="margin-top:16px">后面：物模型写的是左边；运行中的孪生走的是右边。现在不要揉成一个“设备状态”。</p>
+          </div>
+        </div>
+        <aside class="notes-src" hidden>
+          <div><h4>设计思路</h4><p>论文 3.2 核心原则。Constr_D 只点到与任务无关、就地生效。Adapter 契约出现，执行留给协议页。</p></div>
+          <div><h4>内容框架</h4><ol><li>分离原则</li><li>五元组一次亮完</li><li>Cap 不执行</li><li>SM 才是行为中枢</li></ol></div>
+          <div><h4>口播与过渡</h4><p>为什么状态机还要再分成两个空间？下一页回答。</p></div>
+        </aside>
+      </section>
+
+      <!-- 7 -->
+      <section class="slide" data-i="6">
+        <div class="kicker">
+          <div class="tags"><span class="tag theory">§3.2 状态机</span><span class="tag echo">F5 设备侧</span></div>
+          <div class="pg">07 / 22</div>
+        </div>
+        <h1>指令进度不是物理工况</h1>
+        <p class="lead">状态空间写成 <span class="math">St = St<sub>cmd</sub> × St<sub>op</sub></span>。接口只作端点，不藏逻辑。转移由「当前状态 + 入口 + 信号」共同决定。</p>
+        <div class="grid g2" style="flex:1">
+          <div class="card theory">
+            <h3>两个空间</h3>
+            <ul>
+              <li><strong>指令空间</strong>：这条操作命令走到哪了——待发、已派发、执行中、完成或失败。</li>
+              <li><strong>运行空间</strong>：装置现在处于什么工况——空闲、加热、保持，或异常。</li>
+            </ul>
+            <p class="quiet" style="margin-top:16px">一台装置可以“指令已完成”而“工况仍在保持”；也可以“指令失败”而“工况已入异常”。二者必须分开写。</p>
+          </div>
+          <div class="card">
+            <h3>接口是边界，不是程序</h3>
+            <div class="ports">
+              <span class="port">收控制命令</span>
+              <span class="port">收适配器事件</span>
+              <span class="port">向适配器下发</span>
+              <span class="port">对外公布状态</span>
+            </div>
+            <p style="margin-top:16px">工作流、人工干预、约束处置，都可以从不同入口走进<strong>同一台</strong>状态机。工作流并不直接拧硬件。</p>
+            <p class="quiet" style="margin-top:12px">内置约束越限时，状态机就地进入异常——这是后面“两级约束”的本地一侧。</p>
+          </div>
+        </div>
+        <aside class="notes-src" hidden>
+          <div><h4>设计思路</h4><p>讲清双空间。接口端点原则为“多入口进同一台状态机”埋伏笔。不讲急停插队等工程调度。</p></div>
+          <div><h4>内容框架</h4><ol><li>CMD vs OP</li><li>接口四类端点</li><li>转移规则的要素</li><li>内置约束就地生效</li></ol></div>
+          <div><h4>口播与过渡</h4><p>状态机是设备对象的行为中枢。工作流如何引用这个中枢？看映射。</p></div>
+        </aside>
+      </section>
+
+      <!-- 8 -->
+      <section class="slide" data-i="7">
+        <div class="kicker">
+          <div class="tags"><span class="tag theory">§3.3 工作流层</span><span class="tag echo">F1 · F2</span></div>
+          <div class="pg">08 / 22</div>
+        </div>
+        <h1>节点引用能力，不重写能力</h1>
+        <p class="lead">执行节点的映射 <span class="math">Map = ⟨ D, op ⟩</span>。功能节点承担分支、同步、等待。节点生命周期是过程态：受设备回传影响，但与状态机状态不等价。</p>
+        <div class="grid g3" style="flex:1">
+          <div class="card theory">
+            <h3>切片里有什么</h3>
+            <p>被选中的能力，以及它们之间的时间、控制与数据关系。工作流描述的是实验室在该任务中如何演化，而不只是步骤清单。</p>
+          </div>
+          <div class="card echo">
+            <h3>执行节点</h3>
+            <p>指向某个设备对象上的一项操作。参数、属性与信号语义来自该对象，而不是在节点里另写一套。</p>
+          </div>
+          <div class="card">
+            <h3>节点自己还带什么</h3>
+            <p>内部变量、过程生命周期、允许的转移、接口、端口、以及可被触发器调用的动作。</p>
+          </div>
+        </div>
+        <div class="foot-claim">如果节点只是发一条命令，第 4 页的主张就塌了。关键是节点<strong>带着状态、数据与信号语义</strong>去映射能力。</div>
+        <aside class="notes-src" hidden>
+          <div><h4>设计思路</h4><p>回收第 4 页。强调引用已有能力。F5 在此点出节点过程态 ≠ 设备状态。通道细节下一页。</p></div>
+          <div><h4>内容框架</h4><ol><li>切片组织能力与关系</li><li>Map = ⟨设备, 能力⟩</li><li>功能节点</li><li>节点七元组点到为止</li></ol></div>
+          <div><h4>口播与过渡</h4><p>能力映射解决“节点是什么”。下一页解决“节点之间如何连”。</p></div>
+        </aside>
+      </section>
+
+      <!-- 9 -->
+      <section class="slide" data-i="8">
+        <div class="kicker">
+          <div class="tags"><span class="tag theory">§3.3 拓扑与触发</span><span class="tag echo">F4 · F5</span></div>
+          <div class="pg">09 / 22</div>
+        </div>
+        <h1>信号决定何时走，数据决定带上什么</h1>
+        <p class="lead"><span class="math">F = ⟨ V<sub>F</sub>, E<sub>I</sub>, E<sub>P</sub> ⟩</span>。接口边包含节点之间，以及节点与设备状态机之间的信号路由。端口边是持续的数据依赖。</p>
+        <div class="row" style="flex:1">
+          <div class="grow card theory">
+            <h3>实线　接口连接 E<sub>I</sub></h3>
+            <p>控制与通知：激活下游、向状态机发出启动或中止、收回设备状态。</p>
+            <p class="quiet" style="margin-top:12px">信号到达接口后，绑定的触发器检查条件；成立则执行动作——更新变量、请求生命周期变化、或再发出信号。</p>
+          </div>
+          <div class="grow card echo">
+            <h3>虚线　端口连接 E<sub>P</sub></h3>
+            <p>数据依赖：温度、设定值、中间量在连接有效期内保持可取用。</p>
+            <p class="quiet" style="margin-top:12px">数据通道不负责“下一步该不该发生”。它只保证该在的值能被下游看见。</p>
+          </div>
+        </div>
+        <div class="foot-claim">节点完成 ≠ 设备指令完成；前者常常以后者为条件。两套生命周期要分开写——系统后文会保持这张图，而不是拧成一根线。</div>
+        <aside class="notes-src" hidden>
+          <div><h4>设计思路</h4><p>F4 在此成形。触发语义用一条因果链即可，不讲轮询。F5 对照句放在底栏，便于第 16–17 页回收。</p></div>
+          <div><h4>内容框架</h4><ol><li>EI 何时推进</li><li>EP 数据如何到达</li><li>触发器 ⟨条件, 动作⟩</li><li>两套生命周期</li></ol></div>
+          <div><h4>口播与过渡</h4><p>控制与数据必须能分开画。边界由谁看守？看约束层。</p></div>
+        </aside>
+      </section>
+
+      <!-- 10 -->
+      <section class="slide" data-i="9">
+        <div class="kicker">
+          <div class="tags"><span class="tag theory">§3.4 约束层</span><span class="tag echo">F6</span></div>
+          <div class="pg">10 / 22</div>
+        </div>
+        <h1>本地先停住，全局再看见并处置</h1>
+        <p class="lead"><span class="math">C = ⟨ BC, Obs, VH, TC ⟩</span>，观测 <span class="math">Obs = Obs<sub>R</sub> ∪ Obs<sub>F</sub></span>。内置约束与约束层互补，不是重复建设。</p>
+        <div class="grid g3" style="flex:1">
+          <div class="card danger">
+            <h3>设备内置 Constr<sub>D</sub></h3>
+            <p>与任务无关，由状态机就地监视属性。越限立即进入异常。例如装置自身上限 500℃。</p>
+          </div>
+          <div class="card theory">
+            <h3>基线 BC　始终在</h3>
+            <p>看守实验室会话，不论当前有没有任务。例如运行状态不得停留在异常而不被理会。</p>
+          </div>
+          <div class="card echo">
+            <h3>任务包 TC<sub>τ</sub>　随任务出现</h3>
+            <p>本任务目标与本任务边界。例如加热任务要求温度不超过 120℃，否则停止。</p>
+          </div>
+        </div>
+        <div class="foot-claim">约束层只通过<strong>可观测空间</strong>看世界：设备属性与状态，以及节点、任务的过程态。处置包括警告、停止、中止等——它监护编排，并不取代编排。</div>
+        <aside class="notes-src" hidden>
+          <div><h4>设计思路</h4><p>互补结构是唯一重点。500/120 为案例页预告。可观测空间为工程“统一观测”埋伏笔。</p></div>
+          <div><h4>内容框架</h4><ol><li>Obs 的两端来源</li><li>内置 / 基线 / 任务</li><li>互补关系</li><li>处置是规则的一部分</li></ol></div>
+          <div><h4>口播与过渡</h4><p>一个保证设备自己先停，一个保证任务和实验室知道并处置。三层如何说话？协议。</p></div>
+        </aside>
+      </section>
+
+      <!-- 11 -->
+      <section class="slide" data-i="10">
+        <div class="kicker">
+          <div class="tags"><span class="tag theory">§3.1 协议 Π</span><span class="tag echo">F7</span></div>
+          <div class="pg">11 / 22</div>
+        </div>
+        <h1>协议约定怎么说，并不代替谁来做</h1>
+        <p class="lead">Π 定义信号外形与交互约定，被资源、工作流、约束共用。适配器登记命令模板与事件；能力模型提供统一语义视图。</p>
+        <div class="grid g2" style="flex:1">
+          <div class="card theory">
+            <h3>共同语言</h3>
+            <ul>
+              <li>启动、中止、状态公布、遥测与事件，需要可识别的外形</li>
+              <li>三层通过约定交互，而不是读取彼此的内部结构</li>
+              <li>没有这套约定，切片无法在异质装置之间保持同一语义</li>
+            </ul>
+          </div>
+          <div class="card echo">
+            <h3>语义在模型，翻译在边缘</h3>
+            <ul>
+              <li>适配器面对物理装置的方言</li>
+              <li>对象模型面对任务切片</li>
+              <li>若把状态、约束写回适配器脚本，第 3 页的缺口会再现</li>
+            </ul>
+          </div>
+        </div>
+        <div class="foot-claim">后面可以换一种仪器、换一个翻译。切片应当仍能读懂——这是协议层存在的理由。</div>
+        <aside class="notes-src" hidden>
+          <div><h4>设计思路</h4><p>Π 着墨不多，工程最容易讲歪。本页只立“共同语言”。物理协议留到第 19 页。</p></div>
+          <div><h4>内容框架</h4><ol><li>Π 共享而非执行</li><li>适配器登记</li><li>模型持有语义</li><li>换翻译不换切片</li></ol></div>
+          <div><h4>口播与过渡</h4><p>积木齐了。论文用反应釜加热把它们装进一次切片。</p></div>
+        </aside>
+      </section>
+
+      <!-- 12 -->
+      <section class="slide" data-i="11">
+        <div class="kicker">
+          <div class="tags"><span class="tag theory">§4.1 案例</span></div>
+          <div class="pg">12 / 22</div>
+        </div>
+        <h1>反应釜加热：三层装进同一切片</h1>
+        <p class="lead">这是结构可实例化的说明，不是性能评测。一个对象模型、一个加热节点、两级约束。</p>
+        <div class="layers" style="flex:1">
+          <div class="layer" style="border-left:4px solid var(--echo)">
+            <h3>约束</h3>
+            <p>基线：运行状态不应无人理会地停留在异常。任务：温度 ≤ 120℃，否则停止。观测：温度、设备状态、加热节点生命周期。</p>
+          </div>
+          <div class="layer" style="border-left:4px solid var(--theory)">
+            <h3>工作流切片</h3>
+            <p>加热节点映射 ⟨反应釜, 加热⟩。上游完成信号激活本节点；本节点完成后再激活下游。温度进入节点变量，并经数据端口传给后续步骤。</p>
+          </div>
+          <div class="layer" style="border-left:4px solid var(--eng)">
+            <h3>资源对象 + 适配器 + 物理装置</h3>
+            <p>属性含温度；能力含加热；适配契约登记加热命令。内置上限 500℃——装置自己的底线，比任务边界更宽，也更硬。</p>
+          </div>
+        </div>
+        <aside class="notes-src" hidden>
+          <div><h4>设计思路</h4><p>把 6–11 页积木装进论文 Fig.1。500/120 让 F6 可感。仍不进入我们的界面。</p></div>
+          <div><h4>内容框架</h4><ol><li>对象模型</li><li>能力映射节点</li><li>两级约束对照</li><li>观测对象</li></ol></div>
+          <div><h4>口播与过渡</h4><p>结构能装进去。一次加热在时间上怎么走？下一页留下整场最重要的一条时间线。</p></div>
+        </aside>
+      </section>
+
+      <!-- 13 -->
+      <section class="slide" data-i="12">
+        <div class="kicker">
+          <div class="tags"><span class="tag theory">§4.1 跨层时序</span><span class="tag echo">F8 埋下</span></div>
+          <div class="pg">13 / 22</div>
+        </div>
+        <h1>请记住这条时间线</h1>
+        <p class="lead">后面讲系统时不会换故事，只换这些角色在系统里叫什么。</p>
+        <div class="seq">
+          <div class="beat theory"><div class="n">01</div><h4>激活节点</h4><p>上游完成，加热节点进入执行。</p></div>
+          <div class="beat theory"><div class="n">02</div><h4>请求能力</h4><p>节点向反应釜状态机发出启动，携带加热与目标温度。</p></div>
+          <div class="beat theory"><div class="n">03</div><h4>状态机下发</h4><p>指令空间推进，按适配契约向适配器发出加热命令。</p></div>
+          <div class="beat theory"><div class="n">04</div><h4>物理执行</h4><p>适配器翻译并驱动装置；回传接收、执行中、完成等事件。</p></div>
+          <div class="beat theory"><div class="n">05</div><h4>回写并继续</h4><p>状态机更新并对外公布；节点更新过程态，激活下游。</p></div>
+          <div class="beat echo"><div class="n">06</div><h4>并行监护</h4><p>温度进入观测。越任务边界则停止；越内置上限则装置先入异常。</p></div>
+        </div>
+        <div class="foot-claim">异常有两条路：约束<strong>直接看见</strong>温度越界；或状态机先入异常，再被约束层从观测空间看见。上半场到此结束。</div>
+        <aside class="notes-src" hidden>
+          <div><h4>设计思路</h4><p>把 Fig.3 收成六拍，方便第 20 页同构对照。异常两路都要在。本页结束方法部分。</p></div>
+          <div><h4>内容框架</h4><ol><li>六拍主路径</li><li>适配器只翻译</li><li>节点等回写再往下</li><li>异常两路</li></ol></div>
+          <div><h4>口播与过渡</h4><p>方法已经把词立住。系统要做的不是另起一套词。</p></div>
+        </aside>
+      </section>
+
+      <!-- 14 -->
+      <section class="slide" data-i="13">
+        <div class="kicker">
+          <div class="tags"><span class="tag eng">转折</span></div>
+          <div class="pg">14 / 22</div>
+        </div>
+        <h1>系统不另起词汇表</h1>
+        <p class="lead">从这里开始，每个词都应该在上一幕出现过。系统只是让这些元素变成可配置、可执行、可检查的对象。</p>
+        <div class="grid g3" style="flex:1">
+          <div class="card eng">
+            <h3>一层理论，一类职责</h3>
+            <p>资源、工作流、约束各自演化，不把状态写进对方内部。协议仍是语言，不是又一套业务逻辑。</p>
+          </div>
+          <div class="card eng">
+            <h3>切片可复用，任务可实例化</h3>
+            <p>型号与流程先被定义；一次实验再把切片绑到具体装置与参数上。这就是第 4 页那句伏笔的回收方式。</p>
+          </div>
+          <div class="card eng">
+            <h3>约束不侵入编排</h3>
+            <p>监护只通过可观测空间看世界，再用标准处置回到任务或设备。编排继续走自己的通道。</p>
+          </div>
+        </div>
+        <div class="foot-claim">下面五页按 <strong>R · F · 通道与状态机 · C · Π</strong> 回声，图形尽量保持上一幕的结构，只换着色。</div>
+        <aside class="notes-src" hidden>
+          <div><h4>设计思路</h4><p>明确换幕。三条原则是 15–19 页的滤镜。本页禁止模块清单和实现细节。</p></div>
+          <div><h4>内容框架</h4><ol><li>职责分离</li><li>模型与任务分离</li><li>观测旁路</li></ol></div>
+          <div><h4>口播与过渡</h4><p>先回收资源层：型号、实例、孪生、适配器。</p></div>
+        </aside>
+      </section>
+
+      <!-- 15 -->
+      <section class="slide" data-i="14">
+        <div class="kicker">
+          <div class="tags"><span class="tag eng">系统回声</span><span class="tag echo">F3 · F7</span></div>
+          <div class="pg">15 / 22</div>
+        </div>
+        <h1>型号定义对象，实例进入实验室，孪生持有当前像</h1>
+        <p class="lead">对应 <span class="math">D = ⟨ Cap, SM ⟩</span>。设计时面对型号；运行时面对实例。切片引用前者，任务绑定后者。</p>
+        <div class="grid g4" style="flex:1">
+          <div class="card eng">
+            <h3>型号</h3>
+            <p>可编辑的设备对象定义：属性、能力、适配契约、端口、内置约束，以及双空间状态机。</p>
+          </div>
+          <div class="card eng">
+            <h3>实例</h3>
+            <p>某型号在实验室中的一次在役存在。它指向适配器上的一个物理点位。</p>
+          </div>
+          <div class="card eng">
+            <h3>孪生</h3>
+            <p>属性的当前值，加上指令空间与运行空间的当前像。供工作流与约束读取。</p>
+          </div>
+          <div class="card echo">
+            <h3>适配器</h3>
+            <p>适配契约的物理端：翻译命令、回传事件、上报属性。语义仍留在型号里。</p>
+          </div>
+        </div>
+        <div class="foot-claim">人工点动与任务编排走不同入口，进入的是<strong>同一台</strong>设备状态机——第 7 页的接口端点原则在这里落地。</div>
+        <aside class="notes-src" hidden>
+          <div><h4>设计思路</h4><p>回收 6–7 页。四个概念一层，不展开编辑器字段。人工入口点一句，第 17 页展开。</p></div>
+          <div><h4>内容框架</h4><ol><li>型号≈对象定义</li><li>实例≈在役绑定</li><li>孪生≈当前像</li><li>适配器≈翻译端</li></ol></div>
+          <div><h4>口播与过渡</h4><p>对象有了。切片如何被画出来、又如何变成一次执行？</p></div>
+        </aside>
+      </section>
+
+      <!-- 16 -->
+      <section class="slide" data-i="15">
+        <div class="kicker">
+          <div class="tags"><span class="tag eng">系统回声</span><span class="tag echo">F1 · F2 · F5</span></div>
+          <div class="pg">16 / 22</div>
+        </div>
+        <h1>流程是切片，任务是这一次切法的执行</h1>
+        <p class="lead">还记得“创建任务就是切这一片”吗？现在收回：设计器画出切片；发布后可被引用；任务把它绑到实例与参数上。</p>
+        <div class="grid g3" style="flex:1">
+          <div class="card eng">
+            <h3>1 设计切片</h3>
+            <p>设备节点映射型号上的能力；功能节点处理分支与汇聚；子流程嵌套另一份切片。同时画出信号边与数据边。</p>
+          </div>
+          <div class="card eng">
+            <h3>2 发布为可引用流程</h3>
+            <p>切片成为实验室中的流程对象。它仍然面向型号，不预先绑死某一台装置。</p>
+          </div>
+          <div class="card echo">
+            <h3>3 实例化为任务</h3>
+            <p>选定流程，绑定具体实例与参数，必要时附上本任务约束。一次实验由此开始。</p>
+          </div>
+        </div>
+        <div class="foot-claim">步骤的过程态仍然不是设备状态。节点等待状态机回传，但两套生命周期分账——与第 9 页同一句话。</div>
+        <aside class="notes-src" hidden>
+          <div><h4>设计思路</h4><p>必须把流程模型与任务分开，否则切片一词塌掉。NL 生成若提，只说草稿仍是同一份切片。</p></div>
+          <div><h4>内容框架</h4><ol><li>设计映射</li><li>发布可复用</li><li>任务绑定实例</li><li>过程态≠设备态</li></ol></div>
+          <div><h4>口播与过渡</h4><p>切片如何推进、设备如何被请求？看通道与状态机。</p></div>
+        </aside>
+      </section>
+
+      <!-- 17 -->
+      <section class="slide" data-i="16">
+        <div class="kicker">
+          <div class="tags"><span class="tag eng">系统回声</span><span class="tag echo">F4 · F5</span></div>
+          <div class="pg">17 / 22</div>
+        </div>
+        <h1>两根线，一台中枢，三个入口</h1>
+        <p class="lead">工作流并不绕过状态机去命令硬件。控制通道推进；数据通道送达；状态机仍按双空间演化。</p>
+        <div class="grid g2" style="flex:1">
+          <div class="card eng">
+            <h3>正交两边，沿用第 9 页</h3>
+            <ul>
+              <li><strong>信号通道</strong>：激活、启动、中止、完成、状态回写</li>
+              <li><strong>数据通道</strong>：下游取用上游或装置属性，不回写上游</li>
+            </ul>
+            <p class="quiet" style="margin-top:14px">何时走、带上什么，仍然分开画、分开活。</p>
+          </div>
+          <div class="card echo">
+            <h3>同一状态机，不同入口</h3>
+            <ul>
+              <li>任务编排请求一项能力</li>
+              <li>人工在控制台点动同一项能力</li>
+              <li>约束触发一项保护能力</li>
+            </ul>
+            <p class="quiet" style="margin-top:14px">入口不同，中枢相同：指令空间走进度，运行空间反映工况。</p>
+          </div>
+        </div>
+        <aside class="notes-src" hidden>
+          <div><h4>设计思路</h4><p>左回收第 9 页实线/虚线，右回收第 7 页双空间与多入口。不讲占用与回程实现。</p></div>
+          <div><h4>内容框架</h4><ol><li>控制通道</li><li>数据通道</li><li>CMD/OP</li><li>三入口</li></ol></div>
+          <div><h4>口播与过渡</h4><p>编排在走的同时，边界如何被看见？约束与观测。</p></div>
+        </aside>
+      </section>
+
+      <!-- 18 -->
+      <section class="slide" data-i="17">
+        <div class="kicker">
+          <div class="tags"><span class="tag eng">系统回声</span><span class="tag echo">F6</span></div>
+          <div class="pg">18 / 22</div>
+        </div>
+        <h1>500℃ 仍是装置底线，120℃ 仍是这次实验的边界</h1>
+        <p class="lead">三层监护读同一片可观测空间。内置约束就地锁存；基线始终在；任务约束随本次执行出现。</p>
+        <div class="grid g3" style="flex:1">
+          <div class="card danger">
+            <h3>内环 · 内置</h3>
+            <p>状态机监视属性，越限进入异常。不因指标瞬态回落而自动当作安全——需要确认后才解除。</p>
+          </div>
+          <div class="card echo">
+            <h3>中环 · 本任务</h3>
+            <p>随任务装入的目标与边界。只在这次执行期间看守切片里的过程。</p>
+          </div>
+          <div class="card theory">
+            <h3>外环 · 实验室基线</h3>
+            <p>与是否有任务无关的会话级规则。实验室作为整体仍被监护。</p>
+          </div>
+        </div>
+        <div class="foot-claim">中心是可观测空间：属性、指令进度、运行工况、节点与任务过程态。处置回到任务控制，或回到设备保护能力——监护不取代编排。</div>
+        <aside class="notes-src" hidden>
+          <div><h4>设计思路</h4><p>三环 + 底栏观测，避免新架构图。处置保持概念级。用论文数字把回声说死。</p></div>
+          <div><h4>内容框架</h4><ol><li>内置锁存</li><li>任务包</li><li>基线</li><li>Obs 与处置</li></ol></div>
+          <div><h4>口播与过渡</h4><p>这些层如何对装置开口？协议与边缘。</p></div>
+        </aside>
+      </section>
+
+      <!-- 19 -->
+      <section class="slide" data-i="18">
+        <div class="kicker">
+          <div class="tags"><span class="tag eng">系统回声</span><span class="tag echo">F7</span></div>
+          <div class="pg">19 / 22</div>
+        </div>
+        <h1>北向是标准信封，南向才是硬件方言</h1>
+        <p class="lead">对应 Π：语义留在模型里。换一种仪器，换的是翻译，不是切片。</p>
+        <div class="grid g2" style="flex:1">
+          <div class="card eng">
+            <h3>共同信封</h3>
+            <ul>
+              <li>登记：适配器声明自己能提供什么</li>
+              <li>心跳：是否仍在</li>
+              <li>命令：按契约下发一次操作</li>
+              <li>遥测：属性进入孪生</li>
+              <li>事件：驱动状态机，而不是直接改写工作流</li>
+            </ul>
+          </div>
+          <div class="card echo">
+            <h3>边缘只翻译</h3>
+            <ul>
+              <li>公开契约可被型号引用</li>
+              <li>本地连接信息不必进入任务切片</li>
+              <li>内部点位参数留在边缘，系统只下发业务参数</li>
+            </ul>
+            <p class="quiet" style="margin-top:14px">若执行逻辑写回边缘脚本，任务级模型再次碎掉——第 3 页与第 11 页在此会合。</p>
+          </div>
+        </div>
+        <aside class="notes-src" hidden>
+          <div><h4>设计思路</h4><p>回收第 11 页。五类交互用中文。强调契约与本地配置分离，仍保持概念层。</p></div>
+          <div><h4>内容框架</h4><ol><li>信封五类</li><li>事件进状态机</li><li>遥测进孪生</li><li>换翻译不换语义</li></ol></div>
+          <div><h4>口播与过渡</h4><p>现在可以把第 13 页的时间线用系统的词再走一遍。</p></div>
+        </aside>
+      </section>
+
+      <!-- 20 -->
+      <section class="slide" data-i="19">
+        <div class="kicker">
+          <div class="tags"><span class="tag eng">回放</span><span class="tag echo">F8 收回</span></div>
+          <div class="pg">20 / 22</div>
+        </div>
+        <h1>这不是另一条链路</h1>
+        <p class="lead">与第 13 页同构。只是角色换成系统里的名字。</p>
+        <div class="seq">
+          <div class="beat eng"><div class="n">01</div><h4>任务激活步骤</h4><p>切片中的加热节点进入执行过程态。</p></div>
+          <div class="beat eng"><div class="n">02</div><h4>经信号通道请求</h4><p>向已绑定实例的状态机发出启动，映射 ⟨该反应釜, 加热⟩。</p></div>
+          <div class="beat eng"><div class="n">03</div><h4>双空间推进并下发</h4><p>指令空间前进；按型号契约把命令交给适配器。</p></div>
+          <div class="beat eng"><div class="n">04</div><h4>边缘翻译与回传</h4><p>物理加热与测温发生；事件与遥测按标准信封返回。</p></div>
+          <div class="beat eng"><div class="n">05</div><h4>孪生更新，步骤继续</h4><p>状态公布写回节点；过程态完成，信号通道激活下游。</p></div>
+          <div class="beat echo"><div class="n">06</div><h4>观测上的两级监护</h4><p>任务边界可停止本次实验；内置上限让装置先入异常。</p></div>
+        </div>
+        <div class="foot-claim">若这两页对不上，说明系统讲歪了，或论文没讲透。对得上，就是这次对照讲要证明的事。</div>
+        <aside class="notes-src" hidden>
+          <div><h4>设计思路</h4><p>伏笔高潮。版式与第 13 页同构。异常两路保持。不要在这一页再加新概念。</p></div>
+          <div><h4>内容框架</h4><ol><li>六拍一一对应</li><li>强调不是新故事</li><li>监护并行</li></ol></div>
+          <div><h4>口播与过渡</h4><p>对照完成后，用三行对齐论文贡献与我们的工作。</p></div>
+        </aside>
+      </section>
+
+      <!-- 21 -->
+      <section class="slide" data-i="20">
+        <div class="kicker">
+          <div class="tags"><span class="tag">对齐</span></div>
+          <div class="pg">21 / 22</div>
+        </div>
+        <h1>论文给出框架，系统让框架可运行</h1>
+        <p class="lead">论文是形式化提案与可实例化说明，不是大规模评测。系统是按该框架推进的可运行原型。复杂并发与长时实验，仍是两边共同的下一步。</p>
+        <table class="map">
+          <thead>
+            <tr><th>论文贡献</th><th>系统中的对应</th><th>尚未声称的</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>工作流作为任务切片；节点作为能力映射</td>
+              <td>流程可设计、可发布；任务把切片绑到实例上执行</td>
+              <td>不以“编排器更全”为贡献</td>
+            </tr>
+            <tr>
+              <td>能力与状态分离的设备对象</td>
+              <td>型号、实例、孪生、适配器按对象语义运行</td>
+              <td>不把界面字段当作模型本身</td>
+            </tr>
+            <tr>
+              <td>内置约束与基线/任务约束互补；统一观测</td>
+              <td>就地锁存与全局监护同时存在，处置回到任务或保护能力</td>
+              <td>不提供未验证的规模化指标</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="quiet" style="margin-top:16px">作者侧的延伸：设计器、以及用自然语言生成草稿，产出的仍是同一份切片，并不另造执行语言。</p>
+        <aside class="notes-src" hidden>
+          <div><h4>设计思路</h4><p>诚实对齐论文 Conclusions。不夸大指标。Agent 只作为作者延伸，不是方法论核心。</p></div>
+          <div><h4>内容框架</h4><ol><li>三行贡献对照</li><li>明确未声称项</li><li>一句作者界面</li></ol></div>
+          <div><h4>口播与过渡</h4><p>我们做的工作，是让论文里的模型元素在实验室里能配、能跑、能看。</p></div>
+        </aside>
+      </section>
+
+      <!-- 22 -->
+      <section class="slide" data-i="21">
+        <div class="kicker">
+          <div class="tags"><span class="tag">结语</span></div>
+          <div class="pg">22 / 22</div>
+        </div>
+        <h1>切片、映射、监护</h1>
+        <p class="lead">三个词把论文和方法落到系统上。不再开新概念。</p>
+        <div class="grid g3" style="flex:1">
+          <div class="card theory">
+            <h3>1</h3>
+            <p>任务执行是实验室在特定上下文中的整体演化。工作流是这次演化的切片。</p>
+          </div>
+          <div class="card echo">
+            <h3>2</h3>
+            <p>节点映射设备能力，并分开携带信号与数据。设备用双空间表达指令进度与工况。</p>
+          </div>
+          <div class="card eng">
+            <h3>3</h3>
+            <p>约束通过可观测空间监护边界。协议让语义留在模型，边缘只负责翻译。</p>
+          </div>
+        </div>
+        <div class="foot-claim">下一步与论文一致：更复杂的多设备任务、仿真与实装对照，以及用覆盖、复用、变更影响范围来做定量评估。　感谢，欢迎讨论。</div>
+        <aside class="notes-src" hidden>
+          <div><h4>设计思路</h4><p>收回第 2 页地图。下一步同时引用论文 Future work。最后一页干净，停在问答。</p></div>
+          <div><h4>内容框架</h4><ol><li>三句话</li><li>下一步</li><li>致谢</li></ol></div>
+          <div><h4>口播与过渡</h4><p>把话筒交给问题。若被问实现细节，再下沉，不必在这页预支。</p></div>
+        </aside>
+      </section>
+    </div>
+  </div>
+
+  <aside id="notes">
+    <div class="cols" id="notes-body"></div>
+  </aside>
+
+  <div id="bar">
+    <div>
+      <button type="button" id="prev">上一页</button>
+      <button type="button" id="next">下一页</button>
+    </div>
+    <div class="prog" aria-hidden="true"><i id="prog"></i></div>
+    <div class="hint">← → 翻页　N 本页说明　O 总览　F 全屏</div>
+  </div>
+</div>
+
+<script>
+  const slides = [...document.querySelectorAll('.slide')];
+  const notesBody = document.getElementById('notes-body');
+  const prog = document.getElementById('prog');
+  const thumbs = document.getElementById('thumbs');
+  let i = 0;
+
+  const titles = slides.map((s, idx) => {
+    const h = s.querySelector('h1');
+    return { n: String(idx + 1).padStart(2, '0'), t: h ? h.textContent : '' };
+  });
+  thumbs.innerHTML = titles.map((t, idx) =>
+    `<button type="button" class="thumb" data-go="${idx}"><b>${t.n}</b><span>${t.t}</span></button>`
+  ).join('');
+
+  function fit() {
+    const wrap = document.getElementById('stage-wrap');
+    const stage = document.getElementById('stage');
+    const sx = wrap.clientWidth / 1600;
+    const sy = wrap.clientHeight / 900;
+    stage.style.transform = 'scale(' + Math.min(sx, sy) + ')';
+  }
+
+  function show(n) {
+    i = Math.max(0, Math.min(slides.length - 1, n));
+    slides.forEach((s, k) => s.classList.toggle('on', k === i));
+    document.getElementById('prev').disabled = i === 0;
+    document.getElementById('next').disabled = i === slides.length - 1;
+    prog.style.width = ((i + 1) / slides.length * 100) + '%';
+    const src = slides[i].querySelector('.notes-src');
+    notesBody.innerHTML = src ? src.innerHTML : '';
+    thumbs.querySelectorAll('.thumb').forEach((el, k) => el.classList.toggle('now', k === i));
+  }
+
+  document.getElementById('prev').onclick = () => show(i - 1);
+  document.getElementById('next').onclick = () => show(i + 1);
+  thumbs.addEventListener('click', (e) => {
+    const b = e.target.closest('[data-go]');
+    if (!b) return;
+    document.body.classList.remove('overview-on');
+    show(+b.dataset.go);
+  });
+
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === 'PageDown' || e.key === ' ') {
+      e.preventDefault(); show(i + 1);
+    } else if (e.key === 'ArrowLeft' || e.key === 'PageUp' || e.key === 'Backspace') {
+      e.preventDefault(); show(i - 1);
+    } else if (e.key === 'Home') show(0);
+    else if (e.key === 'End') show(slides.length - 1);
+    else if (e.key === 'n' || e.key === 'N') {
+      document.body.classList.toggle('notes-on');
+      requestAnimationFrame(fit);
+    } else if (e.key === 'o' || e.key === 'O') document.body.classList.toggle('overview-on');
+    else if (e.key === 'Escape') document.body.classList.remove('overview-on');
+    else if (e.key === 'f' || e.key === 'F') {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+      else document.exitFullscreen();
+    }
+  });
+
+  window.addEventListener('resize', fit);
+  window.goTo = show;
+  document.body.tabIndex = -1;
+  document.body.focus();
+  show(0);
+  fit();
+  requestAnimationFrame(fit);
+</script>
+</body>
+</html>

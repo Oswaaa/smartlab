@@ -1,5 +1,5 @@
 <template>
-  <div class="task-preflight-section">
+  <div class="task-preflight-section" :class="{ 'is-compact': !loading && !result }">
     <div class="section-card-head">
       <div class="section-card-title">
         <span class="sec-idx-badge">04</span>
@@ -11,7 +11,7 @@
       </button>
     </div>
 
-    <div class="section-card-body padded">
+    <div v-if="loading || result" class="section-card-body padded">
       <div v-if="loading" class="preflight-loading">
         <el-skeleton :rows="2" animated />
         <span>正在检查任务前置条件...</span>
@@ -49,12 +49,6 @@
           </div>
         </div>
       </template>
-
-      <!-- 彻底去掉纸箱图标，采用统一紧凑空状态 -->
-      <div v-else class="empty-plain">
-        <strong>尚未执行前置检查</strong>
-        <span>请在分配完设备后，点击右上角或底部“检查”按钮验证流程可执行条件</span>
-      </div>
     </div>
   </div>
 </template>
@@ -122,6 +116,10 @@ defineEmits<{ retry: [] }>()
 
 .section-card-body.padded {
   padding: 10px 14px;
+}
+
+.task-preflight-section.is-compact .section-card-head {
+  border-bottom: 0;
 }
 
 /* 按钮规范 */

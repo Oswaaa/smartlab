@@ -1,54 +1,77 @@
-# SmartLab Fixture
+# SmartLab Fixture 测试装置库
 
-模拟温度传感器 + Adapter 的端到端测试装置。
+SmartLab 设备与 Adapter 的端到端测试装置集合。包含温度传感器与智能泄压阀两套模拟体系。
+
+---
 
 ## 目录结构
 
-```
+```text
 fixture/
 ├── device/
-│   └── temp_sensor.py    # 模拟温度传感器（28-38°C 随机值，TCP 9999端口）
-├── adapter/
-│   ├── main.py            # Adapter 入口
-│   ├── core.py            # 业务逻辑（读温度、执行加热/散热命令）
-│   ├── adapter_runtime.py # MQTT 通信（注册、心跳、遥测、事件、命令订阅）
-│   ├── adapterSetup.ini   # Adapter 注册配置（发送给 SmartLab 后端）
-│   └── runtime.ini        # MQTT Broker 地址和凭据
-└── run_fixture.py         # 一键启动 device + adapter
+│   ├── temp_sensor.py           # 模拟温度传感器 (GUI, TCP 9999 端口, °C)
+│   └── relief_valve.py          # [新增] 模拟智能泄压阀 (GUI, TCP 9998 端口, MPa)
+├── adapter/                     # 温度传感器 Adapter 套件
+│   ├── main.py
+│   ├── core.py
+│   ├── adapter_runtime.py
+│   ├── adapterSetup.ini
+│   └── runtime.ini
+├── adapter_relief_valve/        # [新增] 智能泄压阀 Adapter 套件
+│   ├── main.py                  # 泄压阀 Adapter 入口
+│   ├── core.py                  # 泄压阀业务逻辑 (压力遥测、泄压/调压/排气指令)
+│   ├── adapter_runtime.py       # MQTT 注册、心跳、遥测、事件发布与指令订阅
+│   ├── adapterSetup.ini         # 泄压阀物模型注册契约 (严格遵循 samples 规范)
+│   └── runtime.ini              # MQTT Broker 地址 (1883) 与设备端口 (9998)
+├── run_device.py                # 一键启动模拟温度传感器
+├── run_adapter.py               # 一键启动温度传感器 Adapter
+├── run_relief_valve_device.py   # [新增] 一键启动模拟泄压阀设备
+└── run_relief_valve_adapter.py  # [新增] 一键启动泄压阀 Adapter
 ```
+
+---
 
 ## 使用方式
 
-### 1. 只启动模拟设备
+### A. 智能泄压阀测试 (Pressure Relief Valve, 单位 MPa)
 
+#### 1. 启动泄压阀模拟设备
 ```bash
-python fixture/device/temp_sensor.py
+python fixture/run_relief_valve_device.py
+```
+* 设备在 `127.0.0.1:9998` 监听；
+* 弹出 Tkinter 图形窗口，实时显示管道压力（MPa）与阀门开度（0-100%），提供加压、泄压与保压手动控制。
+
+#### 2. 启动泄压阀 Adapter
+```bash
+python fixture/run_relief_valve_adapter.py
+```
+* 自动向 MQTT Broker 的 `smartlab/adapter/register` 广播注册 `FixtureReliefValveAdapter`；
+* 周期上报 `smartlab/adapter/FixtureReliefValveAdapter/Valve1/telemetry` 遥测数据（压力 `pressure`、开度 `valveOpening`）；
+* 订阅 `smartlab/adapter/FixtureReliefValveAdapter/+/command` 执行 `releasePressure`、`adjustPressure` 与 `emergencyVent` 控制指令。
+
+---
+
+### B. 温度传感器测试 (Temperature Sensor, 单位 °C)
+
+#### 1. 启动温度传感器模拟设备
+```bash
+python fixture/run_device.py
 ```
 
-设备在 `localhost:9999` 监听，每 2 秒输出一行 JSON 温度数据。
-
-### 2. 启动 Adapter（需要 MQTT Broker）
-
-修改 `fixture/adapter/runtime.ini` 中的 MQTT Broker 地址。
-
+#### 2. 启动温度传感器 Adapter
 ```bash
-pip install paho-mqtt
-python fixture/adapter/main.py
+python fixture/run_adapter.py
 ```
 
-### 3. 一键启动（两者同时运行）
-
-```bash
-python fixture/run_fixture.py
-```
+---
 
 ## 全链路测试流程
 
-1. 启动 fixture：`python fixture/run_fixture.py`
-2. SmartLab 后端收到 MQTT 注册消息 → Adapter 管理页面出现 `FixtureTempAdapter`
-3. 审核并注册 Adapter → 自动生成设备类别 `TempSensor`
-4. 创建设备模型 → 选择 `TempSensor` 模板 → 使用 `heat`/`cool` 能力
-5. 创建设备实例 → 绑定到 `Sensor1` 设备点
-6. 设计工作流：START → 设备能力节点（heat/cool）→ END
-7. 创建任务 → 绑定实例 → preflight → 启动
-8. 观察任务执行、遥测数据更新、约束引擎求值
+1. 启动模拟设备：`python fixture/run_relief_valve_device.py`
+2. 启动对应 Adapter：`python fixture/run_relief_valve_adapter.py`
+3. SmartLab 后端收到 MQTT 注册消息 → 在【执行代理管理】出现 `FixtureReliefValveAdapter`
+4. 审核并注册 Adapter → 自动生成设备类别 `ReliefValve`
+5. 创建设备模型与设备实例 → 绑定到 `Valve1` 点位
+6. 在【任务流程设计器】或【安全约束】中使用该设备的能力与属性（例如：当 `pressure >= 0.5 MPa` 时自动执行 `releasePressure` 泄压指令）
+7. 启动任务，观察闭环指令执行过程与实时数据曲线。

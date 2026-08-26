@@ -98,13 +98,14 @@
             <button type="button" class="btn-aliyun-cta" @click="create">
               <el-icon><Plus /></el-icon><span>新建</span>
             </button>
+            <button type="button" class="btn-aliyun" :disabled="generating || draftSaving || publishSaving || copySaving" @click="generateFromPrompt">{{ generating ? '生成中' : '用自然语言生成' }}</button>
             <button v-if="form.id && !isEditing" type="button" class="btn-aliyun" @click="startEditing">编辑</button>
             <button v-if="canEdit" type="button" class="btn-aliyun" :disabled="!form.nodesDef.length" @click="clearCanvas">清空</button>
             <button type="button" class="btn-aliyun" :disabled="validating || draftSaving || publishSaving || copySaving" @click="runValidation">{{ validating ? '校验中' : '校验' }}</button>
             <button type="button" class="btn-aliyun" :disabled="!form.name" @click="exportWorkflow">导出</button>
             <button type="button" class="btn-aliyun" :disabled="!canEdit || draftSaving || copySaving" @click="saveDraft">{{ draftSaving ? '保存中' : '保存草稿' }}</button>
             <button v-if="form.id" type="button" class="btn-aliyun" :disabled="copySaving || draftSaving || publishSaving" @click="saveAsNew">{{ copySaving ? '保存中' : '保存为新流程' }}</button>
-            <button type="button" class="btn-aliyun-cta" :disabled="!canEdit || publishSaving || copySaving" @click="publishAndValidate">{{ publishSaving ? '发布中' : '发布启用' }}</button>
+            <button type="button" class="btn-aliyun-cta" :disabled="!canPublish || publishSaving || copySaving" @click="publishAndValidate">{{ publishSaving ? '发布中' : '发布启用' }}</button>
             <button
               v-if="form.id"
               type="button"
@@ -287,7 +288,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
+import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Cpu, Document, Folder, Grid, Plus } from '@element-plus/icons-vue'
@@ -320,13 +322,14 @@ import { invalidateFrontendContractMetadata, loadFrontendContractMetadata } from
 import { workflowApi } from '../../../services/workflowApi.js'
 import { adoptPreparedWorkflow, indexWorkflowIssues, toDesignerWorkflow, toWorkflowModelDocument, workflowModelName } from '../../../utils/workflowAuthoring.js'
 import { configureWorkflowNodeTemplates, createDeviceNode, createFunctionNode, createSubflowNode, rehydrateWorkflowNodes, removePort, validateNodeDefinition } from '../../../utils/workflowNodeDefinition.js'
-import { canDragWorkflowResource, clearWorkflowCanvas, workflowLibraryGroups, workflowNodeConnectionIssues, workflowStatusLabel, workflowSuccessorConflict, workflowUnconnectedPortIssues, workflowVersionLabel } from '../../../utils/workflowDesignerRules.js'
+import { canDragWorkflowResource, canPublishWorkflow, clearWorkflowCanvas, workflowLibraryGroups, workflowNodeConnectionIssues, workflowStatusLabel, workflowSuccessorConflict, workflowUnconnectedPortIssues, workflowVersionLabel } from '../../../utils/workflowDesignerRules.js'
 
 type NodeDefinition = Record<string, any>
 type FlowNode = Record<string, any>
 type FlowEdge = Record<string, any>
 type ValidationIssue = { code:string, severity:'error'|'warning', scope:'flow'|'node', title:string, detail:string, nodeName?:string, path?:string }
 
+const route = useRoute()
 const tab = ref('devices')
 const workflows = ref<any[]>([])
 const models = ref<any[]>([])
@@ -337,6 +340,7 @@ const publishSaving = ref(false)
 const copySaving = ref(false)
 const validating = ref(false)
 const deleteLoading = ref(false)
+const generating = ref(false)
 const lastPublishCheck = ref<{ executable: boolean } | null>(null)
 const resourceKeyword = ref('')
 const contractReady = ref(false)
@@ -368,6 +372,7 @@ const palette = [
 const defaultEdgeOptions = { type:'workflow', markerEnd:'arrowclosed', style:{ stroke:'#7c93b8', strokeWidth:1.8 } }
 const edgeTypes = { workflow: markRaw(WorkflowCanvasEdge) }
 const canEdit = computed(() => contractReady.value && isEditing.value)
+const canPublish = computed(() => canPublishWorkflow(form, { contractReady: contractReady.value, isEditing: isEditing.value }))
 
 const selectedNode = computed(() => nodeByName(selectedNodeName.value))
 const selectedDeviceModel = computed(() => selectedNode.value?.nodeType === 'DEV_NODE' ? modelById(selectedNode.value.deviceModelId) : null)
@@ -1283,7 +1288,7 @@ async function saveAsNew() {
 
 
 async function publishAndValidate() {
-  if (!canEdit.value) return ElMessage.warning('请先点击编辑')
+  if (!canPublish.value) return ElMessage.warning('请先点击编辑')
   publishSaving.value = true
   const previousLayoutKey = currentLayoutKey()
   const currentLayout = serializeLayout(flowNodes.value)
@@ -1323,6 +1328,55 @@ async function publishAndValidate() {
   }
 }
 
+async function generateFromPrompt() {
+  if (!await confirmDiscardChanges()) return
+  let prompt = ''
+  try {
+    const result = await ElMessageBox.prompt('用自然语言描述实验流程。系统会查设备目录、生成模型文件并保存为草稿，随后在本页打开供你确认。', '用自然语言生成', {
+      confirmButtonText: '生成草稿',
+      cancelButtonText: '取消',
+      inputType: 'textarea',
+      inputPlaceholder: '例如：用加热套把样品加热到 80℃，到达温度后结束',
+      inputValidator: value => (value && String(value).trim() ? true : '请输入流程描述'),
+    })
+    prompt = String(result.value || '').trim()
+  } catch {
+    return
+  }
+  generating.value = true
+  try {
+    const response = await workflowApi.generate(prompt)
+    if (!response.data?.success) throw Error(response.data?.message || '生成失败')
+    const prepared = response.data.data || {}
+    const definition = adoptPreparedWorkflow(prepared)
+    if (!definition.id) throw Error('生成成功但未返回草稿 ID')
+    setWorkflowIssues(prepared.issues || [])
+    lastPublishCheck.value = prepared
+    reset(definition)
+    isEditing.value = false
+    await loadList()
+    ElMessage.success(`已生成草稿 ${workflowVersionLabel(definition)}，请检查后发布`)
+  } catch (error:any) {
+    if (error === 'cancel' || error === 'close') return
+    ElMessage.error(error.response?.data?.message || error.message || '生成失败')
+  } finally {
+    generating.value = false
+  }
+}
+
+function queryWorkflowId() {
+  const raw = route.query.id
+  const value = Array.isArray(raw) ? raw[0] : raw
+  const id = Number(value)
+  return Number.isInteger(id) && id > 0 ? id : null
+}
+
+async function openWorkflowFromQuery() {
+  const id = queryWorkflowId()
+  if (!id) return
+  await loadWorkflow(id)
+}
+
 async function loadWorkflow(id:number | null) {
   if (!id) return
   const previousId = form.id || null
@@ -1353,7 +1407,11 @@ function handleBeforeUnload(event:BeforeUnloadEvent) {
   event.returnValue = ''
 }
 
-onMounted(() => { void loadAll(); window.addEventListener('beforeunload', handleBeforeUnload) })
+onMounted(() => {
+  window.addEventListener('beforeunload', handleBeforeUnload)
+  void loadAll().then(() => openWorkflowFromQuery())
+})
+watch(() => route.query.id, () => { void openWorkflowFromQuery() })
 onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnload))
 </script>
 

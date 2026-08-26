@@ -9,6 +9,11 @@ export function isActiveWorkflow(workflow) {
   return String(workflow?.status || '').trim().toUpperCase() === 'ACTIVE'
 }
 
+export function canPublishWorkflow(workflow, { contractReady = false, isEditing = false } = {}) {
+  if (!contractReady) return false
+  return isEditing || !isActiveWorkflow(workflow)
+}
+
 export function workflowStatusLabel(status) {
   return String(status || '').trim().toUpperCase() === 'ACTIVE' ? '已启用' : '草稿'
 }

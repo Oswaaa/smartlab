@@ -1,5 +1,5 @@
 <template>
-  <div class="task-constraint-section">
+  <div class="task-constraint-section" :class="{ 'is-compact': !rules.length }">
     <div class="section-card-head">
       <div class="section-card-title">
         <span class="sec-idx-badge">03</span>
@@ -11,15 +11,8 @@
       </button>
     </div>
     
-    <div class="section-card-body">
-      <!-- 彻底去掉纸箱图标，采用统一紧凑空状态 -->
-      <div v-if="!rules.length" class="empty-plain">
-        <strong>未配置任务级约束</strong>
-        <span>如需针对本任务设置温度/压力越限保护，请点击右上角“添加任务约束”</span>
-      </div>
-
-      <!-- 约束规则卡片列表 -->
-      <div v-else class="constraint-card-list">
+    <div v-if="rules.length" class="section-card-body">
+      <div class="constraint-card-list">
         <div v-for="(rule, index) in rules" :key="index" class="constraint-item-card" :class="{ 'has-warning': reviews[index] }">
           <div class="constraint-info-left">
             <div class="constraint-title-row">
@@ -102,8 +95,8 @@ const emit = defineEmits<{ edit: [index?: number], remove: [index: number] }>()
   font-weight: 400;
 }
 
-.section-card-body {
-  padding: 0;
+.task-constraint-section.is-compact .section-card-head {
+  border-bottom: 0;
 }
 
 /* 按钮规范 */

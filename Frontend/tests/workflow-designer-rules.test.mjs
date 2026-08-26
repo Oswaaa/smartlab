@@ -2,6 +2,7 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   canDragWorkflowResource,
+  canPublishWorkflow,
   clearWorkflowCanvas,
   formatWorkflowExpression,
   protocolSignalCandidates,
@@ -18,6 +19,16 @@ import {
   workflowSuccessorConflict,
   workflowVersionLabel,
 } from '../src/utils/workflowDesignerRules.js'
+
+test('drafts can be published without entering edit mode', () => {
+  const draft = { id: 2, status: 'DRAFT' }
+  const active = { id: 1, status: 'ACTIVE' }
+  assert.equal(canPublishWorkflow(draft, { contractReady: true, isEditing: false }), true)
+  assert.equal(canPublishWorkflow(draft, { contractReady: true, isEditing: true }), true)
+  assert.equal(canPublishWorkflow(active, { contractReady: true, isEditing: false }), false)
+  assert.equal(canPublishWorkflow(active, { contractReady: true, isEditing: true }), true)
+  assert.equal(canPublishWorkflow(draft, { contractReady: false, isEditing: true }), false)
+})
 
 test('workflow library allows dragging another workflow only while editing', () => {
   const current = { id: 12, flowName: '当前流程' }

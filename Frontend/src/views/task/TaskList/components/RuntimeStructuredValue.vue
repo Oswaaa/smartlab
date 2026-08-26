@@ -35,8 +35,8 @@ const text = computed(() => formatSnapshotScalar(props.value))
 <style scoped>
 .runtime-value {
   color: var(--sl-text-heading, #0f172a);
-  font-family: var(--sl-font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
-  font-size: 12px;
+  font-family: var(--sl-font-family);
+  font-size: 12.5px;
   line-height: 1.45;
   word-break: break-all;
 }
@@ -51,16 +51,20 @@ const text = computed(() => formatSnapshotScalar(props.value))
 }
 .runtime-fields > div {
   display: grid;
-  grid-template-columns: minmax(72px, 38%) minmax(0, 1fr);
+  grid-template-columns: max-content minmax(0, 1fr);
   gap: 8px;
   align-items: start;
 }
 .runtime-fields dt {
   margin: 0;
   color: var(--sl-text-secondary, #64748b);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.45;
   word-break: break-all;
+}
+.runtime-fields dt::after {
+  content: ':';
+  margin-left: 1px;
 }
 .runtime-fields dd {
   margin: 0;

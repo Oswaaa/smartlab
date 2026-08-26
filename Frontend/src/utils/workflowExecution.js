@@ -83,10 +83,12 @@ export function triggerStatesOf(variableSpace) {
   return states && typeof states === 'object' && !Array.isArray(states) ? states : {}
 }
 
+export function workflowTriggerIndexKey(interfaceName, index) {
+  return `${interfaceName || ''}::__i::${index}`
+}
+
 export function isWorkflowTriggerFired(triggerStates, interfaceName, index) {
-  const prefix = `${interfaceName || ''}::`
-  const keys = Object.keys(triggerStates || {}).filter(key => key.startsWith(prefix) && key !== '__terminalObserved')
-  return Boolean(triggerStates?.[keys[index]])
+  return Boolean(triggerStates?.[workflowTriggerIndexKey(interfaceName, index)])
 }
 
 function snapshotHasValue(value) {
@@ -159,9 +161,91 @@ function latestStep(steps) {
   return [...steps].sort((left, right) => Number(right?.id ?? 0) - Number(left?.id ?? 0))[0] || null
 }
 
-export function buildRuntimeGraph(workflow, steps) {
+export const UNSTARTED_PARENT_STEP_ID = 'unstarted'
+
+export function sameStepParent(step, parentStepId) {
+  if (parentStepId === UNSTARTED_PARENT_STEP_ID) return false
+  const raw = step?.parentStepId
+  const actual = raw == null || raw === '' ? null : Number(raw)
+  if (parentStepId == null || parentStepId === '') return actual == null || Number.isNaN(actual)
+  return actual === Number(parentStepId)
+}
+
+export function stepsForLayer(steps, parentStepId) {
+  return (Array.isArray(steps) ? steps : []).filter(step => sameStepParent(step, parentStepId))
+}
+
+export function matchLayerStep(definition, layerSteps, refsByName = new Map()) {
+  const name = definition?.name
+  const named = (layerSteps || []).filter(step => stepNodeName(step) && stepNodeName(step) === name)
+  if (named.length) return latestStep(named)
+  const idRef = definitionIdRef(definition, refsByName)
+  if (idRef == null || idRef === '') return null
+  const keyed = (layerSteps || []).filter(step => step?.nodeIdRef != null && String(step.nodeIdRef) === String(idRef))
+  return latestStep(keyed)
+}
+
+export function workflowDocumentFromGroup(group) {
+  if (!group) return { nodesDef: [], interfaceConnections: [], portConnections: [] }
+  const nodes = group.nodes || []
+  return {
+    nodesDef: nodes,
+    nodes,
+    interfaceConnections: group.interfaceConnections || [],
+    portConnections: group.portConnections || [],
+    nodeIdRefs: nodes.map(node => ({ nodeName: node.name, nodeIdRef: node.nodeIdRef })),
+  }
+}
+
+export function runtimeGroupTrail(groups, groupKey) {
+  const list = Array.isArray(groups) ? groups : []
+  const byKey = new Map(list.map(group => [group.groupKey, group]))
+  const trail = []
+  let key = groupKey || list[0]?.groupKey || 'root'
+  const seen = new Set()
+  while (key && byKey.has(key) && !seen.has(key)) {
+    seen.add(key)
+    const group = byKey.get(key)
+    trail.unshift(group)
+    key = group.parentGroupKey
+  }
+  return trail
+}
+
+export function runtimeTrailLabel(group, index) {
+  if (!group) return '流程'
+  if (index === 0) return group.flowName || '主流程'
+  const segments = String(group.occurrencePath || '').split(/\s+\/\s+/).filter(Boolean)
+  return segments[segments.length - 1] || group.flowName || '子流程'
+}
+
+export function runtimeParentStepId(groups, steps, groupKey) {
+  if (!groupKey || groupKey === 'root') return null
+  const list = Array.isArray(groups) ? groups : []
+  const byKey = new Map(list.map(group => [group.groupKey, group]))
+  const group = byKey.get(groupKey)
+  if (!group) return null
+  const parentKey = group.parentGroupKey
+  if (!parentKey) return null
+  const parentStepId = runtimeParentStepId(groups, steps, parentKey)
+  const parentGroup = byKey.get(parentKey)
+  const caller = (parentGroup?.nodes || []).find(node => node.childGroupKey === groupKey)
+  if (!caller) return UNSTARTED_PARENT_STEP_ID
+  const step = matchLayerStep(
+    caller,
+    stepsForLayer(steps, parentStepId),
+    nodeIdRefsByName(workflowDocumentFromGroup(parentGroup)),
+  )
+  return step?.id ?? UNSTARTED_PARENT_STEP_ID
+}
+
+export function buildRuntimeGraph(workflow, steps, options = {}) {
+  const parentStepId = Object.prototype.hasOwnProperty.call(options, 'parentStepId')
+    ? options.parentStepId
+    : null
   const definitions = workflow?.nodesDef ?? workflow?.nodes ?? []
   const allSteps = Array.isArray(steps) ? steps : []
+  const layerSteps = stepsForLayer(allSteps, parentStepId)
   const stepTree = buildStepTree(allSteps)
   const treeById = new Map()
   const indexTree = (items) => items.forEach(item => { treeById.set(item.id, item); indexTree(item.children || []) })
@@ -170,13 +254,7 @@ export function buildRuntimeGraph(workflow, steps) {
 
   const nodes = definitions.map((definition, index) => {
     const name = definition?.name ?? `node-${index + 1}`
-    const idRef = definitionIdRef(definition, refsByName) ?? String(index + 1)
-    const matches = allSteps.filter(step => {
-      const stepName = stepNodeName(step)
-      if (stepName && stepName === name) return true
-      return idRef != null && step?.nodeIdRef != null && String(step.nodeIdRef) === String(idRef)
-    })
-    const step = latestStep(matches)
+    const step = matchLayerStep(definition, layerSteps, refsByName)
     return {
       ...definition,
       name,
@@ -264,21 +342,53 @@ export function businessEventNodeName(log, steps = [], workflow = null) {
   return nodeNameFromLogInfo(log?.logInfo)
 }
 
-export function groupBusinessExecutionEvents(logs, steps = [], workflow = null) {
+export function groupBusinessExecutionEvents(logs, steps = [], workflow = null, options = {}) {
+  const scoped = Object.prototype.hasOwnProperty.call(options, 'parentStepId')
+  const parentStepId = options.parentStepId
+  const layerSteps = scoped ? stepsForLayer(steps, parentStepId) : (steps || [])
+  const layerStepIds = new Set(layerSteps.map(step => step?.id).filter(id => id != null))
+  const nodes = options.nodes || workflow?.nodesDef || workflow?.nodes || []
+  const nodeByName = new Map(nodes.filter(node => node?.name).map(node => [node.name, node]))
+  const layerNames = new Set(nodeByName.keys())
+  for (const step of layerSteps) {
+    const name = stepNodeName(step)
+    if (name) layerNames.add(name)
+  }
   const groups = []
   const index = new Map()
   for (const event of businessExecutionEvents(logs)) {
+    if (scoped) {
+      if (event?.taskStepId != null) {
+        if (!layerStepIds.has(event.taskStepId)) continue
+      } else {
+        const parsedName = nodeNameFromLogInfo(event?.logInfo)
+        if (parsedName) {
+          if (!layerNames.has(parsedName)) continue
+        } else if (parentStepId != null) {
+          continue
+        }
+      }
+    }
     const nodeName = businessEventNodeName(event, steps, workflow)
     const key = nodeName || (
       event?.sourceType === 'CONSTRAINT' ? '__constraint__'
         : event?.sourceType === 'TASK' || event?.sourceType === 'MANUAL' ? '__task__'
           : '__other__'
     )
+    const definition = nodeName ? nodeByName.get(nodeName) : null
     const label = nodeName
       || (key === '__constraint__' ? '任务约束' : key === '__task__' ? '任务' : '其他')
     if (!index.has(key)) {
       index.set(key, groups.length)
-      groups.push({ key, nodeName: nodeName || null, label, events: [] })
+      groups.push({
+        key,
+        nodeName: nodeName || null,
+        label,
+        childGroupKey: definition?.childGroupKey || null,
+        nodeType: definition?.nodeType || null,
+        stepId: nodeName ? (matchLayerStep(definition || { name: nodeName }, layerSteps)?.id ?? null) : null,
+        events: [],
+      })
     }
     groups[index.get(key)].events.push(event)
   }

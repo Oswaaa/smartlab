@@ -49,10 +49,10 @@
         </div>
         <span v-if="issues.length" class="warning-dot" :title="issues[0]?.message || '节点配置未完成'">!</span>
         <div v-if="statusLabel || showBindingLine" class="node-badges">
-          <span v-if="statusLabel" class="status-pill" :class="statusTone">{{ statusLabel }}</span>
           <span v-if="showBindingLine" class="bind-pill" :class="overlay.bound ? 'is-bound' : 'is-unbound'">
             {{ overlay.bound ? (overlay.boundLabel || '已绑定') : '待绑定' }}
           </span>
+          <span v-if="statusLabel" class="status-pill" :class="statusTone">{{ statusLabel }}</span>
         </div>
       </header>
       <div v-if="isBranch" class="node-body rows">
@@ -242,8 +242,8 @@ function portLabelStyle(index: number, total: number) {
 .canvas-node.selected:hover{border-color:var(--sl-primary,#2563eb)}
 .canvas-node.warning{border-color:#e8c47f}
 .node-main{min-width:0;display:flex;flex:1;flex-direction:column}
-.node-header{display:flex;align-items:center;gap:8px;padding:10px 12px 8px}
-.compact .node-header{padding:9px 12px}
+.node-header{display:flex;align-items:flex-start;gap:8px;padding:10px 12px 8px}
+.compact .node-header{padding:9px 12px;align-items:center}
 .node-chip{flex:none;display:grid;place-items:center;width:26px;height:26px;border-radius:7px}
 .compact .node-chip{width:22px;height:22px;border-radius:6px}
 .node-chip :deep(svg){width:14px;height:14px;display:block}
@@ -258,8 +258,8 @@ function portLabelStyle(index: number, total: number) {
 .compact .node-name{font-size:12.5px}
 .node-kind{display:block;color:var(--sl-text-secondary,#8f959e);font-size:10.5px}
 .warning-dot{width:16px;height:16px;display:grid;place-items:center;flex:none;border-radius:50%;background:var(--sl-warning-light,#fffbeb);color:var(--sl-warning,#d97706);font-size:10px;font-weight:600}
-.node-badges{margin-left:auto;flex:none;display:flex;align-items:center;gap:6px;min-width:0}
-.status-pill{flex:none;font-size:10px;font-weight:700;color:#94a3b8}
+.node-badges{margin-left:auto;flex:none;display:flex;flex-direction:column;align-items:flex-end;justify-content:flex-start;gap:2px;max-width:96px}
+.status-pill{flex:none;font-size:10px;font-weight:700;line-height:1.2;text-align:right;white-space:nowrap;color:#94a3b8}
 .status-pill.running{color:var(--sl-primary,#2563eb)}
 .status-pill.succeeded{color:var(--sl-success,#16a34a)}
 .status-pill.failed{color:var(--sl-danger,#dc2626)}
@@ -268,9 +268,9 @@ function portLabelStyle(index: number, total: number) {
 .canvas-node.status-failed{border-color:#fca5a5}
 .canvas-node.status-succeeded{border-color:#bbf7d0}
 .canvas-node.unbound{border-color:#f0b429;box-shadow:0 0 0 2px rgba(240,180,41,.22),var(--sl-shadow-sm)}
-.bind-pill{flex:none;padding:1px 6px;border-radius:999px;font-size:10px;font-weight:700;line-height:16px}
+.bind-pill{flex:none;max-width:96px;padding:1px 6px;border-radius:999px;font-size:10px;font-weight:700;line-height:16px}
 .bind-pill.is-unbound{background:#fff7e8;color:#b45309;border:1px solid #f5d08a}
-.bind-pill.is-bound{background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;max-width:88px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bind-pill.is-bound{background:#f0fdf4;color:#15803d;border:1px solid #bbf7d0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .node-body{flex:1;display:flex;flex-direction:column;padding:4px 12px 18px;border-top:1px solid var(--sl-border-light,#f0f1f4)}
 .node-body:not(.rows){align-items:flex-start;justify-content:flex-start;text-align:left}
 .node-op{display:flex;align-items:baseline;justify-content:flex-start;gap:6px;min-width:0;max-width:100%}

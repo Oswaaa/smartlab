@@ -16,12 +16,12 @@
           >{{ group.flowName }}</button>
         </nav>
 
-        <div v-if="currentGroup && canvasReady" class="graph-stage">
+        <div v-if="canvasReady" class="graph-stage">
           <WorkflowStageGraph
-            :key="currentGroup.groupKey"
-            :nodes="currentGroup.nodes"
-            :interface-connections="currentGroup.interfaceConnections"
-            :port-connections="currentGroup.portConnections"
+            :key="currentGroup?.groupKey || 'empty'"
+            :nodes="currentGroup?.nodes || []"
+            :interface-connections="currentGroup?.interfaceConnections || []"
+            :port-connections="currentGroup?.portConnections || []"
             :selected-node-name="selectedNodeName"
             :min-zoom="0.45"
             :max-zoom="1.35"
@@ -32,8 +32,7 @@
             @node-click="handleNodeClick"
           />
         </div>
-        <div v-else-if="currentGroup" class="graph-empty">正在加载流程图</div>
-        <div v-else class="graph-empty">当前流程没有可显示的节点</div>
+        <div v-else class="graph-empty">正在加载流程图</div>
       </section>
 
       <aside class="binding-editor">
@@ -329,6 +328,8 @@ function applyToSameModel() {
 .graph-stage {
   position: relative;
   height: 446px;
+  overflow: hidden;
+  isolation: isolate;
 }
 .graph-empty {
   height: 446px;

@@ -1,0 +1,729 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>SmartLab 2.0 智能实验室系统技术架构文档</title>
+  <style>
+:root {
+  --paper: #ebe4d6; --ink: #1b2430; --muted: #5d6670; --line: #ddd4c4;
+  --theory: #3b4a86; --eng: #0f6e66; --white: #fffcf7; --chip: #f3eee4;
+  --font: "Source Han Sans SC", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --serif: "Source Han Serif SC", "Noto Serif SC", "Songti SC", serif;
+}
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; display: grid; grid-template-columns: 280px 1fr; min-height: 100vh;
+  background: var(--paper); color: var(--ink); font-family: var(--font);
+}
+nav {
+  position: sticky; top: 0; height: 100vh; overflow: auto;
+  padding: 28px 18px 40px; border-right: 1px solid var(--line); background: #f6f1e6;
+}
+nav .brand { font-family: var(--serif); font-size: 16px; line-height: 1.4; margin-bottom: 18px; }
+nav a { display: block; color: var(--muted); text-decoration: none; font-size: 13px; padding: 6px 8px; line-height: 1.4; }
+nav a:hover { background: #e7eaf4; color: var(--theory); }
+nav a.h3 { padding-left: 16px; font-size: 12px; }
+main { max-width: 1100px; padding: 36px 48px 80px; }
+.hero { color: var(--muted); margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+article h1 { font-family: var(--serif); font-size: 30px; margin: 0 0 16px; }
+article h2 { font-family: var(--serif); font-size: 22px; margin: 44px 0 14px; padding-top: 12px; border-top: 1px solid var(--line); }
+article h2:first-of-type { border-top: 0; margin-top: 0; }
+article h3 { font-size: 17px; margin: 26px 0 10px; color: var(--theory); }
+article h4 { font-size: 15px; margin: 18px 0 8px; }
+article p, article li { line-height: 1.7; font-size: 15px; }
+article ul, article ol { padding-left: 22px; }
+article li + li { margin-top: 4px; }
+article code { font-family: ui-monospace, Consolas, monospace; font-size: .88em; background: var(--chip); padding: 1px 5px; }
+article pre { background: #1b2430; color: #e8e2d6; padding: 16px 18px; overflow: auto; font-size: 13px; line-height: 1.5; }
+article pre code { background: none; color: inherit; padding: 0; }
+.diagram { background: var(--white); border: 1px solid var(--line); padding: 12px 12px 8px; margin: 18px 0 28px; }
+.diagram .caption { font-size: 12px; letter-spacing: .08em; color: var(--muted); margin-bottom: 8px; text-transform: uppercase; }
+table { width: 100%; border-collapse: collapse; background: var(--white); font-size: 14px; margin: 12px 0 24px; }
+th, td { border: 1px solid var(--line); padding: 10px 12px; text-align: left; vertical-align: top; line-height: 1.5; }
+th { background: var(--chip); color: var(--theory); }
+hr { border: 0; border-top: 1px solid var(--line); margin: 24px 0; }
+@media (max-width: 960px) { body { grid-template-columns: 1fr; } nav { display: none; } main { padding: 20px; } }
+</style>
+</head>
+<body>
+  <nav>
+    <div class="brand">SmartLab 2.0<br/>技术架构</div>
+    <a class="h2" href="#1-总体架构概览">1. 总体架构概览</a>
+<a class="h3" href="#1-1-系统定位与核心价值">1.1 系统定位与核心价值</a>
+<a class="h3" href="#1-2-核心架构分层与设计原则">1.2 核心架构分层与设计原则</a>
+<a class="h3" href="#1-3-系统架构拓扑图">1.3 系统架构拓扑图</a>
+<a class="h2" href="#2-核心规范体系与模型-json-schema">2. 核心规范体系与模型 JSON Schema</a>
+<a class="h3" href="#2-1-跨模块协议规范-协议规范-json">2.1 跨模块协议规范 (协议规范.json)</a>
+<a class="h3" href="#2-2-设备能力模型-schema-设备能力模型-json">2.2 设备能力模型 Schema (设备能力模型.json)</a>
+<a class="h3" href="#2-3-设备状态机模型-schema-设备状态机模型-json">2.3 设备状态机模型 Schema (设备状态机模型.json)</a>
+<a class="h3" href="#2-4-工作流模型-schema-工作流模型-json">2.4 工作流模型 Schema (工作流模型.json)</a>
+<a class="h3" href="#2-5-约束模型-schema-约束模型-json">2.5 约束模型 Schema (约束模型.json)</a>
+<a class="h2" href="#3-设备状态机引擎-device-state-machine-engine">3. 设备状态机引擎 (Device State Machine Engine)</a>
+<a class="h3" href="#3-1-双状态空间架构">3.1 双状态空间架构</a>
+<a class="h3" href="#3-2-接口类型与信号隔离">3.2 接口类型与信号隔离</a>
+<a class="h3" href="#3-3-普通指令与抢占式终止指令双轨制">3.3 普通指令与抢占式终止指令双轨制</a>
+<a class="h3" href="#3-4-设备内置约束监测器-intrinsicconstraintmonitor">3.4 设备内置约束监测器 (IntrinsicConstraintMonitor)</a>
+<a class="h2" href="#4-工作流引擎-workflow-engine">4. 工作流引擎 (Workflow Engine)</a>
+<a class="h3" href="#4-1-核心执行机制与调度">4.1 核心执行机制与调度</a>
+<a class="h3" href="#4-2-节点类型调度策略">4.2 节点类型调度策略</a>
+<a class="h3" href="#4-3-异步状态监听与闭环恢复">4.3 异步状态监听与闭环恢复</a>
+<a class="h2" href="#5-约束引擎与统一可观测层-constraint-engine-observation">5. 约束引擎与统一可观测层 (Constraint Engine &amp; Observation)</a>
+<a class="h3" href="#5-1-六类可观测对象的权威内存来源">5.1 六类可观测对象的权威内存来源</a>
+<a class="h3" href="#5-2-全局约束与任务约束生命周期">5.2 全局约束与任务约束生命周期</a>
+<a class="h3" href="#5-3-软实时双轨调度与求值计算">5.3 软实时双轨调度与求值计算</a>
+<a class="h3" href="#5-4-违规处置闭环与审计">5.4 违规处置闭环与审计</a>
+<a class="h2" href="#6-adapter-边缘接入与通信体系">6. Adapter 边缘接入与通信体系</a>
+<a class="h3" href="#6-1-adapter-四层标准架构">6.1 Adapter 四层标准架构</a>
+<a class="h3" href="#6-2-adapter-配置文件规范-adapterconfig-ini">6.2 Adapter 配置文件规范 (adapterconfig.ini)</a>
+<a class="h3" href="#6-3-internal-参数隔离机制">6.3 internal 参数隔离机制</a>
+<a class="h3" href="#6-4-mqtt-通信主题与报文规约">6.4 MQTT 通信主题与报文规约</a>
+<a class="h2" href="#7-数据库结构设计与持久化映射">7. 数据库结构设计与持久化映射</a>
+<a class="h3" href="#7-1-核心数据表与实体映射">7.1 核心数据表与实体映射</a>
+<a class="h2" href="#8-总结与架构演进方向">8. 总结与架构演进方向</a>
+  </nav>
+  <main>
+    <p class="hero">来源：智能实验室系统技术架构文档.md · 架构图已绘制，可离线打开</p>
+    <article><h1>SmartLab 2.0 智能实验室系统技术架构文档</h1>
+<hr/>
+<h2 id="1-总体架构概览">1. 总体架构概览</h2>
+<h3 id="1-1-系统定位与核心价值">1.1 系统定位与核心价值</h3>
+<p>SmartLab 2.0 是一套面向智能化学/材料实验室、自动化合成与仪器装备联动的<strong>任务导向型可执行建模与运行时控制系统</strong>。系统通过建立物理设备抽象（数字孪生）、灵活的工作流编排、软实时约束监控与安全联锁，以及标准化的边缘 Adapter 接入体系，实现了从实验配方设计到硬件底层执行的全链路闭环。</p>
+<h3 id="1-2-核心架构分层与设计原则">1.2 核心架构分层与设计原则</h3>
+<p>系统采用 <strong>“三层规范驱动 + 四层软件架构 + 内存软实时求值 + 异步消息闭环”</strong> 的设计模式：</p>
+<ol>
+<li>1. <strong>三层规范体系</strong>：</li>
+<li><strong>公共跨模块协议字典 (<code>protocol-dict.json</code> / <code>协议规范.json</code>)</strong>：统一基础数据类型、系统信号类型、MQTT 主题约定与报文结构；</li>
+<li><strong>领域模型 JSON Schema</strong>：分别约束设备能力模型、状态机模型、工作流模型与约束模型；</li>
+<li><strong>Java / Python 运行时执行层</strong>：执行状态推进、节点调度、表达式计算与物理寄存器交互。</li>
+<li>2. <strong>内存快照软实时求值</strong>：</li>
+<li>约束引擎求值与设备内置约束监测<strong>绝不直连数据库</strong>，全部通过基于内存的权威快照（<code>ConcurrentHashMap</code> 结合修订号 <code>revision</code>）进行纳秒/微秒级内存读取，保障 200ms 周期内的软实时安全联锁；</li>
+<li>数据库仅承担静态定义、任务归档、历史审计和系统崩溃恢复职责。</li>
+<li>3. <strong>高内聚低耦合的引擎分工</strong>：</li>
+<li><strong>工作流引擎</strong>：负责“做哪些步骤、按什么拓扑做”；</li>
+<li><strong>状态机引擎</strong>：负责“单个设备处于什么状态、允许执行什么动作”；</li>
+<li><strong>约束引擎</strong>：负责“全局/任务维度是否存在违规，如何联锁干预”；</li>
+<li><strong>Adapter 体系</strong>：负责“软硬件协议转换与物理通信”。</li>
+</ol>
+<h3 id="1-3-系统架构拓扑图">1.3 系统架构拓扑图</h3>
+
+<div class="diagram">
+  <div class="caption">图 1 · 系统架构拓扑</div>
+  <svg viewBox="0 0 1100 720" width="100%" role="img" aria-label="图 1 · 系统架构拓扑">
+    <defs>
+      <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+        <path d="M0,0 L8,4 L0,8 z" fill="#5d6670"/>
+      </marker>
+    </defs>
+    
+  <rect x="40" y="20" width="1020" height="70" rx="6" fill="#e7eaf4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="52" y="42" font-size="13" font-weight="700" fill="#1b2430">前端交互层  Vue 3 + Pinia + Element Plus</text>
+<text x="52" y="64" font-size="12" fill="#3a4350">工作流设计器    设备能力 / 状态机编辑器    约束规则配置    人工控制台</text>
+  <rect x="40" y="120" width="1020" height="250" rx="6" fill="#fffcf7" stroke="#1b2430" stroke-width="1.4"/>
+<text x="52" y="142" font-size="13" font-weight="700" fill="#1b2430">核心引擎层  Spring Boot 运行时</text>
+  <rect x="60" y="155" width="230" height="195" rx="6" fill="#e7eaf4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="72" y="177" font-size="13" font-weight="700" fill="#1b2430">工作流引擎</text>
+<text x="72" y="199" font-size="12" fill="#3a4350">驱动器</text>
+<text x="72" y="217" font-size="12" fill="#3a4350">任务控制</text>
+<text x="72" y="235" font-size="12" fill="#3a4350">TASK / TASK_STEP</text>
+<text x="72" y="253" font-size="12" fill="#3a4350">条件求值</text>
+  <rect x="310" y="155" width="250" height="195" rx="6" fill="#dceeea" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="322" y="177" font-size="13" font-weight="700" fill="#1b2430">状态机引擎</text>
+<text x="322" y="199" font-size="12" fill="#3a4350">CMD 指令空间</text>
+<text x="322" y="217" font-size="12" fill="#3a4350">OP 运行 / 异常空间</text>
+<text x="322" y="235" font-size="12" fill="#3a4350">内置约束监测</text>
+  <rect x="580" y="155" width="230" height="195" rx="6" fill="#f3e6d4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="592" y="177" font-size="13" font-weight="700" fill="#1b2430">约束引擎</text>
+<text x="592" y="199" font-size="12" fill="#3a4350">调度协调</text>
+<text x="592" y="217" font-size="12" fill="#3a4350">表达式求值</text>
+<text x="592" y="235" font-size="12" fill="#3a4350">有效模型编译</text>
+  <rect x="830" y="155" width="210" height="195" rx="6" fill="#f3eee4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="842" y="177" font-size="13" font-weight="700" fill="#1b2430">可观测层</text>
+<text x="842" y="199" font-size="12" fill="#3a4350">设备孪生快照</text>
+<text x="842" y="217" font-size="12" fill="#3a4350">CMD / OP 快照</text>
+<text x="842" y="235" font-size="12" fill="#3a4350">任务 / 节点 / 变量</text>
+  <rect x="40" y="400" width="500" height="110" rx="6" fill="#e7eaf4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="52" y="422" font-size="13" font-weight="700" fill="#1b2430">边缘通信层  MQTT</text>
+<text x="52" y="444" font-size="12" fill="#3a4350">注册 / 心跳 / 命令 / 遥测 / 事件</text>
+<text x="52" y="462" font-size="12" fill="#3a4350">报文映射 · Manifest 解析</text>
+  <rect x="560" y="400" width="500" height="110" rx="6" fill="#dceeea" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="572" y="422" font-size="13" font-weight="700" fill="#1b2430">物理接入层  Adapter</text>
+<text x="572" y="444" font-size="12" fill="#3a4350">Python / C++ 适配器进程</text>
+<text x="572" y="462" font-size="12" fill="#3a4350">PLC / 控制卡 / 传感器 / 仪器</text>
+  <rect x="40" y="540" width="1020" height="90" rx="6" fill="#f3eee4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="52" y="562" font-size="13" font-weight="700" fill="#1b2430">数据存储层  PostgreSQL + JSONB</text>
+<text x="52" y="584" font-size="12" fill="#3a4350">DEVICE_*    FLOW_* / TASK_*    CONSTRAINT_RULE / VIOLATION_LOG    ADAPTER_INDEX</text>
+  <line x1="175" y1="370" x2="435" y2="400" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="305.0" y="377.0" text-anchor="middle" font-size="11" fill="#9a4a12">1 启动 WF_EXECUTE_START</text>
+  <line x1="435" y1="350" x2="290" y2="400" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="362.5" y="367.0" text-anchor="middle" font-size="11" fill="#9a4a12">2 指令 CMD_START / ABORT</text>
+  <line x1="810" y1="350" x2="810" y2="400" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="810.0" y="367.0" text-anchor="middle" font-size="11" fill="#9a4a12">3/4 遥测与事件</text>
+  <line x1="435" y1="250" x2="695" y2="250" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="565.0" y="242.0" text-anchor="middle" font-size="11" fill="#9a4a12">5 状态 CMD_STATE</text>
+  <line x1="935" y1="350" x2="695" y2="350" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="815.0" y="342.0" text-anchor="middle" font-size="11" fill="#9a4a12">6 观测 → 约束</text>
+  <line x1="695" y1="350" x2="175" y2="350" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="435.0" y="342.0" text-anchor="middle" font-size="11" fill="#9a4a12">7 联锁 ABORT / PAUSE</text>
+  <line x1="695" y1="370" x2="435" y2="370" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="565.0" y="362.0" text-anchor="middle" font-size="11" fill="#9a4a12">8 CONSTRAINT_EXECUTE</text>
+
+  </svg>
+</div>
+
+<hr/>
+<h2 id="2-核心规范体系与模型-json-schema">2. 核心规范体系与模型 JSON Schema</h2>
+<p>系统所有领域模型通过统一的 JSON Schema（Draft-07）定义，并由后端 <code><code>ProtocolDictionaryService</code></code> 与 <code><code>SchemaMetadataService</code></code> 加载校验，统一对前端提供元数据接口 <code>/api/schema-metadata/frontend</code>。</p>
+
+<div class="diagram">
+  <div class="caption">图 2 · 三层规范与 Schema 引用</div>
+  <svg viewBox="0 0 1100 340" width="100%" role="img" aria-label="图 2 · 三层规范与 Schema 引用">
+    <defs>
+      <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+        <path d="M0,0 L8,4 L0,8 z" fill="#5d6670"/>
+      </marker>
+    </defs>
+    
+  <rect x="430" y="20" width="240" height="70" rx="6" fill="#e7eaf4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="442" y="42" font-size="13" font-weight="700" fill="#1b2430">协议规范.json</text>
+<text x="442" y="64" font-size="12" fill="#3a4350">类型 · 信号 · MQTT 报文</text>
+  <rect x="40" y="150" width="180" height="70" rx="6" fill="#fffcf7" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="52" y="172" font-size="13" font-weight="700" fill="#1b2430">设备能力模型</text>
+  <rect x="250" y="150" width="180" height="70" rx="6" fill="#fffcf7" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="262" y="172" font-size="13" font-weight="700" fill="#1b2430">状态机模型</text>
+  <rect x="460" y="150" width="180" height="70" rx="6" fill="#fffcf7" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="472" y="172" font-size="13" font-weight="700" fill="#1b2430">工作流模型</text>
+  <rect x="670" y="150" width="180" height="70" rx="6" fill="#fffcf7" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="682" y="172" font-size="13" font-weight="700" fill="#1b2430">约束模型</text>
+  <rect x="880" y="150" width="180" height="70" rx="6" fill="#dceeea" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="892" y="172" font-size="13" font-weight="700" fill="#1b2430">运行时执行</text>
+<text x="892" y="194" font-size="12" fill="#3a4350">Java / Python</text>
+  <rect x="250" y="260" width="400" height="55" rx="6" fill="#f3eee4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="262" y="282" font-size="13" font-weight="700" fill="#1b2430">ProtocolDictionary + SchemaMetadata  →  前端元数据 / 后端校验</text>
+  <line x1="550" y1="90" x2="130" y2="150" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="340.0" y="112.0" text-anchor="middle" font-size="11" fill="#9a4a12">$ref</text>
+  <line x1="550" y1="90" x2="340" y2="150" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="550" y1="90" x2="550" y2="150" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="550" y1="90" x2="760" y2="150" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="450" y1="205" x2="450" y2="260" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  </svg>
+</div>
+
+<h3 id="2-1-跨模块协议规范-协议规范-json">2.1 跨模块协议规范 (<code>协议规范.json</code>)</h3>
+<p>承担跨引擎通用定义：</p>
+<ul>
+<li><strong><code>DataType</code></strong>：全局基础数据类型：<code>INTEGER</code>、<code>DOUBLE</code>、<code>STRING</code>、<code>BOOLEAN</code>、<code>JSON</code>。</li>
+<li><strong><code>CommunicationProtocol</code></strong>：适配器通信协议（当前为 <code>MQTT</code>）。</li>
+<li><strong>统一系统信号枚举</strong>：</li>
+<li><code>WorkflowControlSignal</code>：<code>WF_EXECUTE_START</code>（携带能力名与参数）、<code>WF_EXECUTE_ABORT</code>（不带参数，通过上下文触发附属终止能力）；</li>
+<li><code>ManualControlSignal</code>：<code>MANUAL_EXECUTE_START</code>、<code>MANUAL_EXECUTE_ABORT</code>；</li>
+<li><code>ConstraintControlSignal</code>：<code>CONSTRAINT_EXECUTE</code>、<code>CONSTRAINT_ABORT</code>；</li>
+<li><code>AdapterOutboundSignal</code>：<code>CMD_START</code>、<code>CMD_ABORT</code>；</li>
+<li><code>StatusSignal</code>：<code>CMD_STATE</code>、<code>OP_STATE</code>。</li>
+<li><strong>MQTT 主题规范 (<code>MqttTopicConvention</code>)</strong> 与 <strong>5 类标准 MQTT 报文格式</strong>（<code>AdapterRegisterRequest</code>、<code>CommandMessageFormat</code>、<code>TelemetryMessageFormat</code>、<code>EventMessageFormat</code>、<code>AdapterHeartbeat</code>）。</li>
+</ul>
+<h3 id="2-2-设备能力模型-schema-设备能力模型-json">2.2 设备能力模型 Schema (<code>设备能力模型.json</code>)</h3>
+<p>描述设备静态功能与物理接口：</p>
+<ul>
+<li><strong><code>attributes</code></strong>：属性空间（属性名、数据类型、连续/离散 <code>valueKind</code>、单位 <code>unit</code>）；</li>
+<li><strong><code>capabilities</code></strong>：对外暴露的能力集。包含 <code>capabilityName</code>、映射的 <code>adapterCommandName</code>、<code>isAbort</code>（是否为终止操作）、<code>abortCapabilityName</code>（普通能力关联的附属终止能力）、<code>scope</code>（终止影响范围）、<code>parameters</code> 及 <code>parameterMapping</code>；</li>
+<li><strong><code>adapterContract</code></strong>：包含 <code>commands</code>（已剔除 internal 的公开参数）、<code>telemetry</code>（上报字段及到设备属性的 <code>attributesMapping</code>）、<code>events</code>（<code>cmdEvents</code> 与 <code>opEvents</code>）；</li>
+<li><strong><code>intrinsicConstraints</code></strong>：设备内置约束（监测表达式、违规激活的异常状态名 <code>violationStateName</code> 及处置动作）。</li>
+</ul>
+<h3 id="2-3-设备状态机模型-schema-设备状态机模型-json">2.3 设备状态机模型 Schema (<code>设备状态机模型.json</code>)</h3>
+<p>规范设备动态运行状态与转移规则：</p>
+<ul>
+<li><strong><code>interfaces</code></strong>：声明接口名称、方向（<code>IN</code>/<code>OUT</code>）、类型（<code>WORKFLOW</code>、<code>STATE</code>、<code>ADAPTER</code>、<code>CONTROL</code>、<code>CONSTRAINT</code>）及允许信号 <code>allowedSignals</code>；</li>
+<li><strong><code>opStateSpace</code></strong>：业务状态空间，包含 <code>OPERATIONAL</code>（单状态互斥业务区）与 <code>EXCEPTION</code>（异常状态集合区）；</li>
+<li><strong><code>cmdLifecycleSpace</code></strong>：指令生命周期空间（标准路径：<code>IDLE</code> → <code>SENT</code> → <code>RUNNING</code> → <code>COMPLETED</code>；异常/终止路径：<code>ABORTING</code> → <code>ABORTED</code>、<code>FAILED</code>）；</li>
+<li><strong><code>transitions</code></strong>：声明触发条件（接口名 + 信号名）、前置状态、目标状态与执行动作（<code>StateMachineAction: SEND</code>）。</li>
+</ul>
+<h3 id="2-4-工作流模型-schema-工作流模型-json">2.4 工作流模型 Schema (<code>工作流模型.json</code>)</h3>
+<p>规范实验流程图拓扑：</p>
+<ul>
+<li><strong><code>nodes</code></strong>：支持三种节点类型：</li>
+<li><code>devNode</code>（设备能力节点）：绑定目标设备模型、能力、参数表达式与内部变量映射；</li>
+<li><code>funcNode</code>（功能控制节点）：<code>START</code>、<code>END</code>、<code>BRANCH</code>（条件分支）、<code>AGGREGATE</code>（多路汇聚）；</li>
+<li><code>subflowNode</code>（子流程节点）：嵌套引用外部流程模型。</li>
+<li><strong><code>interfaceConnections</code></strong>：接口连线关系（<code>NODE_TO_NODE</code>、<code>NODE_TO_DEVICE</code>、<code>DEVICE_TO_NODE</code>）；</li>
+<li><strong><code>portConnections</code></strong>：数据/物理物料端口连线拓扑（<code>source</code> → <code>target</code>）。</li>
+</ul>
+<h3 id="2-5-约束模型-schema-约束模型-json">2.5 约束模型 Schema (<code>约束模型.json</code>)</h3>
+<p>规范安全检测规则与联锁：</p>
+<ul>
+<li><strong><code>observableObjects</code></strong>：声明监测的数据源，通过 <code>sourceType</code> 区分 6 类对象：</li>
+<li>  1. <code>DEVICE_ATTRIBUTE</code>：设备属性；</li>
+</ul>
+<p>  2. <code>DEVICE_OPERATION_STATE</code>：设备业务运行状态；   3. <code>DEVICE_COMMAND_LIFECYCLE</code>：设备指令生命周期；   4. <code>NODE_LIFECYCLE_STATE</code>：工作流节点生命周期；   5. <code>NODE_INTERNAL_VARIABLE</code>：节点内部变量；   6. <code>TASK_LIFECYCLE_STATE</code>：任务整体执行状态。</p>
+<ul>
+<li><strong><code>constraints</code></strong>：规则集，包含布尔表达式 <code>expression</code>、变量映射 <code>bindings</code>（绑定到 <code>OBSERVABLE</code> 或 <code>LITERAL</code> 常量）、持续时间窗口 <code>windowSeconds</code>、违规处置动作 <code>violationActions</code>（<code>SYSTEM</code> 任务控制或 <code>DEVICE_CAPABILITY</code> 触发设备能力）。</li>
+</ul>
+<hr/>
+<h2 id="3-设备状态机引擎-device-state-machine-engine">3. 设备状态机引擎 (Device State Machine Engine)</h2>
+<p>设备状态机引擎（<code><code>StateMachineEngine</code></code>）是设备数字孪生与控制的中枢。</p>
+
+<div class="diagram">
+  <div class="caption">图 3 · 设备指令状态机</div>
+  <svg viewBox="0 0 1100 280" width="100%" role="img" aria-label="图 3 · 设备指令状态机">
+    <defs>
+      <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+        <path d="M0,0 L8,4 L0,8 z" fill="#5d6670"/>
+      </marker>
+    </defs>
+    
+  <rect x="40" y="90" width="110" height="70" rx="6" fill="#dceeea" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="52" y="112" font-size="13" font-weight="700" fill="#1b2430">IDLE</text>
+<text x="52" y="134" font-size="12" fill="#3a4350">空闲可接令</text>
+  <rect x="200" y="90" width="110" height="70" rx="6" fill="#e7eaf4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="212" y="112" font-size="13" font-weight="700" fill="#1b2430">SENT</text>
+<text x="212" y="134" font-size="12" fill="#3a4350">已下发</text>
+  <rect x="360" y="90" width="130" height="70" rx="6" fill="#e7eaf4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="372" y="112" font-size="13" font-weight="700" fill="#1b2430">RUNNING</text>
+<text x="372" y="134" font-size="12" fill="#3a4350">物理执行中</text>
+  <rect x="540" y="90" width="140" height="70" rx="6" fill="#dceeea" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="552" y="112" font-size="13" font-weight="700" fill="#1b2430">COMPLETED</text>
+<text x="552" y="134" font-size="12" fill="#3a4350">完成 → 复位</text>
+  <rect x="360" y="200" width="130" height="60" rx="6" fill="#f3e6d4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="372" y="222" font-size="13" font-weight="700" fill="#1b2430">ABORTING</text>
+<text x="372" y="244" font-size="12" fill="#3a4350">终止中</text>
+  <rect x="540" y="200" width="140" height="60" rx="6" fill="#f3e6d4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="552" y="222" font-size="13" font-weight="700" fill="#1b2430">ABORTED</text>
+<text x="552" y="244" font-size="12" fill="#3a4350">已终止</text>
+  <rect x="740" y="90" width="130" height="70" rx="6" fill="#f3dce0" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="752" y="112" font-size="13" font-weight="700" fill="#1b2430">FAILED</text>
+<text x="752" y="134" font-size="12" fill="#3a4350">失败 / 超时</text>
+  <line x1="150" y1="125" x2="200" y2="125" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="175.0" y="117.0" text-anchor="middle" font-size="11" fill="#9a4a12">WF / 人工 / 约束启动</text>
+  <line x1="310" y1="125" x2="360" y2="125" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="335.0" y="117.0" text-anchor="middle" font-size="11" fill="#9a4a12">COMMAND_RUNNING</text>
+  <line x1="490" y1="125" x2="540" y2="125" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="515.0" y="117.0" text-anchor="middle" font-size="11" fill="#9a4a12">COMPLETED</text>
+  <line x1="425" y1="160" x2="425" y2="200" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="425.0" y="172.0" text-anchor="middle" font-size="11" fill="#9a4a12">ABORT</text>
+  <line x1="490" y1="230" x2="540" y2="230" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="490" y1="125" x2="740" y2="125" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="615.0" y="117.0" text-anchor="middle" font-size="11" fill="#9a4a12">FAILED</text>
+  <text x="40" y="40" font-size="14" fill="#5d6670">CMD 指令生命周期（终态后自动回到 IDLE）</text>
+
+  </svg>
+</div>
+
+<h3 id="3-1-双状态空间架构">3.1 双状态空间架构</h3>
+<p>每个设备实例在内存中维护两个独立而关联的状态空间：</p>
+<ol>
+<li>1. <strong>CMD 状态空间（指令生命周期）</strong>：</li>
+<li>统一由系统内核状态机驱动，追踪单条指令从发起到完成的物理执行进度；</li>
+<li>严格保证指令终态（<code>COMPLETED</code> / <code>ABORTED</code> / <code>FAILED</code>）后自动复位至 <code>IDLE</code>，以便接收下一条指令。</li>
+<li>2. <strong>OP 状态空间（设备功能/安全状态）</strong>：</li>
+<li><strong><code>OPERATIONAL</code> 分区</strong>：表示设备当前的物理运行模态（如 <code>STANDBY</code>、<code>HEATING</code>、<code>STIRRING</code>），遵循状态转移表；</li>
+<li><strong><code>EXCEPTION</code> 分区</strong>：表示设备当前的异常标记集合（如 <code>[OVER_PRESSURE, DOOR_OPEN]</code>）。异常状态无需手动转移，由内置约束监测器依据实时传感器数据自动挂载与消除。</li>
+</ol>
+<h3 id="3-2-接口类型与信号隔离">3.2 接口类型与信号隔离</h3>
+<p>状态机对外暴露 5 类接口，防止非法信号串扰：</p>
+<ul>
+<li><strong><code>WORKFLOW</code> (IN)</strong>：仅接收 <code>WF_EXECUTE_START</code> 与 <code>WF_EXECUTE_ABORT</code>；</li>
+<li><strong><code>CONTROL</code> (IN)</strong>：仅接收人工操作界面的 <code>MANUAL_EXECUTE_START</code> 与 <code>MANUAL_EXECUTE_ABORT</code>；</li>
+<li><strong><code>CONSTRAINT</code> (IN)</strong>：仅接收约束引擎触发的 <code>CONSTRAINT_EXECUTE</code> 与 <code>CONSTRAINT_ABORT</code>；</li>
+<li><strong><code>ADAPTER</code> (IN/OUT)</strong>：IN 方向接收 Adapter 原始事件（如 <code>COMMAND_RUNNING</code>、<code>TEMP_REACHED</code>）；OUT 方向向 Adapter 发送 <code>CMD_START</code> / <code>CMD_ABORT</code> 下行控制；</li>
+<li><strong><code>STATE</code> (OUT)</strong>：向外广播 <code>CMD_STATE</code>（携带 <code>messageId</code>）和 <code>OP_STATE</code> 状态变更通知。</li>
+</ul>
+<h3 id="3-3-普通指令与抢占式终止指令双轨制">3.3 普通指令与抢占式终止指令双轨制</h3>
+<ul>
+<li>当设备正在执行耗时较长的普通指令（<code>isAbort=false</code>，处于 <code>RUNNING</code> 态）时，系统禁止下发其他普通指令；</li>
+<li>系统允许立即下发标记为 <code>isAbort=true</code> 的终止指令，或者通过普通指令定义的 <code>abortCapabilityName</code> 路由到专属终止能力；</li>
+<li>状态机直接切入 <code>ABORTING</code> 态并向 Adapter 发送终止下行帧，实现安全抢占。</li>
+</ul>
+<h3 id="3-4-设备内置约束监测器-intrinsicconstraintmonitor">3.4 设备内置约束监测器 (<code><code>IntrinsicConstraintMonitor</code></code>)</h3>
+<ul>
+<li>系统启动或模型变更时，将设备模型中的 <code>intrinsicConstraints</code> 预编译为内存中的 <code><code>IntrinsicConstraintPlan</code></code>；</li>
+<li>监测器独立轮询设备属性快照的 <code>revision</code>，当发现温度/压力超限时，自动将状态机 <code>EXCEPTION</code> 分区置为异常，并触发内置保护动作。</li>
+</ul>
+<hr/>
+<h2 id="4-工作流引擎-workflow-engine">4. 工作流引擎 (Workflow Engine)</h2>
+<p>工作流引擎（<code><code>WorkflowEngine</code></code>）负责任务流程的驱动、节点生命周期管理与上下文传递。</p>
+
+<div class="diagram">
+  <div class="caption">图 4 · 工作流节点拓扑示例</div>
+  <svg viewBox="0 0 1100 220" width="100%" role="img" aria-label="图 4 · 工作流节点拓扑示例">
+    <defs>
+      <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+        <path d="M0,0 L8,4 L0,8 z" fill="#5d6670"/>
+      </marker>
+    </defs>
+    
+  <rect x="20" y="70" width="110" height="70" rx="6" fill="#dceeea" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="32" y="92" font-size="13" font-weight="700" fill="#1b2430">START</text>
+<text x="32" y="114" font-size="12" fill="#3a4350">初始化</text>
+  <rect x="160" y="70" width="130" height="70" rx="6" fill="#e7eaf4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="172" y="92" font-size="13" font-weight="700" fill="#1b2430">DEV 加料</text>
+<text x="172" y="114" font-size="12" fill="#3a4350">设备能力节点</text>
+  <rect x="320" y="70" width="140" height="70" rx="6" fill="#f3e6d4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="332" y="92" font-size="13" font-weight="700" fill="#1b2430">BRANCH</text>
+<text x="332" y="114" font-size="12" fill="#3a4350">条件判断</text>
+  <rect x="500" y="20" width="160" height="70" rx="6" fill="#e7eaf4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="512" y="42" font-size="13" font-weight="700" fill="#1b2430">DEV 加热反应</text>
+<text x="512" y="64" font-size="12" fill="#3a4350">温度正常</text>
+  <rect x="500" y="130" width="160" height="70" rx="6" fill="#f3dce0" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="512" y="152" font-size="13" font-weight="700" fill="#1b2430">DEV 冷却排空</text>
+<text x="512" y="174" font-size="12" fill="#3a4350">温度过高</text>
+  <rect x="700" y="70" width="150" height="70" rx="6" fill="#f3eee4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="712" y="92" font-size="13" font-weight="700" fill="#1b2430">AGGREGATE</text>
+<text x="712" y="114" font-size="12" fill="#3a4350">汇聚等待</text>
+  <rect x="880" y="70" width="180" height="70" rx="6" fill="#dceeea" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="892" y="92" font-size="13" font-weight="700" fill="#1b2430">子流程 → END</text>
+<text x="892" y="114" font-size="12" fill="#3a4350">分析检测</text>
+  <line x1="130" y1="105" x2="160" y2="105" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="290" y1="105" x2="320" y2="105" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="460" y1="90" x2="500" y2="55" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="480.0" y="64.5" text-anchor="middle" font-size="11" fill="#9a4a12">正常</text>
+  <line x1="460" y1="120" x2="500" y2="165" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="480.0" y="134.5" text-anchor="middle" font-size="11" fill="#9a4a12">过高</text>
+  <line x1="660" y1="55" x2="775" y2="90" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="660" y1="165" x2="775" y2="120" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="850" y1="105" x2="880" y2="105" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  </svg>
+</div>
+
+<h3 id="4-1-核心执行机制与调度">4.1 核心执行机制与调度</h3>
+<ul>
+<li><strong>静态定义与动态实例分离</strong>：</li>
+<li>流程图结构持久化在 <code>FLOW_MODELS</code> 和 <code>FLOW_NODE</code> 表中；</li>
+<li>运行时每次执行创建独立的 <code>TASK</code> 记录，每一个节点的实际调度生成一条 <code>TASK_STEP</code> 记录。</li>
+<li><strong>节点生命周期</strong>：<code>PENDING</code> → <code>EXECUTING</code> → <code>COMPLETED</code>（或 <code>FAILED</code> / <code>ABORTED</code>）。</li>
+</ul>
+<h3 id="4-2-节点类型调度策略">4.2 节点类型调度策略</h3>
+<ol>
+<li>1. <strong><code>START</code> 节点</strong>：初始化任务变量空间，沿输出连接激活第一批下游节点；</li>
+<li>2. <strong><code>END</code> 节点</strong>：</li>
+<li>若当前为主流程，则标记整个 <code>TASK</code> 为 <code>COMPLETED</code>；</li>
+<li>若当前为子流程（<code>SUB_FLOW_NODE</code>），则向父步骤发送 <code>SUBFLOW_COMPLETED</code> 信号，恢复父流程执行；</li>
+<li>3. <strong><code>BRANCH</code> 节点</strong>：调用 <code><code>WorkflowConditionEvaluator</code></code>，根据任务变量与操作符（<code>==</code>, <code>!=</code>, <code>&gt;</code>, <code>&lt;</code>, <code>&gt;=</code>, <code>&lt;=</code>, <code>IN</code>, <code>BETWEEN</code> 等）计算满足条件的分支并输出；</li>
+<li>4. <strong><code>AGGREGATE</code> 节点</strong>：等待所有到达当前汇聚点的前序实际步骤全部执行完成（<code>ALL</code> 策略）后才继续推进；</li>
+<li>5. <strong><code>SUB_FLOW_NODE</code> 节点</strong>：实例化目标子流程，并自动维护 <code>parentStepId</code> 与递增的 <code>stepDepth</code>；</li>
+<li>6. <strong><code>DEVICE_CAPABILITY_NODE</code> 节点</strong>：</li>
+<li>从 <code>TASK.RESOURCE_MAP</code> 中解析当前节点绑定的物理 <code>deviceInstanceId</code>；</li>
+<li>生成全局唯一 <code>messageId</code> 写入 <code>TASK_STEP.INTERFACE_IN_SNAPSHOT</code>；</li>
+<li>向对应状态机发送 <code>WF_EXECUTE_START</code> 信号，当前步骤进入 <code>EXECUTING</code> 挂起状态。</li>
+</ol>
+<h3 id="4-3-异步状态监听与闭环恢复">4.3 异步状态监听与闭环恢复</h3>
+<ul>
+<li>工作流引擎实现 <code><code>StateMachineInterfaceSignalEvent</code></code> 事件监听；</li>
+<li>收到状态机的 <code>CMD_STATE</code> 广播后，提取载荷中的 <code>messageId</code>；</li>
+<li>准确定位对应的 <code>TASK_STEP</code>：</li>
+<li>若为 <code>COMPLETED</code>：完成当前步骤，将输出参数写入变量空间，并沿连接线激活下游节点；</li>
+<li>若为 <code>FAILED</code> 或 <code>ABORTED</code>：将当前步骤与任务标记为异常终态。</li>
+</ul>
+<hr/>
+<h2 id="5-约束引擎与统一可观测层-constraint-engine-observation">5. 约束引擎与统一可观测层 (Constraint Engine &amp; Observation)</h2>
+<p>约束引擎负责全局与实验过程中的安全联锁、工艺窗口监测与异常应急处置。</p>
+
+<div class="diagram">
+  <div class="caption">图 5 · 约束引擎求值与处置</div>
+  <svg viewBox="0 0 1100 280" width="100%" role="img" aria-label="图 5 · 约束引擎求值与处置">
+    <defs>
+      <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+        <path d="M0,0 L8,4 L0,8 z" fill="#5d6670"/>
+      </marker>
+    </defs>
+    
+  <rect x="30" y="40" width="240" height="200" rx="6" fill="#e7eaf4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="42" y="62" font-size="13" font-weight="700" fill="#1b2430">权威内存数据源</text>
+<text x="42" y="84" font-size="12" fill="#3a4350">设备孪生属性</text>
+<text x="42" y="102" font-size="12" fill="#3a4350">CMD / OP 状态</text>
+<text x="42" y="120" font-size="12" fill="#3a4350">任务 / 节点 / 变量</text>
+  <rect x="310" y="40" width="230" height="200" rx="6" fill="#dceeea" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="322" y="62" font-size="13" font-weight="700" fill="#1b2430">双轨调度</text>
+<text x="322" y="84" font-size="12" fill="#3a4350">事件：可观测变更</text>
+<text x="322" y="102" font-size="12" fill="#3a4350">时钟：200ms 扫描</text>
+  <rect x="580" y="40" width="240" height="200" rx="6" fill="#f3e6d4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="592" y="62" font-size="13" font-weight="700" fill="#1b2430">约束引擎核心</text>
+<text x="592" y="84" font-size="12" fill="#3a4350">编译有效模型</text>
+<text x="592" y="102" font-size="12" fill="#3a4350">监控计划</text>
+<text x="592" y="120" font-size="12" fill="#3a4350">表达式 + 时间窗口</text>
+  <rect x="860" y="40" width="210" height="200" rx="6" fill="#f3dce0" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="872" y="62" font-size="13" font-weight="700" fill="#1b2430">违规处置</text>
+<text x="872" y="84" font-size="12" fill="#3a4350">SYSTEM ABORT/PAUSE/ALERT</text>
+<text x="872" y="102" font-size="12" fill="#3a4350">设备保护能力</text>
+<text x="872" y="120" font-size="12" fill="#3a4350">写入 VIOLATION_LOG</text>
+  <line x1="270" y1="140" x2="310" y2="140" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="540" y1="140" x2="580" y2="140" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="820" y1="140" x2="860" y2="140" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+<text x="840.0" y="132.0" text-anchor="middle" font-size="11" fill="#9a4a12">确认违规</text>
+
+  </svg>
+</div>
+
+<h3 id="5-1-六类可观测对象的权威内存来源">5.1 六类可观测对象的权威内存来源</h3>
+<p>系统通过 <code><code>ObservableKey</code></code> 唯一定位可观测对象。所有对象统一具备 <strong>当前值保持、修订号递增、轻量变更通知、随时只读快照访问</strong> 特性：</p>
+<ul>
+<li><code>DEVICE_ATTRIBUTE</code>：源自 <code><code>DeviceTwinSnapshotRegistry</code></code>；</li>
+<li><code>DEVICE_OPERATION_STATE</code> / <code>DEVICE_COMMAND_LIFECYCLE</code>：源自 <code><code>StateMachineObservationRegistry</code></code>；</li>
+<li><code>NODE_LIFECYCLE_STATE</code> / <code>NODE_INTERNAL_VARIABLE</code> / <code>TASK_LIFECYCLE_STATE</code>：源自工作流运行态内存映射。</li>
+</ul>
+<h3 id="5-2-全局约束与任务约束生命周期">5.2 全局约束与任务约束生命周期</h3>
+<ul>
+<li><strong>全局约束 (<code>CONSTRAINT_RULE</code>)</strong>：保存在数据库中，支持动态维护。规则的新增、修改、停用会即时触发 <code>ConstraintRulesChangedEvent</code>，重新编译当前所有运行任务的监控计划；</li>
+<li><strong>任务约束 (<code>TASK.TASK_CONSTRAINTS</code>)</strong>：在任务创建时写入快照，<strong>任务一旦启动后绝对锁定</strong>，不随全局规则修改而漂移，保证实验可追溯性。</li>
+</ul>
+<h3 id="5-3-软实时双轨调度与求值计算">5.3 软实时双轨调度与求值计算</h3>
+<ul>
+<li><strong>调度器 (<code><code>ConstraintEvaluationCoordinator</code></code>)</strong>：</li>
+<li><strong>事件驱动</strong>：当属性/状态变化抛出 <code>ObservableChangedEvent</code> 时，快速将对象标记为 <code>dirty</code> 并异步触发单线程 Worker；</li>
+<li><strong>固定 200ms 扫描</strong>：以 <code>smartlab.constraint.scan-interval-ms: 200</code> 为周期进行软实时轮询，作为滑动窗口函数与事件遗漏的兜底机制。</li>
+<li><strong>表达式求值 (<code><code>ConstraintExpressionEvaluator</code></code>)</strong>：</li>
+<li>基于 Spring Expression Language (SpEL)，支持算术、逻辑与比较运算；</li>
+<li><strong>时序滑动窗口函数</strong>：</li>
+</ul>
+<p>    - <code>delta(var, seconds)</code>：变量在过去 N 秒内的数值变化量；     - <code>avg(var, seconds)</code>：变量在过去 N 秒内的移动平均值；     - <code>rate(var)</code>：变量的变化速率（单位/秒）。   - <strong>持续时间窗口 (<code>windowSeconds</code>)</strong>：仅当表达式持续为 <code>true</code> 超过该秒数后才触发动作，有效过滤传感器噪声抖动。</p>
+<h3 id="5-4-违规处置闭环与审计">5.4 违规处置闭环与审计</h3>
+<ul>
+<li><strong><code>SYSTEM</code> 动作</strong>：</li>
+<li><code>ABORT</code>：调用 <code>WorkflowTaskControlService.terminate(taskId)</code> 立即终止任务；</li>
+<li><code>PAUSE</code>：调用 <code>WorkflowTaskControlService.pause(taskId)</code> 挂起任务执行；</li>
+<li><code>ALERT</code>：通过 Spring 事件总线发布 <code>ConstraintAlertEvent</code> 向前端推送告警。</li>
+<li><strong><code>DEVICE_CAPABILITY</code> 动作</strong>：</li>
+<li>调用 <code>StateMachineCommandPort.executeConstraintCapability(deviceInstanceId, capabilityName, params)</code>，向设备状态机下发应急动作（如紧急关阀、开启排风）；</li>
+<li><strong>审计记录</strong>：</li>
+<li>触发瞬间捕获完整的现场变量快照、表达式与处置记录，持久化写入 <code>VIOLATION_LOG</code>。</li>
+</ul>
+<hr/>
+<h2 id="6-adapter-边缘接入与通信体系">6. Adapter 边缘接入与通信体系</h2>
+<p>Adapter 是部署在边缘网关或工控机上的物理接入代理。</p>
+
+<div class="diagram">
+  <div class="caption">图 6 · Adapter 四层接入</div>
+  <svg viewBox="0 0 1100 420" width="100%" role="img" aria-label="图 6 · Adapter 四层接入">
+    <defs>
+      <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+        <path d="M0,0 L8,4 L0,8 z" fill="#5d6670"/>
+      </marker>
+    </defs>
+    
+  <rect x="300" y="20" width="500" height="60" rx="6" fill="#e7eaf4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="312" y="42" font-size="13" font-weight="700" fill="#1b2430">SmartLab 2.0 后端</text>
+<text x="312" y="64" font-size="12" fill="#3a4350">command 下行 · telemetry / event / register / heartbeat 上行</text>
+  <rect x="300" y="120" width="500" height="50" rx="6" fill="#f3eee4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="312" y="142" font-size="13" font-weight="700" fill="#1b2430">MQTT Broker</text>
+<text x="312" y="164" font-size="12" fill="#3a4350">smartlab/adapter/{name}/{point}/…</text>
+  <rect x="80" y="220" width="940" height="120" rx="6" fill="#fffcf7" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="92" y="242" font-size="13" font-weight="700" fill="#1b2430">Adapter 边缘进程</text>
+  <rect x="110" y="250" width="200" height="70" rx="6" fill="#e7eaf4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="122" y="272" font-size="13" font-weight="700" fill="#1b2430">northbound.py</text>
+<text x="122" y="294" font-size="12" fill="#3a4350">MQTT 标准信封</text>
+  <rect x="360" y="250" width="200" height="70" rx="6" fill="#dceeea" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="372" y="272" font-size="13" font-weight="700" fill="#1b2430">core.py</text>
+<text x="372" y="294" font-size="12" fill="#3a4350">语义翻译 / 追踪</text>
+  <rect x="610" y="250" width="200" height="70" rx="6" fill="#f3e6d4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="622" y="272" font-size="13" font-weight="700" fill="#1b2430">southbound.py</text>
+<text x="622" y="294" font-size="12" fill="#3a4350">PLC / SDK 驱动</text>
+  <rect x="830" y="250" width="160" height="70" rx="6" fill="#f3eee4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="842" y="272" font-size="13" font-weight="700" fill="#1b2430">runtime.py</text>
+<text x="842" y="294" font-size="12" fill="#3a4350">配置 / 心跳</text>
+  <rect x="300" y="370" width="500" height="40" rx="6" fill="#1b2430" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="312" y="392" font-size="13" font-weight="700" fill="#1b2430">PLC / 反应釜 / 仪器硬件</text>
+  <text x="550" y="395" text-anchor="middle" font-size="13" fill="#fffcf7">Modbus / TCP / 串口 / 厂商 SDK</text>
+  <line x1="550" y1="80" x2="550" y2="120" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="550" y1="170" x2="550" y2="220" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="550" y1="340" x2="550" y2="370" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  </svg>
+</div>
+
+<h3 id="6-1-adapter-四层标准架构">6.1 Adapter 四层标准架构</h3>
+<ol>
+<li>1. <strong><code>runtime.py</code></strong>：加载配置文件、管理进程生命周期、心跳与异常恢复；</li>
+<li>2. <strong><code>northbound.py</code></strong>：封装 MQTT 客户端，处理与系统的标准报文收发；</li>
+<li>3. <strong><code>core.py</code></strong>：处理业务逻辑、指令追踪、设备原始数据与系统模型双向翻译；</li>
+<li>4. <strong><code>southbound.py</code></strong>：对接底层硬件协议驱动（如 Modbus-TCP、PLC S7、串口、厂商 SDK）。</li>
+</ol>
+<h3 id="6-2-adapter-配置文件规范-adapterconfig-ini">6.2 Adapter 配置文件规范 (<code>adapterconfig.ini</code>)</h3>
+<p>Adapter 通过声明式 INI/JSON 文件表达设备模板、物理点位与映射关系：</p>
+<pre><code class="ini">[adapter]
+specVersion = smartlab.adapter.config.v1
+adapterName = TestHeatPressureAdapter-01
+rawConfigFormat = INI
+
+; 1. 类别与模板定义
+[deviceTemplates.ReactorUnitTemplate]
+categoryName = ReactorUnit
+categoryDescription = 反应单元
+
+; 声明支持的遥测属性
+[deviceTemplates.ReactorUnitTemplate.attributes]
+temperature = [DOUBLE][当前温度]
+pressure = [DOUBLE][当前压力]
+
+; 声明支持的下发指令与参数
+[deviceTemplates.ReactorUnitTemplate.commands.heat]
+description = 加热到目标温度
+
+[deviceTemplates.ReactorUnitTemplate.commands.heat.parameters]
+targetTemperature = [DOUBLE][目标温度][internal=false]
+durationSec = [INTEGER][加热持续时间，秒][internal=false]
+index = [INTEGER][设备点内部编号][internal=true][sourceField=index]
+
+; 声明指令生命周期事件与物理运行事件
+[deviceTemplates.ReactorUnitTemplate.events.cmdEvents]
+COMMAND_RECEIVED = 指令已接收
+COMMAND_RUNNING = 指令执行中
+COMMAND_COMPLETED = 指令执行完成
+
+[deviceTemplates.ReactorUnitTemplate.events.opEvents]
+HEAT_STARTED = 开始加热
+TARGET_TEMP_REACHED = 达到目标温度
+
+; 2. 物理点位与硬件映射定义
+[devicePoints.Reactor1]
+templateName = ReactorUnitTemplate
+description = 1号反应单元
+index = 1
+
+[devicePoints.Reactor1.attributeMapping]
+temperature = R1_TEMP_REG
+pressure = R1_PRESS_REG</code></pre>
+<h3 id="6-3-internal-参数隔离机制">6.3 <code>internal</code> 参数隔离机制</h3>
+<ul>
+<li><strong>前端与物模型隔离</strong>：<code>internal=true</code> 的参数（如设备内部编号 <code>index</code>、通信通道号 <code>channel</code>）在后端生成物模型契约时被完全剔除，用户和工作流设计器无需关心；</li>
+<li><strong>下发与注入机制</strong>：系统只下发业务参数（如 <code>targetTemperature=80.0</code>）；Adapter 收到指令后，根据目标 <code>devicePoint</code> 从本地点位配置中提取 <code>sourceField=index</code>，自动将 <code>index=1</code> 注入到底层 PLC 报文。</li>
+</ul>
+<h3 id="6-4-mqtt-通信主题与报文规约">6.4 MQTT 通信主题与报文规约</h3>
+<table><thead><tr><th>Topic 格式</th><th>方向</th><th>报文 Schema</th><th>用途</th></tr></thead><tbody><tr><td><code>smartlab/adapter/register</code></td><td>Adapter → 系统</td><td><code>AdapterRegisterRequest</code></td><td>适配器启动注册，上报配置文本</td></tr><tr><td><code>smartlab/adapter/{adapterName}/heartbeat</code></td><td>Adapter → 系统</td><td><code>AdapterHeartbeat</code></td><td>声明 <code>ALIVE</code>，系统超时判定离线</td></tr><tr><td><code>smartlab/adapter/{adapterName}/{devicePoint}/command</code></td><td>系统 → Adapter</td><td><code>CommandMessageFormat</code></td><td>下发普通指令或终止指令（携带 <code>messageId</code>）</td></tr><tr><td><code>smartlab/adapter/{adapterName}/{devicePoint}/telemetry</code></td><td>Adapter → 系统</td><td><code>TelemetryMessageFormat</code></td><td>周期性上报传感器遥测数据</td></tr><tr><td><code>smartlab/adapter/{adapterName}/{devicePoint}/event</code></td><td>Adapter → 系统</td><td><code>EventMessageFormat</code></td><td>回传指令生命周期与状态事件（回传 <code>messageId</code>）</td></tr></tbody></table>
+<hr/>
+<h2 id="7-数据库结构设计与持久化映射">7. 数据库结构设计与持久化映射</h2>
+<p>数据库采用 PostgreSQL，广泛使用 <code>JSONB</code> 字段存储复杂模型，兼具强一致性与模型可扩展性。</p>
+
+<div class="diagram">
+  <div class="caption">图 7 · 核心表关系</div>
+  <svg viewBox="0 0 1100 360" width="100%" role="img" aria-label="图 7 · 核心表关系">
+    <defs>
+      <marker id="arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+        <path d="M0,0 L8,4 L0,8 z" fill="#5d6670"/>
+      </marker>
+    </defs>
+    
+  <rect x="40" y="30" width="180" height="50" rx="6" fill="#e7eaf4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="52" y="52" font-size="13" font-weight="700" fill="#1b2430">ADAPTER_INDEX</text>
+  <rect x="40" y="120" width="180" height="50" rx="6" fill="#e7eaf4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="52" y="142" font-size="13" font-weight="700" fill="#1b2430">DEVICE_CATEGORY</text>
+  <rect x="300" y="75" width="200" height="50" rx="6" fill="#dceeea" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="312" y="97" font-size="13" font-weight="700" fill="#1b2430">DEVICE_MODELS</text>
+  <rect x="580" y="75" width="210" height="50" rx="6" fill="#dceeea" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="592" y="97" font-size="13" font-weight="700" fill="#1b2430">DEVICE_INSTANCES</text>
+  <rect x="860" y="30" width="200" height="50" rx="6" fill="#f3eee4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="872" y="52" font-size="13" font-weight="700" fill="#1b2430">DEVICE_TWIN_STATES</text>
+  <rect x="860" y="120" width="200" height="50" rx="6" fill="#f3eee4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="872" y="142" font-size="13" font-weight="700" fill="#1b2430">DEVICE_COMPONENTS</text>
+  <rect x="40" y="210" width="180" height="50" rx="6" fill="#e7eaf4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="52" y="232" font-size="13" font-weight="700" fill="#1b2430">FLOW_MODELS</text>
+  <rect x="300" y="210" width="200" height="50" rx="6" fill="#dceeea" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="312" y="232" font-size="13" font-weight="700" fill="#1b2430">FLOW_NODE</text>
+  <rect x="580" y="210" width="210" height="50" rx="6" fill="#f3e6d4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="592" y="232" font-size="13" font-weight="700" fill="#1b2430">TASK</text>
+  <rect x="860" y="210" width="200" height="50" rx="6" fill="#f3e6d4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="872" y="232" font-size="13" font-weight="700" fill="#1b2430">TASK_STEP</text>
+  <rect x="300" y="300" width="200" height="40" rx="6" fill="#f3dce0" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="312" y="322" font-size="13" font-weight="700" fill="#1b2430">CONSTRAINT_RULE</text>
+  <rect x="580" y="300" width="210" height="40" rx="6" fill="#f3dce0" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="592" y="322" font-size="13" font-weight="700" fill="#1b2430">VIOLATION_LOG</text>
+  <rect x="860" y="300" width="200" height="40" rx="6" fill="#f3eee4" stroke="#3b4a86" stroke-width="1.4"/>
+<text x="872" y="322" font-size="13" font-weight="700" fill="#1b2430">EXECUTION_LOG</text>
+  <line x1="220" y1="55" x2="300" y2="100" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="220" y1="145" x2="300" y2="100" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="500" y1="100" x2="580" y2="100" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="790" y1="100" x2="860" y2="55" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="790" y1="100" x2="860" y2="145" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="220" y1="235" x2="300" y2="235" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="220" y1="235" x2="580" y2="235" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="500" y1="235" x2="580" y2="235" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="790" y1="235" x2="860" y2="235" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="500" y1="235" x2="860" y2="235" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="500" y1="320" x2="580" y2="320" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="685" y1="260" x2="685" y2="300" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+  <line x1="790" y1="235" x2="960" y2="300" stroke="#5d6670" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+  </svg>
+</div>
+
+<h3 id="7-1-核心数据表与实体映射">7.1 核心数据表与实体映射</h3>
+<h4>1. 资源与设备模型表</h4>
+<ul>
+<li><strong><code>DEVICE_MODELS</code></strong> (<code><code>DeviceModels</code></code>)：设备物模型定义。</li>
+<li><code>model_name</code> (VARCHAR), <code>category_id</code> (BIGINT)</li>
+<li><code>attributes</code> (JSONB)：设备属性元数据定义列表。</li>
+<li><code>capabilities</code> (JSONB)：设备操作能力、参数及终止能力映射。</li>
+<li><code>adapter_contract</code> (JSONB)：对应的 Adapter 契约（命令、遥测映射、事件）。</li>
+<li><code>state_machine_interfaces</code> (JSONB)：状态机 5 类接口及允许信号。</li>
+<li><code>op_state</code> / <code>cmd_state</code> / <code>state_transitions</code> (JSONB)：双状态空间与转移规则。</li>
+<li><code>intrinsic_constraint</code> (JSONB)：设备内置硬约束规则。</li>
+<li><code>components_bom</code> (JSONB)：设备物料清单与子组件模板。</li>
+<li><strong><code>DEVICE_INSTANCES</code></strong> (<code><code>DeviceInstances</code></code>)：物理设备实例注册。</li>
+<li><code>instance_name</code> (VARCHAR), <code>device_model_id</code> (BIGINT)</li>
+<li><code>bound_adapter_name</code> (VARCHAR), <code>bound_device_point</code> (VARCHAR)</li>
+<li><code>lifecycle_status</code> (VARCHAR)：<code>IN_USE</code>（使用中）、<code>RETIRED</code>（已注销）。</li>
+<li><code>instance_config</code> (JSONB)：实例专属配置参数。</li>
+<li><strong><code>DEVICE_TWIN_STATES</code></strong> (<code><code>DeviceTwinStates</code></code>)：设备数字孪生实时状态快照。</li>
+<li><code>instance_id</code> (BIGINT)</li>
+<li><code>current_cmd_state</code> (VARCHAR)：最新指令状态（<code>IDLE</code>, <code>RUNNING</code> 等）。</li>
+<li><code>current_op_state</code> (JSONB)：各 OP 分区当前激活状态列表。</li>
+<li><code>current_attr</code> (JSONB)：最新传感器遥测属性键值对快照。</li>
+<li><code>online_status</code> (VARCHAR), <code>last_online_time</code> (TIMESTAMP)。</li>
+</ul>
+<h4>2. 工作流与任务执行表</h4>
+<ul>
+<li><strong><code>FLOW_MODELS</code></strong> (<code><code>FlowModels</code></code>)：工作流模型图。</li>
+<li><code>flow_name</code> (VARCHAR), <code>version</code> (INT), <code>status</code> (VARCHAR)</li>
+<li><code>nodes</code> (JSONB)：引用的流程节点 ID 列表。</li>
+<li><code>interface_connection</code> (JSONB)：节点间与状态机接口连接关系。</li>
+<li><code>port_connection</code> (JSONB)：数据与物料端口连接关系。</li>
+<li><strong><code>FLOW_NODE</code></strong> (<code><code>FlowNode</code></code>)：工作流节点静态配置。</li>
+<li><code>flow_model_id</code> (BIGINT), <code>node_type</code> (VARCHAR: <code>DEV_NODE</code>/<code>FUNC_NODE</code>/<code>SUBFLOW_NODE</code>)</li>
+<li><code>capability</code> (JSONB)：设备能力配置及入参表达式。</li>
+<li><code>in_variables</code> (JSONB)：节点内部变量空间及初始值。</li>
+<li><code>lifecycle</code> (JSONB), <code>interfaces</code> (JSONB), <code>ports</code> (JSONB), <code>actions</code> (JSONB)。</li>
+<li><strong><code>TASK</code></strong> (<code><code>Task</code></code>)：任务执行实例。</li>
+<li><code>task_name</code> (VARCHAR), <code>flow_model_id</code> (BIGINT), <code>task_status</code> (VARCHAR)</li>
+<li><code>resource_map</code> (JSONB)：节点 ID 到具体 <code>deviceInstanceId</code> 的绑定关系。</li>
+<li><code>task_variables</code> (JSONB)：当前任务全局变量空间。</li>
+<li><code>task_constraints</code> (JSONB)：任务启动时固化的任务级约束规则快照。</li>
+<li><strong><code>TASK_STEP</code></strong> (<code><code>TaskStep</code></code>)：节点单次执行明细。</li>
+<li><code>task_id</code> (BIGINT), <code>flow_node_id</code> (BIGINT), <code>node_status</code> (VARCHAR)</li>
+<li><code>parent_step_id</code> (BIGINT), <code>step_depth</code> (INT)</li>
+<li><code>interface_in_snapshot</code> (JSONB)：包含本次下发的 <code>messageId</code> 及入参快照。</li>
+<li><code>interface_out_snapshot</code> (JSONB)：节点执行输出快照。</li>
+<li><code>variable_space</code> (JSONB)：节点私有变量运行时上下文。</li>
+<li><code>start_time</code> / <code>end_time</code> (TIMESTAMP), <code>duration_ms</code> (BIGINT)。</li>
+</ul>
+<h4>3. 约束与审计表</h4>
+<ul>
+<li><strong><code>CONSTRAINT_RULE</code></strong> (<code><code>ConstraintRule</code></code>)：全局约束规则。</li>
+<li><code>rule_name</code> (VARCHAR), <code>expression</code> (VARCHAR)</li>
+<li><code>bindings</code> (JSONB)：变量绑定映射定义。</li>
+<li><code>window_seconds</code> (INT)：持续时间阈值。</li>
+<li><code>violation_actions</code> (JSONB)：违规处置动作列表。</li>
+<li><code>is_enabled</code> (BOOLEAN)：全局开关。</li>
+<li><strong><code>VIOLATION_LOG</code></strong> (<code><code>ViolationLog</code></code>)：安全违规与联锁审计日志。</li>
+<li><code>constraint_rule_id</code> (BIGINT), <code>constraint_type</code> (VARCHAR: <code>TASK_CONSTRAINT</code> / <code>CONSTRAINT_MODEL</code>)</li>
+<li><code>task_id</code> (BIGINT), <code>task_step_id</code> (BIGINT), <code>device_instance_id</code> (BIGINT)</li>
+<li><code>observed_variable</code> (JSONB)：被监测的可观测变量元数据。</li>
+<li><code>actual_value</code> (JSONB)：违规采样值快照。</li>
+<li><code>variable_snapshot</code> (JSONB)：违规时任务与设备的环境全量上下文快照。</li>
+<li><code>action_taken</code> (VARCHAR)：实际采取的处置措施（如 <code>SYSTEM:ABORT</code>）。</li>
+<li><strong><code>ADAPTER_INDEX</code></strong> (<code><code>AdapterIndex</code></code>)：适配器注册中心。</li>
+<li><code>adapter_name</code> (VARCHAR), <code>status</code> (VARCHAR), <code>last_heartbeat</code> (TIMESTAMP)</li>
+<li><code>original_config</code> (TEXT)：原始 INI / JSON 文本。</li>
+<li><code>parsed_config</code> (JSONB)：标准化解析后的配置元数据树。</li>
+</ul>
+<hr/>
+<h2 id="8-总结与架构演进方向">8. 总结与架构演进方向</h2>
+<p>SmartLab 2.0 架构通过模型驱动与强契约设计，实现了复杂的化学实验自动化控制逻辑与底层多变硬件的完全解耦：</p>
+<ol>
+<li>1. <strong>可靠性</strong>：基于 <code>messageId</code> 的全生命周期状态闭环与双状态空间设计，杜绝了指令丢失与状态不一致；</li>
+<li>2. <strong>安全性</strong>：基于内存快照的 200ms 软实时约束引擎与设备内置约束监测器，为自动化实验提供了多层安全防线；</li>
+<li>3. <strong>灵活性</strong>：通过统一的 JSON Schema 规范体系与声明式 Adapter 配置，新增仪器型号仅需编写配置文件或轻量驱动即可即插即用。</li>
+</ol></article>
+  </main>
+</body>
+</html>

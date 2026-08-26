@@ -4,6 +4,12 @@
       <header>
         <strong>节点信息</strong>
         <span>{{ node?.name || step?.nodeName || '未选择节点' }}</span>
+        <button
+          v-if="canEnterSubflow"
+          class="btn-link"
+          type="button"
+          @click="emit('enter-subflow')"
+        >查看子流程运行图</button>
       </header>
       <table class="detail-table">
         <tbody>
@@ -20,7 +26,6 @@
         <strong>接口快照</strong>
         <span>{{ interfaceCount }} 个接口</span>
       </header>
-      <p class="summary-hint">{{ conditionSummaryHint }}</p>
       <InterfaceSnapshotPanel
         v-if="step"
         :input-snapshot="step.interfaceInSnapshot"
@@ -83,12 +88,11 @@ import { computed } from 'vue'
 import InterfaceSnapshotPanel from './InterfaceSnapshotPanel.vue'
 import RuntimeStructuredValue from './RuntimeStructuredValue.vue'
 import { formatLogDateTime } from '../../../../utils/formatLogTime.js'
-import { WORKFLOW_TRIGGER_CONDITION_SUMMARY_HINT } from '../../../../utils/workflowCanvas.js'
 import { normalizeInterfaceSnapshot, normalizePortSnapshot, triggerStatesOf, visibleVariableEntries } from '../../../../utils/workflowExecution.js'
 import { nodeStatusLabel } from '../taskExecutionPresentation.js'
 type Item = Record<string, any>
-const props = defineProps<{ step?: Item | null, node?: Item | null }>()
-const conditionSummaryHint = WORKFLOW_TRIGGER_CONDITION_SUMMARY_HINT
+const props = defineProps<{ step?: Item | null, node?: Item | null, canEnterSubflow?: boolean }>()
+const emit = defineEmits<{ 'enter-subflow': [] }>()
 const variables = computed(() => visibleVariableEntries(props.step?.variableSpace))
 const triggerStates = computed(() => triggerStatesOf(props.step?.variableSpace))
 const interfaceCount = computed(() => {
@@ -144,6 +148,8 @@ const nodeInfoRows = computed(() => {
   overflow: hidden;
   border: 1px solid var(--sl-border-base, #e2e8f0);
   background: #fff;
+  font-family: var(--sl-font-family);
+  color: var(--sl-text-heading, #0f172a);
 }
 .detail-card {
   overflow: hidden;
@@ -151,7 +157,6 @@ const nodeInfoRows = computed(() => {
   border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
   background: #fff;
 }
-.detail-card:nth-child(even) { background: #f8fafc; }
 .detail-card:last-child { border-bottom: 0; }
 .detail-card > header {
   display: flex;
@@ -160,17 +165,10 @@ const nodeInfoRows = computed(() => {
   gap: 8px;
   padding: 8px 12px;
   border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
-  background: inherit;
+  background: #ffffff;
 }
-.detail-card > header strong { color: var(--sl-text-heading, #0f172a); font-size: 12.5px; font-weight: 700; }
-.detail-card > header span { color: var(--sl-text-secondary, #64748b); font-size: 11px; }
-.summary-hint {
-  margin: 0;
-  padding: 8px 12px 0;
-  color: var(--sl-text-secondary, #64748b);
-  font-size: 11px;
-  line-height: 1.5;
-}
+.detail-card > header strong { color: var(--sl-text-heading, #0f172a); font-size: 13px; font-weight: 600; }
+.detail-card > header span { color: var(--sl-text-secondary, #64748b); font-size: 12px; margin-right: auto; }
 .detail-table {
   width: 100%;
   border-collapse: collapse;
@@ -181,7 +179,7 @@ const nodeInfoRows = computed(() => {
   border-bottom: 1px solid var(--sl-border-subtle, #f1f5f9);
   text-align: left;
   vertical-align: top;
-  font-size: 12px;
+  font-size: 12.5px;
 }
 .detail-table tr:last-child th,
 .detail-table tr:last-child td { border-bottom: 0; }
@@ -194,15 +192,20 @@ const nodeInfoRows = computed(() => {
 .mono { font-family: var(--sl-font-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace); }
 .port-group-title {
   margin: 0;
-  padding: 8px 12px 0;
+  padding: 6px 12px;
+  background: #f8fafc;
+  border-bottom: 1px solid var(--sl-border-subtle, #f1f5f9);
   color: var(--sl-text-secondary, #64748b);
-  font-size: 11px;
+  font-size: 11.5px;
   font-weight: 600;
+}
+.port-group-title:not(:first-child) {
+  border-top: 1px solid var(--sl-border-subtle, #f1f5f9);
 }
 .empty-hint {
   padding: 12px;
   color: var(--sl-text-disabled, #94a3b8);
-  font-size: 12px;
+  font-size: 12.5px;
 }
-.empty-hint.nested { padding-top: 6px; }
+.empty-hint.nested { padding: 8px 12px; }
 </style>

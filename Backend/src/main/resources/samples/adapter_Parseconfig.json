@@ -1,0 +1,104 @@
+{
+    "adapterName": "FixtureTempAdapter",
+    "specVersion": "smartlab.adapter.config.v1",
+    "registerMeta": {
+        "specVersion": "smartlab.adapter.config.v1",
+        "registeredAt": 1787108741401,
+        "rawConfigFormat": "INI"
+    },
+    "rawConfigFormat": "INI",
+    "deviceCategories": [
+        {
+            "categoryName": "TempSensor",
+            "devicePoints": [
+                {
+                    "index": 1,
+                    "description": "1号模拟温度传感器",
+                    "devicePoint": "Sensor1",
+                    "categoryName": "TempSensor",
+                    "templateName": "TempSensorTemplate"
+                }
+            ],
+            "deviceTemplate": {
+                "events": {
+                    "opEvents": [
+                        {
+                            "name": "HEATING_STARTED",
+                            "description": "加热已启动"
+                        },
+                        {
+                            "name": "TARGET_TEMPERATURE_REACHED",
+                            "description": "已达目标温度"
+                        },
+                        {
+                            "name": "COOLING_STARTED",
+                            "description": "散热已启动"
+                        },
+                        {
+                            "name": "TEMPERATURE_NORMAL",
+                            "description": "温度恢复正常"
+                        }
+                    ],
+                    "cmdEvents": [
+                        {
+                            "name": "COMMAND_RECEIVED",
+                            "description": "指令已接收"
+                        },
+                        {
+                            "name": "COMMAND_RUNNING",
+                            "description": "指令执行中"
+                        },
+                        {
+                            "name": "COMMAND_COMPLETED",
+                            "description": "指令执行完成"
+                        },
+                        {
+                            "name": "COMMAND_FAILED",
+                            "description": "指令执行失败"
+                        }
+                    ]
+                },
+                "commands": [
+                    {
+                        "name": "heat",
+                        "parameters": [
+                            {
+                                "name": "targetTemperature",
+                                "dataType": "DOUBLE",
+                                "description": "目标温度"
+                            },
+                            {
+                                "name": "holdDurationSec",
+                                "dataType": "INTEGER",
+                                "description": "温度保持时长，秒"
+                            }
+                        ],
+                        "description": "加热到目标温度并保持"
+                    },
+                    {
+                        "name": "cool",
+                        "parameters": [
+                            {
+                                "name": "durationSec",
+                                "dataType": "INTEGER",
+                                "description": "散热时长，秒"
+                            }
+                        ],
+                        "description": "启动散热降温"
+                    }
+                ],
+                "attributes": [
+                    {
+                        "name": "temperature",
+                        "dataType": "DOUBLE",
+                        "description": "当前温度，单位：摄氏度"
+                    }
+                ],
+                "description": "提供温度遥测与加热控制能力的模拟设备模板",
+                "templateName": "TempSensorTemplate"
+            },
+            "categoryDescription": "模拟温度传感器"
+        }
+    ],
+    "adapterDescription": "测试用温度传感器Adapter，模拟28-38度温度数据"
+}

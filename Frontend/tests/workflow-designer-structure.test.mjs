@@ -55,7 +55,7 @@ describe('Task 6 — Designer Structure', () => {
 
   test('designer has separate draft and publish buttons', () => {
     const commandbar = designerSource.split('island-right')[1]?.split('island-right')[0] || designerSource
-    const order = ['新建', '编辑', '清空', '校验', '导出', '保存草稿', '保存为新流程', '发布启用', '删除'].map(label => commandbar.indexOf(label))
+    const order = ['新建', '用自然语言生成', '编辑', '清空', '校验', '导出', '保存草稿', '保存为新流程', '发布启用', '删除'].map(label => commandbar.indexOf(label))
     assert.equal(order.every(index => index >= 0), true)
     assert.deepEqual(order, [...order].sort((left, right) => left - right))
     assert.match(designerSource, /保存草稿/)
@@ -65,6 +65,12 @@ describe('Task 6 — Designer Structure', () => {
     assert.match(designerSource, /打开该版本/)
     assert.match(designerSource, /workflowApi\.saveAsNew/)
     assert.doesNotMatch(designerSource.split('async function saveAsNew')[1]?.split('async function')[0] || '', /localStorage\.removeItem\(previousLayoutKey\)/)
+  })
+
+  test('designer opens a generated draft from the homepage query', () => {
+    assert.match(designerSource, /route\.query\.id/)
+    assert.match(designerSource, /openWorkflowFromQuery/)
+    assert.match(designerSource, /loadAll\(\)\.then\(\(\) => openWorkflowFromQuery\(\)\)/)
   })
 
   test('canvas nodes render only workflow control interfaces and every data port', () => {
@@ -213,6 +219,13 @@ describe('Task 6 — Designer Structure', () => {
     assert.match(designerSource, />清空</)
     assert.match(designerSource, /clearCanvas/)
     assert.match(designerSource, /:readonly="!canEdit"/)
+  })
+
+  test('drafts can publish without entering edit mode while active flows still require it', () => {
+    assert.match(designerSource, /canPublishWorkflow/)
+    assert.match(designerSource, /:disabled="!canPublish \|\| publishSaving \|\| copySaving"/)
+    assert.match(designerSource, /if \(!canPublish\.value\) return ElMessage\.warning\('请先点击编辑'\)/)
+    assert.match(designerSource, /:disabled="!canEdit \|\| draftSaving \|\| copySaving"/)
   })
 
   test('persisted workflows expose a confirmed delete action and reset after deletion', () => {

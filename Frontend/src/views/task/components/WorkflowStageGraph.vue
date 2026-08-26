@@ -1,10 +1,6 @@
 <template>
   <section ref="hostRef" class="workflow-stage-graph">
     <VueFlow
-      v-if="viewportReady"
-      :id="flowId"
-      v-model:nodes="localNodes"
-      v-model:edges="localEdges"
       class="workflow-flow"
       :edge-types="edgeTypes"
       :default-edge-options="defaultEdgeOptions"
@@ -15,9 +11,9 @@
       :fit-view-on-init="true"
       :min-zoom="minZoom"
       :max-zoom="maxZoom"
-      @init="fitGraph"
-      @pane-ready="fitGraph"
-      @nodes-initialized="fitGraph"
+      :delete-key-code="null"
+      @nodes-initialized="onNodesInitialized"
+      @pane-ready="refreshViewport"
       @node-click="handleNodeClick"
     >
       <Background variant="lines" pattern-color="#f3f5f8" :gap="8" :size="1" />
@@ -45,8 +41,8 @@
 </template>
 
 <script setup lang="ts">
-import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, provide, ref, watch } from 'vue'
-import { VueFlow } from '@vue-flow/core'
+import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { VueFlow, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls } from '@vue-flow/controls'
 import '@vue-flow/core/dist/style.css'
@@ -77,88 +73,101 @@ const props = withDefaults(defineProps<{
   minZoom: 0.35,
   maxZoom: 1.6,
   legendItems: () => [],
-  overlayFor: () => () => ({}),
-  capabilitiesFor: () => () => [],
-  issuesFor: () => () => [],
-  decorateEdge: () => (edge: Item) => edge,
+  // 函数类型 prop 的默认值会被 Vue 原样使用（不会作为工厂调用），
+  // 因此这里必须直接写目标函数，不能再包一层工厂。
+  overlayFor: () => ({}),
+  capabilitiesFor: () => [],
+  issuesFor: () => [],
+  decorateEdge: (edge: Item) => edge,
 })
 const emit = defineEmits<{ 'node-click': [node: Item] }>()
 
-const flowId = `workflow-stage-${Math.random().toString(36).slice(2, 10)}`
-provide('smartlabWorkflowFlowId', flowId)
+// 通过 useVueFlow 创建并向下 provide 一个独立的 store 实例，随后直接用
+// setNodes/setEdges 驱动它。不要改回 v-model:edges：Vue Flow 内部的
+// model<->store 双向同步基于 watchPausable，在 store 回写 model 的暂停窗口内
+// 对 model 的赋值会被丢弃，导致边永远进不了 store（连线不显示）。
+const { fitView, updateNodeInternals, setNodes, setEdges, getNodes } = useVueFlow()
 const edgeTypes = { workflow: markRaw(WorkflowCanvasEdge) }
 const defaultEdgeOptions = { type: 'workflow', markerEnd: 'arrowclosed', style: { stroke: '#7c93b8', strokeWidth: 1.8 } }
 const nodesByName = computed(() => new Map(props.nodes.map(node => [node.name, node])))
 const hostRef = ref<HTMLElement | null>(null)
-const viewportReady = ref(false)
-const localNodes = ref<Item[]>([])
-const localEdges = ref<Item[]>([])
+const refreshTimers: number[] = []
 
-const flowNodes = computed(() => props.nodes.map((node: Item, index: number) => {
-  const size = workflowCanvasNodeSize(node || {})
-  return {
-    id: editorNodeId(node.name),
-    type: 'workflow',
-    position: node.position || { x: 80 + index * 280, y: 120 },
-    selectable: true,
-    draggable: false,
-    width: size.width,
-    height: size.height,
-    style: { width: `${size.width}px`, height: `${size.height}px` },
-    data: { nodeName: node.name, nodeType: node.nodeType, functionType: node.functionType },
-  }
-}))
-
-const flowEdges = computed(() => buildFlowEdges(
-  props.interfaceConnections,
-  props.portConnections,
-  props.nodes,
-).map((edge: Item) => props.decorateEdge(edge, nodesByName.value)))
-
-watch([flowNodes, flowEdges], () => {
-  const previous = new Map(localNodes.value.map((node: Item) => [node.id, node]))
-  localNodes.value = flowNodes.value.map((node: Item) => {
-    const current = previous.get(node.id)
-    if (!current) return { ...node, data: { ...node.data } }
+function graphNodes() {
+  return props.nodes.map((node: Item, index: number) => {
+    const size = workflowCanvasNodeSize(node || {})
     return {
-      ...node,
-      position: current.position || node.position,
-      dimensions: current.dimensions,
-      computedPosition: current.computedPosition,
-      handleBounds: current.handleBounds,
-      selected: current.selected,
-      data: { ...node.data },
+      id: editorNodeId(node.name),
+      type: 'workflow',
+      position: node.position || { x: 80 + index * 280, y: 120 },
+      selectable: true,
+      draggable: false,
+      width: size.width,
+      height: size.height,
+      style: { width: `${size.width}px`, height: `${size.height}px` },
+      data: { nodeName: node.name, nodeType: node.nodeType, functionType: node.functionType },
     }
   })
-  localEdges.value = flowEdges.value.map((edge: Item) => ({ ...edge, data: { ...(edge.data || {}) } }))
-  nextTick(() => fitGraph())
-}, { immediate: true })
+}
 
-let fitApi: { fitView?: (options?: Item) => void } | null = null
-function fitGraph(instance?: { fitView?: (options?: Item) => void }) {
-  if (instance?.fitView) fitApi = instance
+function graphEdges() {
+  return buildFlowEdges(
+    props.interfaceConnections,
+    props.portConnections,
+    props.nodes,
+  ).map((edge: Item) => props.decorateEdge(edge, nodesByName.value))
+}
+
+function refreshViewport() {
   nextTick(() => {
     try {
-      fitApi?.fitView?.({ padding: 0.18, duration: 0 })
+      const ids = getNodes.value.map((node: Item) => node.id).filter(Boolean)
+      if (ids.length) updateNodeInternals(ids)
+      else updateNodeInternals()
+      fitView({ padding: 0.18, duration: 0 })
     } catch {
       // Vue Flow viewport is not ready yet
     }
   })
 }
 
-function markViewportReady() {
-  const el = hostRef.value
-  if (!el) return
-  if (el.clientWidth > 8 && el.clientHeight > 8) viewportReady.value = true
+function scheduleViewportRefresh() {
+  refreshTimers.splice(0).forEach(timer => window.clearTimeout(timer))
+  refreshViewport()
+  for (const ms of [48, 160, 360]) {
+    refreshTimers.push(window.setTimeout(refreshViewport, ms) as unknown as number)
+  }
 }
 
+function rebuildCanvas() {
+  setNodes(graphNodes())
+  setEdges(graphEdges())
+  scheduleViewportRefresh()
+}
+
+function onNodesInitialized() {
+  scheduleViewportRefresh()
+}
+
+watch(
+  () => [
+    props.nodes,
+    props.interfaceConnections,
+    props.portConnections,
+  ],
+  rebuildCanvas,
+  { immediate: true, deep: true },
+)
+
 onMounted(() => {
-  markViewportReady()
   const el = hostRef.value
   if (!el || typeof ResizeObserver === 'undefined') return
-  const observer = new ResizeObserver(markViewportReady)
+  const observer = new ResizeObserver(() => scheduleViewportRefresh())
   observer.observe(el)
   onBeforeUnmount(() => observer.disconnect())
+})
+onBeforeUnmount(() => {
+  refreshTimers.forEach(timer => window.clearTimeout(timer))
 })
 
 function nodeByName(name: string) {
@@ -193,21 +202,8 @@ function handleNodeClick({ node }: { node: Item }) {
   width: 100%;
   height: 100%;
 }
-.workflow-stage-graph :deep(.vue-flow),
-.workflow-stage-graph :deep(.vue-flow__container),
-.workflow-stage-graph :deep(.vue-flow__viewport) {
-  width: 100%;
-  height: 100%;
-}
-.workflow-stage-graph :deep(.vue-flow__pane) { cursor: default; }
-.workflow-stage-graph :deep(.vue-flow__node),
-.workflow-stage-graph :deep(.vue-flow__nodes),
-.workflow-stage-graph :deep(.vue-flow__edges),
-.workflow-stage-graph :deep(.vue-flow__viewport) {
-  overflow: visible;
-}
-.workflow-stage-graph :deep(.vue-flow__edges) {
-  z-index: 3;
+.workflow-stage-graph :deep(.vue-flow__pane) {
+  cursor: default;
 }
 .workflow-stage-graph :deep(.vue-flow__edge-path) {
   stroke: #7c93b8;

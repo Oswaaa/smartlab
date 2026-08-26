@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SmartLab 2.0 - 任务详情节点抽屉 UI 方案一优化 (单一方正合并框·父子层级清晰)</title>
+  <style>
+    :root {
+      --sl-primary: #2563eb;
+      --sl-primary-hover: #1d4ed8;
+      --sl-text-heading: #0f172a;
+      --sl-text-body: #334155;
+      --sl-text-secondary: #64748b;
+      --sl-text-muted: #94a3b8;
+      --sl-border-base: #e2e8f0;
+      --sl-border-subtle: #f1f5f9;
+      --sl-border-dark: #cbd5e1;
+      --sl-bg-page: #0b1120;
+      --sl-font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --sl-font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      border-radius: 0 !important; /* 严格强制直角：全界面零圆角、零胶囊 */
+    }
+
+    body {
+      font-family: var(--sl-font-family);
+      background: #0b1120;
+      color: #334155;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 顶部方案导航栏 */
+    .top-nav-bar {
+      background: #0f172a;
+      border-bottom: 1px solid #1e293b;
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: #ffffff;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .brand-title {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .brand-badge {
+      background: #2563eb;
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 6px;
+      letter-spacing: 0.5px;
+    }
+    .brand-text {
+      font-size: 15px;
+      font-weight: 700;
+      color: #f8fafc;
+    }
+
+    .scheme-tabs {
+      display: flex;
+      background: #1e293b;
+      padding: 2px;
+      gap: 2px;
+      border: 1px solid #334155;
+    }
+
+    .scheme-btn {
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      font-size: 12px;
+      font-weight: 600;
+      padding: 6px 14px;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-family: inherit;
+    }
+    .scheme-btn:hover {
+      color: #f8fafc;
+      background: #334155;
+    }
+    .scheme-btn.active {
+      background: #2563eb;
+      color: #ffffff;
+    }
+
+    /* 主工作展示区 */
+    .workbench-layout {
+      flex: 1;
+      display: grid;
+      grid-template-columns: 360px 1fr;
+      gap: 24px;
+      padding: 24px;
+      max-width: 1480px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    /* 左侧：层级与合并设计说明 */
+    .notes-sidebar {
+      background: #1e293b;
+      border: 1px solid #334155;
+      padding: 20px;
+      color: #cbd5e1;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      height: fit-content;
+    }
+
+    .notes-title {
+      font-size: 14px;
+      font-weight: 700;
+      color: #f8fafc;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border-bottom: 1px solid #334155;
+      padding-bottom: 12px;
+    }
+
+    .note-item {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 12px;
+      line-height: 1.55;
+    }
+    .note-item strong {
+      color: #60a5fa;
+      font-size: 13px;
+    }
+    .note-item p {
+      color: #94a3b8;
+    }
+    .tag-diff {
+      display: inline-block;
+      font-size: 10.5px;
+      font-weight: 600;
+      padding: 1px 5px;
+      margin-right: 4px;
+      border: 1px solid transparent;
+    }
+    .tag-diff.merge { background: #064e3b; color: #34d399; border-color: #065f46; }
+    .tag-diff.hierarchy { background: #1e3a8a; color: #93c5fd; border-color: #1e40af; }
+
+    /* 右侧：模拟抽屉容器 (480px 居中展示) */
+    .drawer-preview-stage {
+      background: #1e293b;
+      border: 1px solid #334155;
+      padding: 28px;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+      min-height: 860px;
+      position: relative;
+    }
+
+    /* 抽屉拟真外框 (480px 宽度标准，直角四方) */
+    .mock-drawer {
+      width: 480px;
+      background: #ffffff;
+      border: 1px solid #cbd5e1;
+      display: flex;
+      flex-direction: column;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+    }
+
+    /* 抽屉头部 (42px 直角) */
+    .mock-drawer-header {
+      height: 42px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--sl-border-base);
+      background: #f8fafc;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .drawer-title-group {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .node-type-square {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 1px 5px;
+      background: #eff6ff;
+      color: #2563eb;
+      border: 1px solid #bfdbfe;
+    }
+    .drawer-node-title {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--sl-text-heading);
+    }
+    .close-x-btn {
+      color: var(--sl-text-secondary);
+      font-size: 13px;
+      cursor: pointer;
+      background: transparent;
+      border: 1px solid transparent;
+      padding: 2px 6px;
+    }
+    .close-x-btn:hover {
+      background: #e2e8f0;
+      color: #0f172a;
+    }
+
+    /* 抽屉主体：全平铺直角画卷 */
+    .mock-drawer-body {
+      padding: 0;
+      background: #ffffff;
+      overflow-y: auto;
+      max-height: 760px;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 通用平铺大节标题栏 (32px 直角无卡片) */
+    .flat-section {
+      border-bottom: 1px solid var(--sl-border-base);
+      background: #ffffff;
+    }
+    .flat-section:last-child {
+      border-bottom: none;
+    }
+
+    .flat-sec-head {
+      height: 32px;
+      padding: 0 12px;
+      background: #f8fafc;
+      border-bottom: 1px solid var(--sl-border-base);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .flat-sec-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: var(--sl-text-heading);
+    }
+    .flat-sec-meta {
+      font-size: 11px;
+      color: var(--sl-text-secondary);
+    }
+
+    /* 基础信息平铺表 */
+    .flat-desc-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .flat-desc-table th {
+      width: 86px;
+      padding: 5px 12px;
+      text-align: left;
+      font-size: 11.5px;
+      font-weight: 600;
+      color: var(--sl-text-secondary);
+      background: #ffffff;
+      border-bottom: 1px solid var(--sl-border-subtle);
+    }
+    .flat-desc-table td {
+      padding: 5px 12px;
+      font-size: 11.5px;
+      color: var(--sl-text-heading);
+      border-bottom: 1px solid var(--sl-border-subtle);
+    }
+    .flat-desc-table tr:last-child th,
+    .flat-desc-table tr:last-child td {
+      border-bottom: none;
+    }
+    .mono-val {
+      font-family: var(--sl-font-mono);
+      font-size: 11px;
+    }
+
+
+    /* =========================================================================
+       方案 1A (SCHEME 1A): 统一方正合并框 · 树形缩进导轨 (官方强烈推荐)
+       ========================================================================= */
+
+    /* 1. 父节点：接口行 (Level 1 Root) */
+    .iface-root-block {
+      border-bottom: 1px solid var(--sl-border-base);
+      background: #ffffff;
+    }
+    .iface-root-block:last-child {
+      border-bottom: none;
+    }
+
+    /* 接口标题行 (纯净：左侧折叠符+名称+方向方标，右侧绝无信号！) */
+    .s1-iface-head {
+      height: 34px;
+      padding: 0 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #ffffff;
+      cursor: pointer;
+      user-select: none;
+      transition: background 0.15s;
+    }
+    .s1-iface-head:hover {
+      background: #f8fafc;
+    }
+    .s1-iface-title-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .square-expander {
+      font-family: var(--sl-font-mono);
+      font-size: 11px;
+      color: #64748b;
+      font-weight: 700;
+      width: 14px;
+    }
+    .iface-name-text {
+      font-size: 12.5px;
+      font-weight: 700;
+      color: #0f172a;
+      font-family: var(--sl-font-mono);
+    }
+    .square-tag {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 0 4px;
+      border: 1px solid #cbd5e1;
+      background: #f8fafc;
+      color: #475569;
+    }
+    .square-tag.in {
+      border-color: #bfdbfe;
+      background: #eff6ff;
+      color: #2563eb;
+    }
+    .square-tag.out {
+      border-color: #ddd6fe;
+      background: #f5f3ff;
+      color: #7c3aed;
+    }
+
+    /* 2. 子节点容器 (Level 2 Child Wrapper) - 树形导轨线 + 16px 缩进，清晰表达父子归属 */
+    .s1-merged-container {
+      margin-left: 18px; /* 父子缩进 18px */
+      margin-right: 12px;
+      margin-bottom: 8px;
+      border-left: 2px solid #cbd5e1; /* 树形父子从属导轨线 */
+      padding-left: 10px;
+    }
+
+    /* 3. 核心合并单一方框 (Unified Single Square Card) - 彻底合二为一！ */
+    .s1-unified-box {
+      border: 1px solid #cbd5e1;
+      background: #ffffff;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 合并框段落一：当前信号与有效载荷 */
+    .ubox-signal-section {
+      background: #ffffff;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .ubox-section-bar {
+      height: 25px;
+      padding: 0 8px;
+      background: #f8fafc;
+      border-bottom: 1px solid #e2e8f0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 11px;
+      font-weight: 700;
+      color: #334155;
+    }
+    .ubox-section-bar-title {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .ubox-sig-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .ubox-sig-table th {
+      width: 80px;
+      padding: 4px 8px;
+      font-size: 11px;
+      color: #64748b;
+      text-align: left;
+      font-weight: 500;
+      border-bottom: 1px solid #f1f5f9;
+      background: #ffffff;
+    }
+    .ubox-sig-table td {
+      padding: 4px 8px;
+      font-size: 11px;
+      color: #0f172a;
+      border-bottom: 1px solid #f1f5f9;
+      font-family: var(--sl-font-mono);
+    }
+    .ubox-sig-table tr:last-child th,
+    .ubox-sig-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    /* 合并框段落二：关联触发器规则表 */
+    .ubox-trig-section {
+      background: #ffffff;
+    }
+    .ubox-trig-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #ffffff;
+    }
+    .ubox-trig-table th {
+      background: #fafbfc;
+      color: #64748b;
+      font-size: 10.5px;
+      font-weight: 600;
+      padding: 4px 8px;
+      text-align: left;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .ubox-trig-table td {
+      padding: 5px 8px;
+      font-size: 11px;
+      color: #334155;
+      border-bottom: 1px solid #f1f5f9;
+      vertical-align: top;
+    }
+    .ubox-trig-table tr:hover td {
+      background: #f8fafc;
+    }
+    .ubox-trig-table tr:last-child td {
+      border-bottom: none;
+    }
+    .verb-square-emit {
+      font-size: 10px;
+      font-weight: 700;
+      color: #2563eb;
+      background: #eff6ff;
+      border: 1px solid #bfdbfe;
+      padding: 0 4px;
+      margin-right: 3px;
+    }
+
+    /* 数据端口：纯白通栏直角表格 */
+    .s1-ports-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: #ffffff;
+    }
+    .s1-ports-table th {
+      background: #f8fafc;
+      color: #64748b;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 5px 12px;
+      text-align: left;
+      border-bottom: 1px solid #e2e8f0;
+    }
+    .s1-ports-table td {
+      padding: 6px 12px;
+      font-size: 11.5px;
+      color: #334155;
+      border-bottom: 1px solid #f1f5f9;
+      vertical-align: middle;
+      background: #ffffff;
+    }
+    .s1-ports-table tr:hover td {
+      background: #fafbfc;
+    }
+    .s1-ports-table tr:last-child td {
+      border-bottom: none;
+    }
+    .port-name-text {
+      font-weight: 600;
+      color: #0f172a;
+      font-family: var(--sl-font-mono);
+    }
+    .port-val-text {
+      font-family: var(--sl-font-mono);
+      font-size: 11px;
+      color: #0f172a;
+    }
+
+
+    /* =========================================================================
+       方案 1B (SCHEME 1B): 单一合并方框 · 纯表格主从结构 (Master-Detail)
+       ========================================================================= */
+    .s1b-grid-box {
+      margin-left: 18px;
+      margin-right: 12px;
+      margin-bottom: 8px;
+      border: 1px solid #cbd5e1;
+    }
+    .s1b-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .s1b-table th {
+      width: 90px;
+      background: #f8fafc;
+      padding: 4px 8px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #64748b;
+      text-align: left;
+      border-bottom: 1px solid #e2e8f0;
+      border-right: 1px solid #e2e8f0;
+    }
+    .s1b-table td {
+      padding: 4px 8px;
+      font-size: 11px;
+      color: #0f172a;
+      border-bottom: 1px solid #e2e8f0;
+      font-family: var(--sl-font-mono);
+    }
+
+
+    /* =========================================================================
+       方案 1C (SCHEME 1C): 单一合并方框 · 阶梯式沉浸嵌入
+       ========================================================================= */
+    .s1c-stepped-pane {
+      background: #fafbfc;
+      border-top: 1px solid #e2e8f0;
+      padding: 8px 12px 8px 24px; /* 深度缩进 24px */
+    }
+    .s1c-single-box {
+      border: 1px solid #cbd5e1;
+      background: #ffffff;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 顶部方案切换栏 -->
+  <header class="top-nav-bar">
+    <div class="brand-title">
+      <span class="brand-badge">SMARTLAB 2.0</span>
+      <h1 class="brand-text">任务详情节点抽屉 UI 方案一优化 (单一方正合并框·父子层级清晰)</h1>
+    </div>
+    <div class="scheme-tabs">
+      <button class="scheme-btn active" onclick="switchScheme('1a')">方案 1A：单一方框 + 树形导轨缩进 (强烈推荐)</button>
+      <button class="scheme-btn" onclick="switchScheme('1b')">方案 1B：单一方框 + 全表格主从结构</button>
+      <button class="scheme-btn" onclick="switchScheme('1c')">方案 1C：单一方框 + 阶梯沉浸嵌入</button>
+    </div>
+  </header>
+
+  <main class="workbench-layout">
+    <!-- 左侧：合并与层级设计说明 -->
+    <aside class="notes-sidebar">
+      <div class="notes-title">
+        <span>📐 方案一“单一方正合并框”重构落地点</span>
+      </div>
+
+      <div class="note-item">
+        <strong>1. 彻底合二为一 (Merged Single Box)</strong>
+        <p><span class="tag-diff merge">合并优化</span>将原本散落的“当前信号快照”与“关联触发器规则”彻底<b>合并为一个四四方方的直角容器 (<code>.s1-unified-box</code>)</b>，不再有两张零散的小卡片，界面高度集约。</p>
+      </div>
+
+      <div class="note-item">
+        <strong>2. 严密的父子层级表现体系</strong>
+        <p><span class="tag-diff hierarchy">父子分明</span>通过三重手段确保父子关系 100% 直观明确：</p>
+        <p>• <b>左侧 18px 深度缩进</b>：合并框整体挂在接口下方并向右缩进；</p>
+        <p>• <b>浅灰树形导轨线 (<code>border-left: 2px solid #cbd5e1</code>)</b>：将接口主干与合并框物理连接；</p>
+        <p>• <b>字阶梯次</b>：接口名 <code>12.5px 粗体</code> ➔ 子段落标 <code>11px</code> ➔ 参数 <code>11px mono</code>。</p>
+      </div>
+
+      <div class="note-item">
+        <strong>3. 朴素直角规范 (All Straight Angles)</strong>
+        <p><span class="tag-diff merge">零圆角规范</span>全局强制 <code>border-radius: 0</code>，零胶囊药丸，纯方正直角线条。</p>
+      </div>
+
+      <div class="note-item">
+        <strong>4. 接口标题彻底去信号</strong>
+        <p><span class="tag-diff merge">纯净标题</span>接口标题行右侧不显示任何信号文本，纯净干练。</p>
+      </div>
+
+      <div class="note-item">
+        <strong>5. 数据端口：纯白通栏直角表格</strong>
+        <p><span class="tag-diff merge">纯白直角</span>纯白背景、直角 1px 细线边框的标准 4 列数据表格。</p>
+      </div>
+    </aside>
+
+    <!-- 右侧：模拟抽屉展示区 (480px) -->
+    <section class="drawer-preview-stage">
+
+      <!-- ===================================================================
+           方案 1A：单一方框 + 树形导轨缩进 (默认激活展示 · 官方推荐)
+           =================================================================== -->
+      <div id="scheme-1a-view" class="mock-drawer">
+        <!-- 抽屉头部 (42px 直角) -->
+        <div class="mock-drawer-header">
+          <div class="drawer-title-group">
+            <span class="node-type-square">DEV_NODE</span>
+            <strong class="drawer-node-title">device1</strong>
+          </div>
+          <button class="close-x-btn" title="关闭">✕</button>
+        </div>
+
+        <div class="mock-drawer-body">
+          <!-- 1. 节点基础信息 (平铺) -->
+          <div class="flat-section">
+            <div class="flat-sec-head">
+              <span class="flat-sec-title">节点基础信息</span>
+              <span class="flat-sec-meta">步骤 #2 · 耗时 320ms</span>
+            </div>
+            <table class="flat-desc-table">
+              <tbody>
+                <tr>
+                  <th>运行状态</th>
+                  <td><span class="square-tag" style="border-color: #bbf7d0; background: #f0fdf4; color: #16a34a; font-weight: 700;">SUCCEEDED (运行成功)</span></td>
+                </tr>
+                <tr>
+                  <th>绑定能力</th>
+                  <td class="mono-val">capability_1 (加热至目标温度)</td>
+                </tr>
+                <tr>
+                  <th>执行时间</th>
+                  <td class="mono-val">2026-08-26 09:30:12 ~ 09:30:15</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- 2. 接口快照：单一方正合并卡片 (父子层级清晰，无胶囊！) -->
+          <div class="flat-section">
+            <div class="flat-sec-head">
+              <span class="flat-sec-title">接口快照</span>
+              <span class="flat-sec-meta">2 个控制接口</span>
+            </div>
+
+            <!-- 接口 1: Interface_workflow_in (展开演示) -->
+            <div class="iface-root-block">
+              <!-- 父节点接口标题行 (右侧无信号，纯净！) -->
+              <div class="s1-iface-head" onclick="toggleS1('1a', 1)">
+                <div class="s1-iface-title-group">
+                  <span id="s1a-sym-1" class="square-expander">[-]</span>
+                  <span class="iface-name-text">Interface_workflow_in</span>
+                  <span class="square-tag in">IN 输入</span>
+                </div>
+              </div>
+
+              <!-- 树形导轨线 + 18px 缩进容器 -->
+              <div id="s1a-body-1" class="s1-merged-container">
+                <!-- 核心：单一方正合并框 (信号 + 触发器合二为一) -->
+                <div class="s1-unified-box">
+                  <!-- 上段：当前信号与载荷 -->
+                  <div class="ubox-signal-section">
+                    <div class="ubox-section-bar">
+                      <span class="ubox-section-bar-title">
+                        <span>├─ 当前信号状态快照</span>
+                      </span>
+                      <span style="font-family: var(--sl-font-mono); color: #16a34a; font-weight: 700;">ACTIVE (已收到)</span>
+                    </div>
+                    <table class="ubox-sig-table">
+                      <tbody>
+                        <tr>
+                          <th>messageId</th>
+                          <td>3a5f0457-3586-3649-8c6e-ebca51776f15</td>
+                        </tr>
+                        <tr>
+                          <th>timestamp</th>
+                          <td>1787670012450</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <!-- 下段：关联触发器规则表 -->
+                  <div class="ubox-trig-section">
+                    <div class="ubox-section-bar" style="background: #fafbfc;">
+                      <span class="ubox-section-bar-title">
+                        <span>└─ 关联触发器规则</span>
+                      </span>
+                      <span style="color: #64748b; font-weight: 500;">共 1 项</span>
+                    </div>
+                    <table class="ubox-trig-table">
+                      <thead>
+                        <tr>
+                          <th style="width: 46px;">序号</th>
+                          <th style="width: 140px;">判定条件</th>
+                          <th>触发动作</th>
+                          <th style="width: 55px;">状态</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td style="font-family: var(--sl-font-mono); font-weight: 700; color: #475569;">#0</td>
+                          <td style="font-family: var(--sl-font-mono); color: #0f172a;">signal == "ACTIVE"</td>
+                          <td>
+                            <span class="verb-square-emit">EMIT</span>
+                            <span style="font-family: var(--sl-font-mono); font-size: 10.5px;">Interface_state_out(WF_EXECUTE_START)</span>
+                          </td>
+                          <td><span class="square-tag in" style="font-size: 9.5px;">已触发</span></td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 接口 2: Interface_state_out (折叠演示) -->
+            <div class="iface-root-block">
+              <div class="s1-iface-head" onclick="toggleS1('1a', 2)">
+                <div class="s1-iface-title-group">
+                  <span id="s1a-sym-2" class="square-expander">[+]</span>
+                  <span class="iface-name-text">Interface_state_out</span>
+                  <span class="square-tag out">OUT 输出</span>
+                </div>
+              </div>
+
+              <div id="s1a-body-2" class="s1-merged-container" style="display: none;">
+                <div class="s1-unified-box">
+                  <div class="ubox-signal-section" style="border-bottom: none;">
+                    <div class="ubox-section-bar">
+                      <span class="ubox-section-bar-title">
+                        <span>├─ 当前信号状态快照</span>
+                      </span>
+                      <span style="font-family: var(--sl-font-mono); color: #2563eb; font-weight: 700;">WF_EXECUTE_START (已发送)</span>
+                    </div>
+                    <table class="ubox-sig-table">
+                      <tbody>
+                        <tr>
+                          <th>capability</th>
+                          <td>capability_1</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- 3. 数据端口：纯白直角四方表格 (彻底消除灰色底) -->
+          <div class="flat-section">
+            <div class="flat-sec-head">
+              <span class="flat-sec-title">数据端口</span>
+              <span class="flat-sec-meta">共 3 个数据端口</span>
+            </div>
+
+            <table class="s1-ports-table">
+              <thead>
+                <tr>
+                  <th style="width: 120px;">端口名称</th>
+                  <th style="width: 65px;">流向</th>
+                  <th style="width: 70px;">类型</th>
+                  <th>实时快照数据 (Payload)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="port-name-text">target_temp</td>
+                  <td><span class="square-tag in">输入</span></td>
+                  <td class="mono-val" style="color: #64748b;">DOUBLE</td>
+                  <td class="port-val-text">300.0 (°C)</td>
+                </tr>
+                <tr>
+                  <td class="port-name-text">hold_duration</td>
+                  <td><span class="square-tag in">输入</span></td>
+                  <td class="mono-val" style="color: #64748b;">INTEGER</td>
+                  <td class="port-val-text">30 (秒)</td>
+                </tr>
+                <tr>
+                  <td class="port-name-text">current_temp</td>
+                  <td><span class="square-tag out">输出</span></td>
+                  <td class="mono-val" style="color: #64748b;">DOUBLE</td>
+                  <td class="port-val-text" style="color: #16a34a; font-weight: 700;">298.5 (°C)</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <!-- 4. 变量空间 (直角平铺) -->
+          <div class="flat-section">
+            <div class="flat-sec-head">
+              <span class="flat-sec-title">变量空间</span>
+              <span class="flat-sec-meta">1 项变量</span>
+            </div>
+            <table class="flat-desc-table">
+              <tbody>
+                <tr>
+                  <th class="mono-val" style="width: 120px;">var_heat_count</th>
+                  <td class="mono-val">3</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+
+      <!-- ===================================================================
+           方案 1B：单一方框 + 全表格主从结构
+           =================================================================== -->
+      <div id="scheme-1b-view" class="mock-drawer" style="display: none;">
+        <div class="mock-drawer-header">
+          <div class="drawer-title-group">
+            <span class="node-type-square">DEV_NODE</span>
+            <strong class="drawer-node-title">device1 (方案 1B：主从树表)</strong>
+          </div>
+          <button class="close-x-btn">✕</button>
+        </div>
+
+        <div class="mock-drawer-body">
+          <div class="flat-section">
+            <div class="flat-sec-head">
+              <span class="flat-sec-title">接口快照</span>
+            </div>
+            <div class="iface-root-block">
+              <div class="s1-iface-head">
+                <div class="s1-iface-title-group">
+                  <span class="square-expander">[-]</span>
+                  <span class="iface-name-text">Interface_workflow_in</span>
+                  <span class="square-tag in">IN</span>
+                </div>
+              </div>
+              <div class="s1b-grid-box">
+                <table class="s1b-table">
+                  <tbody>
+                    <tr>
+                      <th>当前信号</th>
+                      <td style="color: #16a34a; font-weight: 700;">ACTIVE (已收到)</td>
+                    </tr>
+                    <tr>
+                      <th>载荷数据</th>
+                      <td>messageId = 3a5f0457-3586-3649</td>
+                    </tr>
+                    <tr>
+                      <th>触发规则</th>
+                      <td>#0: signal == "ACTIVE" ➔ EMIT(WF_EXECUTE_START) [已触发]</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div class="flat-section">
+            <div class="flat-sec-head">
+              <span class="flat-sec-title">数据端口</span>
+            </div>
+            <table class="s1-ports-table">
+              <thead>
+                <tr>
+                  <th>端口名称</th>
+                  <th>流向</th>
+                  <th>快照值</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="port-name-text">target_temp</td>
+                  <td>输入</td>
+                  <td class="port-val-text">300.0</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+
+      <!-- ===================================================================
+           方案 1C：单一方框 + 阶梯沉浸嵌入
+           =================================================================== -->
+      <div id="scheme-1c-view" class="mock-drawer" style="display: none;">
+        <div class="mock-drawer-header">
+          <div class="drawer-title-group">
+            <span class="node-type-square">DEV_NODE</span>
+            <strong class="drawer-node-title">device1 (方案 1C：阶梯沉浸)</strong>
+          </div>
+          <button class="close-x-btn">✕</button>
+        </div>
+
+        <div class="mock-drawer-body">
+          <div class="flat-section">
+            <div class="flat-sec-head">
+              <span class="flat-sec-title">接口快照</span>
+            </div>
+            <div class="iface-root-block">
+              <div class="s1-iface-head" style="background: #f1f5f9;">
+                <div class="s1-iface-title-group">
+                  <span class="square-expander">[-]</span>
+                  <span class="iface-name-text">Interface_workflow_in</span>
+                  <span class="square-tag in">IN</span>
+                </div>
+              </div>
+              <div class="s1c-stepped-pane">
+                <div class="s1c-single-box">
+                  <div style="padding: 6px 8px; border-bottom: 1px solid #e2e8f0; font-size: 11px;">
+                    <strong>当前信号:</strong> <span style="color: #16a34a; font-weight: 700;">ACTIVE</span> (mid: 3a5f0457-3586)
+                  </div>
+                  <div style="padding: 6px 8px; font-size: 11px;">
+                    <strong>触发器 #0:</strong> <code>signal == "ACTIVE"</code> ➔ <code>EMIT(WF_EXECUTE_START)</code>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+  </main>
+
+  <script>
+    function switchScheme(type) {
+      document.querySelectorAll('.scheme-btn').forEach((b, i) => {
+        b.classList.toggle('active', (type === '1a' && i === 0) || (type === '1b' && i === 1) || (type === '1c' && i === 2));
+      });
+      document.getElementById('scheme-1a-view').style.display = type === '1a' ? 'flex' : 'none';
+      document.getElementById('scheme-1b-view').style.display = type === '1b' ? 'flex' : 'none';
+      document.getElementById('scheme-1c-view').style.display = type === '1c' ? 'flex' : 'none';
+    }
+
+    function toggleS1(sch, num) {
+      const body = document.getElementById(`s${sch}-body-${num}`);
+      const sym = document.getElementById(`s${sch}-sym-${num}`);
+      const isOpen = body.style.display !== 'none';
+      body.style.display = isOpen ? 'none' : 'flex';
+      sym.textContent = isOpen ? '[+]' : '[-]';
+    }
+  </script>
+</body>
+</html>

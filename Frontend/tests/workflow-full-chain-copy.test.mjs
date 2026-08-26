@@ -59,16 +59,37 @@ describe('Task 9 — Full-Chain Copy Regression', () => {
     assert.match(drawer, /发布启用|已发布|可执行流程/)
     assert.match(bindingCanvas, /WorkflowStageGraph/)
     assert.match(bindingCanvas, /selectedRequirement\.slotId/)
+    const stageGraph = readSource('views/task/components/WorkflowStageGraph.vue')
+    assert.match(stageGraph, /WorkflowCanvasEdge/)
+    assert.match(stageGraph, /useVueFlow/)
+    assert.match(stageGraph, /#edge-workflow/)
+    assert.doesNotMatch(stageGraph, /hide-tooltips/)
+    assert.doesNotMatch(stageGraph, /:id="flowId"/)
+    assert.doesNotMatch(stageGraph, /v-if="viewportReady"/)
+    assert.doesNotMatch(stageGraph, /smoothstep/)
   })
 
   test('execution drawer exposes the confirmed runtime views', () => {
     const source = readSource('views/task/TaskList/components/TaskExecutionDrawer.vue')
-    for (const label of ['运行状态', '业务事件', '设备绑定', '约束实例']) {
+    for (const label of ['运行状态', '任务日志', '设备绑定', '约束实例']) {
       assert.match(source, new RegExp(label))
     }
     assert.match(source, /设备绑定/)
     assert.match(source, /全局级|任务级/)
     assert.match(source, /约束实例/)
+    assert.doesNotMatch(source.split('</template>')[0], /按节点区分生命周期、接口收发与约束动作/)
+  })
+
+  test('execution drawer and logs share subflow layer navigation', () => {
+    const drawer = readSource('views/task/TaskList/components/TaskExecutionDrawer.vue')
+    const logs = readSource('views/task/TaskList/components/TaskBusinessEventList.vue')
+    const detail = readSource('views/task/TaskList/components/TaskStepDetail.vue')
+    assert.match(drawer, /flow-breadcrumb/)
+    assert.match(drawer, /enterSubflow/)
+    assert.match(drawer, /parent-step-id/)
+    assert.match(logs, /查看子流程日志/)
+    assert.match(detail, /查看子流程运行图/)
+    assert.match(readSource('views/task/TaskList/TaskList.vue'), /:groups="activeWorkflowGroups"/)
   })
 
   test('snapshot panel uses canonical fields and no routing envelope', () => {
@@ -76,11 +97,13 @@ describe('Task 9 — Full-Chain Copy Regression', () => {
     assert.match(source, /interfaceName/)
     assert.match(source, /signalName/)
     assert.match(source, /payload/)
-    assert.match(source, /bindingTriggers|绑定触发器|条件摘要/)
+    assert.match(source, /bindingTriggers|绑定触发器/)
     assert.match(source, /当前信号/)
     assert.match(source, /触发器绑定列表/)
     assert.match(source, /触发条件/)
     assert.match(source, /触发动作/)
+    assert.match(source, /action-verb/)
+    assert.doesNotMatch(source, /条件摘要会展开/)
     assert.doesNotMatch(source, /messageId|capabilityRef|sourceNodeIdRef|inputSignalName/)
   })
 

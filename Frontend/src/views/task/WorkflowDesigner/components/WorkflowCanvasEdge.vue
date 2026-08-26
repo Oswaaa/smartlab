@@ -26,7 +26,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, inject, onBeforeUnmount, ref } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { BaseEdge, EdgeLabelRenderer, useVueFlow } from '@vue-flow/core'
 import { workflowOrthogonalPath, workflowOrthogonalPoints } from '../../../../utils/workflowCanvas.js'
 
@@ -59,8 +59,7 @@ const props = withDefaults(defineProps<{
   hideTooltips: false,
 })
 
-const flowId = inject<string | null>('smartlabWorkflowFlowId', null)
-const flow = flowId ? useVueFlow({ id: flowId }) : useVueFlow()
+const flow = useVueFlow()
 const hovered = ref(false)
 const tooltipArmed = ref(false)
 let tooltipTimer: ReturnType<typeof setTimeout> | null = null
@@ -158,7 +157,8 @@ onBeforeUnmount(onLeave)
   color: #fff;
   font-size: 12px;
   line-height: 1.4;
-  white-space: nowrap;
+  white-space: pre-wrap;
+  max-width: 420px;
   box-shadow: 0 4px 12px rgba(15, 23, 42, .18);
 }
 </style>

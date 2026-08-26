@@ -1,0 +1,12 @@
+---
+description: Agent must not change engine, compiler, or ingest contracts to tolerate LLM mistakes
+alwaysApply: true
+---
+
+# Agent 对引擎零妥协
+
+大模型生成是 `com.smartlab.agent` 的客户端，不是第二套工作流语言。
+
+- 禁止为迁就模型写错而改 `engine`、`WorkflowDefinitionCanonicalizer`、`WorkflowDefinitionCompiler`、`WorkflowService` 保存/校验/发布路径，或 `WorkflowModelDocument` / `WorkflowModelMetadata` 的 Jackson 合同（别名、忽略未知字段、缺省补全、把 `START` 改写成 `FUNC_NODE` 等）。
+- 模型交上来的稿必须走与设计器相同的 `validate` / `saveDraft`。写错就报错，由提示、工具 schema、校验 issues 教它改，不要在引擎里把错稿改成对稿。
+- Agent 只调用现有 `WorkflowService` API。目录精简、校验返回裁剪、skill 文本可以改；引擎语义不可以改。

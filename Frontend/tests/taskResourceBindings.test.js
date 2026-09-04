@@ -87,6 +87,7 @@ test('creates and preflights tasks with the same slot-id deviceBindings contract
   assert.deepEqual(payload, {
     taskName: '升温任务',
     flowModelId: 1,
+    executionKind: 'PRODUCTION',
     deviceBindings: [
       { slotId: '1:1/2:7', deviceInstanceId: 101 },
       { slotId: '1:2/2:7', deviceInstanceId: 102 }
@@ -94,6 +95,25 @@ test('creates and preflights tasks with the same slot-id deviceBindings contract
     taskConstraints: [{ name: '温度上限' }],
     taskVariables: {}
   })
+})
+
+test('simulation create payload includes physical instance ids and marks execution kind', () => {
+  const payload = buildTaskCreatePayload({
+    taskName: '仿真升温',
+    flowModelId: 1,
+    executionKind: 'SIMULATION',
+    resourceBindings: { '1:1': 101 },
+    parameterBindings: { '1:1': { target: 80 } },
+    taskConstraints: []
+  }, [{
+    slotId: '1:1',
+    capabilityParameters: [{ name: 'target', hole: true }]
+  }])
+
+  assert.equal(payload.executionKind, 'SIMULATION')
+  assert.deepEqual(payload.deviceBindings, [
+    { slotId: '1:1', deviceInstanceId: 101, capabilityParameters: { target: 80 } }
+  ])
 })
 
 test('decorates only device nodes with requirements using exact backend slot ids', async () => {

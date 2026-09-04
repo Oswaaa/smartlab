@@ -34,7 +34,7 @@ const props = defineProps<{
   instances: DeviceInstance[]
 }>()
 
-defineEmits<{
+const emit = defineEmits<{
   'update:modelValue': [value: boolean]
   'show-spec': [row: any]
 }>()

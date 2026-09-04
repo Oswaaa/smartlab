@@ -10,16 +10,20 @@ import com.smartlab.management.dto.workflow.TaskDeviceBindingRequest;
 import com.smartlab.management.dto.workflow.WorkflowIssue;
 import com.smartlab.management.dto.workflow.WorkflowDetailResponse;
 import com.smartlab.management.dto.workflow.WorkflowResourceRequirementsResponse;
+import com.smartlab.management.entity.resource.device.DeviceInstanceKind;
 import com.smartlab.management.entity.resource.device.DeviceInstanceLifecycle;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
 import com.smartlab.management.entity.resource.device.DeviceModels;
 import com.smartlab.management.entity.workflow.FlowNode;
 import com.smartlab.management.entity.workflow.Task;
+import com.smartlab.management.entity.workflow.TaskExecutionKind;
 import com.smartlab.management.entity.workflow.TaskStep;
 import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
 import com.smartlab.management.mapper.resource.device.DeviceModelsMapper;
 import com.smartlab.management.mapper.workflow.FlowNodeMapper;
 import com.smartlab.management.mapper.workflow.TaskStepMapper;
+import com.smartlab.management.service.db.resource.adapter.VirtualLeaseService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -42,6 +46,7 @@ public class WorkflowTaskResourceService {
     private final DeviceModelsMapper deviceModelsMapper;
     private final TaskStepMapper taskStepMapper;
     private final FlowNodeMapper flowNodeMapper;
+    private VirtualLeaseService virtualLeaseService;
 
     public WorkflowTaskResourceService(WorkflowService workflowService, DeviceInstancesMapper deviceInstancesMapper,
                                        DeviceModelsMapper deviceModelsMapper, TaskStepMapper taskStepMapper,
@@ -53,6 +58,11 @@ public class WorkflowTaskResourceService {
         this.flowNodeMapper = flowNodeMapper;
     }
 
+    @Autowired(required = false)
+    public void setVirtualLeaseService(VirtualLeaseService virtualLeaseService) {
+        this.virtualLeaseService = virtualLeaseService;
+    }
+
     public WorkflowResourceRequirementsResponse requirements(Long rootFlowModelId) {
         if (rootFlowModelId == null) throw new IllegalArgumentException("工作流模型ID不能为空");
         WorkflowDetailResponse rootDefinition = workflowService.getDefinition(rootFlowModelId);
@@ -62,6 +72,12 @@ public class WorkflowTaskResourceService {
         return new WorkflowResourceRequirementsResponse(rootFlowModelId, rootDefinition.getVersion(), List.copyOf(bindings));
     }
     public PreparedTaskResources prepare(Long flowModelId, List<TaskDeviceBindingRequest> deviceBindings) {
+        return prepare(flowModelId, deviceBindings, TaskExecutionKind.PRODUCTION);
+    }
+
+    public PreparedTaskResources prepare(Long flowModelId, List<TaskDeviceBindingRequest> deviceBindings,
+                                          String executionKind) {
+        String expectedKind = expectedInstanceKind(executionKind, null);
         ObjectNode resourceMap = JsonNodeSupport.objectNode();
         resourceMap.put("formatVersion", RESOURCE_MAP_FORMAT_VERSION);
         ObjectNode canonicalBindings = resourceMap.putObject("deviceBindings");
@@ -93,18 +109,21 @@ public class WorkflowTaskResourceService {
                 issues.add(bindingIssue("TASK_BINDING_UNKNOWN", slotId, "设备绑定槽位不属于当前工作流", "刷新工作流 requirements 后重新绑定")));
         for (DeviceBindingRequirement requirement : requirements) {
             TaskDeviceBindingRequest suppliedBinding = supplied.get(requirement.slotId());
-            if (suppliedBinding == null || suppliedBinding.deviceInstanceId() == null || suppliedBinding.deviceInstanceId() <= 0) {
-                issues.add(bindingIssue("TASK_BINDING_MISSING", requirement.slotId(), "DEV_NODE缺少任务设备实例绑定", "为该槽位选择一个可用设备实例"));
+            Long instanceId = suppliedBinding == null ? null : suppliedBinding.deviceInstanceId();
+            if (instanceId == null || instanceId <= 0) {
+                issues.add(bindingIssue("TASK_BINDING_MISSING", requirement.slotId(),
+                        "DEV_NODE缺少任务设备实例绑定", "为该槽位选择一个可用设备实例"));
                 continue;
             }
             ObjectNode binding = canonicalBindings.putObject(requirement.slotId());
             binding.put("deviceModelId", requirement.deviceModelId());
-            binding.put("deviceInstanceId", suppliedBinding.deviceInstanceId());
-            ObjectNode storedParameters = storedHoleParameters(requirement, suppliedBinding.capabilityParameters(), issues);
+            binding.put("deviceInstanceId", instanceId);
+            ObjectNode storedParameters = storedHoleParameters(requirement,
+                    suppliedBinding == null ? null : suppliedBinding.capabilityParameters(), issues);
             if (storedParameters.size() > 0) binding.set("capabilityParameters", storedParameters);
         }
         issues.addAll(inspectCapabilityParameters(flowModelId, resourceMap));
-        if (issues.stream().noneMatch(WorkflowIssue::blocking)) try { validate(flowModelId, resourceMap); }
+        if (issues.stream().noneMatch(WorkflowIssue::blocking)) try { validate(flowModelId, resourceMap, expectedKind); }
         catch (RuntimeException error) { issues.add(bindingIssue("TASK_BINDING_INVALID", "", error.getMessage(), "检查设备实例、模型和设备接口")); }
         return new PreparedTaskResources(resourceMap, List.copyOf(issues));
     }
@@ -115,11 +134,19 @@ public class WorkflowTaskResourceService {
                 message == null ? "任务设备绑定无效" : message, suggestion);
     }
     public void validate(Long flowModelId, JsonNode resourceMap) {
+        validate(flowModelId, resourceMap, DeviceInstanceKind.PHYSICAL);
+    }
+
+    public void validate(Long flowModelId, JsonNode resourceMap, String expectedInstanceKind) {
+        String expectedKind = expectedInstanceKind == null || expectedInstanceKind.isBlank()
+                ? DeviceInstanceKind.PHYSICAL
+                : DeviceInstanceKind.normalize(expectedInstanceKind);
         JsonNode bindings = bindings(resourceMap);
         List<DeviceBindingSlot> legacySlots = deviceBindingSlots(flowModelId);
         List<DeviceBindingRequirement> requirements = requirements(flowModelId).bindings();
         if (legacySlots.size() != requirements.size()) throw new IllegalStateException("工作流设备绑定要求不一致");
         Set<String> expectedKeys = new LinkedHashSet<>();
+        Set<String> boundKinds = new LinkedHashSet<>();
         for (int index = 0; index < legacySlots.size(); index++) {
             DeviceBindingSlot slot = legacySlots.get(index);
             DeviceBindingRequirement requirement = requirements.get(index);
@@ -133,10 +160,17 @@ public class WorkflowTaskResourceService {
             long instanceId = taskBinding.path("deviceInstanceId").asLong(0);
             if (instanceId <= 0) throw new IllegalStateException("DEV_NODE缺少任务设备实例绑定: " + requirement.slotId());
             DeviceInstances instance = requireUsableInstance(instanceId);
+            boundKinds.add(instance.getInstanceKind());
+            if (!expectedKind.equals(instance.getInstanceKind())) {
+                throw new IllegalStateException(bindingKindMismatchMessage(expectedKind, instance, requirement.slotId()));
+            }
             if (!Long.valueOf(slot.deviceModelId()).equals(instance.getDeviceModelId())) {
                 throw new IllegalStateException("任务绑定设备实例的模型与DEV_NODE.deviceModelId不匹配: " + requirement.slotId());
             }
             validateModelInterfaces(workflowService.getDefinition(slot.flowModelId()), slot.nodeName(), slot.deviceModelId());
+        }
+        if (boundKinds.size() > 1) {
+            throw new IllegalStateException("同一任务不能混绑不同种类的设备实例: " + boundKinds);
         }
         bindings.fieldNames().forEachRemaining(key -> {
             if (!expectedKeys.contains(key)) throw new IllegalStateException("resourceMap包含工作流未声明的设备节点: " + key);
@@ -203,7 +237,7 @@ public class WorkflowTaskResourceService {
         String nodeName = nodeName(node.getFlowModelId(), node.getNodeIdRef());
         String key = bindingKey(subFlowPath, nodeName);
         subFlowOccurrences.add(new BindingOccurrence(node.getFlowModelId(), node.getNodeIdRef(), nodeName));
-        return resolveBinding(node.getDeviceModelId(), task.getResourceMap(), slotId(subFlowOccurrences), key);
+        return remapIfSimulation(task, resolveBinding(node.getDeviceModelId(), task.getResourceMap(), slotId(subFlowOccurrences), key));
     }
 
     public JsonNode resolveCapabilityParameters(Task task, TaskStep step, FlowNode node) {
@@ -406,6 +440,16 @@ public class WorkflowTaskResourceService {
             throw new IllegalStateException("任务绑定设备实例的模型与DEV_NODE.deviceModelId不匹配: " + key);
         }
         return instance;
+    }
+
+    private DeviceInstances remapIfSimulation(Task task, DeviceInstances instance) {
+        if (!TaskExecutionKind.isSimulation(task) || instance == null) {
+            return instance;
+        }
+        if (virtualLeaseService == null) {
+            throw new IllegalStateException("模拟任务运行时缺少租约服务");
+        }
+        return virtualLeaseService.requireActiveVirtual(instance.getId(), task.getId());
     }
 
     public Set<Long> boundDeviceInstanceIds(JsonNode resourceMap) {
@@ -622,6 +666,18 @@ public class WorkflowTaskResourceService {
         if (instance == null) throw new IllegalArgumentException("设备实例不存在: " + instanceId);
         if (!DeviceInstanceLifecycle.isUsable(instance)) throw new IllegalStateException("设备实例已注销，不能执行工作流节点: " + instanceId);
         return instance;
+    }
+
+    public String expectedInstanceKind(String executionKind, JsonNode resourceMap) {
+        TaskExecutionKind.normalize(executionKind);
+        return DeviceInstanceKind.PHYSICAL;
+    }
+
+    private String bindingKindMismatchMessage(String expectedKind, DeviceInstances instance, String slotId) {
+        if (DeviceInstanceKind.PHYSICAL.equals(expectedKind)) {
+            return "任务只能绑定物理设备实例: " + slotId;
+        }
+        return "设备实例种类与任务执行种类不匹配: " + instance.getInstanceKind();
     }
 
     private Iterable<JsonNode> iterable(JsonNode node) {

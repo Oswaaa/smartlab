@@ -42,6 +42,18 @@
             <el-option label="失败" value="FAILED" />
             <el-option label="已终止" value="TERMINATED" />
           </el-select>
+          <el-select
+            v-model="taskExecutionKindFilter"
+            size="small"
+            class="lifecycle-filter"
+            placeholder="全部执行"
+            clearable
+            @change="applyTaskFilters"
+          >
+            <el-option label="全部执行" value="" />
+            <el-option label="正式执行" value="PRODUCTION" />
+            <el-option label="模拟执行" value="SIMULATION" />
+          </el-select>
           <el-input
             v-model="taskKeyword"
             class="task-search"
@@ -99,6 +111,14 @@
                 </div>
               </template>
             </el-table-column>
+            <el-table-column label="执行种类" width="100" align="center">
+              <template #default="{ row }">
+                <span v-if="row.taskStatus === 'PENDING'" class="text-disabled">待启动</span>
+                <el-tag v-else :type="row.executionKind === 'SIMULATION' ? 'warning' : 'info'" effect="plain" class="status-tag">
+                  {{ row.executionKind === 'SIMULATION' ? '模拟' : '正式' }}
+                </el-tag>
+              </template>
+            </el-table-column>
             <el-table-column label="当前节点" min-width="120" align="center">
               <template #default="{ row }">
                 <span v-if="row.currentNodeIdRef != null" class="node-badge" :title="`节点 ID: ${row.currentNodeIdRef}`">
@@ -132,11 +152,12 @@
                 <span v-else class="text-disabled">无</span>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="168" fixed="right" align="center">
+            <el-table-column label="操作" width="268" fixed="right" align="center">
               <template #default="{ row }">
                 <div class="action-buttons" @click.stop>
                   <button class="btn-link" type="button" @click="openTaskDetail(row)">详情</button>
-                  <button v-if="row.taskStatus === 'PENDING'" class="btn-link" type="button" @click="startTask(row.id)">启动</button>
+                  <button v-if="row.taskStatus === 'PENDING'" class="btn-link" type="button" @click="startTask(row.id, 'PRODUCTION')">启动</button>
+                  <button v-if="row.taskStatus === 'PENDING'" class="btn-link" type="button" @click="startTask(row.id, 'SIMULATION')">仿真执行</button>
                   <button v-if="['RUNNING', 'PAUSED'].includes(row.taskStatus)" class="btn-link danger" type="button" @click="abortTask(row.id)">终止</button>
                   <button class="btn-link danger" type="button" @click="confirmDeleteTask(row.id)">删除</button>
                 </div>
@@ -223,6 +244,7 @@ interface TaskInstance {
   resourceMap?: any
   taskConstraints?: any[]
   taskStatus: string
+  executionKind?: string
   currentNodeIdRef?: number
   currentFlowNodeId?: number
   startTime?: string
@@ -288,6 +310,7 @@ const taskPageSize = ref(20)
 const taskKeyword = ref('')
 const taskWorkflowFilter = ref<number | string>('')
 const taskStatusFilter = ref('')
+const taskExecutionKindFilter = ref('')
 const lastUpdatedAt = ref('')
 const taskSummary = ref({
   total: 0,
@@ -310,6 +333,7 @@ const createFormRef = ref<any>()
 const createForm = ref({
   taskName: '',
   flowModelId: null as number | null,
+  executionKind: 'PRODUCTION',
   resourceBindings: {} as Record<string, number | null>,
   parameterBindings: {} as Record<string, Record<string, unknown>>,
   taskConstraints: [] as any[]
@@ -344,10 +368,10 @@ const selectedTaskResources = computed(() => {
 })
 const selectedWorkflowNodes = computed(() => createForm.value.flowModelId == null ? [] : workflowNodes.value[String(createForm.value.flowModelId)] || [])
 
-const hasTaskFilters = computed(() => Boolean(taskKeyword.value.trim() || taskStatusFilter.value))
+const hasTaskFilters = computed(() => Boolean(taskKeyword.value.trim() || taskStatusFilter.value || taskExecutionKindFilter.value))
 const applyTaskFilters = () => { taskPageNo.value = 1; fetchTasks() }
 const setTaskStatus = (status: string) => { taskStatusFilter.value = status; applyTaskFilters() }
-const clearTaskFilters = () => { taskKeyword.value = ''; taskStatusFilter.value = ''; applyTaskFilters() }
+const clearTaskFilters = () => { taskKeyword.value = ''; taskStatusFilter.value = ''; taskExecutionKindFilter.value = ''; applyTaskFilters() }
 
 
 async function runPreflight() {
@@ -399,8 +423,13 @@ async function runPreflight() {
   try {
     const payload = {
       flowModelId: createForm.value.flowModelId,
+      executionKind: createForm.value.executionKind || 'PRODUCTION',
       taskVariables: {},
-      deviceBindings: buildDeviceBindings(selectedWorkflowRequirements.value, createForm.value.resourceBindings, createForm.value.parameterBindings),
+      deviceBindings: buildDeviceBindings(
+        selectedWorkflowRequirements.value,
+        createForm.value.resourceBindings,
+        createForm.value.parameterBindings
+      ),
       taskConstraints: createForm.value.taskConstraints || []
     }
     const response = await taskApi.preflight(payload)
@@ -480,7 +509,8 @@ const fetchTasks = async (silent = false) => {
         pageSize: taskPageSize.value,
         keyword: taskKeyword.value || undefined,
         status: taskStatusFilter.value || undefined,
-        flowModelId: taskWorkflowFilter.value || undefined
+        flowModelId: taskWorkflowFilter.value || undefined,
+        executionKind: taskExecutionKindFilter.value || undefined
       }
     })
     if (res.data?.success) {
@@ -868,20 +898,29 @@ const fetchLogsAndSnapshots = async (silent = false) => {
 }
 
 // Start task on engine
-const startTask = async (taskId: number) => {
+const startTask = async (taskId: number, executionKind: 'PRODUCTION' | 'SIMULATION' = 'PRODUCTION') => {
+  const simulation = executionKind === 'SIMULATION'
   try {
-    await ElMessageBox.confirm('确认启动该任务吗？', '启动确认', {
-      confirmButtonText: '确认启动',
-      cancelButtonText: '取消',
-      type: 'warning'
+    await ElMessageBox.confirm(
+      simulation
+        ? '确认为绑定设备申请虚拟点并仿真执行吗？'
+        : '确认在绑定的物理设备上启动该任务吗？',
+      simulation ? '仿真执行' : '启动确认',
+      {
+        confirmButtonText: simulation ? '仿真执行' : '确认启动',
+        cancelButtonText: '取消',
+        type: 'warning'
+      }
+    )
+
+    const res = await axios.post(`/api/task/start/${taskId}`, null, {
+      params: { executionKind }
     })
-    
-    const res = await axios.post(`/api/task/start/${taskId}`)
     if (res.data?.success) {
-      ElMessage.success('任务已启动')
+      ElMessage.success(simulation ? '任务已仿真启动' : '任务已启动')
       refreshTaskList()
     } else {
-      ElMessage.error(res.data?.message || '启动任务失败')
+      ElMessage.error(res.data?.message || (simulation ? '仿真启动失败' : '启动任务失败'))
     }
   } catch (e) {
     // cancelled
@@ -939,7 +978,7 @@ const openCreateDrawer = () => {
     ElMessage.warning('当前没有已启用的工作流，请先在流程设计器中保存并启用流程')
     return
   }
-  createForm.value = { taskName: '', flowModelId: null, resourceBindings: {}, parameterBindings: {}, taskConstraints: [] }
+  createForm.value = { taskName: '', flowModelId: null, executionKind: 'PRODUCTION', resourceBindings: {}, parameterBindings: {}, taskConstraints: [] }
   taskConstraintReviews.value = []
   createDrawerVisible.value = true
   nextTick(() => {
@@ -1416,7 +1455,8 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  flex-wrap: wrap;
+  gap: 8px 10px;
 }
 
 .pager-wrap {

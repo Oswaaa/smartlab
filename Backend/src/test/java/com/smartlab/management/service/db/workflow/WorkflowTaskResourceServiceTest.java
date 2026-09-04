@@ -11,6 +11,7 @@ import com.smartlab.management.dto.workflow.WorkflowDetailResponse;
 import com.smartlab.management.dto.workflow.WorkflowIssue;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
 import com.smartlab.management.entity.resource.device.DeviceModels;
+import com.smartlab.management.entity.workflow.TaskExecutionKind;
 import com.smartlab.management.entity.workflow.FlowNode;
 import com.smartlab.management.entity.workflow.Task;
 import com.smartlab.management.entity.workflow.TaskStep;
@@ -18,6 +19,7 @@ import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
 import com.smartlab.management.mapper.resource.device.DeviceModelsMapper;
 import com.smartlab.management.mapper.workflow.FlowNodeMapper;
 import com.smartlab.management.mapper.workflow.TaskStepMapper;
+import com.smartlab.management.service.db.resource.adapter.VirtualLeaseService;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -27,6 +29,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -145,6 +148,36 @@ class WorkflowTaskResourceServiceTest {
     }
 
     @Test
+    void simulationResolveRemapsPhysicalBindingToVirtualInstance() {
+        WorkflowService workflows = mock(WorkflowService.class);
+        DeviceInstancesMapper instances = mock(DeviceInstancesMapper.class);
+        TaskStepMapper steps = mock(TaskStepMapper.class);
+        FlowNodeMapper nodes = mock(FlowNodeMapper.class);
+        VirtualLeaseService leases = mock(VirtualLeaseService.class);
+        WorkflowTaskResourceService service = new WorkflowTaskResourceService(
+                workflows, instances, mock(DeviceModelsMapper.class), steps, nodes);
+        service.setVirtualLeaseService(leases);
+        stubRepeatedSubFlow(workflows);
+        when(instances.selectById(55L)).thenReturn(instance(55L, 7L, "IN_USE"));
+        DeviceInstances virtual = instance(99L, 7L, "IN_USE");
+        when(leases.requireActiveVirtual(55L, 3L)).thenReturn(virtual);
+
+        FlowNode parentNode = flowNode(1000L, 10L, 1L, "SUBFLOW_NODE", null);
+        FlowNode childNode = flowNode(2000L, 20L, 1L, "DEV_NODE", 7L);
+        TaskStep parentStep = step(100L, 1000L, null);
+        TaskStep childStep = step(101L, 2000L, 100L);
+        when(steps.selectById(100L)).thenReturn(parentStep);
+        when(nodes.selectById(1000L)).thenReturn(parentNode);
+
+        Task task = new Task();
+        task.setId(3L);
+        task.setExecutionKind(TaskExecutionKind.SIMULATION);
+        task.setResourceMap(resourceMap("root/openLidFirst/armUp", 7L, 55L));
+
+        assertEquals(99L, service.resolveDeviceInstance(task, childStep, childNode).getId());
+    }
+
+    @Test
     void resolvesTaskDeviceBindingForDevNode() {
         WorkflowService workflows = mock(WorkflowService.class);
         DeviceInstancesMapper instances = mock(DeviceInstancesMapper.class);
@@ -201,6 +234,22 @@ class WorkflowTaskResourceServiceTest {
         assertEquals(80, stored.path("target").asInt());
         assertFalse(stored.has("duration"));
         assertTrue(prepared.issues().stream().anyMatch(issue -> "TASK_BINDING_PARAM_UNEXPECTED".equals(issue.code())));
+    }
+
+    @Test
+    void simulationPrepareRequiresPhysicalInstance() {
+        WorkflowService workflows = mock(WorkflowService.class);
+        DeviceInstancesMapper instances = mock(DeviceInstancesMapper.class);
+        WorkflowTaskResourceService service = new WorkflowTaskResourceService(
+                workflows, instances, mock(DeviceModelsMapper.class),
+                mock(TaskStepMapper.class), mock(FlowNodeMapper.class));
+        stubWorkflow(workflows, 3L, 7L);
+
+        WorkflowTaskResourceService.PreparedTaskResources prepared = service.prepare(
+                3L, List.of(), TaskExecutionKind.SIMULATION);
+
+        assertTrue(prepared.issues().stream().anyMatch(issue -> "TASK_BINDING_MISSING".equals(issue.code())));
+        assertFalse(prepared.resourceMap().path("deviceBindings").has("3:1"));
     }
 
     @Test

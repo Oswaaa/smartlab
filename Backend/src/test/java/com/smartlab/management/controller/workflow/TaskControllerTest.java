@@ -24,6 +24,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.smartlab.management.service.db.workflow.TaskDataAssetService;
 import com.smartlab.management.sse.TaskExecutionSseHub;
 
 class TaskControllerTest {
@@ -79,7 +80,7 @@ class TaskControllerTest {
     @Test
     void pageForwardsFlowModelIdFilter() throws Exception {
         TaskService service = mock(TaskService.class);
-        when(service.page(1L, 20L, null, null, 11L)).thenReturn(new com.smartlab.management.dto.common.PageResult<>(0, 1, 20, java.util.List.of()));
+        when(service.page(1L, 20L, null, null, 11L, null)).thenReturn(new com.smartlab.management.dto.common.PageResult<>(0, 1, 20, java.util.List.of()));
         MockMvc mvc = MockMvcBuilders.standaloneSetup(new TaskController(service,
                 mock(WorkflowTaskControlService.class), mock(TaskExecutionViewService.class),
                 mock(TaskExecutionSseHub.class))).build();
@@ -88,6 +89,25 @@ class TaskControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.success").value(true));
 
-        verify(service).page(1L, 20L, null, null, 11L);
+        verify(service).page(1L, 20L, null, null, 11L, null);
+    }
+
+    @Test
+    void dataAssetsReturnsTaskTreePayload() throws Exception {
+        TaskService service = mock(TaskService.class);
+        TaskDataAssetService assets = mock(TaskDataAssetService.class);
+        when(assets.listDataAssets(9L)).thenReturn(new com.smartlab.management.dto.workflow.TaskDataAssetsResponse(
+                9L, "仿真任务", "SIMULATION", java.util.List.of()));
+        MockMvc mvc = MockMvcBuilders.standaloneSetup(new TaskController(service,
+                mock(WorkflowTaskControlService.class), mock(TaskExecutionViewService.class),
+                mock(TaskExecutionSseHub.class), assets)).build();
+
+        mvc.perform(get("/api/task/9/data-assets"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true))
+                .andExpect(jsonPath("$.data.taskId").value(9))
+                .andExpect(jsonPath("$.data.executionKind").value("SIMULATION"));
+
+        verify(assets).listDataAssets(9L);
     }
 }

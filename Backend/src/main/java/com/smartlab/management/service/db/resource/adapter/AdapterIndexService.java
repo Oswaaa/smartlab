@@ -13,7 +13,12 @@ import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
 import com.smartlab.management.mapper.resource.device.DeviceModelsMapper;
 import com.smartlab.adapter.AdapterManifestService;
 import com.smartlab.management.service.db.common.ManagementCrudService;
+import com.smartlab.global.event.AdapterDeletedEvent;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
@@ -34,11 +39,15 @@ import org.springframework.scheduling.annotation.Scheduled;
  */
 public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
 
+    private static final Logger log = LoggerFactory.getLogger(AdapterIndexService.class);
+
     private final AdapterIndexMapper mapper;
     private final AdapterManifestService manifestService;
     private final DeviceInstancesMapper deviceInstancesMapper;
     private final DeviceModelsMapper deviceModelsMapper;
     private final DeviceTwinStatesMapper deviceTwinStatesMapper;
+    private ApplicationEventPublisher eventPublisher;
+    private long heartbeatTimeoutSeconds = 30;
 
     public AdapterIndexService(AdapterIndexMapper mapper,
                                AdapterManifestService manifestService,
@@ -67,12 +76,48 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
         this.deviceTwinStatesMapper = deviceTwinStatesMapper;
     }
 
+    @Autowired(required = false)
+    public void setEventPublisher(ApplicationEventPublisher eventPublisher) {
+        this.eventPublisher = eventPublisher;
+    }
+
+    @Value("${smartlab.adapter.heartbeat-timeout-seconds:30}")
+    public void setHeartbeatTimeoutSeconds(long heartbeatTimeoutSeconds) {
+        this.heartbeatTimeoutSeconds = Math.max(1, heartbeatTimeoutSeconds);
+    }
+
+    public long heartbeatTimeoutSeconds() {
+        return heartbeatTimeoutSeconds;
+    }
+
+    public boolean isHeartbeatFresh(String adapterName) {
+        if (adapterName == null || adapterName.isBlank()) {
+            return false;
+        }
+        AdapterIndex adapter = getByName(adapterName.trim());
+        if (adapter == null || !hasCompletedRegistration(adapter)) {
+            return false;
+        }
+        if ("DISABLED".equalsIgnoreCase(adapter.getStatus())) {
+            return false;
+        }
+        OffsetDateTime lastHeartbeat = adapter.getLastHeartbeat();
+        if (lastHeartbeat == null) {
+            return false;
+        }
+        return lastHeartbeat.isAfter(OffsetDateTime.now().minusSeconds(heartbeatTimeoutSeconds));
+    }
+
     /**
-     * 查询全部 Adapter 索引，按更新时间倒序排列。
+     * 查询全部已完成配置审阅的 Adapter 索引，按更新时间倒序排列。
+     * 心跳误插入、尚未审阅的空记录不出现在管理列表中。
      */
     @Override
     public List<AdapterIndex> list() {
-        return mapper.selectList(Wrappers.<AdapterIndex>lambdaQuery().orderByDesc(AdapterIndex::getUpdateTime, AdapterIndex::getId));
+        return mapper.selectList(Wrappers.<AdapterIndex>lambdaQuery().orderByDesc(AdapterIndex::getUpdateTime, AdapterIndex::getId))
+                .stream()
+                .filter(this::hasCompletedRegistration)
+                .toList();
     }
 
     /**
@@ -223,15 +268,35 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
     }
 
     /**
-     * 记录 Adapter 心跳并更新时间戳，若处于 ENABLED 状态则联动更新下属使用中 (IN_USE) 设备实例为 ONLINE。
+     * 已通过页面审阅并写入配置的 Adapter 才算完成注册。
+     * 仅有名称、没有 originalConfig/parsedConfig 的心跳空记录不算。
+     */
+    public boolean hasCompletedRegistration(String adapterName) {
+        return hasCompletedRegistration(getByName(adapterName));
+    }
+
+    public boolean hasCompletedRegistration(AdapterIndex adapter) {
+        if (adapter == null) {
+            return false;
+        }
+        if (adapter.getOriginalConfig() != null && !adapter.getOriginalConfig().isBlank()) {
+            return true;
+        }
+        JsonNode config = adapter.getParsedConfig();
+        return config != null && config.isObject() && config.path("deviceCategories").isArray();
+    }
+
+    /**
+     * 记录已注册 Adapter 的心跳并更新时间戳。
+     * 未完成注册的 Adapter 不能因为心跳入库，否则会挡住 MQTT 待审核队列。
      */
     public AdapterIndex heartbeat(String adapterName, String status) {
         AdapterIndex adapter = getByName(adapterName);
-        if (adapter == null) {
-            adapter = new AdapterIndex();
-            adapter.setAdapterName(adapterName);
-            adapter.setStatus("ENABLED");
-        } else if (adapter.getStatus() == null || adapter.getStatus().isBlank()) {
+        if (adapter == null || !hasCompletedRegistration(adapter)) {
+            log.debug("忽略未完成注册的 Adapter 心跳: {}", adapterName);
+            return null;
+        }
+        if (adapter.getStatus() == null || adapter.getStatus().isBlank()) {
             adapter.setStatus("ENABLED");
         }
         OffsetDateTime now = OffsetDateTime.now();
@@ -249,7 +314,7 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
      */
     @Scheduled(fixedDelay = 5000)
     public void scanAndExpireHeartbeats() {
-        OffsetDateTime threshold = OffsetDateTime.now().minusSeconds(30);
+        OffsetDateTime threshold = OffsetDateTime.now().minusSeconds(heartbeatTimeoutSeconds);
         List<AdapterIndex> expiredAdapters = mapper.selectList(
                 Wrappers.<AdapterIndex>lambdaQuery()
                         .isNotNull(AdapterIndex::getLastHeartbeat)
@@ -280,7 +345,8 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
         if (deviceTwinStatesMapper != null && adapter.getAdapterName() != null) {
             if ("DISABLED".equals(resolvedStatus)) {
                 deviceTwinStatesMapper.updateOnlineStatusByAdapter(adapter.getAdapterName(), "OFFLINE", now);
-            } else if (adapter.getLastHeartbeat() != null && adapter.getLastHeartbeat().isAfter(now.minusSeconds(30))) {
+            } else if (adapter.getLastHeartbeat() != null
+                    && adapter.getLastHeartbeat().isAfter(now.minusSeconds(heartbeatTimeoutSeconds))) {
                 deviceTwinStatesMapper.updateOnlineStatusByAdapter(adapter.getAdapterName(), "ONLINE", now);
             }
         }
@@ -312,7 +378,11 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
         if (hasReferencingDeviceModel(adapter.getAdapterName())) {
             throw new IllegalStateException("Adapter 已被设备模型引用，不能删除");
         }
+        String adapterName = adapter.getAdapterName();
         super.delete(id);
+        if (eventPublisher != null) {
+            eventPublisher.publishEvent(new AdapterDeletedEvent(adapterName));
+        }
     }
 
     private void ensureConfigNotChangedWhileReferenced(AdapterIndex entity) {

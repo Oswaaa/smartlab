@@ -22,12 +22,19 @@ describe('homepage workflow agent chat', () => {
     assert.doesNotMatch(dashboard, /inspectorTab/)
   })
 
-  test('chat shows success state and a full interaction log', () => {
+  test('chat shows a persisted conversation list and round-grouped model trace', () => {
     assert.match(chat, /workflowApi\.generateStream/)
-    assert.match(chat, /交互日志/)
+    assert.match(chat, /useAgentConversationStore/)
+    assert.match(chat, /conversation-rail/)
+    assert.match(chat, /新对话/)
+    assert.match(chat, /再生成一份草稿/)
+    assert.match(chat, /模型交互/)
+    assert.match(chat, /round-block/)
     assert.match(chat, /result-pill/)
     assert.match(chat, /appendLog/)
-    assert.match(chat, /正在请求大模型/)
+    assert.match(chat, /llm_call/)
+    assert.match(chat, /nudge: '解答'/)
+    assert.doesNotMatch(chat, /催促/)
   })
 
   test('successful generation offers designer navigation without auto jump', () => {

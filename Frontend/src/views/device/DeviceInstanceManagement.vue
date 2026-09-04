@@ -68,7 +68,7 @@
       :instance="detailSource"
       :models="models"
       :model-options="modelOptions"
-      :instances="instances"
+      :instances="allInstances"
       :adapter-options="adapterOptions"
       :categories-map="categoriesMap"
       @saved="loadData"
@@ -105,6 +105,7 @@ const route = useRoute()
 const models = ref<DeviceModel[]>([])
 const modelOptions = ref<DeviceModel[]>([])
 const instances = ref<DeviceInstance[]>([])
+const allInstances = ref<DeviceInstance[]>([])
 const adapterOptions = ref<AdapterOption[]>([])
 const categories = ref<any[]>([])
 const categoriesMap = ref<Record<string, string>>({})
@@ -139,7 +140,7 @@ const selectedModelName = computed(() => {
 })
 
 const loadSidebarModels = async () => {
-  const data = await api.pageModels({ pageNo: 1, pageSize: 100 })
+  const data = await api.pageModels({ pageNo: 1, pageSize: 500 })
   if (data?.success) models.value = (data.data?.records || []).map(normalizeModel)
 }
 
@@ -158,6 +159,17 @@ const loadAdapters = async () => {
     adapterOptions.value = data?.success ? (data.data || []) : []
   } catch {
     adapterOptions.value = []
+  }
+}
+
+const loadAllInstances = async () => {
+  try {
+    const data = await api.listInstances()
+    if (data?.success) {
+      allInstances.value = (data.data || []).map(normalizeInstance)
+    }
+  } catch {
+    allInstances.value = []
   }
 }
 
@@ -196,7 +208,7 @@ const loadData = async () => {
       ;(catData.data || []).forEach((c: any) => { map[c.id] = c.categoryName })
       categoriesMap.value = map
     }
-    await Promise.all([loadSidebarModels(), loadModelOptions(), loadAdapters()])
+    await Promise.all([loadSidebarModels(), loadModelOptions(), loadAdapters(), loadAllInstances()])
     await loadInstances()
   } catch (err: any) {
     ElMessage.error(err.response?.data?.message || '加载设备数据失败')

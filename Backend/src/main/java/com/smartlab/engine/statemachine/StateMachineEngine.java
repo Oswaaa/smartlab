@@ -15,6 +15,7 @@ import com.smartlab.engine.statemachine.IntrinsicConstraintPlanRegistry.Compiled
 import com.smartlab.engine.statemachine.IntrinsicConstraintPlanRegistry.IntrinsicConstraintPlan;
 import com.smartlab.global.contract.ObservableObjectType;
 import com.smartlab.global.contract.SystemExecutionContract;
+import com.smartlab.global.event.DeviceInstanceDeletedEvent;
 import com.smartlab.global.event.DeviceInstanceRetiredEvent;
 import com.smartlab.global.protocol.ProtocolDictionaryService;
 import com.smartlab.global.util.JsonNodeSupport;
@@ -194,7 +195,20 @@ public class StateMachineEngine implements StateMachineCommandPort {
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void handleInstanceRetired(DeviceInstanceRetiredEvent event) {
         if (event != null && event.deviceInstanceId() != null) {
-            deviceRuntimes.remove(event.deviceInstanceId());
+            dropRuntime(event.deviceInstanceId());
+        }
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void handleInstanceDeleted(DeviceInstanceDeletedEvent event) {
+        if (event != null && event.deviceInstanceId() != null) {
+            dropRuntime(event.deviceInstanceId());
+        }
+    }
+
+    public void dropRuntime(Long instanceId) {
+        if (instanceId != null) {
+            deviceRuntimes.remove(instanceId);
         }
     }
 

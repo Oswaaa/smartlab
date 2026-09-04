@@ -15,5 +15,6 @@ public record WorkflowGenerateResponse(
         boolean published,
         Long flowModelId,
         List<String> trace,
-        List<AgentInteractionLog> logs) {
+        List<AgentInteractionLog> logs,
+        String summary) {
 }

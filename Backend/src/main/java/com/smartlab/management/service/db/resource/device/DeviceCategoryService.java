@@ -2,7 +2,9 @@ package com.smartlab.management.service.db.resource.device;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.smartlab.management.entity.resource.device.DeviceCategory;
+import com.smartlab.management.entity.resource.device.DeviceComponents;
 import com.smartlab.management.mapper.resource.device.DeviceCategoryMapper;
+import com.smartlab.management.mapper.resource.device.DeviceComponentsMapper;
 import com.smartlab.management.mapper.resource.device.DeviceModelsMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
@@ -22,11 +24,15 @@ public class DeviceCategoryService extends ManagementCrudService<DeviceCategory>
 
     private final DeviceCategoryMapper mapper;
     private final DeviceModelsMapper deviceModelsMapper;
+    private final DeviceComponentsMapper deviceComponentsMapper;
 
-    public DeviceCategoryService(DeviceCategoryMapper mapper, DeviceModelsMapper deviceModelsMapper) {
+    public DeviceCategoryService(DeviceCategoryMapper mapper,
+                                 DeviceModelsMapper deviceModelsMapper,
+                                 DeviceComponentsMapper deviceComponentsMapper) {
         super(mapper);
         this.mapper = mapper;
         this.deviceModelsMapper = deviceModelsMapper;
+        this.deviceComponentsMapper = deviceComponentsMapper;
     }
 
     @Override
@@ -59,6 +65,14 @@ public class DeviceCategoryService extends ManagementCrudService<DeviceCategory>
                 .eq(com.smartlab.management.entity.resource.device.DeviceModels::getCategoryId, categoryId)) > 0;
     }
 
+    public boolean hasComponents(Long categoryId) {
+        if (categoryId == null) {
+            return false;
+        }
+        return deviceComponentsMapper.selectCount(Wrappers.<DeviceComponents>lambdaQuery()
+                .eq(DeviceComponents::getCategoryId, categoryId)) > 0;
+    }
+
     public void requireLeafCategory(Long categoryId) {
         if (categoryId != null && hasChildren(categoryId)) {
             throw new IllegalArgumentException("设备模型只能挂在叶子类别下，请先选择最末级类别");
@@ -74,6 +88,9 @@ public class DeviceCategoryService extends ManagementCrudService<DeviceCategory>
         }
         if (hasModels(id)) {
             throw new IllegalStateException("该类别下仍有设备模型，不能删除");
+        }
+        if (hasComponents(id)) {
+            throw new IllegalStateException("该类别出现在模型的组件结构清单中，不能删除");
         }
         super.delete(id);
     }

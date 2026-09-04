@@ -51,6 +51,10 @@ class IntrinsicConstraintPlanRegistryTest {
         registry.handleInstanceRetired(new DeviceInstanceRetiredEvent(7L));
         assertEquals(0, registry.size());
         assertThrows(IllegalStateException.class, () -> registry.require(7L));
+
+        registry.handleInstanceSaved(new DeviceInstanceSavedEvent(7L, 9L, true));
+        registry.handleInstanceDeleted(new com.smartlab.global.event.DeviceInstanceDeletedEvent(7L));
+        assertEquals(0, registry.size());
     }
 
     private DeviceInstances instance() {

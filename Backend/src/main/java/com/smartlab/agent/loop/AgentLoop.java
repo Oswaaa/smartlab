@@ -11,10 +11,15 @@ import com.smartlab.agent.llm.LlmCompletion;
 import com.smartlab.agent.llm.LlmMessage;
 import com.smartlab.agent.llm.LlmToolCall;
 import com.smartlab.agent.llm.LlmToolSpec;
+import com.smartlab.agent.nudge.AgentConceptDictionary;
+import com.smartlab.agent.nudge.AgentNudge;
 import com.smartlab.agent.skill.WorkflowGenerationSkill;
 import com.smartlab.agent.tool.AgentTool;
+import com.smartlab.agent.tool.GetDeviceModelTool;
 import com.smartlab.agent.tool.ListDeviceCatalogTool;
+import com.smartlab.agent.tool.ListWorkflowCatalogTool;
 import com.smartlab.agent.tool.SaveDraftTool;
+import com.smartlab.agent.tool.SimulateWorkflowTool;
 import com.smartlab.agent.tool.ValidateWorkflowTool;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.workflow.WorkflowIssue;
@@ -36,13 +41,16 @@ public class AgentLoop {
     private final LlmClient llmClient;
     private final Map<String, AgentTool> tools;
     private final WorkflowGenerationSkill skill;
+    private final AgentConceptDictionary concepts;
     private final AgentProperties properties;
 
-    public AgentLoop(LlmClient llmClient, List<AgentTool> tools, WorkflowGenerationSkill skill, AgentProperties properties) {
+    public AgentLoop(LlmClient llmClient, List<AgentTool> tools, WorkflowGenerationSkill skill,
+                     AgentConceptDictionary concepts, AgentProperties properties) {
         this.llmClient = llmClient;
         this.tools = new LinkedHashMap<>();
         for (AgentTool tool : tools) this.tools.put(tool.name(), tool);
         this.skill = skill;
+        this.concepts = concepts == null ? new AgentConceptDictionary() : concepts;
         this.properties = properties;
     }
 
@@ -60,20 +68,19 @@ public class AgentLoop {
         messages.add(LlmMessage.system(system));
         messages.add(LlmMessage.user(prompt.trim()));
         session.log(0, "start", "开始生成",
-                "模型 " + properties.getModel() + " · 最多 " + Math.max(1, properties.getMaxRounds()) + " 轮",
+                properties.getModel() + " · 最多 " + Math.max(1, properties.getMaxRounds()) + " 轮",
                 jsonObject()
                         .put("model", properties.getModel())
-                        .put("baseUrl", properties.getBaseUrl())
+                        .put("maxRounds", Math.max(1, properties.getMaxRounds()))
                         .put("userPrompt", prompt.trim())
-                        .put("systemPrompt", system)
                         .toString());
         List<LlmToolSpec> specs = toolSpecs();
         int maxRounds = Math.max(1, properties.getMaxRounds());
 
         for (int round = 1; round <= maxRounds; round++) {
             LlmCompletion completion;
-            session.log(round, "llm_call", "正在请求大模型",
-                    "第 " + round + " 轮 · " + properties.getModel(),
+            session.log(round, "llm_call", "请求模型",
+                    properties.getModel(),
                     null);
             try {
                 completion = llmClient.complete(messages, specs);
@@ -82,34 +89,40 @@ public class AgentLoop {
                 session.log(round, "error", "调用大模型失败", message, null);
                 throw new AgentGenerateException(message, session.snapshot());
             }
-            session.log(round, "llm_reply", completion.hasToolCalls() ? "模型请求调用工具" : "模型返回文本",
+            session.log(round, "llm_reply", completion.hasToolCalls() ? "模型调用工具" : "模型返回文本",
                     summarizeCompletion(completion),
                     completionPayload(completion));
             if (completion.hasToolCalls()) {
                 messages.add(LlmMessage.assistant(completion.content(), completion.toolCalls()));
                 for (LlmToolCall call : completion.toolCalls()) {
-                    session.log(round, "tool_call", "调用 " + call.name(),
-                            call.name(),
-                            call.argumentsJson());
+                    session.log(round, "tool_call", call.name(),
+                            null,
+                            toolCallPayload(call));
                     JsonNode result = dispatch(call, session, round);
                     messages.add(LlmMessage.tool(call.id(), call.name(), result.toString()));
-                    session.log(round, "tool_result", "工具返回 " + call.name(),
-                            result.path("error").isTextual() ? result.path("error").asText() : "成功",
+                    session.log(round, "tool_result", call.name(),
+                            result.path("error").isTextual() ? result.path("error").asText()
+                                    : result.path("blocking").asBoolean(false) ? "有 blocking issue"
+                                    : "成功",
                             pretty(result));
                     if (session.savedResult != null) {
                         session.log(round, "done", "已保存草稿",
                                 "flowModelId=" + flowModelIdOf(session.savedResult),
                                 null);
-                        return toResponse(session.savedResult, session);
+                        String summary = writeFinalAnswer(session, messages, session.savedResult);
+                        return toResponse(session.savedResult, session, summary);
                     }
                 }
+                replaceWith(messages, compactHistory(messages));
                 continue;
             }
             String text = completion.content() == null ? "" : completion.content().trim();
             messages.add(LlmMessage.assistant(text, List.of()));
-            String nudge = "不要用散文结束。请按技能继续调用工具：先 list_device_catalog，再 validate_workflow，最后在无 blocking 时 save_draft。";
+            String nudge = AgentNudge.build(session.deviceCatalogFetched, session.workflowCatalogFetched,
+                    session.lastValidateClean, session.lastSimulateWalkable, text, concepts);
             messages.add(LlmMessage.user(nudge));
-            session.log(round, "nudge", "系统催促继续调用工具", nudge, null);
+            session.log(round, "nudge", "解答并继续", nudge, null);
+            replaceWith(messages, compactHistory(messages));
         }
 
         session.log(maxRounds, "error", "未保存草稿", "已达到最大轮次仍未保存草稿", null);
@@ -137,8 +150,10 @@ public class AgentLoop {
         try {
             JsonNode result = tool.execute(arguments);
             session.trace.add(name);
-            if (ListDeviceCatalogTool.NAME.equals(name) && !result.has("error")) session.catalogFetched = true;
+            if (ListDeviceCatalogTool.NAME.equals(name) && !result.has("error")) session.deviceCatalogFetched = true;
+            if (ListWorkflowCatalogTool.NAME.equals(name) && !result.has("error")) session.workflowCatalogFetched = true;
             if (ValidateWorkflowTool.NAME.equals(name)) session.recordValidate(result);
+            if (SimulateWorkflowTool.NAME.equals(name)) session.recordSimulate(result);
             if (SaveDraftTool.NAME.equals(name) && !result.path("error").isTextual()) {
                 session.savedResult = result;
             }
@@ -159,6 +174,126 @@ public class AgentLoop {
         return specs;
     }
 
+    private static void replaceWith(List<LlmMessage> messages, List<LlmMessage> compacted) {
+        messages.clear();
+        messages.addAll(compacted);
+    }
+
+    static List<LlmMessage> compactHistory(List<LlmMessage> messages) {
+        if (messages == null || messages.size() <= 2) {
+            return messages == null ? List.of() : List.copyOf(messages);
+        }
+        List<Turn> turns = turnsOf(messages.subList(2, messages.size()));
+        int lastDeviceCatalog = lastIndexWith(turns, ListDeviceCatalogTool.NAME);
+        int lastWorkflowCatalog = lastIndexWith(turns, ListWorkflowCatalogTool.NAME);
+        int lastValidate = lastIndexWith(turns, ValidateWorkflowTool.NAME);
+        int lastSimulate = lastIndexWith(turns, SimulateWorkflowTool.NAME);
+        int lastSave = lastIndexWith(turns, SaveDraftTool.NAME);
+        List<LlmMessage> kept = new ArrayList<>();
+        kept.add(messages.get(0));
+        kept.add(messages.get(1));
+        for (int index = 0; index < turns.size(); index++) {
+            Turn turn = turns.get(index);
+            boolean keep = turn.hasTool(GetDeviceModelTool.NAME)
+                    || (turn.hasTool(ListDeviceCatalogTool.NAME) && index == lastDeviceCatalog)
+                    || (turn.hasTool(ListWorkflowCatalogTool.NAME) && index == lastWorkflowCatalog)
+                    || (turn.hasTool(ValidateWorkflowTool.NAME) && index == lastValidate)
+                    || (turn.hasTool(SimulateWorkflowTool.NAME) && index == lastSimulate)
+                    || (turn.hasTool(SaveDraftTool.NAME) && index == lastSave)
+                    || turn.hasUnknownTools()
+                    || (turn.nudge && index == turns.size() - 1);
+            if (keep) kept.addAll(turn.messages);
+        }
+        return kept;
+    }
+
+    private static int lastIndexWith(List<Turn> turns, String toolName) {
+        int last = -1;
+        for (int index = 0; index < turns.size(); index++) {
+            if (turns.get(index).hasTool(toolName)) last = index;
+        }
+        return last;
+    }
+
+    private static List<Turn> turnsOf(List<LlmMessage> rest) {
+        List<Turn> turns = new ArrayList<>();
+        int index = 0;
+        while (index < rest.size()) {
+            LlmMessage message = rest.get(index);
+            if ("assistant".equals(message.role()) && message.toolCalls() != null && !message.toolCalls().isEmpty()) {
+                List<LlmMessage> group = new ArrayList<>();
+                group.add(message);
+                index++;
+                while (index < rest.size() && "tool".equals(rest.get(index).role())) {
+                    group.add(rest.get(index));
+                    index++;
+                }
+                turns.add(Turn.tools(group));
+                continue;
+            }
+            List<LlmMessage> group = new ArrayList<>();
+            group.add(message);
+            index++;
+            if ("assistant".equals(message.role()) && index < rest.size() && "user".equals(rest.get(index).role())) {
+                group.add(rest.get(index));
+                index++;
+                turns.add(Turn.nudge(group));
+                continue;
+            }
+            turns.add(Turn.other(group));
+        }
+        return turns;
+    }
+
+    private static final class Turn {
+        final List<LlmMessage> messages;
+        final boolean nudge;
+        private final List<String> toolNames;
+
+        private Turn(List<LlmMessage> messages, boolean nudge, List<String> toolNames) {
+            this.messages = messages;
+            this.nudge = nudge;
+            this.toolNames = toolNames;
+        }
+
+        static Turn tools(List<LlmMessage> messages) {
+            List<String> names = new ArrayList<>();
+            LlmMessage assistant = messages.get(0);
+            if (assistant.toolCalls() != null) {
+                for (LlmToolCall call : assistant.toolCalls()) {
+                    if (call != null && call.name() != null && !call.name().isBlank()) names.add(call.name());
+                }
+            }
+            return new Turn(messages, false, names);
+        }
+
+        static Turn nudge(List<LlmMessage> messages) {
+            return new Turn(messages, true, List.of());
+        }
+
+        static Turn other(List<LlmMessage> messages) {
+            return new Turn(messages, false, List.of());
+        }
+
+        boolean hasTool(String name) {
+            return toolNames.contains(name);
+        }
+
+        boolean hasUnknownTools() {
+            for (String name : toolNames) {
+                if (!ListDeviceCatalogTool.NAME.equals(name)
+                        && !ListWorkflowCatalogTool.NAME.equals(name)
+                        && !GetDeviceModelTool.NAME.equals(name)
+                        && !ValidateWorkflowTool.NAME.equals(name)
+                        && !SimulateWorkflowTool.NAME.equals(name)
+                        && !SaveDraftTool.NAME.equals(name)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+    }
+
     private JsonNode parseArguments(String json) {
         if (json == null || json.isBlank()) return JsonNodeSupport.objectNode();
         try {
@@ -173,7 +308,44 @@ public class AgentLoop {
         return JsonNodeSupport.objectNode().put("error", message);
     }
 
+    private String writeFinalAnswer(Session session, List<LlmMessage> messages, JsonNode saved) {
+        String fallback = fallbackSummary(saved);
+        messages.add(LlmMessage.user("草稿已保存。请用中文对用户做 2～5 句说明：流程名称、对照需求做了哪些步骤（如散热、温度判断、分段加热），以及草稿编号。"
+                + "不要输出节点、接口、JSON 或完整工作流定义。不要调用工具。"));
+        try {
+            session.log(0, "llm_call", "请求整理回答", properties.getModel(), null);
+            LlmCompletion completion = llmClient.complete(messages, List.of());
+            session.log(0, "llm_reply", "模型返回文本",
+                    summarizeCompletion(completion),
+                    completionPayload(completion));
+            String text = completion.content() == null ? "" : completion.content().trim();
+            if (text.isEmpty() || completion.hasToolCalls()) text = fallback;
+            session.log(0, "answer", "最终回答", text, null);
+            return text;
+        } catch (RuntimeException exception) {
+            session.log(0, "answer", "最终回答", fallback, null);
+            return fallback;
+        }
+    }
+
+    private static String fallbackSummary(JsonNode saved) {
+        String name = saved == null ? "" : saved.path("flowModelName").asText("");
+        if (name.isBlank() && saved != null) {
+            name = saved.path("definition").path("metadata").path("flowModelName").asText("");
+        }
+        Long id = flowModelIdOf(saved);
+        StringBuilder text = new StringBuilder("已按你的描述保存工作流草稿");
+        if (!name.isBlank()) text.append("「").append(name).append("」");
+        if (id != null) text.append(" #").append(id);
+        text.append("。可在流程设计器中打开核对步骤后发布，此处不展开完整模型。");
+        return text.toString();
+    }
+
     private WorkflowGenerateResponse toResponse(JsonNode result, Session session) {
+        return toResponse(result, session, null);
+    }
+
+    private WorkflowGenerateResponse toResponse(JsonNode result, Session session, String summary) {
         WorkflowModelDocument definition = null;
         if (result.path("definition").isObject()) {
             try {
@@ -209,7 +381,8 @@ public class AgentLoop {
                 result.path("published").asBoolean(false),
                 flowModelId,
                 List.copyOf(session.trace),
-                List.copyOf(session.logs));
+                List.copyOf(session.logs),
+                summary);
     }
 
     private static Long flowModelIdOf(JsonNode result) {
@@ -234,17 +407,29 @@ public class AgentLoop {
 
     private static String completionPayload(LlmCompletion completion) {
         ObjectNode node = jsonObject();
+        node.put("role", "assistant");
         node.put("content", completion.content() == null ? "" : completion.content());
-        ArrayNode calls = node.putArray("toolCalls");
+        ArrayNode calls = node.putArray("tool_calls");
         if (completion.toolCalls() != null) {
             for (LlmToolCall call : completion.toolCalls()) {
-                ObjectNode item = calls.addObject();
-                item.put("id", call.id());
-                item.put("name", call.name());
-                item.put("arguments", call.argumentsJson());
+                calls.add(toolCallNode(call));
             }
         }
         return pretty(node);
+    }
+
+    private static String toolCallPayload(LlmToolCall call) {
+        return pretty(toolCallNode(call));
+    }
+
+    private static ObjectNode toolCallNode(LlmToolCall call) {
+        ObjectNode item = jsonObject();
+        item.put("id", call.id() == null ? "" : call.id());
+        item.put("type", "function");
+        ObjectNode function = item.putObject("function");
+        function.put("name", call.name() == null ? "" : call.name());
+        function.put("arguments", call.argumentsJson() == null ? "{}" : call.argumentsJson());
+        return item;
     }
 
     private static String pretty(JsonNode node) {
@@ -257,8 +442,10 @@ public class AgentLoop {
     }
 
     private static final class Session {
-        boolean catalogFetched;
+        boolean deviceCatalogFetched;
+        boolean workflowCatalogFetched;
         Boolean lastValidateClean;
+        Boolean lastSimulateWalkable;
         JsonNode savedResult;
         final List<String> trace = new ArrayList<>();
         final List<AgentInteractionLog> logs = new ArrayList<>();
@@ -281,10 +468,16 @@ public class AgentLoop {
 
         void recordValidate(JsonNode result) {
             lastValidateClean = !result.path("blocking").asBoolean(false) && !hasBlockingIssues(result.path("issues"));
+            lastSimulateWalkable = null;
+        }
+
+        void recordSimulate(JsonNode result) {
+            lastSimulateWalkable = !result.path("error").isTextual() && result.path("walkable").asBoolean(false);
         }
 
         String saveBlockReason() {
-            if (!catalogFetched) return "保存前必须先成功调用 list_device_catalog";
+            if (!deviceCatalogFetched) return "保存前必须先成功调用 list_device_catalog";
+            if (!workflowCatalogFetched) return "保存前必须先成功调用 list_workflow_catalog";
             if (lastValidateClean == null) return "保存前必须先调用 validate_workflow";
             if (!lastValidateClean) return "validate_workflow 仍有 blocking issue，不能保存";
             return null;
@@ -292,7 +485,7 @@ public class AgentLoop {
 
         WorkflowGenerateResponse snapshot() {
             return new WorkflowGenerateResponse(null, null, null, null, List.of(), false, false, null,
-                    List.copyOf(trace), List.copyOf(logs));
+                    List.copyOf(trace), List.copyOf(logs), null);
         }
 
         private boolean hasBlockingIssues(JsonNode issues) {

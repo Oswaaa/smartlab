@@ -11,6 +11,7 @@ import com.smartlab.management.entity.constraint.ConstraintRule;
 import com.smartlab.management.entity.workflow.Task;
 import com.smartlab.management.service.db.constraint.ConstraintRuleService;
 import com.smartlab.management.service.db.constraint.TaskConstraintService;
+import com.smartlab.management.service.db.resource.adapter.VirtualLeaseService;
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
@@ -275,6 +276,95 @@ class EffectiveConstraintModelCompilerTest {
                 .map(item -> item.violationActions().get(0).path("deviceInstanceId").asLong())
                 .collect(java.util.stream.Collectors.toSet());
         assertEquals(Set.of(18L, 19L), stamped);
+    }
+
+    @Test
+    void modelWideRuleCoversVirtualSnapshotsTheSameAsPhysical() {
+        ConstraintRuleService globalRules = mock(ConstraintRuleService.class);
+        TaskConstraintService taskRules = mock(TaskConstraintService.class);
+        DeviceTwinSnapshotRegistry devices = mock(DeviceTwinSnapshotRegistry.class);
+        ConstraintRule modelWide = rule(5L, "全场上限", "temperature > limit", 500);
+        ((ObjectNode) modelWide.getBindings().path("temperature").path("source")).remove("deviceInstanceId");
+        Instant now = Instant.now();
+        DeviceTwinSnapshot physical = new DeviceTwinSnapshot(18L, 3L, JsonNodeSupport.objectNode(), "ONLINE",
+                now, now, 1, ObservationStatus.VALID, SnapshotOrigin.LIVE);
+        DeviceTwinSnapshot virtual = new DeviceTwinSnapshot(24L, 3L, JsonNodeSupport.objectNode(), "ONLINE",
+                now, now, 1, ObservationStatus.VALID, SnapshotOrigin.LIVE);
+        when(globalRules.list(Boolean.TRUE)).thenReturn(List.of(modelWide));
+        when(taskRules.activeTasks()).thenReturn(List.of());
+        when(devices.snapshotAll()).thenReturn(Map.of(18L, physical, 24L, virtual));
+
+        EffectiveConstraintModel result = new EffectiveConstraintModelCompiler(
+                globalRules, taskRules, devices).compileGlobal();
+
+        Set<Long> deviceIds = result.monitoringPlan().constraints().values().stream()
+                .map(RuntimeConstraint::deviceInstanceId)
+                .collect(java.util.stream.Collectors.toSet());
+        assertEquals(Set.of(18L, 24L), deviceIds);
+    }
+
+    @Test
+    void deviceLevelRuleInheritsOntoActiveVirtualInstances() {
+        ConstraintRuleService globalRules = mock(ConstraintRuleService.class);
+        TaskConstraintService taskRules = mock(TaskConstraintService.class);
+        DeviceTwinSnapshotRegistry devices = mock(DeviceTwinSnapshotRegistry.class);
+        VirtualLeaseService leases = mock(VirtualLeaseService.class);
+        ConstraintRule deviceRule = rule(9L, "反应釜上限", "temperature > limit", 80);
+        ObjectNode action = JsonNodeSupport.objectNode();
+        action.put("actionType", "DEVICE_CAPABILITY");
+        action.put("deviceModelId", 3);
+        action.put("deviceInstanceId", 18);
+        action.put("capabilityName", "cool");
+        deviceRule.setViolationActions(JsonNodeSupport.MAPPER.createArrayNode().add(action));
+        when(globalRules.list(Boolean.TRUE)).thenReturn(List.of(deviceRule));
+        when(taskRules.activeTasks()).thenReturn(List.of());
+        when(leases.listActiveVirtualInstanceIds(18L)).thenReturn(Set.of(24L));
+
+        EffectiveConstraintModelCompiler compiler = new EffectiveConstraintModelCompiler(globalRules, taskRules, devices);
+        compiler.setVirtualLeaseService(leases);
+        EffectiveConstraintModel result = compiler.compileGlobal();
+
+        Map<Long, RuntimeConstraint> byDevice = result.monitoringPlan().constraints().values().stream()
+                .collect(java.util.stream.Collectors.toMap(RuntimeConstraint::deviceInstanceId, item -> item));
+        assertEquals(Set.of(18L, 24L), byDevice.keySet());
+        assertEquals(18L, byDevice.get(18L).observableBindings().get("temperature").deviceInstanceId());
+        assertEquals(24L, byDevice.get(24L).observableBindings().get("temperature").deviceInstanceId());
+        assertEquals(18L, byDevice.get(18L).violationActions().get(0).path("deviceInstanceId").asLong());
+        assertEquals(24L, byDevice.get(24L).violationActions().get(0).path("deviceInstanceId").asLong());
+    }
+
+    @Test
+    void taskRuleInheritsOntoActiveVirtualInstances() {
+        ConstraintRuleService globalRules = mock(ConstraintRuleService.class);
+        TaskConstraintService taskRules = mock(TaskConstraintService.class);
+        DeviceTwinSnapshotRegistry devices = mock(DeviceTwinSnapshotRegistry.class);
+        VirtualLeaseService leases = mock(VirtualLeaseService.class);
+        ConstraintRule taskRule = rule(-1_024_000_001L, "任务温度上限", "temperature > limit", 70);
+        ObjectNode action = JsonNodeSupport.objectNode();
+        action.put("actionType", "DEVICE_CAPABILITY");
+        action.put("deviceModelId", 3);
+        action.put("deviceInstanceId", 18);
+        action.put("capabilityName", "cool");
+        taskRule.setViolationActions(JsonNodeSupport.MAPPER.createArrayNode().add(action));
+        Task task = task(1024L);
+        when(globalRules.list(Boolean.TRUE)).thenReturn(List.of());
+        when(taskRules.task(1024L)).thenReturn(task);
+        when(taskRules.rulesForTask(task)).thenReturn(List.of(taskRule));
+        when(leases.listActiveVirtualInstanceIds(18L)).thenReturn(Set.of(24L));
+
+        EffectiveConstraintModelCompiler compiler = new EffectiveConstraintModelCompiler(globalRules, taskRules, devices);
+        compiler.setVirtualLeaseService(leases);
+        EffectiveConstraintModel result = compiler.compileForTask(1024L);
+
+        Map<Long, RuntimeConstraint> byDevice = result.monitoringPlan().constraints().values().stream()
+                .collect(java.util.stream.Collectors.toMap(RuntimeConstraint::deviceInstanceId, item -> item));
+        assertEquals(Set.of(18L, 24L), byDevice.keySet());
+        assertEquals(1024L, byDevice.get(18L).taskId());
+        assertEquals(1024L, byDevice.get(24L).taskId());
+        assertEquals(18L, byDevice.get(18L).observableBindings().get("temperature").deviceInstanceId());
+        assertEquals(24L, byDevice.get(24L).observableBindings().get("temperature").deviceInstanceId());
+        assertEquals(18L, byDevice.get(18L).violationActions().get(0).path("deviceInstanceId").asLong());
+        assertEquals(24L, byDevice.get(24L).violationActions().get(0).path("deviceInstanceId").asLong());
     }
 
     @Test

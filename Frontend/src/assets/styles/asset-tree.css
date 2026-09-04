@@ -181,7 +181,9 @@
   color: #475569;
 }
 
-.sl-asset-tree .node-type-dataset {
+.sl-asset-tree .node-type-dataset,
+.sl-asset-tree .node-type-task-dataset,
+.sl-asset-tree .node-type-template-dataset {
   color: #15803d;
 }
 

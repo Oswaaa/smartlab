@@ -101,11 +101,11 @@
             <button type="button" class="btn-aliyun" :disabled="generating || draftSaving || publishSaving || copySaving" @click="generateFromPrompt">{{ generating ? '生成中' : '用自然语言生成' }}</button>
             <button v-if="form.id && !isEditing" type="button" class="btn-aliyun" @click="startEditing">编辑</button>
             <button v-if="canEdit" type="button" class="btn-aliyun" :disabled="!form.nodesDef.length" @click="clearCanvas">清空</button>
-            <button type="button" class="btn-aliyun" :disabled="validating || draftSaving || publishSaving || copySaving" @click="runValidation">{{ validating ? '校验中' : '校验' }}</button>
+            <button type="button" class="btn-aliyun" :disabled="checking || draftSaving || publishSaving || copySaving" @click="runValidation">{{ checking ? '校验中' : (checkCurrent ? '重新校验' : '校验') }}</button>
             <button type="button" class="btn-aliyun" :disabled="!form.name" @click="exportWorkflow">导出</button>
             <button type="button" class="btn-aliyun" :disabled="!canEdit || draftSaving || copySaving" @click="saveDraft">{{ draftSaving ? '保存中' : '保存草稿' }}</button>
             <button v-if="form.id" type="button" class="btn-aliyun" :disabled="copySaving || draftSaving || publishSaving" @click="saveAsNew">{{ copySaving ? '保存中' : '保存为新流程' }}</button>
-            <button type="button" class="btn-aliyun-cta" :disabled="!canPublish || publishSaving || copySaving" @click="publishAndValidate">{{ publishSaving ? '发布中' : '发布启用' }}</button>
+            <button type="button" class="btn-aliyun-cta" :disabled="!canPublish || publishSaving || copySaving || checking" @click="publishAndValidate">{{ publishSaving ? '发布中' : '发布启用' }}</button>
             <button
               v-if="form.id"
               type="button"
@@ -162,109 +162,159 @@
 
         <div class="inspector-scroll">
           <section class="overview-view">
-            <!-- 1. 基本配置 (平铺无卡片嵌套) -->
             <div class="overview-section">
-              <div class="section-title-row">
-                <strong>基本配置</strong>
-                <span>基础属性与描述</span>
+              <button type="button" class="fold-row" :class="{ open: basicConfigOpen }" @click="basicConfigOpen = !basicConfigOpen">
+                <span class="fold-left">
+                  <span class="fold-chev">▶</span>
+                  <strong>基本配置</strong>
+                </span>
+                <span class="fold-meta">{{ basicConfigOpen ? (canEdit ? '点文字编辑' : '只读') : (form.name || '未命名流程') }}</span>
+              </button>
+              <div v-if="basicConfigOpen" class="identity-block">
+                <input
+                  class="id-name"
+                  :value="form.name"
+                  :disabled="!canEdit"
+                  maxlength="80"
+                  placeholder="流程名称"
+                  @input="onNameInput"
+                />
+                <textarea
+                  class="id-desc"
+                  :value="form.description"
+                  :disabled="!canEdit"
+                  maxlength="500"
+                  rows="4"
+                  placeholder="添加描述，说明前置条件与适用范围"
+                  @input="onDescriptionInput"
+                />
               </div>
-              <el-form label-position="top" class="overview-form">
-                <el-form-item label="流程名称">
-                  <el-input
-                    v-model="form.name"
-                    :disabled="!canEdit"
-                    maxlength="80"
-                    placeholder="请输入流程名称"
-                    @input="markDirty"
-                  />
-                </el-form-item>
-                <el-form-item label="流程描述">
-                  <el-input
-                    v-model="form.description"
-                    :disabled="!canEdit"
-                    type="textarea"
-                    :rows="3"
-                    maxlength="500"
-                    placeholder="说明前置条件、执行目标和适用范围"
-                    @input="markDirty"
-                  />
-                </el-form-item>
-              </el-form>
             </div>
 
-            <!-- 3. 建模检查 (平铺无卡片嵌套) -->
-            <div class="overview-section">
-              <div class="section-title-row">
-                <strong>建模检查</strong>
-                <span v-if="validationSummary.errors" class="validation-badge-error">
-                  {{ validationSummary.errors }} 错误<template v-if="validationSummary.warnings"> · {{ validationSummary.warnings }} 提醒</template>
+            <div class="overview-section check-overview-section">
+              <button type="button" class="fold-row" :class="{ open: checkSectionOpen }" @click="checkSectionOpen = !checkSectionOpen">
+                <span class="fold-left">
+                  <span class="fold-chev">▶</span>
+                  <strong>流程完整性校验</strong>
                 </span>
-                <span v-else-if="validationSummary.warnings" class="validation-badge-warn">
-                  {{ validationSummary.warnings }} 提醒
+                <span class="fold-right">
+                  <span :class="checkBadgeClass">{{ checkBadgeText }}</span>
                 </span>
-                <span v-else class="validation-badge-pass">
-                  全部正常
-                </span>
-              </div>
+              </button>
 
-              <div v-if="workflowValidationIssues.length" class="validation-groups">
-                <section v-if="flowValidationIssues.length" class="validation-group">
-                  <div class="issue-group-heading">
-                    <strong>流程拓扑问题</strong>
-                    <span>{{ flowValidationIssues.length }} 项</span>
-                  </div>
-                  <div class="issue-list">
-                    <button
-                      v-for="issue in flowValidationIssues"
-                      :key="issue.code"
-                      :class="issue.severity"
-                      @click="focusValidationIssue(issue)"
-                    >
-                      <b>{{ issue.severity === 'error' ? '错误' : '提醒' }}</b>
-                      <span>
-                        <strong>{{ issue.title }}</strong>
-                        <small>{{ issue.detail }}</small>
-                      </span>
-                      <i>›</i>
-                    </button>
-                  </div>
-                </section>
-
-                <section v-if="nodeValidationIssues.length" class="validation-group">
-                  <div class="issue-group-heading">
-                    <strong>节点配置问题</strong>
-                    <span>{{ nodeValidationIssues.length }} 项</span>
-                  </div>
-                  <div class="issue-list">
-                    <button
-                      v-for="issue in nodeValidationIssues"
-                      :key="issue.code"
-                      :class="issue.severity"
-                      @click="focusValidationIssue(issue)"
-                    >
-                      <b>{{ issue.severity === 'error' ? '错误' : '提醒' }}</b>
-                      <span>
-                        <strong>{{ issue.title }}</strong>
-                        <small>{{ issue.detail }}</small>
-                      </span>
-                      <i>›</i>
-                    </button>
-                  </div>
-                </section>
-              </div>
-
-              <div v-else-if="lastPublishCheck?.executable" class="overview-empty-state">
-                <span class="pass-dot">●</span>
-                <div>
-                  <strong>发布检查通过</strong>
-                  <p>编译、设备模型与子流程引用检查均已通过</p>
+              <div v-if="checkSectionOpen" class="check-body">
+                <div v-if="checking" class="check-progress">
+                  <div class="check-spinner"></div>
+                  <div class="check-phase">{{ checkPhase === 'walk' ? '正在执行链路推演' : '正在流程定义校验' }}</div>
+                  <div class="check-item">{{ checkPhase === 'walk' ? '沿控制路径依次探测设备节点与执行连通性' : '静态编译节点、连线、变量绑定与模型能力引用' }}</div>
                 </div>
-              </div>
-              <div v-else class="overview-empty-state">
-                <span class="pass-dot">●</span>
-                <div>
-                  <strong>暂无即时建模问题</strong>
-                  <p>点击上方「校验」可核对设备模型与外部引用</p>
+
+                <div class="check-tree">
+                  <!-- 阶段一：流程定义校验 -->
+                  <div class="check-child" :class="{ 'is-running': checking && checkPhase !== 'walk' }">
+                    <button
+                      type="button"
+                      class="fold-row"
+                      :class="{ open: structureExpanded }"
+                      @click="toggleStructureFold"
+                    >
+                      <span class="fold-left">
+                        <span class="fold-chev">▶</span>
+                        <strong>流程定义校验</strong>
+                      </span>
+                      <span class="fold-right">
+                        <span :class="definitionBadgeClass">{{ definitionBadgeText }}</span>
+                      </span>
+                    </button>
+                    <div v-if="structureExpanded" class="check-panel">
+                      <div v-if="checking && checkPhase !== 'walk'" class="check-idle">正在校验流程定义…</div>
+                      <div v-else-if="!checkCurrent" class="check-idle">尚未校验，点击顶部「校验」开始验证</div>
+                      <template v-else>
+                        <div v-if="lastCheck?.definitionPassed" class="check-pass-list">
+                          <div class="check-pass-item"><span class="dot"></span>节点、控制连线与拓扑可编译</div>
+                          <div class="check-pass-item"><span class="dot"></span>端口已绑定内部变量，数据连线类型一致</div>
+                          <div class="check-pass-item"><span class="dot"></span>触发器条件引用本节点变量或系统标识</div>
+                          <div class="check-pass-item"><span class="dot"></span>设备模型、能力与子流程引用有效</div>
+                        </div>
+                        <div v-if="structureCheckIssues.length" class="issue-list">
+                          <button
+                            v-for="issue in structureCheckIssues"
+                            :key="issue.code"
+                            :class="issue.severity"
+                            @click="focusValidationIssue(issue)"
+                          >
+                            <b>{{ issue.severity === 'error' ? '错误' : '提醒' }}</b>
+                            <span>
+                              <strong>{{ issue.title }}</strong>
+                              <small>{{ issue.detail }}</small>
+                            </span>
+                            <i>›</i>
+                          </button>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+
+                  <!-- 阶段二：执行链路推演 -->
+                  <div class="check-child" :class="{ 'is-running': checking && checkPhase === 'walk' }">
+                    <button
+                      type="button"
+                      class="fold-row"
+                      :class="{ open: walkExpanded }"
+                      @click="toggleWalkFold"
+                    >
+                      <span class="fold-left">
+                        <span class="fold-chev">▶</span>
+                        <strong>执行链路推演</strong>
+                      </span>
+                      <span class="fold-right">
+                        <span :class="walkBadgeClass">{{ walkBadgeText }}</span>
+                      </span>
+                    </button>
+                    <div v-if="walkExpanded" class="check-panel">
+                      <div v-if="checking && checkPhase === 'walk'" class="check-idle">正在探测设备节点…</div>
+                      <div v-else-if="!checkCurrent" class="check-idle">尚未校验</div>
+                      <div v-else-if="!lastCheck?.definitionPassed" class="check-idle">流程定义校验通过后将自动开始执行推演。</div>
+                      <template v-else>
+                        <div v-if="lastSimulationReport?.issues?.length" class="issue-list">
+                          <button
+                            v-for="(issue, index) in lastSimulationReport.issues"
+                            :key="(issue.code || 'sim') + index"
+                            class="error"
+                            type="button"
+                            @click="focusSimulationIssue(issue)"
+                          >
+                            <b>停在节点</b>
+                            <span>
+                              <strong>{{ issue.code }}</strong>
+                              <small>{{ issue.message }}</small>
+                              <i v-if="issue.suggestion">{{ issue.suggestion }}</i>
+                            </span>
+                            <span class="sim-jump-arrow">›</span>
+                          </button>
+                        </div>
+                        <div v-if="simulationRoutes.length" class="sim-routes">
+                          <div class="sim-routes-title">推演路径明细 ({{ simulationRoutes.length }} 条)</div>
+                          <button
+                            v-for="(route, index) in simulationRoutes"
+                            :key="'route-' + index"
+                            type="button"
+                            class="sim-route"
+                            :class="{ failed: !lastCheck?.walkable }"
+                          >
+                            <span class="sim-route-label">{{ lastCheck?.walkable ? '路径 ' + (index + 1) : '阻断路径' }}</span>
+                            <span class="sim-route-nodes">
+                              <template v-for="(name, nodeIndex) in route" :key="name + nodeIndex">
+                                <span class="sim-node" :class="{ 'is-end': nodeIndex === route.length - 1 }" @click="openNodeDrawer(name)">{{ name }}</span>
+                                <span v-if="nodeIndex < route.length - 1" class="sim-arrow">→</span>
+                              </template>
+                            </span>
+                          </button>
+                        </div>
+                        <div v-else-if="lastCheck?.walkable" class="check-idle">执行链路推演已通过，所有可达路径与设备节点均已验证。</div>
+                      </template>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -322,7 +372,7 @@ import { invalidateFrontendContractMetadata, loadFrontendContractMetadata } from
 import { workflowApi } from '../../../services/workflowApi.js'
 import { adoptPreparedWorkflow, indexWorkflowIssues, toDesignerWorkflow, toWorkflowModelDocument, workflowModelName } from '../../../utils/workflowAuthoring.js'
 import { configureWorkflowNodeTemplates, createDeviceNode, createFunctionNode, createSubflowNode, rehydrateWorkflowNodes, removePort, validateNodeDefinition } from '../../../utils/workflowNodeDefinition.js'
-import { canDragWorkflowResource, canPublishWorkflow, clearWorkflowCanvas, workflowLibraryGroups, workflowNodeConnectionIssues, workflowStatusLabel, workflowSuccessorConflict, workflowUnconnectedPortIssues, workflowVersionLabel } from '../../../utils/workflowDesignerRules.js'
+import { canDragWorkflowResource, canPublishWorkflow, clearWorkflowCanvas, workflowCheckFingerprint, workflowLibraryGroups, workflowNodeConnectionIssues, workflowStatusLabel, workflowSuccessorConflict, workflowUnconnectedPortIssues, workflowVersionLabel } from '../../../utils/workflowDesignerRules.js'
 
 type NodeDefinition = Record<string, any>
 type FlowNode = Record<string, any>
@@ -339,9 +389,29 @@ const draftSaving = ref(false)
 const publishSaving = ref(false)
 const copySaving = ref(false)
 const validating = ref(false)
+const simulating = ref(false)
+const checkPhase = ref<'structure' | 'walk'>('structure')
+const lastCheck = ref<{
+  fingerprint: string
+  definitionPassed: boolean
+  issues: any[]
+  simulationReport: any | null
+  walkable: boolean
+} | null>(null)
+const basicConfigOpen = ref(true)
+const checkSectionOpen = ref(true)
+const structureExpanded = ref(false)
+const walkExpanded = ref(false)
+const lastSimulationReport = computed(() => lastCheck.value?.simulationReport || null)
+const simulationRoutes = computed(() => {
+  const report = lastSimulationReport.value
+  if (!report) return []
+  if (Array.isArray(report.paths) && report.paths.length) return report.paths
+  if (Array.isArray(report.pathTaken) && report.pathTaken.length) return [report.pathTaken]
+  return []
+})
 const deleteLoading = ref(false)
 const generating = ref(false)
-const lastPublishCheck = ref<{ executable: boolean } | null>(null)
 const resourceKeyword = ref('')
 const contractReady = ref(false)
 const contractError = ref('')
@@ -372,7 +442,58 @@ const palette = [
 const defaultEdgeOptions = { type:'workflow', markerEnd:'arrowclosed', style:{ stroke:'#7c93b8', strokeWidth:1.8 } }
 const edgeTypes = { workflow: markRaw(WorkflowCanvasEdge) }
 const canEdit = computed(() => contractReady.value && isEditing.value)
-const canPublish = computed(() => canPublishWorkflow(form, { contractReady: contractReady.value, isEditing: isEditing.value }))
+const checking = computed(() => validating.value || simulating.value)
+const checkFingerprint = computed(() => workflowCheckFingerprint(form))
+const checkCurrent = computed(() => !!lastCheck.value && lastCheck.value.fingerprint === checkFingerprint.value)
+const checkPassed = computed(() => !!lastCheck.value && checkCurrent.value && lastCheck.value.definitionPassed && lastCheck.value.walkable)
+const canPublish = computed(() => canPublishWorkflow(form, { contractReady: contractReady.value, isEditing: isEditing.value }) && checkPassed.value)
+const structureCheckIssues = computed<ValidationIssue[]>(() => {
+  if (!lastCheck.value) return []
+  return (lastCheck.value.issues || []).map((issue: any, index: number) => ({
+    code: `server-${issue.code || index}-${issue.path || issue.elementId || 'workflow'}`,
+    severity: issue.blocking ? 'error' : 'warning',
+    scope: nodeNameForIssue(issue) ? 'node' : 'flow',
+    title: serverIssueTitle(issue),
+    detail: [issue.message, issue.suggestion].filter(Boolean).join('。'),
+    nodeName: nodeNameForIssue(issue),
+    path: issue.path,
+  }))
+})
+const checkBadgeText = computed(() => {
+  if (checking.value) return '校验中'
+  if (!checkCurrent.value) return '未校验'
+  if (!lastCheck.value?.definitionPassed || !lastCheck.value?.walkable) return '未通过'
+  return '已通过'
+})
+const checkBadgeClass = computed(() => {
+  if (checking.value) return 'validation-badge-run'
+  if (!checkCurrent.value) return 'validation-badge-idle'
+  if (!lastCheck.value?.definitionPassed || !lastCheck.value?.walkable) return 'validation-badge-error'
+  return 'validation-badge-pass'
+})
+const definitionBadgeText = computed(() => {
+  if (checking.value && checkPhase.value !== 'walk') return '校验中'
+  if (checking.value && checkPhase.value === 'walk') return '已通过'
+  if (!checkCurrent.value) return '未开始'
+  return lastCheck.value?.definitionPassed ? '已通过' : '未通过'
+})
+const definitionBadgeClass = computed(() => {
+  if (checking.value && checkPhase.value !== 'walk') return 'validation-badge-run'
+  if (checking.value && checkPhase.value === 'walk') return 'validation-badge-pass'
+  if (!checkCurrent.value) return 'validation-badge-idle'
+  return lastCheck.value?.definitionPassed ? 'validation-badge-pass' : 'validation-badge-error'
+})
+const walkBadgeText = computed(() => {
+  if (checking.value && checkPhase.value !== 'walk') return '等待中'
+  if (checking.value && checkPhase.value === 'walk') return '推演中'
+  if (!checkCurrent.value || !lastCheck.value?.definitionPassed) return '未开始'
+  return lastCheck.value.walkable ? '已通过' : '未通过'
+})
+const walkBadgeClass = computed(() => {
+  if (checking.value && checkPhase.value === 'walk') return 'validation-badge-run'
+  if (!checkCurrent.value || !lastCheck.value?.definitionPassed) return 'validation-badge-idle'
+  return lastCheck.value.walkable ? 'validation-badge-pass' : 'validation-badge-error'
+})
 
 const selectedNode = computed(() => nodeByName(selectedNodeName.value))
 const selectedDeviceModel = computed(() => selectedNode.value?.nodeType === 'DEV_NODE' ? modelById(selectedNode.value.deviceModelId) : null)
@@ -510,11 +631,26 @@ function newDraftKey() {
   return 'draft-'+Date.now()+'-'+Math.random().toString(36).slice(2, 8)
 }
 
-function markDirty() {
+function markDirty(options: { semantic?: boolean } = {}) {
   if (!canEdit.value) return
   dirty.value = true
-  setWorkflowIssues()
-  lastPublishCheck.value = null
+  if (options.semantic !== false) setWorkflowIssues()
+}
+
+function onNameInput(event: Event) {
+  form.name = (event.target as HTMLInputElement).value
+  markDirty()
+}
+
+function onDescriptionInput(event: Event) {
+  form.description = (event.target as HTMLTextAreaElement).value
+  markDirty({ semantic: false })
+}
+
+function clearCheck() {
+  lastCheck.value = null
+  structureExpanded.value = false
+  walkExpanded.value = false
 }
 
 function startEditing() { isEditing.value = true }
@@ -673,30 +809,113 @@ function stripNodeName(title = '', nodeName = '') {
 
 async function runValidation() {
   closeElementDrawer()
-  if (validating.value) return
+  if (checking.value) return
   validating.value = true
+  simulating.value = false
+  checkPhase.value = 'structure'
+  checkSectionOpen.value = true
+  structureExpanded.value = false
+  walkExpanded.value = false
+  const fingerprint = workflowCheckFingerprint(form)
+  let definitionIssues: any[] = []
   try {
     const payload = toWorkflowModelDocument(form)
     const response = await workflowApi.validate(payload)
     if (!response.data?.success) throw Error(response.data?.message || '校验失败')
     const prepared = response.data.data
-    setWorkflowIssues(prepared.issues || [])
-    lastPublishCheck.value = { executable: !!prepared.executable }
-    if (prepared.executable) ElMessage.success('发布检查通过')
-    else {
-      const blocking = (prepared.issues || []).filter((issue:any) => issue.blocking).length
-      ElMessage.error(blocking ? `发布检查未通过，有 ${blocking} 个阻断问题` : '发布检查未通过，请按右侧清单处理')
+    definitionIssues = prepared.issues || []
+    setWorkflowIssues(definitionIssues)
+    const definitionPassed = !!prepared.executable
+    if (!definitionPassed) {
+      lastCheck.value = {
+        fingerprint,
+        definitionPassed: false,
+        issues: definitionIssues,
+        simulationReport: null,
+        walkable: false,
+      }
+      structureExpanded.value = true
+      const blocking = definitionIssues.filter((issue:any) => issue.blocking).length
+      ElMessage.error(blocking ? `流程定义校验未通过，有 ${blocking} 个阻断问题` : '流程定义校验未通过，请按右侧清单处理')
+      return
     }
+
+    // 静态定义校验通过：立即写入 lastCheck 状态，以便在推演进行中时第一阶段面板展示通过清单与已通过徽标
+    lastCheck.value = {
+      fingerprint,
+      definitionPassed: true,
+      issues: definitionIssues,
+      simulationReport: null,
+      walkable: false,
+    }
+
+    validating.value = false
+    simulating.value = true
+    checkPhase.value = 'walk'
+    const simResponse = await workflowApi.simulate({
+      flowModelId: form.id || undefined,
+      document: payload,
+    })
+    if (!simResponse.data?.success) throw Error(simResponse.data?.message || '执行链路推演失败')
+    const report = simResponse.data.data
+    lastCheck.value = {
+      fingerprint,
+      definitionPassed: true,
+      issues: definitionIssues,
+      simulationReport: report,
+      walkable: !!report?.walkable,
+    }
+    walkExpanded.value = !report?.walkable
+    if (report?.walkable) ElMessage.success('校验通过：流程定义与执行推演均已通过')
+    else ElMessage.error(report?.issues?.[0]?.message || '执行链路推演未通过')
   } catch (error:any) {
+    if (checkPhase.value === 'walk') {
+      lastCheck.value = {
+        fingerprint,
+        definitionPassed: true,
+        issues: definitionIssues,
+        simulationReport: {
+          walkable: false,
+          issues: [{ code: 'SIM_FAILED', message: error.message || '执行链路推演失败' }],
+        },
+        walkable: false,
+      }
+      walkExpanded.value = true
+    }
     ElMessage.error(error.message || '校验失败')
   } finally {
     validating.value = false
+    simulating.value = false
   }
+}
+
+function toggleStructureFold() {
+  structureExpanded.value = !structureExpanded.value
+}
+
+function toggleWalkFold() {
+  walkExpanded.value = !walkExpanded.value
+}
+
+function focusSimulationIssue(issue: any) {
+  const nodeId = issue?.elementId == null ? '' : String(issue.elementId)
+  const byRef = form.nodesDef.find((node: any) =>
+    String(node.nodeIdRef ?? node.nodeId ?? '') === nodeId)
+  if (byRef?.name && nodeByName(byRef.name)) {
+    openNodeDrawer(byRef.name)
+    return
+  }
+  const fromMessage = String(issue?.message || '').split(':')[0].trim()
+  if (fromMessage && nodeByName(fromMessage)) {
+    openNodeDrawer(fromMessage)
+    return
+  }
+  ElMessage.info(issue?.suggestion || issue?.message || '根据错误修复流程后重试')
 }
 
 function focusValidationIssue(issue:ValidationIssue) {
   if (issue.scope === 'node' && issue.nodeName && nodeByName(issue.nodeName)) openNodeDrawer(issue.nodeName)
-  else if (issue.code === 'flow-name') ElMessage.info('请在右侧“流程基本配置”中填写流程名称')
+  else if (issue.code === 'flow-name') ElMessage.info('请在右侧“基本配置”中填写流程名称')
   else ElMessage.info(issue.detail)
 }
 
@@ -799,7 +1018,7 @@ async function create() {
   draftLayoutKey.value = newDraftKey()
   openedWorkflowId.value = null
   setWorkflowIssues()
-  lastPublishCheck.value = null
+  clearCheck()
   reset(empty())
   isEditing.value = true
 }
@@ -1272,7 +1491,7 @@ async function saveAsNew() {
     const definition = adoptPreparedWorkflow(prepared)
     if (!Array.isArray(definition?.nodesDef)) throw Error('服务端没有返回规范化流程定义')
     setWorkflowIssues(prepared.issues || [])
-    lastPublishCheck.value = null
+    clearCheck()
     isEditing.value = true
     reset(definition, currentLayout)
     persistLayout()
@@ -1288,7 +1507,10 @@ async function saveAsNew() {
 
 
 async function publishAndValidate() {
-  if (!canPublish.value) return ElMessage.warning('请先点击编辑')
+  if (!canPublishWorkflow(form, { contractReady: contractReady.value, isEditing: isEditing.value })) {
+    return ElMessage.warning('请先点击编辑')
+  }
+  if (!checkPassed.value) return ElMessage.warning('请先完成校验')
   publishSaving.value = true
   const previousLayoutKey = currentLayoutKey()
   const currentLayout = serializeLayout(flowNodes.value)
@@ -1303,7 +1525,6 @@ async function publishAndValidate() {
     const definition = adoptPreparedWorkflow(prepared)
     if (!Array.isArray(definition?.nodesDef)) throw Error('服务端没有返回规范化流程定义')
     setWorkflowIssues(prepared.issues || [])
-    lastPublishCheck.value = { executable: !!prepared.executable }
     if (prepared.published) {
       reset(definition, currentLayout)
       persistLayout()
@@ -1332,7 +1553,7 @@ async function generateFromPrompt() {
   if (!await confirmDiscardChanges()) return
   let prompt = ''
   try {
-    const result = await ElMessageBox.prompt('用自然语言描述实验流程。系统会查设备目录、生成模型文件并保存为草稿，随后在本页打开供你确认。', '用自然语言生成', {
+    const result = await ElMessageBox.prompt('保存为草稿，不发布。', '用自然语言生成', {
       confirmButtonText: '生成草稿',
       cancelButtonText: '取消',
       inputType: 'textarea',
@@ -1351,7 +1572,7 @@ async function generateFromPrompt() {
     const definition = adoptPreparedWorkflow(prepared)
     if (!definition.id) throw Error('生成成功但未返回草稿 ID')
     setWorkflowIssues(prepared.issues || [])
-    lastPublishCheck.value = prepared
+    clearCheck()
     reset(definition)
     isEditing.value = false
     await loadList()
@@ -1392,7 +1613,7 @@ async function loadWorkflow(id:number | null) {
     if (!response.data?.success) throw Error(response.data?.message || '加载失败')
     const workflow = response.data.data
     setWorkflowIssues()
-    lastPublishCheck.value = null
+    clearCheck()
     reset(workflow)
     isEditing.value = false
   } catch (error:any) {
@@ -2026,6 +2247,287 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
   font-size: 11px;
 }
 
+.fold-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--sl-border-subtle, #f1f5f9);
+  background: #ffffff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fold-row:hover {
+  background: #f8fafc;
+}
+
+.fold-row.locked {
+  cursor: default;
+}
+
+.fold-row.locked:hover {
+  background: #ffffff;
+}
+
+.fold-left,
+.fold-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.fold-right {
+  flex: none;
+}
+
+.fold-chev {
+  display: inline-block;
+  width: 12px;
+  color: #94a3b8;
+  font-size: 10px;
+  transition: transform 0.15s;
+}
+
+.fold-row.open .fold-chev {
+  transform: rotate(90deg);
+}
+
+.fold-row.locked .fold-chev {
+  color: #e2e8f0;
+}
+
+.fold-row strong {
+  color: var(--sl-text-heading, #0f172a);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.fold-meta {
+  color: var(--sl-text-secondary, #64748b);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.identity-block {
+  padding: 8px 12px 14px;
+}
+
+.id-name,
+.id-desc {
+  width: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  font-family: inherit;
+  border-radius: 4px;
+}
+
+.id-name {
+  font-size: 16px;
+  font-weight: 650;
+  color: var(--sl-text-heading, #0f172a);
+  line-height: 1.35;
+  padding: 2px 4px;
+  margin: 0 -4px;
+}
+
+.id-desc {
+  resize: none;
+  font-size: 12.5px;
+  color: var(--sl-text-secondary, #64748b);
+  line-height: 1.5;
+  padding: 4px 4px 0;
+  margin: 2px -4px 0;
+  min-height: 76px;
+}
+
+.id-name:hover,
+.id-name:focus,
+.id-desc:hover,
+.id-desc:focus {
+  background: #f8fafc;
+}
+
+.id-name:focus,
+.id-desc:focus {
+  box-shadow: inset 0 0 0 1px #cbd5e1;
+}
+
+.id-name:disabled,
+.id-desc:disabled {
+  cursor: default;
+  background: transparent;
+}
+
+.id-name:disabled:hover,
+.id-desc:disabled:hover {
+  background: transparent;
+}
+
+.id-name::placeholder,
+.id-desc::placeholder {
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.check-progress {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 16px 10px;
+  gap: 8px;
+  background: #ffffff;
+  border: 1px solid var(--sl-border-base, #e2e8f0);
+  border-radius: var(--sl-radius-md, 8px);
+  margin: 6px 12px 8px;
+}
+
+.check-spinner {
+  width: 26px;
+  height: 26px;
+  border: 2.5px solid #dbeafe;
+  border-top-color: var(--sl-primary, #2563eb);
+  border-radius: 50%;
+  animation: check-spin 0.7s linear infinite;
+}
+
+@keyframes check-spin {
+  to { transform: rotate(360deg); }
+}
+
+.check-phase {
+  font-size: 13px;
+  font-weight: 650;
+  color: var(--sl-text-heading, #0f172a);
+}
+
+.check-item {
+  font-size: 12px;
+  color: var(--sl-text-secondary, #64748b);
+  text-align: center;
+  line-height: 1.4;
+}
+
+.check-idle {
+  padding: 12px 14px;
+  font-size: 12px;
+  color: var(--sl-text-secondary, #64748b);
+  line-height: 1.5;
+  text-align: center;
+}
+
+.check-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.check-tree {
+  margin: 6px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.check-child {
+  background: #ffffff;
+  border: 1px solid var(--sl-border-base, #e2e8f0);
+  border-radius: var(--sl-radius-md, 8px);
+  overflow: hidden;
+  transition: var(--sl-ease-smooth, all 0.18s ease);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+}
+
+.check-child:hover {
+  border-color: #cbd5e1;
+}
+
+.check-child.is-running {
+  border-color: #93c5fd;
+  box-shadow: 0 0 0 1px #bfdbfe;
+}
+
+.check-child .fold-row {
+  padding: 9px 12px;
+  background: #ffffff;
+  border-bottom: 0;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.check-child .fold-row.open {
+  background: #ffffff;
+  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+}
+
+.check-child .fold-row:hover {
+  background: #f8fafc;
+}
+
+.check-child .fold-row strong {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--sl-text-heading, #0f172a);
+}
+
+.check-child .check-panel {
+  background: #ffffff;
+  padding: 4px 0 6px;
+}
+
+.check-pass-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 12px 10px;
+}
+
+.check-pass-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--sl-success, #16a34a);
+  line-height: 1.5;
+}
+
+.check-pass-item .dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--sl-success, #16a34a);
+  flex-shrink: 0;
+}
+
+.check-panel {
+  padding: 0 0 8px;
+}
+
+.validation-badge-idle {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #64748b;
+  background: #f1f5f9;
+  border: 1px solid var(--sl-border-base, #e2e8f0);
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.validation-badge-run {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--sl-primary, #2563eb);
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
 .overview-form {
   padding: 10px 12px 2px;
 }
@@ -2057,7 +2559,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
   background: var(--sl-danger-light, #fef2f2);
   border: 1px solid #fecaca;
   padding: 1px 6px;
-  border-radius: 3px;
+  border-radius: 4px;
 }
 
 .validation-badge-warn {
@@ -2067,7 +2569,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
   background: var(--sl-warning-light, #fffbeb);
   border: 1px solid #fed7aa;
   padding: 1px 6px;
-  border-radius: 3px;
+  border-radius: 4px;
 }
 
 .validation-badge-pass {
@@ -2077,7 +2579,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
   background: #f0fdf4;
   border: 1px solid #bbf7d0;
   padding: 1px 6px;
-  border-radius: 3px;
+  border-radius: 4px;
 }
 
 .overview-empty-state {
@@ -2107,6 +2609,129 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
   font-size: 11px;
   color: var(--sl-text-secondary, #64748b);
   line-height: 1.4;
+}
+
+.sim-report {
+  margin-top: 12px;
+  border: 1px solid var(--sl-border-base, #e2e8f0);
+  border-radius: 6px;
+  background: #fff;
+  overflow: hidden;
+}
+
+.sim-hint,
+.sim-ok {
+  margin: 8px 12px;
+  color: var(--sl-text-secondary, #64748b);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.sim-ok {
+  color: var(--sl-success, #16a34a);
+}
+
+.sim-routes {
+  display: grid;
+  gap: 8px;
+  padding: 8px 10px 10px;
+}
+
+.sim-routes-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--sl-text-secondary, #64748b);
+  padding: 0 2px;
+}
+
+.sim-route {
+  display: grid;
+  gap: 6px;
+  width: 100%;
+  text-align: left;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #ffffff;
+  padding: 8px 10px;
+  cursor: default;
+  transition: all 0.15s ease;
+}
+
+.sim-route:hover {
+  background: #f8fafc;
+  border-color: #cbd5e1;
+}
+
+.sim-route.failed {
+  background: #fff8f8;
+  border-color: #fecaca;
+}
+
+.sim-route-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--sl-text-secondary, #64748b);
+}
+
+.sim-route.failed .sim-route-label {
+  color: var(--sl-danger, #dc2626);
+}
+
+.sim-route-nodes {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+
+.sim-node {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  padding: 2px 9px;
+  border-radius: 999px;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  color: var(--sl-text-heading, #0f172a);
+  font-size: 11.5px;
+  line-height: 18px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.sim-node:hover {
+  border-color: #3b82f6;
+  color: #1d4ed8;
+  background: #eff6ff;
+  box-shadow: 0 1px 2px rgba(37, 99, 235, 0.12);
+}
+
+.sim-node.is-end {
+  background: #f0fdf4;
+  border-color: #86efac;
+  color: #15803d;
+  font-weight: 600;
+}
+
+.sim-arrow {
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.sim-jump-arrow {
+  color: #dc2626;
+  font-size: 14px;
+  font-weight: 600;
+  align-self: center;
+}
+
+.sim-path {
+  margin: 8px 12px 8px;
+  color: var(--sl-text-secondary, #64748b);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .validation-groups {

@@ -1,0 +1,846 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartLab 2.0 · 流程编排助手 UI 效果图</title>
+  <style>
+    :root {
+      --sl-primary: #2563eb;
+      --sl-primary-hover: #1d4ed8;
+      --sl-primary-active: #1e40af;
+      --sl-primary-light: #eff6ff;
+      --sl-primary-border: #bfdbfe;
+      --sl-success: #16a34a;
+      --sl-success-light: #f0fdf4;
+      --sl-success-border: #bbf7d0;
+      --sl-danger: #dc2626;
+      --sl-danger-light: #fef2f2;
+      --sl-danger-border: #fecaca;
+      --sl-warning: #d97706;
+      --sl-warning-light: #fffbeb;
+      --sl-warning-border: #fde68a;
+      --sl-text-heading: #0f172a;
+      --sl-text-body: #334155;
+      --sl-text-secondary: #64748b;
+      --sl-text-disabled: #94a3b8;
+      --sl-bg-page: #f8fafc;
+      --sl-bg-surface: #ffffff;
+      --sl-bg-hover: #f1f5f9;
+      --sl-bg-active: #eff6ff;
+      --sl-border-base: #e2e8f0;
+      --sl-border-input: #cbd5e1;
+      --sl-border-subtle: #f1f5f9;
+      --sl-radius-sm: 6px;
+      --sl-radius-md: 8px;
+      --sl-radius-lg: 10px;
+      --sl-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --sl-mono: "JetBrains Mono", "Cascadia Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sl-ease: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font-family: var(--sl-font);
+      background: #0b1120;
+      color: var(--sl-text-body);
+      min-height: 100vh;
+    }
+
+    /* —— 效果图外壳（非产品 UI） —— */
+    .mock-shell {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+    .mock-bar {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 6px 16px;
+      background: #1e293b;
+      border-bottom: 2px solid var(--sl-primary);
+      color: #e2e8f0;
+    }
+    .mock-brand { display: flex; align-items: center; gap: 10px; }
+    .mock-badge {
+      background: var(--sl-primary);
+      color: #fff;
+      font-size: 10.5px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .mock-brand strong { font-size: 13px; font-weight: 700; color: #f8fafc; }
+    .mock-brand span { font-size: 12px; color: #94a3b8; }
+    .state-tabs {
+      display: flex;
+      gap: 4px;
+      padding: 3px;
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 8px;
+    }
+    .state-tabs button {
+      height: 26px;
+      padding: 0 12px;
+      border: 0;
+      background: transparent;
+      color: #94a3b8;
+      font-size: 12px;
+      font-weight: 600;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: var(--sl-ease);
+    }
+    .state-tabs button:hover { color: #e2e8f0; background: rgba(255,255,255,0.06); }
+    .state-tabs button.is-on {
+      background: var(--sl-primary);
+      color: #fff;
+    }
+    .mock-note {
+      font-size: 11.5px;
+      color: #64748b;
+      max-width: 360px;
+      text-align: right;
+      line-height: 1.45;
+    }
+
+    /* —— 假系统框：石墨顶栏 + 锁屏工作台 —— */
+    .app-frame {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--sl-bg-page);
+    }
+    .top-navbar {
+      height: 50px;
+      min-height: 50px;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      background: #0f172a;
+      border-bottom: 1px solid #1e293b;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.12);
+      flex-shrink: 0;
+    }
+    .brand-mark {
+      width: 30px; height: 30px;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(37,99,235,0.15);
+      border: 1px solid rgba(37,99,235,0.3);
+      border-radius: 6px;
+      margin-right: 24px;
+    }
+    .nav-item {
+      height: 50px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 0 14px;
+      font-size: 13px;
+      font-weight: 500;
+      color: rgba(255,255,255,0.72);
+      border-bottom: 2.5px solid transparent;
+    }
+    .nav-item.is-active {
+      color: #fff;
+      border-bottom-color: var(--sl-primary);
+      background: rgba(255,255,255,0.09);
+    }
+    .nav-right { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+    .info-chip {
+      display: flex; align-items: center; gap: 5px;
+      color: rgba(255,255,255,0.6);
+      font-size: 12px;
+      padding: 3px 9px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 5px;
+    }
+    .info-chip .mono { font-family: var(--sl-mono); letter-spacing: 0.04em; }
+
+    .workspace {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 240px minmax(0, 1fr);
+      background: var(--sl-bg-surface);
+      overflow: hidden;
+    }
+
+    /* —— 左侧会话轨：资产树语汇 —— */
+    .rail {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      background: #fff;
+      border-right: 1px solid var(--sl-border-base);
+    }
+    .rail-actions {
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      border-bottom: 1px solid var(--sl-border-base);
+    }
+    .btn-aliyun, .btn-cta, .btn-primary, .btn-link {
+      display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+      border-radius: var(--sl-radius-sm);
+      cursor: pointer;
+      transition: var(--sl-ease);
+      font-family: inherit;
+    }
+    .btn-aliyun {
+      height: 28px;
+      width: 100%;
+      background: #fff;
+      border: 1px solid var(--sl-border-input);
+      color: var(--sl-text-heading);
+      font-size: 12.5px;
+    }
+    .btn-aliyun:hover { background: var(--sl-bg-hover); transform: translateY(-1px); }
+    .btn-cta {
+      height: 26px;
+      width: 100%;
+      background: #fff;
+      border: 1px solid var(--sl-primary);
+      color: var(--sl-primary);
+      font-size: 12px;
+      font-weight: 500;
+    }
+    .btn-cta:hover {
+      background: var(--sl-primary);
+      color: #fff;
+      transform: translateY(-1px);
+      box-shadow: 0 2px 6px rgba(37,99,235,0.2);
+    }
+    .btn-primary {
+      height: 28px;
+      padding: 0 12px;
+      background: var(--sl-primary);
+      border: 1px solid var(--sl-primary);
+      color: #fff;
+      font-size: 12.5px;
+      font-weight: 500;
+      box-shadow: 0 1px 2px rgba(37,99,235,0.2);
+    }
+    .btn-primary:hover {
+      background: var(--sl-primary-hover);
+      transform: translateY(-1px);
+      box-shadow: 0 3px 6px rgba(37,99,235,0.25);
+    }
+    .btn-primary:disabled { background: #e2e8f0; border-color: #e2e8f0; color: #94a3b8; box-shadow: none; transform: none; cursor: not-allowed; }
+    .btn-link {
+      background: none; border: 0; color: var(--sl-primary);
+      font-size: 12px; font-weight: 500; padding: 0; height: auto;
+    }
+    .btn-link:hover { text-decoration: underline; }
+
+    .rail-list { flex: 1; min-height: 0; overflow: auto; padding: 8px; }
+    .rail-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--sl-text-secondary);
+      padding: 4px 8px 6px;
+    }
+    .conv {
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: var(--sl-radius-sm);
+      padding: 6px 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      cursor: pointer;
+      transition: var(--sl-ease);
+      margin-bottom: 2px;
+    }
+    .conv:hover { background: var(--sl-bg-hover); }
+    .conv.is-active {
+      background: var(--sl-bg-active);
+      border-color: var(--sl-primary-border);
+    }
+    .conv-title {
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--sl-text-heading);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .conv.is-active .conv-title { color: var(--sl-primary); font-weight: 600; }
+    .conv-meta {
+      display: flex; align-items: center; justify-content: space-between;
+      font-family: var(--sl-mono);
+      font-size: 10.5px;
+      color: var(--sl-text-disabled);
+    }
+    .dot {
+      width: 6px; height: 6px; border-radius: 50%;
+      display: inline-block; margin-right: 5px; vertical-align: 1px;
+    }
+    .dot.idle { background: #cbd5e1; }
+    .dot.run { background: var(--sl-warning); animation: pulse 1.2s ease-in-out infinite; }
+    .dot.ok { background: var(--sl-success); }
+
+    /* —— 主舞台 —— */
+    .stage {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+      background: #fff;
+    }
+    .stage-head {
+      height: 40px;
+      padding: 0 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid var(--sl-border-base);
+      flex-shrink: 0;
+    }
+    .stage-title {
+      display: flex; align-items: center; gap: 10px;
+      font-size: 13px; font-weight: 600; color: var(--sl-text-heading);
+    }
+    .round-ticks { display: flex; gap: 3px; }
+    .tick {
+      width: 7px; height: 8px;
+      background: var(--sl-border-base);
+      border-radius: 1px;
+    }
+    .tick.on { background: var(--sl-primary); }
+    .tick.live { background: var(--sl-warning); animation: pulse 1s ease-in-out infinite; }
+    .stage-meta { display: flex; align-items: center; gap: 12px; }
+    .pill {
+      font-size: 11px; font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid var(--sl-border-base);
+      color: var(--sl-text-secondary);
+      background: var(--sl-bg-page);
+      display: inline-flex; align-items: center; gap: 6px;
+    }
+    .pill.run { color: var(--sl-warning); background: var(--sl-warning-light); border-color: var(--sl-warning-border); }
+    .pill.ok { color: var(--sl-success); background: var(--sl-success-light); border-color: var(--sl-success-border); }
+    .pill.idle { color: var(--sl-text-secondary); }
+    .mono-tip {
+      font-family: var(--sl-mono);
+      font-size: 11px;
+      color: var(--sl-text-secondary);
+    }
+
+    .scroll {
+      flex: 1;
+      min-height: 0;
+      overflow: auto;
+      padding: 16px 20px 8px;
+    }
+    .flow {
+      max-width: 920px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* 空态 */
+    .welcome {
+      margin: 48px auto 8px;
+      max-width: 560px;
+      text-align: center;
+    }
+    .hero-mark {
+      width: 40px; height: 40px; margin: 0 auto 12px;
+      display: flex; align-items: center; justify-content: center;
+      background: var(--sl-primary-light);
+      border: 1px solid var(--sl-primary-border);
+      border-radius: var(--sl-radius-md);
+    }
+    .welcome h2 {
+      font-size: 16px; font-weight: 700; color: var(--sl-text-heading);
+      margin-bottom: 6px;
+    }
+    .welcome p {
+      font-size: 13px; line-height: 20px; color: var(--sl-text-secondary);
+    }
+    .chips {
+      display: flex; flex-wrap: wrap; justify-content: center; gap: 8px;
+      margin-top: 16px;
+    }
+    .chip {
+      height: 28px;
+      padding: 0 12px;
+      background: #fff;
+      border: 1px solid var(--sl-border-input);
+      border-radius: var(--sl-radius-sm);
+      font-size: 12px;
+      color: var(--sl-text-body);
+      cursor: pointer;
+      transition: var(--sl-ease);
+    }
+    .chip:hover {
+      border-color: var(--sl-primary-border);
+      background: var(--sl-primary-light);
+      color: var(--sl-primary);
+      transform: translateY(-1px);
+    }
+
+    .msg-user { display: flex; justify-content: flex-end; }
+    .bubble {
+      max-width: 78%;
+      padding: 8px 12px;
+      background: var(--sl-bg-page);
+      border: 1px solid var(--sl-border-base);
+      border-radius: var(--sl-radius-md);
+      font-size: 13px;
+      line-height: 20px;
+      color: var(--sl-text-heading);
+    }
+    .msg-ai {
+      font-size: 13px;
+      line-height: 20px;
+      color: var(--sl-text-body);
+    }
+    .msg-ai strong { color: var(--sl-text-heading); }
+
+    /* 规程时间线 */
+    .trace {
+      border-left: 2px solid var(--sl-border-base);
+      padding: 0 0 4px 12px;
+      margin-left: 4px;
+    }
+    .trace.is-live { border-left-color: var(--sl-primary); }
+    .trace-toggle {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 12.5px; color: var(--sl-text-body);
+      cursor: pointer; user-select: none; width: fit-content;
+      margin-bottom: 8px;
+    }
+    .trace-toggle:hover { color: var(--sl-text-heading); }
+    .caret { transition: transform 0.18s ease; color: var(--sl-text-secondary); }
+    .caret.closed { transform: rotate(-90deg); }
+    .live-lab {
+      display: inline-flex; align-items: center; gap: 6px;
+      margin-left: 4px;
+      font-size: 11.5px; color: var(--sl-warning);
+    }
+    .round {
+      margin-bottom: 10px;
+    }
+    .round-h {
+      display: flex; align-items: center; gap: 6px;
+      font-size: 12px; font-weight: 600; color: var(--sl-text-heading);
+      margin-bottom: 4px;
+    }
+    .round-h .n {
+      font-family: var(--sl-mono);
+      font-size: 10.5px; font-weight: 500;
+      color: var(--sl-text-secondary);
+    }
+    .entry {
+      display: grid;
+      grid-template-columns: 52px minmax(0, 1fr);
+      gap: 8px;
+      align-items: start;
+      padding: 4px 0;
+      font-size: 12.5px;
+    }
+    .kind {
+      font-size: 10.5px;
+      font-weight: 600;
+      height: 18px;
+      padding: 0 6px;
+      border-radius: 4px;
+      display: inline-flex; align-items: center; justify-content: center;
+      border: 1px solid transparent;
+      white-space: nowrap;
+    }
+    .kind.req { color: var(--sl-text-secondary); background: var(--sl-bg-hover); border-color: var(--sl-border-base); }
+    .kind.reply { color: var(--sl-primary); background: var(--sl-primary-light); border-color: var(--sl-primary-border); }
+    .kind.call { color: #0369a1; background: #f0f9ff; border-color: #bae6fd; }
+    .kind.ret { color: var(--sl-success); background: var(--sl-success-light); border-color: var(--sl-success-border); }
+    .kind.done { color: var(--sl-success); background: var(--sl-success-light); border-color: var(--sl-success-border); }
+    .kind.block { color: var(--sl-danger); background: var(--sl-danger-light); border-color: var(--sl-danger-border); }
+    .entry-body { color: var(--sl-text-body); min-width: 0; }
+    .entry-body .tool {
+      font-family: var(--sl-mono);
+      font-size: 12px;
+      color: var(--sl-text-heading);
+    }
+    .entry.is-live .entry-body { color: var(--sl-text-heading); }
+    .entry.is-live .tool::after {
+      content: "";
+      display: inline-block;
+      width: 6px; height: 12px;
+      margin-left: 6px;
+      background: var(--sl-primary);
+      animation: pulse 0.9s steps(1) infinite;
+      vertical-align: -2px;
+    }
+    .detail {
+      margin-top: 4px;
+      padding: 6px 8px;
+      background: var(--sl-bg-page);
+      border: 1px solid var(--sl-border-subtle);
+      border-radius: var(--sl-radius-sm);
+      font-family: var(--sl-mono);
+      font-size: 11.5px;
+      line-height: 18px;
+      color: var(--sl-text-secondary);
+      white-space: pre-wrap;
+    }
+
+    .draft {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 12px;
+      background: var(--sl-success-light);
+      border: 1px solid var(--sl-success-border);
+      border-radius: var(--sl-radius-sm);
+      border-left: 2px solid var(--sl-success);
+    }
+    .draft-meta { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--sl-text-body); }
+    .draft-badge {
+      font-size: 10.5px; font-weight: 600;
+      color: var(--sl-success);
+      background: #fff;
+      border: 1px solid var(--sl-success-border);
+      border-radius: 4px;
+      padding: 1px 6px;
+    }
+    .draft .id { font-family: var(--sl-mono); font-weight: 700; color: var(--sl-text-heading); }
+
+    /* 输入条 */
+    .composer {
+      flex-shrink: 0;
+      padding: 8px 20px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .composer-box {
+      max-width: 920px;
+      width: 100%;
+      margin: 0 auto;
+      border: 1px solid var(--sl-border-input);
+      border-radius: var(--sl-radius-md);
+      background: #fff;
+      padding: 8px 10px 8px 12px;
+      transition: var(--sl-ease);
+    }
+    .composer-box:focus-within {
+      border-color: var(--sl-primary);
+      box-shadow: 0 0 0 3px rgba(37,99,235,0.12);
+    }
+    .composer-box textarea {
+      width: 100%;
+      border: 0; outline: 0; resize: none;
+      min-height: 44px;
+      font-family: inherit;
+      font-size: 13px;
+      line-height: 20px;
+      color: var(--sl-text-heading);
+      background: transparent;
+    }
+    .composer-box textarea::placeholder { color: var(--sl-text-disabled); }
+    .composer-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    }
+    .hint { font-size: 11.5px; color: var(--sl-text-secondary); }
+    .disclaimer {
+      text-align: center;
+      font-size: 11px;
+      color: var(--sl-text-disabled);
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.28; }
+    }
+
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="mock-shell">
+    <header class="mock-bar">
+      <div class="mock-brand">
+        <span class="mock-badge">MOCK</span>
+        <strong>流程编排助手</strong>
+        <span>效果图 · 石墨顶栏 + 钴蓝规程工作台</span>
+      </div>
+      <div class="state-tabs" role="tablist">
+        <button type="button" class="is-on" data-state="empty">空态</button>
+        <button type="button" data-state="running">规程执行中</button>
+        <button type="button" data-state="ready">草稿就绪</button>
+      </div>
+      <p class="mock-note">对齐 Design Tokens 与 1+N 按钮。发送为唯一实体蓝；新对话 / 打开设计器为描边 CTA。</p>
+    </header>
+
+    <div class="app-frame">
+      <header class="top-navbar">
+        <div class="brand-mark">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <path d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18" stroke="#60a5fa" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </div>
+        <div class="nav-item is-active">首页</div>
+        <div class="nav-item">设备</div>
+        <div class="nav-item">任务</div>
+        <div class="nav-item">数据</div>
+        <div class="nav-right">
+          <div class="info-chip">SmartLab</div>
+          <div class="info-chip"><span class="mono">10:09:24</span></div>
+        </div>
+      </header>
+
+      <section class="workspace">
+        <aside class="rail">
+          <div class="rail-actions">
+            <button class="btn-aliyun" type="button">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5"/><polyline points="12 19 5 12 12 5"/></svg>
+              返回首页
+            </button>
+            <button class="btn-cta" type="button">+ 新对话</button>
+          </div>
+          <div class="rail-list">
+            <div class="rail-label">对话历史</div>
+            <button class="conv is-active" type="button">
+              <span class="conv-title" id="activeTitle">新对话</span>
+              <span class="conv-meta">
+                <span><i class="dot idle" id="activeDot"></i><span id="activeTime">刚刚</span></span>
+              </span>
+            </button>
+            <button class="conv" type="button">
+              <span class="conv-title">分段升温后冷却</span>
+              <span class="conv-meta"><span><i class="dot ok"></i>08:41</span></span>
+            </button>
+            <button class="conv" type="button">
+              <span class="conv-title">复用开盖子流程</span>
+              <span class="conv-meta"><span><i class="dot idle"></i>昨天</span></span>
+            </button>
+          </div>
+        </aside>
+
+        <div class="stage">
+          <header class="stage-head">
+            <div class="stage-title">
+              流程编排助手
+              <div class="round-ticks" id="ticks" aria-hidden="true"></div>
+            </div>
+            <div class="stage-meta">
+              <span class="pill idle" id="statusPill"><i class="dot idle"></i>待命</span>
+              <span class="mono-tip" id="roundTip">0 / 12 轮</span>
+              <button class="btn-link hidden" id="copyLogs" type="button">复制过程日志</button>
+            </div>
+          </header>
+
+          <div class="scroll">
+            <div class="flow">
+              <div class="welcome" id="welcome">
+                <div class="hero-mark">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="1.8">
+                    <rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/>
+                    <rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/>
+                    <path d="M10 6.5h4M6.5 10v4M17.5 10v4M10 17.5h4"/>
+                  </svg>
+                </div>
+                <h2>用自然语言编写实验流程</h2>
+                <p>助手按规程检索设备与已有流程，校验后再保存草稿。控制连线只决定谁被激活；温度等读数必须走数据端口。</p>
+                <div class="chips">
+                  <button class="chip" type="button" data-fill="先散热 200 秒，若温度低于 300℃ 则加热到 300，否则继续散热 50 秒；随后分段加热。">散热后按温度分支</button>
+                  <button class="chip" type="button" data-fill="20 秒加热到 300℃，30 秒加热到 400℃，最后散热 10 秒。">分段升温后冷却</button>
+                  <button class="chip" type="button" data-fill="开盖后搅拌 60 秒，能复用已有流程就引用子流程。">复用已有开盖流程</button>
+                </div>
+              </div>
+
+              <article class="msg-user hidden" id="userMsg">
+                <div class="bubble" id="userText">先散热 200 秒，若温度低于 300℃ 则加热到 300，否则继续散热 50 秒；随后分段加热。</div>
+              </article>
+
+              <section class="trace hidden" id="trace">
+                <div class="trace-toggle" id="traceToggle">
+                  <svg class="caret" id="traceCaret" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                  <strong>规程过程</strong>
+                  <span class="live-lab hidden" id="liveLab"><i class="dot run"></i>正在调用工具</span>
+                  <span class="n" id="traceSummary" style="font-family:var(--sl-mono);font-size:11px;color:var(--sl-text-secondary);font-weight:400"></span>
+                </div>
+                <div id="traceBody">
+                  <div class="round">
+                    <div class="round-h">第 1 轮 <span class="n">目录检索</span></div>
+                    <div class="entry"><span class="kind req">请求</span><div class="entry-body">列出设备目录、已有流程</div></div>
+                    <div class="entry"><span class="kind call">调用</span><div class="entry-body"><span class="tool">list_device_catalog</span></div></div>
+                    <div class="entry"><span class="kind ret">返回</span><div class="entry-body">热阱、反应釜、温度传感器 · 3 台</div></div>
+                    <div class="entry"><span class="kind call">调用</span><div class="entry-body"><span class="tool">list_workflow_catalog</span></div></div>
+                    <div class="entry"><span class="kind ret">返回</span><div class="entry-body">ACTIVE 流程 2 条，无直接可复用开盖</div></div>
+                  </div>
+                  <div class="round">
+                    <div class="round-h">第 2 轮 <span class="n">设备终判</span></div>
+                    <div class="entry"><span class="kind call">调用</span><div class="entry-body"><span class="tool">get_device_model</span> · 热阱 #31 / 反应釜 #28</div></div>
+                    <div class="entry"><span class="kind ret">返回</span><div class="entry-body">散热仅有时长参数；温度走属性映射后经数据端口送入分支</div></div>
+                  </div>
+                  <div class="round" id="roundLive">
+                    <div class="round-h">第 3 轮 <span class="n">校验</span></div>
+                    <div class="entry"><span class="kind call">调用</span><div class="entry-body"><span class="tool">validate_workflow</span></div></div>
+                    <div class="entry hidden" id="entryBlocking"><span class="kind block">拦截</span><div class="entry-body">condition.object 必须是本节点变量或系统标识</div></div>
+                    <div class="entry is-live hidden" id="entryLive"><span class="kind call">调用</span><div class="entry-body"><span class="tool">validate_workflow</span></div></div>
+                    <div class="entry hidden" id="entrySave"><span class="kind done">完成</span><div class="entry-body"><span class="tool">save_draft</span> · 草稿 #73</div></div>
+                  </div>
+                </div>
+              </section>
+
+              <article class="msg-ai hidden" id="aiMsg">
+                已按「散热 → 温度分支 → 分段加热」写好草稿。分支判断用本节点变量，温度由热阱经数据端口传入；设备控制连线使用状态机上的 IN+WORKFLOW / OUT+STATE 接口。
+              </article>
+
+              <div class="draft hidden" id="draftStrip">
+                <div class="draft-meta">
+                  <span class="draft-badge">草稿就绪</span>
+                  <span>工作流草稿 <span class="id">#73</span> 已保存，尚未发布</span>
+                </div>
+                <button class="btn-cta" type="button" style="width:auto;padding:0 12px;">打开设计器 →</button>
+              </div>
+            </div>
+          </div>
+
+          <form class="composer" onsubmit="return false;">
+            <div class="composer-box">
+              <textarea id="prompt" rows="2" placeholder="描述实验步骤，例如：先散热 200 秒，温度低于 300℃ 则加热…"></textarea>
+              <div class="composer-row">
+                <span class="hint">发送将再生成一份草稿，不会改写上一份 · Enter 发送</span>
+                <button class="btn-primary" id="sendBtn" type="button">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 19V5"/><polyline points="5 12 12 5 19 12"/></svg>
+                  发送
+                </button>
+              </div>
+            </div>
+            <div class="disclaimer">内容由规程推演生成，请在流程设计器中确认后发布。</div>
+          </form>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const ticks = document.getElementById("ticks");
+    for (let i = 0; i < 12; i++) {
+      const el = document.createElement("i");
+      el.className = "tick";
+      ticks.appendChild(el);
+    }
+
+    const ui = {
+      welcome: document.getElementById("welcome"),
+      userMsg: document.getElementById("userMsg"),
+      trace: document.getElementById("trace"),
+      traceBody: document.getElementById("traceBody"),
+      traceCaret: document.getElementById("traceCaret"),
+      liveLab: document.getElementById("liveLab"),
+      traceSummary: document.getElementById("traceSummary"),
+      aiMsg: document.getElementById("aiMsg"),
+      draftStrip: document.getElementById("draftStrip"),
+      statusPill: document.getElementById("statusPill"),
+      roundTip: document.getElementById("roundTip"),
+      copyLogs: document.getElementById("copyLogs"),
+      sendBtn: document.getElementById("sendBtn"),
+      prompt: document.getElementById("prompt"),
+      activeTitle: document.getElementById("activeTitle"),
+      activeDot: document.getElementById("activeDot"),
+      entryLive: document.getElementById("entryLive"),
+      entrySave: document.getElementById("entrySave"),
+      entryBlocking: document.getElementById("entryBlocking"),
+    };
+
+    function setTicks(filled, liveIndex) {
+      [...ticks.children].forEach((t, i) => {
+        t.className = "tick";
+        if (i < filled) t.classList.add("on");
+        if (i === liveIndex) t.classList.add("live");
+      });
+    }
+
+    function apply(state) {
+      document.querySelectorAll(".state-tabs button").forEach((b) => {
+        b.classList.toggle("is-on", b.dataset.state === state);
+      });
+      const empty = state === "empty";
+      const running = state === "running";
+      const ready = state === "ready";
+
+      ui.welcome.classList.toggle("hidden", !empty);
+      ui.userMsg.classList.toggle("hidden", empty);
+      ui.trace.classList.toggle("hidden", empty);
+      ui.aiMsg.classList.toggle("hidden", !ready);
+      ui.draftStrip.classList.toggle("hidden", !ready);
+      ui.copyLogs.classList.toggle("hidden", empty);
+      ui.liveLab.classList.toggle("hidden", !running);
+      ui.entryLive.classList.toggle("hidden", !running);
+      ui.entrySave.classList.toggle("hidden", !ready);
+      ui.entryBlocking.classList.add("hidden");
+      ui.trace.classList.toggle("is-live", running);
+      ui.traceBody.classList.toggle("hidden", ready);
+      ui.traceCaret.classList.toggle("closed", ready);
+
+      ui.sendBtn.disabled = running;
+      ui.prompt.disabled = running;
+
+      if (empty) {
+        ui.statusPill.className = "pill idle";
+        ui.statusPill.innerHTML = '<i class="dot idle"></i>待命';
+        ui.roundTip.textContent = "0 / 12 轮";
+        ui.activeTitle.textContent = "新对话";
+        ui.activeDot.className = "dot idle";
+        ui.traceSummary.textContent = "";
+        setTicks(0, -1);
+        ui.prompt.value = "";
+      } else if (running) {
+        ui.statusPill.className = "pill run";
+        ui.statusPill.innerHTML = '<i class="dot run"></i>规程执行中';
+        ui.roundTip.textContent = "3 / 12 轮";
+        ui.activeTitle.textContent = "散热后按温度分支加热";
+        ui.activeDot.className = "dot run";
+        ui.traceSummary.textContent = "";
+        setTicks(2, 2);
+        ui.prompt.value = "";
+      } else {
+        ui.statusPill.className = "pill ok";
+        ui.statusPill.innerHTML = '<i class="dot ok"></i>草稿就绪';
+        ui.roundTip.textContent = "4 / 12 轮";
+        ui.activeTitle.textContent = "散热后按温度分支加热";
+        ui.activeDot.className = "dot ok";
+        ui.traceSummary.textContent = "4 轮已执行";
+        setTicks(4, -1);
+      }
+    }
+
+    document.querySelectorAll(".state-tabs button").forEach((btn) => {
+      btn.addEventListener("click", () => apply(btn.dataset.state));
+    });
+    document.querySelectorAll(".chip").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        ui.prompt.value = chip.dataset.fill;
+        ui.prompt.focus();
+      });
+    });
+    document.getElementById("traceToggle").addEventListener("click", () => {
+      ui.traceBody.classList.toggle("hidden");
+      ui.traceCaret.classList.toggle("closed");
+    });
+    ui.sendBtn.addEventListener("click", () => apply("running"));
+
+    apply("empty");
+  </script>
+</body>
+</html>

@@ -3,6 +3,7 @@ package com.smartlab.global.protocol;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.smartlab.global.contract.MqttTopic;
 import com.smartlab.global.contract.ProtocolContract;
 import com.smartlab.global.contract.SignalPayloadPolicy;
 import com.smartlab.global.util.JsonNodeSupport;
@@ -51,6 +52,11 @@ public class ProtocolDictionaryService {
             case "EventMessageFormat" -> objectDefinition(Map.of(
                     "timestamp", "number", "adapterName", "string", "devicePoint", "string", "eventName", "string", "payload", "object"));
             case "AdapterHeartbeat" -> objectDefinition(Map.of("status", "string", "timestamp", "number"));
+            case "LeaseRequestFormat" -> objectDefinition(Map.of(
+                    "leaseId", "integer", "adapterName", "string", "action", "string", "devicePoint", "string", "timestamp", "number"));
+            case "LeaseResultFormat" -> objectDefinition(Map.of(
+                    "leaseId", "integer", "adapterName", "string", "action", "string", "devicePoint", "string",
+                    "status", "string", "errorMessage", "string", "timestamp", "number"));
             case "ConstraintExecutePayload" -> objectDefinition(Map.of(
                     "deviceInstanceId", "integer", "capabilityName", "string", "parameters", "object"));
             case "CommandStatePayload" -> objectDefinition(Map.of(
@@ -147,7 +153,19 @@ public class ProtocolDictionaryService {
                 requireNumber(payload, "timestamp");
                 requireText(payload, "adapterName");
                 requireText(payload, "devicePoint");
-                requireObjectField(payload, "telemetryData");
+                String formatType = payload.path("formatType").asText("SINGLE").trim().toUpperCase();
+                if ("BATCH".equals(formatType)) {
+                    requireArrayField(payload, "items");
+                    for (JsonNode item : payload.path("items")) {
+                        if (item == null || !item.isObject()) {
+                            throw new IllegalArgumentException("items 元素必须是对象");
+                        }
+                        requireNumber(item, "timestamp");
+                        requireObjectField(item, "telemetryData");
+                    }
+                } else {
+                    requireObjectField(payload, "telemetryData");
+                }
             }
             case "EventMessageFormat" -> {
                 requireNumber(payload, "timestamp");
@@ -162,6 +180,8 @@ public class ProtocolDictionaryService {
                 requireEnum(payload, "status", List.of("ALIVE", "ONLINE"));
                 requireNumber(payload, "timestamp");
             }
+            case "LeaseRequestFormat" -> validateLeaseRequest(payload);
+            case "LeaseResultFormat" -> validateLeaseResult(payload);
             case "ConstraintExecutePayload" -> {
                 requireNumber(payload, "deviceInstanceId");
                 requireText(payload, "capabilityName");
@@ -207,7 +227,8 @@ public class ProtocolDictionaryService {
         return List.of(
                 "DataType", "CommunicationProtocol", "WorkflowNodeSignal", "WorkflowControlSignal", "ManualControlSignal",
                 "ConstraintControlSignal", "AdapterOutboundSignal", "StatusSignal", "MqttTopicConvention", "AdapterRegisterRequest",
-                "CommandMessageFormat", "TelemetryMessageFormat", "EventMessageFormat", "AdapterHeartbeat", "ConstraintExecutePayload",
+                "CommandMessageFormat", "TelemetryMessageFormat", "EventMessageFormat", "AdapterHeartbeat",
+                "LeaseAction", "LeaseResultStatus", "LeaseRequestFormat", "LeaseResultFormat", "ConstraintExecutePayload",
                 "CommandStatePayload", "OperationStatePayload", "SystemSignalFormat");
     }
 
@@ -225,6 +246,37 @@ public class ProtocolDictionaryService {
         ObjectNode properties = definition.putObject("properties");
         propertyTypes.forEach((name, type) -> properties.putObject(name).put("type", type));
         return definition;
+    }
+
+    private void validateLeaseRequest(JsonNode payload) {
+        requireInteger(payload, "leaseId");
+        requireText(payload, "adapterName");
+        requireEnum(payload, "action", enumValues("LeaseAction"));
+        requireText(payload, "devicePoint");
+        requireNumber(payload, "timestamp");
+    }
+
+    private void validateLeaseResult(JsonNode payload) {
+        requireInteger(payload, "leaseId");
+        requireText(payload, "adapterName");
+        String action = requireEnum(payload, "action", enumValues("LeaseAction"));
+        String status = requireEnum(payload, "status", enumValues("LeaseResultStatus"));
+        if ("LEASE".equals(action) && "RELEASED".equals(status)) {
+            throw new IllegalArgumentException("LEASE不得返回RELEASED");
+        }
+        if ("RELEASE".equals(action) && "GRANTED".equals(status)) {
+            throw new IllegalArgumentException("RELEASE不得返回GRANTED");
+        }
+        if ("GRANTED".equals(status) || "RELEASED".equals(status)) {
+            requireText(payload, "devicePoint");
+        } else if (payload.has("devicePoint") && !payload.get("devicePoint").isNull()) {
+            requireText(payload, "devicePoint");
+        }
+        if (payload.has("errorMessage") && !payload.get("errorMessage").isNull()
+                && !payload.get("errorMessage").isTextual()) {
+            throw new IllegalArgumentException("errorMessage必须是字符串");
+        }
+        requireNumber(payload, "timestamp");
     }
 
     private void validateSystemSignal(JsonNode payload) {
@@ -296,6 +348,13 @@ public class ProtocolDictionaryService {
         }
     }
 
+    private void requireInteger(JsonNode payload, String name) {
+        JsonNode value = payload.get(name);
+        if (value == null || !value.isIntegralNumber() || value.asLong() <= 0) {
+            throw new IllegalArgumentException(name + " 必须是正整数");
+        }
+    }
+
     private void requireObjectField(JsonNode payload, String name) {
         JsonNode value = payload.get(name);
         if (value == null || !value.isObject()) {
@@ -303,11 +362,19 @@ public class ProtocolDictionaryService {
         }
     }
 
-    private void requireEnum(JsonNode payload, String name, List<String> acceptedValues) {
+    private void requireArrayField(JsonNode payload, String name) {
+        JsonNode value = payload.get(name);
+        if (value == null || !value.isArray()) {
+            throw new IllegalArgumentException(name + " 必须是数组");
+        }
+    }
+
+    private String requireEnum(JsonNode payload, String name, List<String> acceptedValues) {
         String value = requireText(payload, name);
         if (!acceptedValues.contains(value)) {
             throw new IllegalArgumentException(name + " 取值不合法: " + value);
         }
+        return value;
     }
 
     private void rejectField(JsonNode payload, String name) {
@@ -325,7 +392,8 @@ public class ProtocolDictionaryService {
             if (value == null || String.valueOf(value).isBlank()) {
                 throw new IllegalArgumentException("MQTT主题缺少变量: " + name);
             }
-            matcher.appendReplacement(result, Matcher.quoteReplacement(String.valueOf(value).trim()));
+            matcher.appendReplacement(result, Matcher.quoteReplacement(
+                    MqttTopic.requireSafeSegment(name, String.valueOf(value))));
         }
         matcher.appendTail(result);
         return result.toString();

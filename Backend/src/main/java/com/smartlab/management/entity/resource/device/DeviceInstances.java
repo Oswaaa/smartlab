@@ -60,11 +60,24 @@ public class DeviceInstances {
     @TableField("lifecycle_status")
     private String lifecycleStatus;
 
+    @TableField("instance_kind")
+    private String instanceKind;
+
     @TableField("picture")
     private String picture;
 
     @TableField("create_time")
     private OffsetDateTime createTime;
+
+    public String getInstanceKind() {
+        return DeviceInstanceKind.normalize(instanceKind);
+    }
+
+    public void setInstanceKind(String instanceKind) {
+        this.instanceKind = instanceKind == null || instanceKind.isBlank()
+                ? DeviceInstanceKind.PHYSICAL
+                : DeviceInstanceKind.normalize(instanceKind);
+    }
 
     public JsonNode getCommConfig() {
         return instanceConfig;

@@ -15,11 +15,14 @@ import com.smartlab.management.dto.workflow.WorkflowIssue;
 import com.smartlab.management.dto.workflow.TaskMonitorSummary;
 import com.smartlab.management.entity.workflow.ExecutionLog;
 import com.smartlab.management.entity.workflow.Task;
+import com.smartlab.management.entity.workflow.TaskExecutionKind;
 import com.smartlab.management.entity.workflow.TaskStep;
 import com.smartlab.management.mapper.workflow.TaskMapper;
 import com.smartlab.management.mapper.workflow.TaskStepMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
 import com.smartlab.management.service.db.constraint.TaskConstraintService;
+import com.smartlab.management.service.db.resource.adapter.VirtualLeaseService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,6 +47,7 @@ public class TaskService extends ManagementCrudService<Task> {
     private final WorkflowExecutionReadinessService executionReadinessService;
     private final TaskConstraintService taskConstraintService;
     private final ApplicationEventPublisher eventPublisher;
+    private final VirtualLeaseService virtualLeaseService;
 
     public TaskService(TaskMapper taskMapper, TaskStepMapper taskStepMapper,
                        ExecutionLogService executionLogService, WorkflowService workflowService,
@@ -51,6 +55,18 @@ public class TaskService extends ManagementCrudService<Task> {
                        WorkflowExecutionReadinessService executionReadinessService,
                        TaskConstraintService taskConstraintService,
                        ApplicationEventPublisher eventPublisher) {
+        this(taskMapper, taskStepMapper, executionLogService, workflowService, resourceService,
+                executionReadinessService, taskConstraintService, eventPublisher, null);
+    }
+
+    @Autowired
+    public TaskService(TaskMapper taskMapper, TaskStepMapper taskStepMapper,
+                       ExecutionLogService executionLogService, WorkflowService workflowService,
+                       WorkflowTaskResourceService resourceService,
+                       WorkflowExecutionReadinessService executionReadinessService,
+                       TaskConstraintService taskConstraintService,
+                       ApplicationEventPublisher eventPublisher,
+                       VirtualLeaseService virtualLeaseService) {
         super(taskMapper);
         this.taskMapper = taskMapper;
         this.taskStepMapper = taskStepMapper;
@@ -60,13 +76,22 @@ public class TaskService extends ManagementCrudService<Task> {
         this.executionReadinessService = executionReadinessService;
         this.taskConstraintService = taskConstraintService;
         this.eventPublisher = eventPublisher;
+        this.virtualLeaseService = virtualLeaseService;
     }
 
     public PageResult<Task> page(long pageNo, long pageSize, String keyword, String status, Long flowModelId) {
+        return page(pageNo, pageSize, keyword, status, flowModelId, null);
+    }
+
+    public PageResult<Task> page(long pageNo, long pageSize, String keyword, String status, Long flowModelId,
+                                  String executionKind) {
         var query = Wrappers.<Task>lambdaQuery();
         if (keyword != null && !keyword.isBlank()) query.like(Task::getTaskName, keyword.trim());
         if (status != null && !status.isBlank()) query.eq(Task::getTaskStatus, status.trim());
         if (flowModelId != null && flowModelId > 0) query.eq(Task::getFlowModelId, flowModelId);
+        if (executionKind != null && !executionKind.isBlank()) {
+            query.eq(Task::getExecutionKind, TaskExecutionKind.normalize(executionKind));
+        }
         query.orderByDesc(Task::getId);
         Page<Task> page = taskMapper.selectPage(new Page<>(Math.max(1, pageNo), Math.max(1, pageSize)), query);
         return new PageResult<>(page.getTotal(), page.getCurrent(), page.getSize(), page.getRecords());
@@ -87,15 +112,22 @@ public class TaskService extends ManagementCrudService<Task> {
             throw new IllegalArgumentException("任务名称不能为空");
         }
         JsonNode resourceMap;
+        String executionKind = TaskExecutionKind.normalize(request.getExecutionKind());
         if (request.getDeviceBindings() != null) {
             TaskPreflightResponse preflight = preflight(TaskPreflightRequest.from(request));
             requireReady(preflight);
-            resourceMap = resourceService.prepare(request.getFlowModelId(), request.getDeviceBindings()).resourceMap();
+            resourceMap = resourceService.prepare(request.getFlowModelId(), request.getDeviceBindings(), executionKind)
+                    .resourceMap();
         } else {
             resourceMap = nonNullObject(request.getResourceMap());
             requireReady(inspect(request.getFlowModelId(), request.getTaskVariables(), resourceMap,
-                    request.getTaskConstraints()));
+                    request.getTaskConstraints(), executionKind));
         }
+        return persistPendingTask(request, resourceMap);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public Task persistPreparedTask(TaskCreateRequest request, JsonNode resourceMap) {
         return persistPendingTask(request, resourceMap);
     }
 
@@ -110,6 +142,7 @@ public class TaskService extends ManagementCrudService<Task> {
         task.setResourceMap(resourceMap);
         task.setTaskVariables(nonNullObject(request.getTaskVariables()));
         task.setCreatorId(request.getCreatorId());
+        task.setExecutionKind(TaskExecutionKind.normalize(request.getExecutionKind()));
         taskMapper.insert(task);
         task.setTaskConstraints(taskConstraintService.normalizeAndValidate(task, request.getTaskConstraints()));
         taskMapper.updateById(task);
@@ -120,18 +153,47 @@ public class TaskService extends ManagementCrudService<Task> {
 
     @Transactional(rollbackFor = Exception.class)
     public Task start(Long taskId) {
+        return start(taskId, true, null);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public Task start(Long taskId, boolean requireExecutableWorkflow) {
+        return start(taskId, requireExecutableWorkflow, null);
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public Task start(Long taskId, boolean requireExecutableWorkflow, String executionKind) {
         Task task = requireTask(taskId);
         requireStatus(task, TaskLifecycleState.PENDING);
+        if (executionKind != null && !executionKind.isBlank()) {
+            task.setExecutionKind(TaskExecutionKind.normalize(executionKind));
+        }
         requireReady(inspect(task.getFlowModelId(), task.getTaskVariables(), task.getResourceMap(),
-                task.getTaskConstraints()));
+                task.getTaskConstraints(), task.getExecutionKind(), requireExecutableWorkflow));
         task.setTaskConstraints(taskConstraintService.normalizeAndValidate(task, task.getTaskConstraints()));
-        task.setTaskStatus(TaskLifecycleState.RUNNING.name());
-        task.setStartTime(OffsetDateTime.now());
-        task.setEndTime(null);
-        taskMapper.updateById(task);
-        executionLogService.append("TASK", taskId, null, null, "INFO", "任务已启动");
-        publishLifecycle(task);
-        return task;
+        boolean leased = false;
+        try {
+            if (TaskExecutionKind.isSimulation(task)) {
+                if (virtualLeaseService == null) {
+                    throw new IllegalStateException("模拟任务启动需要租约服务");
+                }
+                virtualLeaseService.acquireForTask(resourceService.boundDeviceInstanceIds(task.getResourceMap()), taskId);
+                leased = true;
+            }
+            task.setTaskStatus(TaskLifecycleState.RUNNING.name());
+            task.setStartTime(OffsetDateTime.now());
+            task.setEndTime(null);
+            taskMapper.updateById(task);
+            executionLogService.append("TASK", taskId, null, null, "INFO",
+                    TaskExecutionKind.isSimulation(task) ? "任务已仿真启动" : "任务已启动");
+            publishLifecycle(task);
+            return task;
+        } catch (RuntimeException error) {
+            if (leased) {
+                releaseSimulationLeases(taskId);
+            }
+            throw error;
+        }
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -153,7 +215,7 @@ public class TaskService extends ManagementCrudService<Task> {
         Task task = requireTask(taskId);
         requireStatus(task, TaskLifecycleState.PAUSED);
         requireReady(inspect(task.getFlowModelId(), task.getTaskVariables(), task.getResourceMap(),
-                task.getTaskConstraints()));
+                task.getTaskConstraints(), task.getExecutionKind()));
         task.setTaskStatus(TaskLifecycleState.RUNNING.name());
         taskMapper.updateById(task);
         executionLogService.append("TASK", taskId, null, null, "INFO", "任务已恢复");
@@ -190,6 +252,7 @@ public class TaskService extends ManagementCrudService<Task> {
         taskMapper.updateById(task);
         executionLogService.append("TASK", taskId, null, null, "WARN", "任务终止完成");
         publishLifecycle(task);
+        releaseSimulationLeases(task);
         return task;
     }
 
@@ -236,13 +299,15 @@ public class TaskService extends ManagementCrudService<Task> {
         if (ACTIVE_TASK_STATES.contains(task.getTaskStatus())) throw new IllegalStateException("执行中的任务不能删除");
         taskStepMapper.delete(Wrappers.<TaskStep>lambdaQuery().eq(TaskStep::getTaskId, id));
         taskMapper.deleteById(id);
+        releaseSimulationLeases(task);
     }
 
     public TaskPreflightResponse preflight(TaskPreflightRequest request) {
         Long flowModelId = request == null ? null : request.flowModelId();
         List<WorkflowIssue> issues = new ArrayList<>();
         WorkflowTaskResourceService.PreparedTaskResources resources = resourceService.prepare(flowModelId,
-                request == null ? null : request.deviceBindings());
+                request == null ? null : request.deviceBindings(),
+                request == null ? null : request.executionKind());
         addIssues(issues, resources.issues());
         inspectExecutableWorkflow(flowModelId, issues);
         addIssues(issues, executionReadinessService.inspect(resources.resourceMap()));
@@ -256,11 +321,25 @@ public class TaskService extends ManagementCrudService<Task> {
 
     private TaskPreflightResponse inspect(Long flowModelId, JsonNode taskVariables, JsonNode resourceMap,
                                           JsonNode taskConstraints) {
+        return inspect(flowModelId, taskVariables, resourceMap, taskConstraints, TaskExecutionKind.PRODUCTION, true);
+    }
+
+    private TaskPreflightResponse inspect(Long flowModelId, JsonNode taskVariables, JsonNode resourceMap,
+                                          JsonNode taskConstraints, String executionKind) {
+        return inspect(flowModelId, taskVariables, resourceMap, taskConstraints, executionKind, true);
+    }
+
+    private TaskPreflightResponse inspect(Long flowModelId, JsonNode taskVariables, JsonNode resourceMap,
+                                          JsonNode taskConstraints, String executionKind,
+                                          boolean requireExecutableWorkflow) {
         List<WorkflowIssue> issues = new ArrayList<>();
-        inspectExecutableWorkflow(flowModelId, issues);
+        if (requireExecutableWorkflow) {
+            inspectExecutableWorkflow(flowModelId, issues);
+        }
         boolean validResources = true;
         try {
-            resourceService.validate(flowModelId, resourceMap);
+            String expectedKind = resourceService.expectedInstanceKind(executionKind, resourceMap);
+            resourceService.validate(flowModelId, resourceMap, expectedKind);
         } catch (RuntimeException error) {
             validResources = false;
             issues.add(issue("TASK_BINDING_INVALID", "BINDING", "resourceMap", "resourceMap", "",
@@ -324,5 +403,30 @@ public class TaskService extends ManagementCrudService<Task> {
 
     private void publishLifecycle(Task task) {
         eventPublisher.publishEvent(new TaskLifecycleObservationEvent(task.getId(), task.getTaskStatus(), java.time.Instant.now()));
+    }
+
+    private void releaseSimulationLeases(Task task) {
+        if (task != null) {
+            releaseSimulationLeases(task.getId(), task);
+        }
+    }
+
+    private void releaseSimulationLeases(Long taskId) {
+        releaseSimulationLeases(taskId, null);
+    }
+
+    private void releaseSimulationLeases(Long taskId, Task task) {
+        if (virtualLeaseService == null || taskId == null) {
+            return;
+        }
+        if (task != null && !TaskExecutionKind.isSimulation(task)) {
+            return;
+        }
+        try {
+            virtualLeaseService.releaseForTask(taskId);
+        } catch (RuntimeException error) {
+            executionLogService.append("TASK", taskId, null, null, "WARN",
+                    "模拟任务释放虚拟点租约失败: " + error.getMessage());
+        }
     }
 }

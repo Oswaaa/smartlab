@@ -139,9 +139,9 @@ class WorkflowDefinitionCompilerTest {
         ((ObjectNode) aggregate.withArray("interfaces").get(0)).withArray("bindingTriggers").addObject()
                 .put("action", "setPayload")
                 .putObject("condition")
-                .put("object", "inputSignalName")
+                .put("object", "signalName")
                 .put("operator", "=")
-                .put("threshold", "OTHER");
+                .put("threshold", "ACTIVE");
 
         assertDoesNotThrow(() -> compiler.compile(requestWith(aggregate)));
     }
@@ -159,7 +159,7 @@ class WorkflowDefinitionCompilerTest {
         trigger.putObject("condition")
                 .put("object", "signalName")
                 .put("operator", "=")
-                .put("threshold", "OTHER");
+                .put("threshold", "ACTIVE");
         trigger.putObject("action")
                 .put("actionName", "UPDATE")
                 .putObject("payload")
@@ -181,9 +181,9 @@ class WorkflowDefinitionCompilerTest {
                 .put("targetInterfaceName", "Interface_workflow_out")
                 .put("signalName", "ACTIVE");
         trigger.putObject("condition")
-                .put("object", "inputSignalName")
+                .put("object", "signalName")
                 .put("operator", "=")
-                .put("threshold", "OTHER");
+                .put("threshold", "ACTIVE");
 
         assertDoesNotThrow(() -> compiler.compile(requestWith(aggregate)));
     }
@@ -211,7 +211,7 @@ class WorkflowDefinitionCompilerTest {
         end.putArray("actions").add("EMIT");
         ObjectNode trigger = interfaceNamed(end, "Interface_workflow_in")
                 .withArray("bindingTriggers").addObject();
-        trigger.putObject("condition").put("object", "inputSignalName").put("operator", "=").put("threshold", "ACTIVE");
+        trigger.putObject("condition").put("object", "signalName").put("operator", "=").put("threshold", "ACTIVE");
         trigger.putObject("action").put("actionName", "EMIT").putObject("payload")
                 .put("targetInterfaceName", "Interface_workflow_in").put("signalName", "ACTIVE");
 
@@ -568,6 +568,83 @@ class WorkflowDefinitionCompilerTest {
         assertTrue(error.getMessage().contains("initialValue与数据类型不一致"), error.getMessage());
     }
 
+    @Test
+    void rejectsUnknownTriggerObject() {
+        ObjectNode branch = node(new NodeCase("FUNC_NODE", "BRANCH"));
+        addBranchOutput(branch);
+        ObjectNode trigger = interfaceNamed(branch, "branch_out").withArray("bindingTriggers").addObject();
+        trigger.putObject("condition").put("object", "temperature").put("operator", "<").put("threshold", 300);
+        trigger.putObject("action").put("actionName", "EMIT").putObject("payload")
+                .put("targetInterfaceName", "branch_out").put("signalName", "ACTIVE");
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> compiler.compile(requestWith(branch)));
+
+        assertTrue(error.getMessage().contains("触发条件object必须是本节点内部变量或系统标识"), error.getMessage());
+        assertTrue(error.getMessage().contains("temperature"), error.getMessage());
+    }
+
+    @Test
+    void rejectsLifecycleThresholdOutsideDeclaredStates() {
+        ObjectNode branch = node(new NodeCase("FUNC_NODE", "BRANCH"));
+        addBranchOutput(branch);
+        ObjectNode trigger = interfaceNamed(branch, "branch_out").withArray("bindingTriggers").addObject();
+        trigger.putObject("condition").put("object", "nodeLifecycleState").put("operator", "=").put("threshold", "HOT");
+        trigger.putObject("action").put("actionName", "EMIT").putObject("payload")
+                .put("targetInterfaceName", "branch_out").put("signalName", "ACTIVE");
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> compiler.compile(requestWith(branch)));
+
+        assertTrue(error.getMessage().contains("生命周期状态不存在"), error.getMessage());
+        assertTrue(error.getMessage().contains("HOT"), error.getMessage());
+    }
+
+    @Test
+    void rejectsSignalNameOutsideHostAllowedSignals() {
+        ObjectNode aggregate = node(new NodeCase("FUNC_NODE", "AGGREGATE"));
+        ObjectNode trigger = ((ObjectNode) aggregate.withArray("interfaces").get(0)).withArray("bindingTriggers").addObject();
+        trigger.putObject("condition").put("object", "signalName").put("operator", "=").put("threshold", "OTHER");
+        trigger.putObject("action").put("actionName", "UPDATE").putObject("payload")
+                .put("updateType", "INTERNAL_VARIABLE")
+                .put("targetName", "aggregateCount")
+                .put("valueExpression", "aggregateCount + 1");
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> compiler.compile(requestWith(aggregate)));
+
+        assertTrue(error.getMessage().contains("信号不在接口允许列表中"), error.getMessage());
+        assertTrue(error.getMessage().contains("OTHER"), error.getMessage());
+    }
+
+    @Test
+    void rejectsCommandStateNameOutsideContract() {
+        ObjectNode device = node(new NodeCase("DEV_NODE", null));
+        ObjectNode trigger = interfaceNamed(device, "Interface_state_in").withArray("bindingTriggers").addObject();
+        trigger.putObject("condition").put("object", "payload.stateName").put("operator", "=").put("threshold", "DONE");
+        trigger.putObject("action").put("actionName", "UPDATE").putObject("payload")
+                .put("updateType", "NODE_LIFECYCLE")
+                .put("targetName", "SUCCEEDED");
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> compiler.compile(requestWith(device)));
+
+        assertTrue(error.getMessage().contains("指令状态不存在"), error.getMessage());
+        assertTrue(error.getMessage().contains("DONE"), error.getMessage());
+    }
+
+    @Test
+    void rejectsAttributeMappingOnNonDeviceNode() {
+        ObjectNode branch = node(new NodeCase("FUNC_NODE", "BRANCH"));
+        addBranchOutput(branch);
+        ((ObjectNode) branch.withArray("internalVariables").get(0)).put("attributesMapping", "temperature");
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> compiler.compile(requestWith(branch)));
+
+        assertTrue(error.getMessage().contains("attributesMapping只允许出现在DEV_NODE"), error.getMessage());
+    }
+
     private List<NodeCase> cases() { return List.of(new NodeCase("FUNC_NODE", "START"), new NodeCase("FUNC_NODE", "END"), new NodeCase("FUNC_NODE", "BRANCH"), new NodeCase("FUNC_NODE", "AGGREGATE"), new NodeCase("DEV_NODE", null), new NodeCase("SUBFLOW_NODE", null)); }
     @Test
     void draftPreparationRestoresSystemContractAndPreservesBusinessItems() {
@@ -654,9 +731,9 @@ class WorkflowDefinitionCompilerTest {
         ((ObjectNode) aggregate.withArray("interfaces").get(0)).withArray("bindingTriggers").addObject()
                 .put("action", "setCounter")
                 .putObject("condition")
-                .put("object", "inputSignalName")
+                .put("object", "signalName")
                 .put("operator", "=")
-                .put("threshold", "OTHER");
+                .put("threshold", "ACTIVE");
         removeSystemMarkers(aggregate);
         ((ObjectNode) aggregate.path("lifecycle")).put("initialStateName", "BROKEN");
 

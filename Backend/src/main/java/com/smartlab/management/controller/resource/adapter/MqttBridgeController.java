@@ -60,6 +60,10 @@ public class MqttBridgeController {
     }
     @PostMapping({"/mqtt/mqtt/reconnect", "/protocol/mqtt/reconnect"})
     public ApiResponse<Map<String, Object>> reconnectMqtt() {
-        return ApiResponse.ok(mqttAdapterMessagingService.reconnectRegistrationListener());
+        try {
+            return ApiResponse.ok(mqttAdapterMessagingService.reconnectRegistrationListener());
+        } catch (Exception e) {
+            return ApiResponse.fail("MQTT 重连失败: " + e.getMessage());
+        }
     }
 }

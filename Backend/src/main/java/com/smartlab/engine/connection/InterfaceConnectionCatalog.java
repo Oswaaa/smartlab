@@ -41,6 +41,14 @@ public class InterfaceConnectionCatalog {
         return route;
     }
 
+    public NodeToDeviceRoute nodeToDevice(WorkflowDefinitionCompiler.CompiledWorkflow compiled,
+                                              JsonNode interfaceConnections, long nodeIdRef, Long deviceModelId) {
+        InterfaceConnectionEdge edge = uniqueDeviceEdge(compiled, interfaceConnections, nodeIdRef, deviceModelId,
+                "NODE_TO_DEVICE", null);
+        if (edge == null) throw new IllegalStateException("DEV_NODE缺少NODE_TO_DEVICE设备模型连接: " + nodeIdRef);
+        return new NodeToDeviceRoute(edge.sourceInterfaceName(), edge.targetInterfaceName(), edge.deviceModelId());
+    }
+
     public NodeToDeviceRoute findNodeToDevice(FlowNode node) {
         InterfaceConnectionEdge edge = uniqueDeviceEdge(node, "NODE_TO_DEVICE");
         if (edge == null) return null;
@@ -56,36 +64,45 @@ public class InterfaceConnectionCatalog {
         WorkflowDetailResponse definition = workflowService.getDefinition(node.getFlowModelId());
         if (definition == null) return null;
         var compiled = workflowService.compileDefinition(node.getFlowModelId());
+        return uniqueDeviceEdge(compiled, definition.getInterfaceConnections(), node.getNodeIdRef(),
+                node.getDeviceModelId(), connectionType, node.getFlowModelId());
+    }
+
+    private InterfaceConnectionEdge uniqueDeviceEdge(WorkflowDefinitionCompiler.CompiledWorkflow compiled,
+                                                        JsonNode interfaceConnections, long nodeIdRef,
+                                                        Long expectedDeviceModelId, String connectionType,
+                                                        Long flowModelId) {
+        if (compiled == null) return null;
         InterfaceConnectionEdge found = null;
-        for (JsonNode connection : iterable(definition.getInterfaceConnections())) {
+        for (JsonNode connection : iterable(interfaceConnections)) {
             if (!connectionType.equals(connection.path("connectionType").asText())) continue;
             if ("NODE_TO_DEVICE".equals(connectionType)) {
                 Long sourceRef = compiled.refsByNodeName().get(connection.path("source").path("nodeName").asText(""));
-                if (sourceRef == null || sourceRef.longValue() != node.getNodeIdRef()) continue;
+                if (sourceRef == null || sourceRef.longValue() != nodeIdRef) continue;
                 long deviceModelId = connection.path("target").path("deviceModelId").asLong(0);
                 String sourceInterface = connection.path("source").path("interfaceName").asText("");
                 String targetInterface = connection.path("target").path("interfaceName").asText("");
-                if (deviceModelId <= 0 || !Long.valueOf(deviceModelId).equals(node.getDeviceModelId())
+                if (deviceModelId <= 0 || !Long.valueOf(deviceModelId).equals(expectedDeviceModelId)
                         || sourceInterface.isBlank() || targetInterface.isBlank()) {
-                    throw new IllegalArgumentException("NODE_TO_DEVICE设备模型连接不完整或与DEV_NODE不一致: " + node.getNodeIdRef());
+                    throw new IllegalArgumentException("NODE_TO_DEVICE设备模型连接不完整或与DEV_NODE不一致: " + nodeIdRef);
                 }
-                InterfaceConnectionEdge edge = new InterfaceConnectionEdge(connectionType, node.getFlowModelId(),
+                InterfaceConnectionEdge edge = new InterfaceConnectionEdge(connectionType, flowModelId,
                         sourceRef, sourceInterface, null, targetInterface, deviceModelId);
-                if (found != null) throw new IllegalStateException("DEV_NODE只能有一个NODE_TO_DEVICE连接: " + node.getNodeIdRef());
+                if (found != null) throw new IllegalStateException("DEV_NODE只能有一个NODE_TO_DEVICE连接: " + nodeIdRef);
                 found = edge;
             } else {
                 Long targetRef = compiled.refsByNodeName().get(connection.path("target").path("nodeName").asText(""));
-                if (targetRef == null || !Objects.equals(targetRef, node.getNodeIdRef())) continue;
+                if (targetRef == null || !Objects.equals(targetRef, nodeIdRef)) continue;
                 long deviceModelId = connection.path("source").path("deviceModelId").asLong(0);
                 String sourceInterface = connection.path("source").path("interfaceName").asText("");
                 String targetInterface = connection.path("target").path("interfaceName").asText("");
-                if (deviceModelId <= 0 || !Long.valueOf(deviceModelId).equals(node.getDeviceModelId())
+                if (deviceModelId <= 0 || !Long.valueOf(deviceModelId).equals(expectedDeviceModelId)
                         || sourceInterface.isBlank() || targetInterface.isBlank()) {
                     continue;
                 }
-                InterfaceConnectionEdge edge = new InterfaceConnectionEdge(connectionType, node.getFlowModelId(),
+                InterfaceConnectionEdge edge = new InterfaceConnectionEdge(connectionType, flowModelId,
                         null, sourceInterface, targetRef, targetInterface, deviceModelId);
-                if (found != null) throw new IllegalStateException("DEV_NODE只能有一个DEVICE_TO_NODE连接: " + node.getNodeIdRef());
+                if (found != null) throw new IllegalStateException("DEV_NODE只能有一个DEVICE_TO_NODE连接: " + nodeIdRef);
                 found = edge;
             }
         }

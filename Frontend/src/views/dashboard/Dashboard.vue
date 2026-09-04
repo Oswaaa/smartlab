@@ -1,41 +1,45 @@
 <template>
   <div class="dashboard-master-canvas">
-    <header class="dashboard-top-bar">
-      <div class="header-left-meta">
-        <h1 class="page-title">首页</h1>
-        <span :class="['status-pill', mqttStatusTagClass]">
-          <i class="pulse-dot"></i> MQTT {{ mqttStatusLabel }}
-        </span>
-        <span class="clock-tag">{{ currentTime }}</span>
-      </div>
-
-      <div class="kpi-inline-group">
-        <div class="kpi-unit">
-          <span>设备在线</span>
-          <strong class="green">{{ stats.onlineDevices || 0 }} / {{ stats.totalDevices || 0 }}</strong>
+    <template v-if="!isAiChatOpen">
+      <header class="dashboard-top-bar">
+        <div class="header-left-meta">
+          <h1 class="page-title">首页</h1>
+          <span :class="['status-pill', mqttStatusTagClass]">
+            <i class="pulse-dot"></i> MQTT {{ mqttStatusLabel }}
+          </span>
+          <span class="clock-tag">{{ currentTime }}</span>
         </div>
-        <div class="kpi-unit">
-          <span>进行中任务</span>
-          <strong class="blue">{{ stats.runningTasks || 0 }}</strong>
+
+        <div class="kpi-inline-group">
+          <div class="kpi-unit">
+            <span>设备在线</span>
+            <strong class="green">{{ stats.onlineDevices || 0 }} / {{ stats.totalDevices || 0 }}</strong>
+          </div>
+          <div class="kpi-unit">
+            <span>进行中任务</span>
+            <strong class="blue">{{ stats.runningTasks || 0 }}</strong>
+          </div>
         </div>
+
+        <div class="header-actions">
+          <button class="btn-aliyun-cta btn-ai-entry" type="button" @click="isAiChatOpen = true">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+            <span>AI 对话助手</span>
+          </button>
+          <button class="btn-aliyun" type="button" @click="goToTaskList">任务列表</button>
+          <button class="btn-aliyun" type="button" @click="goToTaskDesigner">流程设计</button>
+        </div>
+      </header>
+
+      <!-- 2. MQTT 异常警告条 (仅在未连接时出现) -->
+      <div v-if="showMqttAlert" class="mqtt-inline-alert">
+        <i class="alert-icon">!</i>
+        <span>{{ mqttAlertTitle }}</span>
       </div>
 
-      <div class="header-actions">
-        <button class="btn-aliyun" type="button" @click="goToTaskList">任务列表</button>
-        <button class="btn-aliyun-cta" type="button" @click="goToTaskDesigner">流程设计</button>
-      </div>
-    </header>
-
-    <!-- 2. MQTT 异常警告条 (仅在未连接时出现) -->
-    <div v-if="showMqttAlert" class="mqtt-inline-alert">
-      <i class="alert-icon">!</i>
-      <span>{{ mqttAlertTitle }}</span>
-    </div>
-
-    <div class="dashboard-center-grid">
-      <WorkflowAgentChat />
-
-      <aside class="dashboard-side-pane">
+      <div class="dashboard-center-grid">
         <div class="scene-viewport-pane">
           <div class="scene-header-control">
             <div class="scene-select-group">
@@ -89,52 +93,59 @@
           </div>
         </div>
 
-        <section v-if="currentDevice" class="side-device-card">
-          <div class="side-section-head">
-            <span>当前设备</span>
-            <span :class="['status-pill', currentDevice.isOnline ? 'online' : 'offline']">
-              {{ currentDevice.isOnline ? '在线' : '离线' }}
-            </span>
-          </div>
-          <table class="meta-table-dense">
-            <tbody>
-              <tr>
-                <td class="lbl">名称</td>
-                <td class="val"><strong>{{ currentDevice.instanceName }}</strong></td>
-              </tr>
-              <tr>
-                <td class="lbl">模型</td>
-                <td class="val">{{ getModelLabel(currentDevice.modelId) }}</td>
-              </tr>
-              <tr>
-                <td class="lbl">指令</td>
-                <td class="val mono">{{ liveSnapshot?.currentCommandState || '-' }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </section>
+        <aside class="dashboard-side-pane">
+          <section v-if="currentDevice" class="side-device-card">
+            <div class="side-section-head">
+              <span>当前设备</span>
+              <span :class="['status-pill', currentDevice.isOnline ? 'online' : 'offline']">
+                {{ currentDevice.isOnline ? '在线' : '离线' }}
+              </span>
+            </div>
+            <table class="meta-table-dense">
+              <tbody>
+                <tr>
+                  <td class="lbl">名称</td>
+                  <td class="val"><strong>{{ currentDevice.instanceName }}</strong></td>
+                </tr>
+                <tr>
+                  <td class="lbl">模型</td>
+                  <td class="val">{{ getModelLabel(currentDevice.modelId) }}</td>
+                </tr>
+                <tr>
+                  <td class="lbl">指令</td>
+                  <td class="val mono">{{ liveSnapshot?.currentCommandState || '-' }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </section>
 
-        <section class="side-task-list">
-          <div class="side-section-head">
-            <span>进行中任务</span>
-            <button class="btn-link" type="button" @click="goToTaskList">全部</button>
-          </div>
-          <div v-if="runningTasks.length" class="side-task-rows">
-            <button
-              v-for="task in runningTasks.slice(0, 4)"
-              :key="task.taskId"
-              class="side-task-row"
-              type="button"
-              @click="goToTaskList"
-            >
-              <strong>{{ task.taskName }}</strong>
-              <span class="mono">#{{ task.taskId }}</span>
-            </button>
-          </div>
-          <p v-else class="side-empty">暂无进行中的任务</p>
-        </section>
-      </aside>
-    </div>
+          <section class="side-task-list">
+            <div class="side-section-head">
+              <span>进行中任务</span>
+              <button class="btn-link" type="button" @click="goToTaskList">全部</button>
+            </div>
+            <div v-if="runningTasks.length" class="side-task-rows">
+              <button
+                v-for="task in runningTasks.slice(0, 4)"
+                :key="task.taskId"
+                class="side-task-row"
+                type="button"
+                @click="goToTaskList"
+              >
+                <strong>{{ task.taskName }}</strong>
+                <span class="mono">#{{ task.taskId }}</span>
+              </button>
+            </div>
+            <p v-else class="side-empty">暂无进行中的任务</p>
+          </section>
+        </aside>
+      </div>
+    </template>
+
+    <WorkflowAgentChat
+      v-else
+      @close="isAiChatOpen = false"
+    />
   </div>
 </template>
 
@@ -146,6 +157,7 @@ import { ElMessage } from 'element-plus'
 import WorkflowAgentChat from './components/WorkflowAgentChat.vue'
 
 const router = useRouter()
+const isAiChatOpen = ref(false)
 
 const currentTime = ref('')
 let timer: number | undefined

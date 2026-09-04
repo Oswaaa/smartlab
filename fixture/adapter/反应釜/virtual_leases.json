@@ -1,0 +1,14 @@
+{
+  "25": {
+    "leaseId": 25,
+    "physicalPoint": "Reactor1",
+    "virtualPoint": "Reactor1_sim_25",
+    "status": "RELEASED",
+    "released": true,
+    "state": {
+      "current_temp": 25.0,
+      "current_pressure": 0.1
+    },
+    "updatedTime": 1788451256825
+  }
+}

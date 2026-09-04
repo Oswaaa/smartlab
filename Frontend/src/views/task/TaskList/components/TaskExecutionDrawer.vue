@@ -129,7 +129,7 @@
                     <router-link
                       v-if="row.deviceInstanceId"
                       class="datacenter-link"
-                      :to="`/data-management?instanceId=${row.deviceInstanceId}`"
+                    :to="datacenterLink(row)"
                     >前往数据中心查看历史数据 ➔</router-link>
                   </template>
                 </el-table-column>
@@ -394,6 +394,18 @@ function jumpToRuntimeNode(binding: Item) {
 function openDeviceInstance(binding: Item) {
   if (!binding.deviceInstanceId) return
   router.push({ path: '/device-instance-management', query: { instanceId: String(binding.deviceInstanceId) } })
+}
+
+function datacenterLink(binding: Item) {
+  const taskId = props.task?.id
+  const instanceId = binding?.deviceInstanceId
+  if (taskId && instanceId) {
+    return { path: '/data-management', query: { taskId: String(taskId), instanceId: String(instanceId) } }
+  }
+  if (instanceId) {
+    return { path: '/data-management', query: { instanceId: String(instanceId) } }
+  }
+  return '/data-management'
 }
 
 function statusTone(status: unknown) {

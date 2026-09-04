@@ -75,6 +75,31 @@ test('validating a workflow posts the current model to the backend', async () =>
   assert.equal(request.url, '/api/workflow/validate')
 })
 
+test('simulating a workflow posts the canvas document with a 70s timeout', async () => {
+  const previousAdapter = axios.defaults.adapter
+  let request
+  axios.defaults.adapter = async config => {
+    request = config
+    return {
+      data: { success: true, data: { walkable: true, pathTaken: ['START', 'END'], issues: [] } },
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      config,
+    }
+  }
+
+  try {
+    await workflowApi.simulate({ flowModelId: 7, document: { metadata: { flowModelName: '测试流程' }, nodes: [] } })
+  } finally {
+    axios.defaults.adapter = previousAdapter
+  }
+
+  assert.equal(request.method, 'post')
+  assert.equal(request.url, '/api/workflow/simulate')
+  assert.equal(request.timeout, 70000)
+})
+
 test('exporting a workflow loads the schema document from the backend', async () => {
   const previousAdapter = axios.defaults.adapter
   let request
@@ -126,7 +151,7 @@ test('generating a workflow posts the prompt to the agent endpoint', async () =>
 })
 
 test('SSE frames expose live agent logs before the done event', async () => {
-  const log = parseSseFrame('event: log\ndata: {"kind":"llm_call","title":"正在请求大模型"}\n')
+  const log = parseSseFrame('event: log\ndata: {"kind":"llm_call","title":"请求模型"}\n')
   assert.equal(log.event, 'log')
   assert.equal(log.data.kind, 'llm_call')
 

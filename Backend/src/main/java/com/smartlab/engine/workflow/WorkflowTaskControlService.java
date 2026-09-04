@@ -16,6 +16,10 @@ public class WorkflowTaskControlService {
         return taskService.start(taskId);
     }
 
+    public Task start(Long taskId, String executionKind) {
+        return taskService.start(taskId, true, executionKind);
+    }
+
     public Task pause(Long taskId) {
         return taskService.pause(taskId);
     }

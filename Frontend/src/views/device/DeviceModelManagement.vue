@@ -6,6 +6,7 @@
         class="model-tree-pane"
         :categories="categories"
         :models="models"
+        :components="deviceComponents"
         :selected-model-id="selectedModelId"
         :selected-category-id="selectedCategoryId"
         :loading="loading"
@@ -215,15 +216,19 @@ const selectedCategoryBomUsages = computed(() => {
   const results = []
   models.value.forEach(m => {
     asArray(m.componentsBom).forEach(bom => {
-      if (stringId(bom.deviceCategoryId) === id) {
+      const bomCatId = stringId(bom.categoryId ?? bom.deviceCategoryId)
+      if (bomCatId === id) {
         results.push({
           _key: makeUiKey('bom_use'),
+          parentModelId: m.modelId,
           modelId: m.modelId,
           modelName: m.modelName,
           bomKey: bom._key,
-          componentName: bom.componentName,
-          minQuantity: bom.minQuantity,
-          maxQuantity: bom.maxQuantity
+          slotName: bom.slotName || bom.componentName || bom.name || '-',
+          componentName: bom.componentName || bom.slotName || '-',
+          categoryId: bom.categoryId ?? bom.deviceCategoryId,
+          quantity: bom.quantity || 1,
+          description: bom.description || ''
         })
       }
     })
@@ -234,7 +239,7 @@ const selectedCategoryBomUsages = computed(() => {
 const selectedCategoryComponentSlots = computed(() => {
   const id = selectedCategoryId.value
   if (!id) return []
-  return deviceComponents.value.filter(item => stringId(item.deviceCategoryId) === id)
+  return deviceComponents.value.filter(item => stringId(item.categoryId ?? item.deviceCategoryId) === id)
 })
 
 const selectedCategoryDataAssets = computed(() => {

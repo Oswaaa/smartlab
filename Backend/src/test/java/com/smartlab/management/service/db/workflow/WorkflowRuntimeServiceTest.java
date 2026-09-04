@@ -11,6 +11,7 @@ import com.smartlab.management.entity.workflow.TaskStep;
 import com.smartlab.management.mapper.workflow.FlowNodeMapper;
 import com.smartlab.management.mapper.workflow.TaskMapper;
 import com.smartlab.management.mapper.workflow.TaskStepMapper;
+import com.smartlab.management.service.db.resource.adapter.VirtualLeaseService;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
 
@@ -281,6 +282,42 @@ class WorkflowRuntimeServiceTest {
 
         assertEquals("FAILED", task.getTaskStatus());
         verify(tasks).updateById(task);
+    }
+
+    @Test
+    void completeSimulationTaskReleasesLeases() {
+        TaskMapper tasks = mock(TaskMapper.class);
+        VirtualLeaseService leases = mock(VirtualLeaseService.class);
+        WorkflowRuntimeService runtime = new WorkflowRuntimeService(tasks, mock(TaskStepMapper.class),
+                mock(FlowNodeMapper.class), mock(ExecutionLogService.class), mock(ApplicationEventPublisher.class),
+                null, leases);
+        Task task = new Task();
+        task.setId(5L);
+        task.setTaskStatus("RUNNING");
+        task.setExecutionKind("SIMULATION");
+
+        runtime.completeTask(task);
+
+        assertEquals("SUCCEEDED", task.getTaskStatus());
+        verify(leases).releaseForTask(5L);
+    }
+
+    @Test
+    void failSimulationTaskReleasesLeases() {
+        TaskMapper tasks = mock(TaskMapper.class);
+        VirtualLeaseService leases = mock(VirtualLeaseService.class);
+        WorkflowRuntimeService runtime = new WorkflowRuntimeService(tasks, mock(TaskStepMapper.class),
+                mock(FlowNodeMapper.class), mock(ExecutionLogService.class), mock(ApplicationEventPublisher.class),
+                null, leases);
+        Task task = new Task();
+        task.setId(5L);
+        task.setTaskStatus("RUNNING");
+        task.setExecutionKind("SIMULATION");
+
+        runtime.failTask(task, "boom");
+
+        assertEquals("FAILED", task.getTaskStatus());
+        verify(leases).releaseForTask(5L);
     }
 
     @Test

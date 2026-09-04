@@ -24,12 +24,12 @@ class TaskPreflightBehaviorTest {
     void preflightReturnsBindingIssuesWithoutInsertingTask() {
         TaskMapper taskMapper = mock(TaskMapper.class);
         WorkflowTaskResourceService resources = mock(WorkflowTaskResourceService.class);
-        when(resources.prepare(11L, java.util.List.of())).thenReturn(new WorkflowTaskResourceService.PreparedTaskResources(
+        when(resources.prepare(11L, java.util.List.of(), null)).thenReturn(new WorkflowTaskResourceService.PreparedTaskResources(
                 JsonNodeSupport.objectNode(), java.util.List.of(new WorkflowIssue("TASK_BINDING_MISSING", "BINDING", "deviceBindings", "DEV_NODE", "11:1", true, "缺少设备绑定", "请选择设备实例"))));
         TaskService service = new TaskService(taskMapper, mock(TaskStepMapper.class), mock(ExecutionLogService.class),
                 mock(WorkflowService.class), resources, mock(WorkflowExecutionReadinessService.class), mock(TaskConstraintService.class), mock(ApplicationEventPublisher.class));
 
-        TaskPreflightResponse result = service.preflight(new TaskPreflightRequest(11L, JsonNodeSupport.objectNode(), java.util.List.of(), JsonNodeSupport.arrayNode()));
+        TaskPreflightResponse result = service.preflight(new TaskPreflightRequest(11L, JsonNodeSupport.objectNode(), java.util.List.of(), JsonNodeSupport.arrayNode(), null));
 
         assertFalse(result.ready());
         assertEquals(java.util.List.of("TASK_BINDING_MISSING"), result.issues().stream().map(WorkflowIssue::code).toList());
@@ -43,7 +43,7 @@ class TaskPreflightBehaviorTest {
         var resourceMap = JsonNodeSupport.objectNode();
         resourceMap.putObject("deviceBindings").putObject("slot-online").put("deviceInstanceId", 7L);
         when(resources.prepare(11L, java.util.List.of(
-                new com.smartlab.management.dto.workflow.TaskDeviceBindingRequest("slot-online", 7L))))
+                new com.smartlab.management.dto.workflow.TaskDeviceBindingRequest("slot-online", 7L)), null))
                 .thenReturn(new WorkflowTaskResourceService.PreparedTaskResources(resourceMap, java.util.List.of(
                         new WorkflowIssue("TASK_BINDING_MISSING", "BINDING", "deviceBindings[slot-missing]", "DEV_NODE", "slot-missing", true, "缺少设备绑定", "请选择设备实例"))));
         WorkflowExecutionReadinessService readiness = mock(WorkflowExecutionReadinessService.class);
@@ -53,7 +53,7 @@ class TaskPreflightBehaviorTest {
                 mock(WorkflowService.class), resources, readiness, mock(TaskConstraintService.class), mock(ApplicationEventPublisher.class));
 
         TaskPreflightResponse result = service.preflight(new TaskPreflightRequest(11L, JsonNodeSupport.objectNode(),
-                java.util.List.of(new com.smartlab.management.dto.workflow.TaskDeviceBindingRequest("slot-online", 7L)), JsonNodeSupport.arrayNode()));
+                java.util.List.of(new com.smartlab.management.dto.workflow.TaskDeviceBindingRequest("slot-online", 7L)), JsonNodeSupport.arrayNode(), null));
 
         assertFalse(result.ready());
         assertEquals(java.util.List.of("DEVICE_OFFLINE", "TASK_BINDING_MISSING"),

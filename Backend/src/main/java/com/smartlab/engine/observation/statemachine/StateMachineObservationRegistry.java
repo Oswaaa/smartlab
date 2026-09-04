@@ -10,6 +10,7 @@ import com.smartlab.engine.observation.event.ObservableChangedEvent;
 import com.smartlab.engine.observation.event.ObservableTopologyChangedEvent;
 import com.smartlab.engine.statemachine.StateMachineInterfaceSignalEvent;
 import com.smartlab.global.contract.ObservableObjectType;
+import com.smartlab.global.event.DeviceInstanceDeletedEvent;
 import com.smartlab.global.event.DeviceInstanceRetiredEvent;
 import com.smartlab.global.event.DeviceInstanceSavedEvent;
 import com.smartlab.management.entity.resource.device.DeviceInstanceLifecycle;
@@ -115,6 +116,11 @@ public class StateMachineObservationRegistry {
 
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void handleInstanceRetired(DeviceInstanceRetiredEvent event) {
+        removeDevice(event == null ? null : event.deviceInstanceId());
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void handleInstanceDeleted(DeviceInstanceDeletedEvent event) {
         removeDevice(event == null ? null : event.deviceInstanceId());
     }
 

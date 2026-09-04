@@ -1,0 +1,14 @@
+---
+description: Workflow-sim adapter simulator reads ADAPTER_INDEX.parsed_config, not device adapterContract
+globs: Backend/src/main/java/com/smartlab/adapter/**
+alwaysApply: true
+---
+
+# 流程模拟 Adapter 模拟器
+
+- 模拟器是进程内 Adapter，行为来自 `ADAPTER_INDEX.parsed_config`（配置文件解析结果）。
+- **不要**用设备模型 `adapterContract` 的 commands / events / telemetry 当模拟脚本。`adapterContract.config.adapterName` 和 `categoryName` 只用来查出那份 `parsed_config`。
+- 状态机仍是原 `StateMachineEngine`。`TEMPORARY` 出站在 MQTT 处分叉：不 `publishCommand`，把同一条 `StateMachineSendActionEvent` 交给模拟器。
+- 回灌必须异步，等 `CMD_START` 返回且 SENT 落稳后再 `dispatchAdapterEvent`。禁止在 `SEND` 同一调用栈里把指令跑完。
+- 只回 cmd 事件。禁止写孪生属性、禁止 `target*` 对名、禁止把 adapterContract.telemetry 当模拟脚本。
+- 整图遍历是编排层结构 walker，不是把 `WorkflowEngine` 改成全路径。

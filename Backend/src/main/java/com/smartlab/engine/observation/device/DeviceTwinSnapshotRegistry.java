@@ -10,11 +10,14 @@ import com.smartlab.engine.observation.SnapshotOrigin;
 import com.smartlab.engine.observation.event.ObservableChangedEvent;
 import com.smartlab.engine.observation.event.ObservableTopologyChangedEvent;
 import com.smartlab.global.contract.ObservableObjectType;
-import com.smartlab.global.event.DeviceTelemetryUpdatedEvent;
+import com.smartlab.global.event.DeviceInstanceDeletedEvent;
 import com.smartlab.global.event.DeviceInstanceRetiredEvent;
+import com.smartlab.global.event.DeviceInstanceSavedEvent;
+import com.smartlab.global.event.DeviceTelemetryUpdatedEvent;
 import com.smartlab.global.util.JsonNodeSupport;
-import com.smartlab.management.entity.resource.device.DeviceInstances;
+import com.smartlab.management.entity.resource.device.DeviceInstanceKind;
 import com.smartlab.management.entity.resource.device.DeviceInstanceLifecycle;
+import com.smartlab.management.entity.resource.device.DeviceInstances;
 import com.smartlab.management.entity.resource.device.DeviceTwinStates;
 import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
 import com.smartlab.management.mapper.resource.device.DeviceTwinStatesMapper;
@@ -62,11 +65,31 @@ public class DeviceTwinSnapshotRegistry {
     public void restorePersistedState() {
         for (DeviceTwinStates state : twinStatesMapper.selectList(Wrappers.lambdaQuery())) {
             DeviceInstances instance = instancesMapper.selectById(state.getInstanceId());
-            if (!DeviceInstanceLifecycle.isUsable(instance)) continue;
+            if (!isConstraintVisible(instance)) continue;
             Long modelId = instance.getDeviceModelId();
             Instant observedAt = state.getUpdateTime() == null ? Instant.now()
                     : state.getUpdateTime().toInstant();
             restore(state.getInstanceId(), modelId, state.getCurrentAttr(), state.getOnlineStatus(), observedAt);
+        }
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void handleInstanceSaved(DeviceInstanceSavedEvent event) {
+        if (event == null || event.deviceInstanceId() == null) return;
+        DeviceInstances instance = instancesMapper.selectById(event.deviceInstanceId());
+        if (!isConstraintVisible(instance)) {
+            remove(event.deviceInstanceId());
+            return;
+        }
+        DeviceTwinStates state = twinStatesMapper.selectOne(Wrappers.<DeviceTwinStates>lambdaQuery()
+                .eq(DeviceTwinStates::getInstanceId, instance.getId()));
+        if (state == null) return;
+        Instant observedAt = state.getUpdateTime() == null ? Instant.now() : state.getUpdateTime().toInstant();
+        boolean created = !snapshots.containsKey(instance.getId());
+        restore(instance.getId(), instance.getDeviceModelId(), state.getCurrentAttr(),
+                state.getOnlineStatus(), observedAt);
+        if (event.created() || created) {
+            events.publishEvent(new ObservableTopologyChangedEvent("DEVICE", instance.getId()));
         }
     }
 
@@ -121,6 +144,11 @@ public class DeviceTwinSnapshotRegistry {
         remove(event == null ? null : event.deviceInstanceId());
     }
 
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void handleInstanceDeleted(DeviceInstanceDeletedEvent event) {
+        remove(event == null ? null : event.deviceInstanceId());
+    }
+
     public void remove(Long instanceId) {
         if (instanceId == null) return;
         AtomicReference<DeviceTwinSnapshot> removed = snapshots.remove(instanceId);
@@ -170,5 +198,9 @@ public class DeviceTwinSnapshotRegistry {
         return value == null ? null : new DeviceTwinSnapshot(value.deviceInstanceId(), value.deviceModelId(),
                 value.attributes(), value.onlineStatus(), value.observedAt(), value.updatedAt(), value.revision(),
                 value.status(), value.origin());
+    }
+
+    private boolean isConstraintVisible(DeviceInstances instance) {
+        return DeviceInstanceLifecycle.isUsable(instance) && DeviceInstanceKind.isConstraintVisible(instance);
     }
 }

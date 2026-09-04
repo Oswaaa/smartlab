@@ -71,7 +71,7 @@
                 <el-tooltip :content="data.canRename ? '重命名类别' : '已有子类别或模型的分类禁止直接重命名'" placement="top">
                   <button class="node-action" type="button" :disabled="!data.canRename" aria-label="重命名类别" @click.stop="startRename(data)"><el-icon><EditPen /></el-icon></button>
                 </el-tooltip>
-                <el-tooltip :content="data.canDelete ? '删除类别' : '仅无模型且无子类别的空分类可删除'" placement="top">
+                <el-tooltip :content="data.canDelete ? '删除类别' : (data.isReferencedInComponents ? '该类别已被组件结构清单引用，禁止删除' : '仅无模型且无子类别的空分类可删除')" placement="top">
                   <button class="node-action danger" type="button" :disabled="!data.canDelete" aria-label="删除类别" @click.stop="emit('delete-category', data)"><el-icon><Delete /></el-icon></button>
                 </el-tooltip>
               </div>
@@ -94,6 +94,7 @@ import { Check, Close, Delete, Document, DocumentAdd, EditPen, Folder, FolderAdd
 const props = defineProps({
   categories: { type: Array, default: () => [] },
   models: { type: Array, default: () => [] },
+  components: { type: Array, default: () => [] },
   selectedModelId: { type: [String, Number], default: '' },
   selectedCategoryId: { type: [String, Number], default: '' },
   keyword: { type: String, default: '' },
@@ -194,6 +195,21 @@ function syncExpandedNodes() {
   })
 }
 
+const referencedCategoryIds = computed(() => {
+  const set = new Set()
+  asArray(props.components).forEach(c => {
+    const cid = c.categoryId != null ? String(c.categoryId) : (c.deviceCategoryId != null ? String(c.deviceCategoryId) : '')
+    if (cid) set.add(cid)
+  })
+  asArray(props.models).forEach(m => {
+    asArray(m.componentsBom).forEach(bom => {
+      const cid = bom.categoryId != null ? String(bom.categoryId) : (bom.deviceCategoryId != null ? String(bom.deviceCategoryId) : '')
+      if (cid) set.add(cid)
+    })
+  })
+  return set
+})
+
 function buildCategoryNode(category, forceInclude) {
   const id = category.id == null ? '' : String(category.id)
   const directModels = asArray(modelsByCategory.value.get(id))
@@ -206,6 +222,7 @@ function buildCategoryNode(category, forceInclude) {
   if (editor.visible && editor.mode === 'create' && String(editor.parentCategoryId ?? '') === id) children.unshift(editorNode(id))
   const hasCategoryChildren = childCategories.length > 0
   const totalModelCount = directModels.length + categoryChildren.reduce((sum, child) => sum + countCategoryModels(child), 0)
+  const isReferencedInComponents = referencedCategoryIds.value.has(id)
 
   if (normalizedKeyword.value && !includeAll && children.length === 0) return null
 
@@ -220,9 +237,10 @@ function buildCategoryNode(category, forceInclude) {
     directModels: directModels.map(modelNode),
     totalModelCount,
     hasCategoryChildren,
+    isReferencedInComponents,
     canCreateModel: !hasCategoryChildren,
     canRename: !hasCategoryChildren && directModels.length === 0,
-    canDelete: !hasCategoryChildren && directModels.length === 0,
+    canDelete: !hasCategoryChildren && directModels.length === 0 && !isReferencedInComponents,
     children
   }
 }

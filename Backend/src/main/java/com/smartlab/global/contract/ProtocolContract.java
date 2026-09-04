@@ -53,6 +53,8 @@ public final class ProtocolContract {
         values.put("AdapterOutboundSignal", names(AdapterOutboundSignal.values()));
         values.put("StatusSignal", names(StatusSignal.values()));
         values.put("AdapterRegisterRawConfigFormat", List.of("INI", "JSON"));
+        values.put("LeaseAction", List.of("LEASE", "RELEASE"));
+        values.put("LeaseResultStatus", List.of("GRANTED", "RELEASED", "FAILED"));
         return Map.copyOf(values);
     }
 

@@ -13,7 +13,7 @@
           <input
             v-model="keyword"
             class="tree-search-input"
-            placeholder="搜索类别、模型、设备或模板..."
+            placeholder="搜索任务、类别、模型、设备或模板..."
           />
         </div>
 
@@ -53,8 +53,12 @@
                     <Document />
                   </el-icon>
                   
-                  <!-- 4. 设备实例：设备/芯片图标 -->
-                  <el-icon v-else-if="data.type === 'instance'" class="t-icon instance-icon">
+                  <el-icon v-else-if="data.type === 'task'" class="t-icon task-icon">
+                    <List />
+                  </el-icon>
+                  
+                  <!-- 4. 设备实例 / 任务下物理实例：设备/芯片图标 -->
+                  <el-icon v-else-if="data.type === 'instance' || data.type === 'task-instance'" class="t-icon instance-icon">
                     <Cpu />
                   </el-icon>
                   
@@ -106,11 +110,11 @@
           <div class="metric-ribbon">
             <div class="m-cell">
               <span class="m-label">设备模型</span>
-              <strong class="m-val">{{ modelName(selectedInstance?.deviceModelId) }}</strong>
+              <strong class="m-val">{{ selectedDatasetBinding.modelLabel }}</strong>
             </div>
             <div class="m-cell">
               <span class="m-label">绑定实例</span>
-              <strong class="m-val">{{ instanceName(selectedDataset.deviceInstanceId) }}</strong>
+              <strong class="m-val">{{ selectedDatasetBinding.instanceLabel }}</strong>
             </div>
             <div class="m-cell">
               <span class="m-label">数据模板</span>
@@ -131,14 +135,34 @@
                   <span class="status-dot-badge normal" style="margin-left: 8px;">
                     <span class="dot"></span> 实时采样 (1s)
                   </span>
+                  <span class="count-pill">{{ chartLiveLabel }}</span>
+                  <span v-if="chartWindowLabel" class="count-pill chart-window-label">{{ chartWindowLabel }}</span>
                 </div>
-                <div style="display: flex; gap: 8px;">
-                  <button class="btn-aliyun" type="button" @click="loadRecords(false)">刷新采样</button>
+                <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                  <template v-if="chartUnits.length > 2">
+                    <el-radio-group v-model="chartViewMode" size="small">
+                      <el-radio-button label="facet">分面视图</el-radio-button>
+                      <el-radio-button label="compare">对比视图</el-radio-button>
+                    </el-radio-group>
+                    <template v-if="chartViewModeEffective === 'compare'">
+                      <el-select v-model="compareLeftUnit" size="small" style="width: 108px" placeholder="左轴单位">
+                        <el-option v-for="unit in chartUnits" :key="'left-' + unit" :label="unit" :value="unit" />
+                      </el-select>
+                      <el-select v-model="compareRightUnit" size="small" style="width: 108px" placeholder="右轴单位">
+                        <el-option v-for="unit in chartUnits" :key="'right-' + unit" :label="unit" :value="unit" />
+                      </el-select>
+                    </template>
+                  </template>
+                  <button v-if="canShiftChartEarlier" class="btn-aliyun" type="button" @click="shiftChartWindow(-1)">上一窗</button>
+                  <button v-if="!chartLiveFollow" class="btn-aliyun" type="button" @click="shiftChartWindow(1)">下一窗</button>
+                  <button v-if="!chartLiveFollow" class="btn-aliyun" type="button" @click="resumeChartLive">回到最新</button>
+                  <button class="btn-aliyun" type="button" @click="resetChartZoom">重置缩放</button>
+                  <button class="btn-aliyun" type="button" @click="refreshTelemetry(false)">刷新采样</button>
                   <button class="btn-primary-blue" type="button" @click="exportChartImage">导出图表图片</button>
                 </div>
               </div>
               <div class="chart-section">
-                <div ref="chartRef" class="chart-box"></div>
+                <div ref="chartRef" class="chart-box" :style="{ height: chartBoxHeight + 'px' }"></div>
               </div>
             </div>
 
@@ -223,13 +247,14 @@
               <strong class="m-val">{{ selectedTemplate.isDefault ? '默认模板' : '自定义模板' }}</strong>
             </div>
             <div class="m-cell">
-              <span class="m-label">创建时间</span>
-              <strong class="m-val time-stamp">{{ formatTime(selectedTemplate.createTime) }}</strong>
+              <span class="m-label">已建数据表</span>
+              <strong class="m-val highlight">{{ templateDatasets(selectedTemplate).length }} 张</strong>
             </div>
           </div>
 
           <div class="canvas-fixed-layout">
-            <div class="table-panel-flex">
+            <!-- 核心列表 1: 模板字段定义 -->
+            <div class="table-panel-flex" style="flex: 1.1;">
               <div class="section-toolbar">
                 <div class="section-title">
                   <span>模板字段定义</span>
@@ -264,6 +289,41 @@
                 </div>
               </div>
             </div>
+
+            <!-- 核心列表 2: 基于此模板创建的数据表 -->
+            <div class="table-panel-flex" style="flex: 0.9; border-top: 1px solid var(--sl-border-base);">
+              <div class="section-toolbar">
+                <div class="section-title">
+                  <span>基于此模板创建的数据表</span>
+                  <span class="count-pill">{{ templateDatasets(selectedTemplate).length }} 张表</span>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                  <button v-if="templateHasModel(selectedTemplate)" class="btn-aliyun-cta" type="button" @click="openDatasetDrawer(selectedTemplate)">+ 用此模板建表</button>
+                </div>
+              </div>
+              <div class="table-scroll-container">
+                <div v-if="templateDatasets(selectedTemplate).length" class="table-card">
+                  <el-table :data="templateDatasets(selectedTemplate)" border stripe size="small" height="100%" class="unified-table-el">
+                    <el-table-column prop="dataTable" label="数据表名" min-width="180" />
+                    <el-table-column prop="dataDesc" label="数据表说明" min-width="200" />
+                    <el-table-column label="绑定设备实例" min-width="180">
+                      <template #default="{ row }">{{ instancePathByDataset(row) }}</template>
+                    </el-table-column>
+                    <el-table-column label="创建时间" width="170">
+                      <template #default="{ row }"><span class="time-stamp">{{ formatTime(row.createTime) }}</span></template>
+                    </el-table-column>
+                    <el-table-column label="操作" width="120">
+                      <template #default="{ row }">
+                        <button class="btn-link" type="button" @click="selectDataset(row, { template: selectedTemplate })">查看详情</button>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </div>
+                <el-empty v-else description="暂无基于该模板创建的数据表">
+                  <button v-if="templateHasModel(selectedTemplate)" class="btn-aliyun-cta" type="button" @click="openDatasetDrawer(selectedTemplate)">用此模板建表</button>
+                </el-empty>
+              </div>
+            </div>
           </div>
         </template>
 
@@ -294,16 +354,16 @@
             <div class="table-panel-flex">
               <div class="section-toolbar">
                 <div class="section-title">
-                  <span>该设备已关联的数据表</span>
-                  <span class="count-pill">{{ instanceDatasets(selectedInstance).length }} 张表</span>
+                  <span>{{ selectedTask ? '该任务下该设备的数据表' : '该设备已关联的数据表' }}</span>
+                  <span class="count-pill">{{ displayedInstanceDatasets(selectedInstance).length }} 张表</span>
                 </div>
                 <div style="display: flex; gap: 8px;">
-                  <button v-if="isUsableInstance(selectedInstance)" class="btn-aliyun-cta" type="button" @click="openDatasetDrawer(null, selectedInstance)">+ 为该设备建表</button>
+                  <button v-if="!selectedTask && isUsableInstance(selectedInstance)" class="btn-aliyun-cta" type="button" @click="openDatasetDrawer(null, selectedInstance)">+ 为该设备建表</button>
                 </div>
               </div>
               <div class="table-scroll-container">
-                <div v-if="instanceDatasets(selectedInstance).length" class="table-card">
-                  <el-table :data="instanceDatasets(selectedInstance)" border stripe size="small" height="100%" class="unified-table-el">
+                <div v-if="displayedInstanceDatasets(selectedInstance).length" class="table-card">
+                  <el-table :data="displayedInstanceDatasets(selectedInstance)" border stripe size="small" height="100%" class="unified-table-el">
                     <el-table-column prop="dataTable" label="数据表名" min-width="180" />
                     <el-table-column prop="dataDesc" label="数据表说明" min-width="200" />
                     <el-table-column label="依赖模板" min-width="160">
@@ -311,14 +371,63 @@
                     </el-table-column>
                     <el-table-column label="操作" width="120">
                       <template #default="{ row }">
-                        <button class="btn-link" type="button" @click="selectDataset(row)">查看详情</button>
+                        <button class="btn-link" type="button" @click="openInstanceDataset(row)">查看详情</button>
                       </template>
                     </el-table-column>
                   </el-table>
                 </div>
-                <el-empty v-else description="该设备实例下暂无数据表">
-                  <button v-if="isUsableInstance(selectedInstance)" class="btn-aliyun-cta" type="button" @click="openDatasetDrawer(null, selectedInstance)">为该设备建表</button>
+                <el-empty v-else :description="selectedTask ? '该任务下暂无数据表' : '该设备实例下暂无数据表'">
+                  <button v-if="!selectedTask && isUsableInstance(selectedInstance)" class="btn-aliyun-cta" type="button" @click="openDatasetDrawer(null, selectedInstance)">为该设备建表</button>
                 </el-empty>
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- 2.3b 视角：任务视角 -->
+        <template v-else-if="selectedTask">
+          <div class="metric-ribbon">
+            <div class="m-cell">
+              <span class="m-label">任务</span>
+              <strong class="m-val">{{ selectedTask.taskName }}</strong>
+            </div>
+            <div class="m-cell">
+              <span class="m-label">执行种类</span>
+              <strong class="m-val">{{ selectedTask.executionKind === 'SIMULATION' ? '模拟执行' : '正式执行' }}</strong>
+            </div>
+            <div class="m-cell">
+              <span class="m-label">绑定物理实例</span>
+              <strong class="m-val highlight">{{ taskAssetInstances(selectedTask).length }} 个</strong>
+            </div>
+            <div class="m-cell">
+              <span class="m-label">数据表</span>
+              <strong class="m-val highlight">{{ taskAssetDatasetCount(selectedTask) }} 张</strong>
+            </div>
+          </div>
+
+          <div class="canvas-fixed-layout">
+            <div class="table-panel-flex">
+              <div class="section-toolbar">
+                <div class="section-title">
+                  <span>任务绑定的物理实例与数据表</span>
+                  <span class="count-pill">{{ taskAssetInstances(selectedTask).length }} 个实例</span>
+                </div>
+              </div>
+              <div class="table-scroll-container">
+                <div v-if="taskAssetInstances(selectedTask).length" class="table-card">
+                  <el-table :data="taskAssetInstances(selectedTask)" border stripe size="small" height="100%" class="unified-table-el">
+                    <el-table-column prop="instanceName" label="物理实例" min-width="180" />
+                    <el-table-column label="数据表" min-width="220">
+                      <template #default="{ row }">{{ asArray(row.datasets).map(ds => ds.dataTable).join('、') || '暂无' }}</template>
+                    </el-table-column>
+                    <el-table-column label="操作" width="140">
+                      <template #default="{ row }">
+                        <button class="btn-link" type="button" @click="selectTaskInstance({ task: selectedTask, physicalInstanceId: row.physicalInstanceId, instanceName: row.instanceName })">查看实例</button>
+                      </template>
+                    </el-table-column>
+                  </el-table>
+                </div>
+                <el-empty v-else description="该任务没有绑定设备或尚无归档数据" />
               </div>
             </div>
           </div>
@@ -563,7 +672,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, shallowRef, 
 import { useRoute } from 'vue-router'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
-import { Cpu, Folder, Tickets, Plus, DocumentAdd, Document } from '@element-plus/icons-vue'
+import { Cpu, Folder, Tickets, Plus, DocumentAdd, Document, List } from '@element-plus/icons-vue'
 import * as echarts from 'echarts'
 
 const route = useRoute()
@@ -582,13 +691,43 @@ const templates = ref([])
 const propertyTypes = ref([])
 const templateDetails = ref([])
 const records = ref([])
+const chartRecords = ref([])
+const chartWindowStart = ref(null)
+const chartWindowEnd = ref(null)
+const chartEarliestAvailable = ref(null)
+const chartLatestAvailable = ref(null)
+const chartLiveFollow = ref(true)
+const CHART_WINDOW_MINUTES = 60
+const CHART_MAX_POINTS = 4000
+/** 时间轴最小可视跨度：避免缩放到「1 秒占半屏」导致折线呈阶梯跳跃 */
+const CHART_MIN_VALUE_SPAN_MS = 60 * 1000
+let chartLoadSeq = 0
+let tableLoadSeq = 0
+let chartPanLoading = false
+let chartEdgeIgnoreUntil = 0
+let tableRequestInFlight = false
+let chartRequestInFlight = false
+let tableReloadQueued = false
+let chartReloadQueued = false
 const selectedDataset = ref(null)
 const selectedTemplate = ref(null)
 const selectedInstance = ref(null)
+const selectedTask = ref(null)
 const selectedModel = ref(null)
 const selectedCategory = ref(null)
+const tasks = ref([])
+const taskAssets = ref({})
+const virtualLeases = ref([])
 const chartRef = ref(null)
 const chart = shallowRef(null)
+const chartLegendSelected = ref({})
+const chartLegendBound = ref(false)
+const chartZoomRange = ref({ start: 0, end: 100 })
+const chartDataZoomBound = ref(false)
+const chartViewMode = ref('facet')
+const compareLeftUnit = ref('')
+const compareRightUnit = ref('')
+const CHART_COLORS = ['#2563eb', '#0284c7', '#16a34a', '#d97706', '#7c3aed']
 const recordPage = reactive({ pageNo: 1, pageSize: 100, total: 0 })
 const detailCache = reactive({})
 
@@ -597,6 +736,19 @@ const templateDrawer = reactive({ visible: false, templateName: '', templateDesc
 
 const modelMap = computed(() => Object.fromEntries(models.value.map(m => [String(modelId(m)), m])))
 const templateMap = computed(() => Object.fromEntries(templates.value.map(t => [String(t.id), t])))
+const leaseByDataIndexId = computed(() => {
+  const map = {}
+  for (const lease of virtualLeases.value) {
+    if (lease?.dataIndexId == null) continue
+    const key = String(lease.dataIndexId)
+    const existing = map[key]
+    if (!existing || Number(lease.id) > Number(existing.id)) {
+      map[key] = lease
+    }
+  }
+  return map
+})
+const selectedDatasetBinding = computed(() => resolveDatasetBinding(selectedDataset.value, selectedInstance.value))
 const usableInstances = computed(() => instances.value.filter(isUsableInstance))
 const compatibleTemplates = computed(() => {
   const instance = instances.value.find(row => Number(instanceId(row)) === Number(datasetDrawer.deviceInstanceId))
@@ -622,9 +774,78 @@ const unitMap = computed(() => {
   })
   return map
 })
+function fieldUnit(field) {
+  return unitMap.value.get(field.columnName) || unitMap.value.get(field.deviceAttrKey) || '数值'
+}
+const chartUnits = computed(() => [
+  ...new Set(valueFields.value.map(field => fieldUnit(field)))
+])
+const chartViewModeEffective = computed(() => (
+  chartUnits.value.length <= 2 ? 'compare' : chartViewMode.value
+))
+const chartBoxHeight = computed(() => {
+  const zoomPad = 26
+  if (chartViewModeEffective.value !== 'facet') return 255 + zoomPad
+  const count = Math.max(chartUnits.value.length, 1)
+  return Math.min(540, Math.max(255, 56 + count * 88)) + zoomPad
+})
+const canShiftChartEarlier = computed(() => {
+  if (chartWindowStart.value == null) return false
+  if (chartEarliestAvailable.value == null) return true
+  return chartWindowStart.value > chartEarliestAvailable.value + 1000
+})
+const chartWindowLabel = computed(() => {
+  if (chartWindowStart.value == null || chartWindowEnd.value == null) return ''
+  return `${formatChartAxisTime(chartWindowStart.value)} ~ ${formatChartAxisTime(chartWindowEnd.value)}`
+})
+const chartLiveLabel = computed(() => {
+  if (!chartLiveFollow.value) return '历史窗口（固定）'
+  if (chartEarliestAvailable.value && chartWindowEnd.value) {
+    const spanMs = chartWindowEnd.value - chartEarliestAvailable.value
+    if (spanMs < 55 * 60 * 1000) {
+      return '实时监控（对齐最早采样）'
+    }
+  }
+  return '最近 1 小时（滑动）'
+})
 
-// 侧边栏资产树：明确分为「设备类别」与「数据模板」两个一级独立根节点
+// 侧边栏：任务树 + 设备类别 / 数据模板
 const treeData = computed(() => {
+  const taskGroup = {
+    key: 'group-tasks',
+    label: '任务',
+    type: 'group-header',
+    count: tasks.value.length,
+    children: tasks.value.map(task => {
+      const instanceRows = taskAssetInstances(task)
+      const tNode = {
+        key: `task-${task.id}`,
+        label: task.taskName || `任务 ${task.id}`,
+        type: 'task',
+        data: task,
+        count: instanceRows.length,
+        children: []
+      }
+      instanceRows.forEach(row => {
+        const physical = physicalInstanceForTask(row)
+        const iNode = {
+          key: `task-${task.id}-instance-${row.physicalInstanceId}`,
+          label: row.instanceName || physical.instanceName,
+          type: 'task-instance',
+          data: { task, physicalInstanceId: row.physicalInstanceId, instanceName: row.instanceName },
+          count: asArray(row.datasets).length,
+          children: asArray(row.datasets).map(ds => ({
+            key: `task-${task.id}-dataset-${ds.id}`,
+            label: ds.dataTable,
+            type: 'task-dataset',
+            data: { task, physicalInstanceId: row.physicalInstanceId, instanceName: row.instanceName, dataset: ds }
+          }))
+        }
+        tNode.children.push(iNode)
+      })
+      return tNode
+    })
+  }
   // 1. 设备类别分组 (大标题无图标)
   const categoryGroup = {
     key: 'group-categories',
@@ -681,15 +902,25 @@ const treeData = computed(() => {
     label: '数据模板',
     type: 'group-header',
     count: templates.value.length,
-    children: templates.value.map(tpl => ({
-      key: `template-${tpl.id}`,
-      label: tpl.templateName,
-      type: 'template', // 数据模板 -> 文档图标
-      data: tpl
-    }))
+    children: templates.value.map(tpl => {
+      const tplDatasets = templateDatasets(tpl)
+      return {
+        key: `template-${tpl.id}`,
+        label: tpl.templateName,
+        type: 'template', // 数据模板 -> 文档图标
+        data: tpl,
+        count: tplDatasets.length,
+        children: tplDatasets.map(ds => ({
+          key: `template-${tpl.id}-dataset-${ds.id}`,
+          label: ds.dataTable,
+          type: 'template-dataset', // 数据表 -> 票据/表格图标
+          data: { template: tpl, dataset: ds }
+        }))
+      }
+    })
   }
 
-  return [categoryGroup, templateGroup]
+  return [taskGroup, categoryGroup, templateGroup]
 })
 
 const filteredTree = computed(() => {
@@ -707,13 +938,15 @@ const filteredTree = computed(() => {
 async function loadAll() {
   loading.value = true
   try {
-    const [cRes, mRes, iRes, dRes, tRes, pRes] = await Promise.all([
+    const [cRes, mRes, iRes, dRes, tRes, pRes, taskRes, leaseRes] = await Promise.all([
       axios.get('/api/device/category/list'),
       axios.get('/api/device/model/list'),
       axios.get('/api/device/instance/list'),
       axios.get('/api/data/index/list'),
       axios.get('/api/data/template/list'),
-      axios.get('/api/data/property-type/list')
+      axios.get('/api/data/property-type/list'),
+      axios.get('/api/task/list'),
+      axios.get('/api/adapter/lease/list').catch(() => ({ data: { data: [] } }))
     ])
     categories.value = asArray(cRes.data?.data)
     models.value = asArray(mRes.data?.data)
@@ -721,10 +954,13 @@ async function loadAll() {
     datasets.value = asArray(dRes.data?.data)
     templates.value = asArray(tRes.data?.data)
     propertyTypes.value = asArray(pRes.data?.data)
+    tasks.value = asArray(taskRes.data?.data)
+    virtualLeases.value = asArray(leaseRes.data?.data)
+    await Promise.all(tasks.value.map(task => ensureTaskAssets(task.id)))
     
-    // 如果 URL query 传了 instanceId，则优先按照 query 选中目标实例
-    if (!applyRouteQuery()) {
-      if (!selectedDataset.value && !selectedTemplate.value && !selectedInstance.value && !selectedModel.value && !selectedCategory.value) {
+    // 如果 URL query 传了 taskId / instanceId，则优先按照 query 选中目标
+    if (!await applyRouteQuery()) {
+      if (!selectedDataset.value && !selectedTemplate.value && !selectedInstance.value && !selectedTask.value && !selectedModel.value && !selectedCategory.value) {
         selectFirstAvailable()
       }
     }
@@ -735,16 +971,47 @@ async function loadAll() {
   }
 }
 
-function applyRouteQuery() {
+async function applyRouteQuery() {
+  const qTaskId = route.query.taskId
   const qDatasetId = route.query.datasetId
+  const qInstanceId = route.query.instanceId
+  const qTemplateId = route.query.templateId
+  if (qTaskId) {
+    await ensureTaskAssets(qTaskId)
+    const task = tasks.value.find(item => String(taskIdOf(item)) === String(qTaskId))
+    if (!task) return false
+    if (qDatasetId) {
+      const found = findTaskDataset(task, qDatasetId)
+      if (found) {
+        await selectDataset(found.dataset, {
+          task,
+          physicalInstanceId: found.physicalInstanceId,
+          instanceName: found.instanceName
+        })
+        return true
+      }
+    }
+    if (qInstanceId) {
+      selectTaskInstance({ task, physicalInstanceId: qInstanceId })
+      return true
+    }
+    selectTask(task)
+    return true
+  }
   if (qDatasetId && datasets.value.length) {
     const targetDataset = datasets.value.find(ds => String(ds.id) === String(qDatasetId))
     if (targetDataset) {
-      selectDataset(targetDataset)
+      await selectDataset(targetDataset)
       return true
     }
   }
-  const qInstanceId = route.query.instanceId
+  if (qTemplateId && templates.value.length) {
+    const targetTemplate = templates.value.find(tpl => String(tpl.id) === String(qTemplateId))
+    if (targetTemplate) {
+      selectTemplate(targetTemplate)
+      return true
+    }
+  }
   if (!qInstanceId || !instances.value.length) return false
   
   const targetInstance = instances.value.find(ins => String(instanceId(ins)) === String(qInstanceId))
@@ -752,22 +1019,25 @@ function applyRouteQuery() {
   
   const relatedDatasets = instanceDatasets(targetInstance)
   if (relatedDatasets.length === 1) {
-    selectDataset(relatedDatasets[0])
-    return true
-  } else {
-    selectInstance(targetInstance)
+    await selectDataset(relatedDatasets[0])
     return true
   }
+  selectInstance(targetInstance)
+  return true
 }
 
-watch(() => [route.query.instanceId, route.query.datasetId], () => {
-  if (instances.value.length || datasets.value.length) {
+watch(() => [route.query.instanceId, route.query.datasetId, route.query.taskId, route.query.templateId], () => {
+  if (instances.value.length || datasets.value.length || tasks.value.length || templates.value.length) {
     applyRouteQuery()
   }
 })
 
 function handleTreeClick(node) {
-  if (node.type === 'dataset') selectDataset(node.data)
+  if (node.type === 'task-dataset') selectDataset(node.data.dataset, node.data)
+  else if (node.type === 'template-dataset') selectDataset(node.data.dataset, node.data)
+  else if (node.type === 'task-instance') selectTaskInstance(node.data)
+  else if (node.type === 'task') selectTask(node.data)
+  else if (node.type === 'dataset') selectDataset(node.data)
   else if (node.type === 'template') selectTemplate(node.data)
   else if (node.type === 'instance') selectInstance(node.data)
   else if (node.type === 'model') selectModel(node.data)
@@ -778,18 +1048,42 @@ function clearAllSelections() {
   selectedDataset.value = null
   selectedTemplate.value = null
   selectedInstance.value = null
+  selectedTask.value = null
   selectedModel.value = null
   selectedCategory.value = null
 }
 
-async function selectDataset(dataset) {
+async function selectDataset(dataset, context) {
   clearAllSelections()
+  chartLoadSeq += 1
+  tableLoadSeq += 1
+  chartRecords.value = []
+  records.value = []
+  chartWindowStart.value = null
+  chartWindowEnd.value = null
+  chartEarliestAvailable.value = null
+  chartLatestAvailable.value = null
+  chartLiveFollow.value = true
+  disposeChart()
+  resetChartLegendState()
+  resetChartViewState()
   selectedDataset.value = dataset
-  activeKey.value = `dataset-${dataset.id}`
-  selectedInstance.value = instances.value.find(ins => String(instanceId(ins)) === String(dataset.deviceInstanceId)) || null
+  if (context?.task) {
+    selectedTask.value = context.task
+    selectedInstance.value = physicalInstanceForTask(context)
+    activeKey.value = `task-${context.task.id}-dataset-${dataset.id}`
+  } else if (context?.template) {
+    selectedTemplate.value = context.template
+    selectedInstance.value = instances.value.find(ins => String(instanceId(ins)) === String(dataset.deviceInstanceId)) || null
+    activeKey.value = `template-${context.template.id}-dataset-${dataset.id}`
+  } else {
+    selectedInstance.value = instances.value.find(ins => String(instanceId(ins)) === String(dataset.deviceInstanceId)) || null
+    activeKey.value = `dataset-${dataset.id}`
+  }
   await loadTemplateDetail(dataset.dataTemplateId)
   recordPage.pageNo = 1
-  await loadRecords()
+  await nextTick()
+  await Promise.all([loadRecords(), loadChartRecords()])
 }
 
 async function selectTemplate(template) {
@@ -803,6 +1097,21 @@ function selectInstance(instance) {
   clearAllSelections()
   selectedInstance.value = instance
   activeKey.value = `instance-${instanceId(instance)}`
+}
+
+function selectTask(task) {
+  clearAllSelections()
+  selectedTask.value = task
+  activeKey.value = `task-${task.id}`
+}
+
+function selectTaskInstance(context) {
+  const task = context?.task
+  if (!task) return
+  clearAllSelections()
+  selectedTask.value = task
+  selectedInstance.value = physicalInstanceForTask(context)
+  activeKey.value = `task-${task.id}-instance-${context.physicalInstanceId}`
 }
 
 function selectModel(model) {
@@ -832,102 +1141,575 @@ async function loadTemplateDetail(templateId) {
 
 async function loadRecords(silent = false) {
   if (!selectedDataset.value?.id) { records.value = []; return }
+  if (silent && tableRequestInFlight) {
+    tableReloadQueued = true
+    return
+  }
+  const datasetId = selectedDataset.value.id
+  const seq = ++tableLoadSeq
   if (!silent) loadingRecords.value = true
+  tableRequestInFlight = true
   try {
-    const res = await axios.get(`/api/data/record/dataset/${selectedDataset.value.id}`, { params: { pageNo: recordPage.pageNo, pageSize: recordPage.pageSize } })
+    const res = await axios.get(`/api/data/record/dataset/${datasetId}`, { params: { pageNo: recordPage.pageNo, pageSize: recordPage.pageSize } })
+    if (seq !== tableLoadSeq || selectedDataset.value?.id !== datasetId) return
     const data = res.data?.data
     records.value = asArray(data?.list || data?.records)
     recordPage.total = Number(data?.total || records.value.length || 0)
-    nextTick(() => {
-      renderChart()
-      nextTick(() => chart.value?.resize())
-    })
   } catch (err) {
     if (!silent) ElMessage.error(errorMessage(err, '加载采样数据失败'))
   } finally {
-    if (!silent) loadingRecords.value = false
+    if (seq === tableLoadSeq) {
+      tableRequestInFlight = false
+      if (!silent) loadingRecords.value = false
+      if (tableReloadQueued && selectedDataset.value?.id === datasetId) {
+        tableReloadQueued = false
+        loadRecords(true)
+      }
+    }
   }
 }
 
+async function loadChartRecords(silent = false, range = null) {
+  if (!selectedDataset.value?.id) {
+    chartRecords.value = []
+    chartWindowStart.value = null
+    chartWindowEnd.value = null
+    chartEarliestAvailable.value = null
+    chartLatestAvailable.value = null
+    return
+  }
+  if (silent && chartRequestInFlight && range == null) {
+    chartReloadQueued = true
+    return
+  }
+  const datasetId = selectedDataset.value.id
+  const seq = ++chartLoadSeq
+  const previousWindowStart = chartWindowStart.value
+  const previousWindowEnd = chartWindowEnd.value
+  const requestIsLive = range == null
+  chartRequestInFlight = true
+  try {
+    const params = { windowMinutes: CHART_WINDOW_MINUTES, maxPoints: CHART_MAX_POINTS }
+    if (range?.from != null && range?.to != null) {
+      params.from = range.from
+      params.to = range.to
+    }
+    const res = await axios.get(`/api/data/record/dataset/${datasetId}/series`, { params })
+    if (seq !== chartLoadSeq || selectedDataset.value?.id !== datasetId) return
+    if (res.data?.success === false) {
+      throw new Error(res.data?.message || '加载遥测走势失败')
+    }
+    const data = res.data?.data
+    chartRecords.value = asArray(data?.records)
+    chartWindowStart.value = data?.windowStart ? new Date(data.windowStart).getTime() : null
+    chartWindowEnd.value = data?.windowEnd ? new Date(data.windowEnd).getTime() : null
+    chartEarliestAvailable.value = data?.earliestAvailable ? new Date(data.earliestAvailable).getTime() : null
+    chartLatestAvailable.value = data?.latestAvailable ? new Date(data.latestAvailable).getTime() : null
+
+    // 如果是实时 live 模式，且最早数据距今不足 1 小时，起点直接对齐最早数据，不要再早了
+    if (requestIsLive && chartEarliestAvailable.value != null && chartWindowStart.value != null) {
+      if (chartWindowStart.value < chartEarliestAvailable.value) {
+        chartWindowStart.value = chartEarliestAvailable.value
+      }
+      if (chartWindowEnd.value != null && chartWindowEnd.value <= chartWindowStart.value + 5000) {
+        chartWindowEnd.value = chartWindowStart.value + 5000
+      }
+    }
+    // 历史窗请求绝不能被「live 响应」写回跟随最新；仅本次请求本身是 live 才跟随
+    chartLiveFollow.value = requestIsLive && data?.live !== false
+    const windowChanged = previousWindowStart !== chartWindowStart.value || previousWindowEnd !== chartWindowEnd.value
+    if (windowChanged || !requestIsLive) {
+      chartEdgeIgnoreUntil = Date.now() + 1200
+    }
+    await nextTick()
+    if (seq !== chartLoadSeq || selectedDataset.value?.id !== datasetId) return
+    renderChart()
+    await nextTick()
+    chart.value?.resize()
+  } catch (err) {
+    if (!silent) ElMessage.error(errorMessage(err, '加载遥测走势失败'))
+  } finally {
+    if (seq === chartLoadSeq) {
+      chartRequestInFlight = false
+      if (chartReloadQueued && requestIsLive && chartLiveFollow.value && selectedDataset.value?.id === datasetId) {
+        chartReloadQueued = false
+        loadChartRecords(true)
+      } else {
+        chartReloadQueued = false
+      }
+    }
+  }
+}
+
+async function refreshTelemetry(silent = false) {
+  if (chartLiveFollow.value) {
+    await Promise.all([loadChartRecords(silent), loadRecords(silent)])
+    return
+  }
+  await Promise.all([
+    loadChartRecords(silent, { from: chartWindowStart.value, to: chartWindowEnd.value }),
+    loadRecords(silent)
+  ])
+}
+
+async function resumeChartLive() {
+  chartLiveFollow.value = true
+  chartZoomRange.value = { start: 0, end: 100 }
+  await loadChartRecords(false)
+}
+
+async function shiftChartWindow(direction) {
+  if (chartPanLoading || Date.now() < chartEdgeIgnoreUntil) return
+  const start = chartWindowStart.value
+  const end = chartWindowEnd.value
+  if (start == null || end == null) return
+  const span = Math.max(end - start, CHART_MIN_VALUE_SPAN_MS)
+  const earliest = chartEarliestAvailable.value
+  const latest = chartLatestAvailable.value
+  const visiblePct = Math.min(100, Math.max(8, chartZoomRange.value.end - chartZoomRange.value.start))
+
+  let newStart
+  let newEnd
+  if (direction < 0) {
+    if (!canShiftChartEarlier.value) return
+    newEnd = start
+    newStart = start - span
+    if (earliest != null && newStart < earliest) {
+      newStart = earliest
+      newEnd = Math.min(earliest + span, latest ?? (earliest + span))
+    }
+    if (newEnd <= newStart) return
+  } else {
+    if (latest != null && end >= latest - 1000) {
+      await resumeChartLive()
+      return
+    }
+    newStart = end
+    newEnd = end + span
+    if (latest != null && newEnd > latest) {
+      newEnd = latest
+      newStart = Math.max(latest - span, earliest ?? (latest - span))
+    }
+    if (newEnd <= newStart) return
+  }
+
+  chartPanLoading = true
+  chartLiveFollow.value = false
+  chartEdgeIgnoreUntil = Date.now() + 1500
+  // 落到新窗口衔接侧；故意不贴死 0/100，避免 setOption 后被误判成「又撞到另一侧边缘」
+  if (direction < 0) {
+    const startPct = Math.max(0, Math.min(90, 100 - visiblePct))
+    chartZoomRange.value = { start: startPct, end: Math.min(99, startPct + visiblePct) }
+  } else {
+    const endPct = Math.min(100, Math.max(10, visiblePct))
+    chartZoomRange.value = { start: Math.max(1, endPct - visiblePct), end: endPct }
+  }
+  try {
+    await loadChartRecords(true, { from: newStart, to: newEnd })
+  } finally {
+    chartPanLoading = false
+    chartEdgeIgnoreUntil = Date.now() + 800
+  }
+}
+
+function resetChartLegendState() {
+  chartLegendSelected.value = {}
+  chartLegendBound.value = false
+}
+
+function resetChartZoomState() {
+  chartZoomRange.value = { start: 0, end: 100 }
+  chartDataZoomBound.value = false
+}
+
+function resetChartViewState() {
+  chartViewMode.value = 'facet'
+  compareLeftUnit.value = ''
+  compareRightUnit.value = ''
+  resetChartZoomState()
+}
+
+function buildDataZoomOption(xAxisIndex) {
+  const { start, end } = chartZoomRange.value
+  const windowSpan = (chartWindowStart.value && chartWindowEnd.value)
+    ? Math.max(chartWindowEnd.value - chartWindowStart.value, 1000)
+    : CHART_WINDOW_MINUTES * 60 * 1000
+  const zoomBase = {
+    xAxisIndex,
+    filterMode: 'none',
+    start,
+    end,
+    minValueSpan: Math.min(CHART_MIN_VALUE_SPAN_MS, windowSpan),
+    maxValueSpan: windowSpan
+  }
+  return [
+    {
+      type: 'inside',
+      ...zoomBase,
+      zoomOnMouseWheel: true,
+      moveOnMouseMove: true,
+      moveOnMouseWheel: false,
+      preventDefaultMouseMove: true
+    },
+    {
+      type: 'slider',
+      ...zoomBase,
+      height: 18,
+      bottom: 4,
+      borderColor: '#cbd5e1',
+      backgroundColor: '#f8fafc',
+      fillerColor: 'rgba(37, 99, 235, 0.12)',
+      handleStyle: { color: '#2563eb', borderColor: '#2563eb' },
+      dataBackground: {
+        lineStyle: { color: '#94a3b8', width: 1 },
+        areaStyle: { color: '#e2e8f0' }
+      },
+      selectedDataBackground: {
+        lineStyle: { color: '#2563eb', width: 1 },
+        areaStyle: { color: 'rgba(37, 99, 235, 0.08)' }
+      },
+      textStyle: { color: '#64748b', fontSize: 10 },
+      brushSelect: false
+    }
+  ]
+}
+
+function resetChartZoom() {
+  chartEdgeIgnoreUntil = Date.now() + 800
+  chartZoomRange.value = { start: 0, end: 100 }
+  if (chart.value && !chart.value.isDisposed()) {
+    chart.value.dispatchAction({
+      type: 'dataZoom',
+      start: 0,
+      end: 100
+    })
+  }
+}
+
+function syncCompareUnitDefaults(units) {
+  if (!units.length) {
+    compareLeftUnit.value = ''
+    compareRightUnit.value = ''
+    return
+  }
+  if (!units.includes(compareLeftUnit.value)) {
+    compareLeftUnit.value = units[0]
+  }
+  if (!units.includes(compareRightUnit.value) || compareRightUnit.value === compareLeftUnit.value) {
+    compareRightUnit.value = units.find(unit => unit !== compareLeftUnit.value) || units[0]
+  }
+}
+
+function buildLineSeriesItem(field, index, sorted, extra = {}) {
+  const color = CHART_COLORS[index % CHART_COLORS.length]
+  return {
+    name: field.columnDesc || field.columnName,
+    type: 'line',
+    smooth: false,
+    symbol: 'circle',
+    symbolSize: 4,
+    showSymbol: false,
+    connectNulls: false,
+    itemStyle: { color, borderWidth: 1.5 },
+    lineStyle: { width: 2 },
+    areaStyle: {
+      color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+        { offset: 0, color: color + '1f' },
+        { offset: 1, color: color + '00' }
+      ])
+    },
+    data: sorted.map(row => {
+      const x = chartPointTime(row)
+      const y = numericOrNull(valueOf(row, field.columnName))
+      return x == null ? null : [x, y]
+    }).filter(Boolean),
+    ...extra
+  }
+}
+
+function buildTimeXAxis(extra = {}) {
+  return {
+    type: 'time',
+    min: chartWindowStart.value ?? undefined,
+    max: chartWindowEnd.value ?? undefined,
+    boundaryGap: false,
+    axisLine: { lineStyle: { color: '#cbd5e1' } },
+    axisLabel: {
+      color: '#64748b',
+      fontSize: 10.5,
+      padding: [4, 0, 0, 0],
+      formatter: value => formatChartAxisTime(value)
+    },
+    ...extra
+  }
+}
+
+function baseChartOption(series, extra = {}) {
+  return {
+    color: CHART_COLORS,
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: '#0f172a',
+      borderColor: '#1e293b',
+      padding: [8, 12],
+      textStyle: { color: '#f8fafc', fontSize: 12 },
+      axisPointer: {
+        type: 'line',
+        lineStyle: { color: '#94a3b8', type: 'dashed' }
+      },
+      formatter: (params) => {
+        if (!params || !params.length) return ''
+        const list = Array.isArray(params) ? params : [params]
+        const firstTime = list[0]?.value?.[0] || list[0]?.axisValue
+        const timeStr = formatChartAxisTime(firstTime)
+        let html = `<div style="font-size:12px;font-weight:600;margin-bottom:6px;color:#f1f5f9;">${timeStr}</div>`
+        for (const item of list) {
+          const val = item.value?.[1] != null ? item.value[1] : '-'
+          const marker = item.marker || `<span style="display:inline-block;margin-right:6px;border-radius:10px;width:9px;height:9px;background-color:${item.color};"></span>`
+          html += `<div style="display:flex;justify-content:space-between;gap:16px;line-height:1.6;font-size:12px;">
+            <span>${marker}${item.seriesName}</span>
+            <strong style="color:#ffffff;">${val}</strong>
+          </div>`
+        }
+        return html
+      }
+    },
+    legend: {
+      top: 0,
+      itemWidth: 14,
+      itemHeight: 6,
+      icon: 'roundRect',
+      textStyle: { color: '#475569', fontSize: 11 },
+      selected: legendSelectedForSeries(series)
+    },
+    ...extra,
+    series
+  }
+}
+
+function buildCompareChartOption(sorted, units) {
+  const activeUnits = units.length <= 2
+    ? units
+    : [compareLeftUnit.value, compareRightUnit.value].filter(Boolean)
+  const yAxis = activeUnits.map((unit, idx) => ({
+    type: 'value',
+    name: unit,
+    position: idx % 2 ? 'right' : 'left',
+    splitLine: { show: idx === 0, lineStyle: { type: 'dashed', color: '#e2e8f0' } },
+    axisLabel: { color: '#64748b', fontSize: 10.5 },
+    nameTextStyle: { color: '#64748b', fontSize: 10.5 }
+  }))
+
+  const series = valueFields.value.flatMap((field, index) => {
+    const unit = fieldUnit(field)
+    const axisIndex = activeUnits.indexOf(unit)
+    if (axisIndex < 0) return []
+    return [buildLineSeriesItem(field, index, sorted, { yAxisIndex: axisIndex })]
+  })
+
+  return baseChartOption(series, {
+    grid: {
+      left: 10,
+      right: 16,
+      top: 26,
+      bottom: 34,
+      containLabel: true
+    },
+    dataZoom: buildDataZoomOption(0),
+    xAxis: buildTimeXAxis(),
+    yAxis: yAxis.length ? yAxis : [{ type: 'value' }]
+  })
+}
+
+function buildFacetChartOption(sorted, units) {
+  const legendTop = 26
+  const facetHeight = 88
+  const facetGap = 10
+  const grids = units.map((_, idx) => ({
+    left: 10,
+    right: 16,
+    top: legendTop + idx * (facetHeight + facetGap),
+    height: facetHeight,
+    containLabel: true
+  }))
+  const xAxes = units.map((_, idx) => buildTimeXAxis({
+    gridIndex: idx,
+    show: idx === units.length - 1,
+    axisLine: { show: idx === units.length - 1, lineStyle: { color: '#cbd5e1' } },
+    axisTick: { show: idx === units.length - 1 },
+    axisLabel: {
+      show: idx === units.length - 1,
+      color: '#64748b',
+      fontSize: 10.5,
+      padding: [4, 0, 0, 0],
+      formatter: value => formatChartAxisTime(value)
+    }
+  }))
+  const yAxes = units.map((unit, idx) => ({
+    type: 'value',
+    name: unit,
+    gridIndex: idx,
+    splitLine: { show: true, lineStyle: { type: 'dashed', color: '#e2e8f0' } },
+    axisLabel: { color: '#64748b', fontSize: 10.5 },
+    nameTextStyle: { color: '#64748b', fontSize: 10.5 }
+  }))
+  const series = valueFields.value.map((field, index) => {
+    const gridIndex = Math.max(0, units.indexOf(fieldUnit(field)))
+    return buildLineSeriesItem(field, index, sorted, {
+      xAxisIndex: gridIndex,
+      yAxisIndex: gridIndex
+    })
+  })
+
+  return baseChartOption(series, {
+    axisPointer: { link: [{ xAxisIndex: 'all' }] },
+    dataZoom: buildDataZoomOption('all'),
+    grid: grids,
+    xAxis: xAxes,
+    yAxis: yAxes.length ? yAxes : [{ type: 'value' }]
+  })
+}
+
+function legendSelectedForSeries(seriesList) {
+  const selected = {}
+  for (const item of seriesList) {
+    const name = item.name
+    selected[name] = chartLegendSelected.value[name] !== false
+  }
+  return selected
+}
+
+function bindChartLegend(chartInstance) {
+  if (!chartInstance || chartLegendBound.value) return
+  chartInstance.on('legendselectchanged', (params) => {
+    if (params?.selected) {
+      chartLegendSelected.value = { ...params.selected }
+    }
+  })
+  chartLegendBound.value = true
+}
+
+function bindChartDataZoom(chartInstance) {
+  if (!chartInstance || chartDataZoomBound.value) return
+  let prevStart = chartZoomRange.value.start
+  let prevEnd = chartZoomRange.value.end
+  let isPointerDown = false
+  let dragStartX = 0
+
+  const zr = chartInstance.getZr()
+  zr.on('mousedown', (e) => {
+    isPointerDown = true
+    dragStartX = e.offsetX
+  })
+  const endPointerDrag = () => {
+    isPointerDown = false
+  }
+  zr.on('mouseup', endPointerDrag)
+  zr.on('globalout', endPointerDrag)
+
+  chartInstance.on('datazoom', (params) => {
+    const batch = params?.batch?.length ? params.batch : [params]
+    for (const item of batch) {
+      if (item?.start != null && item?.end != null) {
+        chartZoomRange.value = { start: item.start, end: item.end }
+      }
+    }
+    const { start, end } = chartZoomRange.value
+    // 关键判据：鼠标滚轮缩小（Zoom Out）时，两端同时向外扩散（start 减小 且 end 增大）
+    const isWheelZoomOut = (start < prevStart - 0.2) && (end > prevEnd + 0.2)
+
+    // 只有在按下鼠标拖拽滑块（isPointerDown）且不是滚轮缩小（!isWheelZoomOut）时，拖到边界才翻窗
+    if (isPointerDown && !isWheelZoomOut && Date.now() >= chartEdgeIgnoreUntil && !chartPanLoading) {
+      // 拖动滑块向左到达最左边缘（start <= 1）且之前在右侧（prevStart > 1.5）-> 往前推一个小时（更早）
+      if (start <= 1 && prevStart > 1.5) {
+        isPointerDown = false
+        if (canShiftChartEarlier.value) {
+          shiftChartWindow(-1)
+        } else {
+          ElMessage.info('已到达任务最早数据起点')
+        }
+      }
+      // 拖动滑块向右到达最右边缘（end >= 99）且之前在左侧（prevEnd < 98.5）-> 往后推一个小时（更晚 / 回到最新）
+      else if (end >= 99 && prevEnd < 98.5) {
+        isPointerDown = false
+        if (!chartLiveFollow.value) {
+          shiftChartWindow(1)
+        }
+      }
+    }
+
+    prevStart = chartZoomRange.value.start
+    prevEnd = chartZoomRange.value.end
+  })
+
+  // 当时间轴已经贴死在最左侧（start <= 1）或最右侧（end >= 99），再拖拽无法产生 datazoom 事件时，用鼠标拖动位移翻窗
+  zr.on('mousemove', (e) => {
+    if (!isPointerDown || chartPanLoading || Date.now() < chartEdgeIgnoreUntil) return
+    const totalDx = e.offsetX - dragStartX
+    const { start, end } = chartZoomRange.value
+
+    // 向左拖拽超过 35px 且处于最左边缘：往前推一个小时（更早）
+    if (totalDx < -35 && start <= 1.5) {
+      isPointerDown = false
+      if (canShiftChartEarlier.value) {
+        shiftChartWindow(-1)
+      } else {
+        ElMessage.info('已到达任务最早数据起点')
+      }
+    }
+    // 向右拖拽超过 35px 且处于最右边缘：往后推一个小时（更晚 / 回到最新）
+    else if (totalDx > 35 && end >= 98.5) {
+      isPointerDown = false
+      if (!chartLiveFollow.value) {
+        shiftChartWindow(1)
+      } else {
+        ElMessage.info('当前已处于最新实时窗口')
+      }
+    }
+  })
+
+  chartDataZoomBound.value = true
+}
+
 function renderChart() {
-  if (!chartRef.value || !selectedDataset.value) return
-  
+  if (!selectedDataset.value) return
+  if (!chartRef.value) {
+    nextTick(() => {
+      if (selectedDataset.value && chartRef.value) renderChart()
+    })
+    return
+  }
+  const datasetId = selectedDataset.value.id
   // 如果旧实例绑定了已经废弃或重新创建的 DOM，先行妥善释放，彻底解决二次点击不渲染问题
   if (chart.value) {
     if (chart.value.getDom() !== chartRef.value || chart.value.isDisposed()) {
       try { chart.value.dispose() } catch (e) {}
       chart.value = null
+      chartLegendBound.value = false
+      chartDataZoomBound.value = false
     }
   }
   if (!chart.value) {
     chart.value = echarts.init(chartRef.value)
+    bindChartLegend(chart.value)
+    bindChartDataZoom(chart.value)
+  } else {
+    if (!chartLegendBound.value) bindChartLegend(chart.value)
+    if (!chartDataZoomBound.value) bindChartDataZoom(chart.value)
   }
   
-  const sorted = [...records.value].sort((a, b) => new Date(recordTime(a) || 0) - new Date(recordTime(b) || 0))
-  const xData = sorted.map(row => formatTime(recordTime(row)))
-  const units = [...new Set(valueFields.value.map(field => unitMap.value.get(field.columnName) || unitMap.value.get(field.deviceAttrKey) || '数值'))]
-  const yAxis = units.map((unit, idx) => ({ 
-    type: 'value', 
-    name: unit, 
-    position: idx % 2 ? 'right' : 'left', 
-    offset: idx > 1 ? (idx - 1) * 36 : 0, 
-    splitLine: { show: idx === 0, lineStyle: { type: 'dashed', color: '#e2e8f0' } },
-    axisLabel: { color: '#64748b', fontSize: 10.5 },
-    nameTextStyle: { color: '#64748b', fontSize: 10.5 }
-  }))
-  
-  const colors = ['#2563eb', '#0284c7', '#16a34a', '#d97706', '#7c3aed'];
-  
-  const series = valueFields.value.map((field, index) => {
-    const unit = unitMap.value.get(field.columnName) || unitMap.value.get(field.deviceAttrKey) || '数值'
-    const color = colors[index % colors.length]
-    return { 
-      name: field.columnDesc || field.columnName, 
-      type: 'line', 
-      smooth: 0.35, 
-      symbol: 'circle',
-      symbolSize: 4,
-      showSymbol: false,
-      itemStyle: { color: color, borderWidth: 2 },
-      lineStyle: { width: 2 },
-      areaStyle: {
-        color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-          { offset: 0, color: color + '28' },
-          { offset: 1, color: color + '00' }
-        ])
-      },
-      yAxisIndex: Math.max(0, units.indexOf(unit)), 
-      data: sorted.map(row => numericOrNull(valueOf(row, field.columnName))) 
-    }
-  })
-  
-  chart.value.setOption({ 
-    color: colors,
-    tooltip: { 
-      trigger: 'axis',
-      backgroundColor: '#0f172a',
-      borderColor: '#1e293b',
-      padding: [8, 12],
-      textStyle: { color: '#f8fafc', fontSize: 12 }
-    }, 
-    legend: { top: 0, itemWidth: 14, itemHeight: 6, icon: 'roundRect', textStyle: { color: '#475569', fontSize: 11 } }, 
-    grid: { 
-      left: 10, 
-      right: 16, 
-      top: 26, 
-      bottom: 8, 
-      containLabel: true 
-    }, 
-    xAxis: { 
-      type: 'category', 
-      data: xData, 
-      boundaryGap: false,
-      axisLine: { lineStyle: { color: '#cbd5e1' } },
-      axisLabel: { color: '#64748b', fontSize: 10.5, padding: [4, 0, 0, 0] }
-    }, 
-    yAxis: yAxis.length ? yAxis : [{ type: 'value' }], 
-    series 
-  }, true)
+  const sorted = [...chartRecords.value].sort((a, b) => chartPointTime(a) - chartPointTime(b))
+  const units = chartUnits.value
+  if (units.length > 2) {
+    syncCompareUnitDefaults(units)
+  }
+
+  const option = chartViewModeEffective.value === 'facet'
+    ? buildFacetChartOption(sorted, units)
+    : buildCompareChartOption(sorted, units)
+
+  if (selectedDataset.value?.id !== datasetId) return
+  chart.value.setOption(option, { replaceMerge: ['grid', 'series', 'xAxis', 'yAxis', 'dataZoom'] })
 
   setTimeout(() => {
     chart.value?.resize()
@@ -1198,7 +1980,24 @@ function numericOrNull(value) {
 
 function recordTime(row) { return row?.create_time || row?.createTime || row?.timestamp || row?.collectTime }
 function recordIngestTime(row) { return row?.ingest_time || row?.ingestTime }
+function chartPointTime(row) {
+  const value = recordTime(row)
+  if (!value) return 0
+  const time = new Date(value).getTime()
+  return Number.isFinite(time) ? time : 0
+}
 function formatTime(value) { return value ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '-' }
+function formatChartAxisTime(value) {
+  if (value == null) return ''
+  return new Date(value).toLocaleString('zh-CN', {
+    hour12: false,
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit'
+  })
+}
 function isUnitField(row) { return String(row?.columnName || '').endsWith('_unit') }
 function stripUnit(value) { return String(value || '').replace(/_unit$/, '') }
 function modelId(model) { return model?.modelId || model?.id }
@@ -1219,9 +2018,123 @@ function instanceName(id) { return instances.value.find(ins => String(instanceId
 function instancePath(ins) { return `${modelName(ins.deviceModelId)} / ${ins.instanceName}` }
 function categoryName(id) { return categories.value.find(c => String(c.id) === String(id))?.categoryName || '未分类' }
 function modelTemplates(model) { if (!model) return []; const mId = String(modelId(model)); return templates.value.filter(t => String(t.deviceModelId) === mId) }
+function templateDatasets(template) { if (!template) return []; const tId = String(template.id); return datasets.value.filter(ds => String(ds.dataTemplateId) === tId) }
+function leaseForDataset(dataset) {
+  if (!dataset?.id) return null
+  return leaseByDataIndexId.value[String(dataset.id)] || null
+}
+function resolveDatasetBinding(dataset, preferredInstance) {
+  if (!dataset) {
+    return { modelLabel: '未关联模型', instanceLabel: '-', virtual: false }
+  }
+  const lease = leaseForDataset(dataset)
+  if (lease) {
+    const physical = instances.value.find(ins => String(instanceId(ins)) === String(lease.physicalInstanceId))
+      || preferredInstance
+    const point = (lease.virtualDevicePoint && String(lease.virtualDevicePoint).trim())
+      || `租约 #${lease.id}`
+    return {
+      modelLabel: modelName(physical?.deviceModelId || physical?.modelId),
+      instanceLabel: `${point}（虚拟机）`,
+      virtual: true
+    }
+  }
+  const live = preferredInstance
+    || instances.value.find(ins => String(instanceId(ins)) === String(dataset.deviceInstanceId))
+  if (live?.deviceModelId || live?.modelId || live?.instanceName) {
+    return {
+      modelLabel: modelName(live.deviceModelId || live.modelId),
+      instanceLabel: live.instanceName || instanceName(dataset.deviceInstanceId),
+      virtual: false
+    }
+  }
+  if (dataset.deviceInstanceId) {
+    return {
+      modelLabel: '未关联模型',
+      instanceLabel: `实例 #${dataset.deviceInstanceId}`,
+      virtual: false
+    }
+  }
+  return { modelLabel: '未关联模型', instanceLabel: '-', virtual: false }
+}
+function instancePathByDataset(dataset) {
+  const binding = resolveDatasetBinding(dataset, null)
+  if (binding.virtual) {
+    return `${binding.modelLabel} / ${binding.instanceLabel}`
+  }
+  if (!dataset?.deviceInstanceId) return binding.instanceLabel
+  const ins = instances.value.find(i => String(instanceId(i)) === String(dataset.deviceInstanceId))
+  if (!ins) return binding.instanceLabel === '-' ? `实例 #${dataset.deviceInstanceId}` : binding.instanceLabel
+  return instancePath(ins)
+}
 function modelInstances(model) { if (!model) return []; const mId = String(modelId(model)); return instances.value.filter(ins => String(ins.deviceModelId || ins.modelId) === mId) }
 function modelDatasets(model) { const mInstances = modelInstances(model); const insIds = new Set(mInstances.map(ins => String(instanceId(ins)))); return datasets.value.filter(ds => insIds.has(String(ds.deviceInstanceId))) }
 function instanceDatasets(instance) { if (!instance) return []; const iId = String(instanceId(instance)); return datasets.value.filter(ds => String(ds.deviceInstanceId) === iId) }
+function displayedInstanceDatasets(instance) {
+  if (selectedTask.value) return taskInstanceDatasets(selectedTask.value, instance)
+  return instanceDatasets(instance)
+}
+function taskIdOf(task) { return task?.id }
+function taskAssetInstances(task) {
+  if (!task) return []
+  const seen = new Set()
+  return asArray(taskAssets.value[task.id]?.instances).filter(row => {
+    const id = String(row.physicalInstanceId)
+    if (!id || seen.has(id)) return false
+    seen.add(id)
+    return true
+  })
+}
+function taskAssetDatasetCount(task) {
+  return taskAssetInstances(task).reduce((sum, row) => sum + asArray(row.datasets).length, 0)
+}
+function taskInstanceDatasets(task, instance) {
+  if (!task || !instance) return []
+  const physicalId = String(instance.physicalInstanceId || instanceId(instance))
+  const row = taskAssetInstances(task).find(item => String(item.physicalInstanceId) === physicalId)
+  return asArray(row?.datasets)
+}
+function physicalInstanceForTask(context) {
+  const physicalId = context?.physicalInstanceId
+  const live = instances.value.find(ins => String(instanceId(ins)) === String(physicalId))
+  if (live) return { ...live, physicalInstanceId: physicalId }
+  return {
+    id: physicalId,
+    instanceId: physicalId == null ? null : String(physicalId),
+    instanceName: context?.instanceName || String(physicalId || '-'),
+    physicalInstanceId: physicalId
+  }
+}
+function findTaskDataset(task, datasetId) {
+  for (const row of taskAssetInstances(task)) {
+    const dataset = asArray(row.datasets).find(ds => String(ds.id) === String(datasetId))
+    if (dataset) return { dataset, physicalInstanceId: row.physicalInstanceId, instanceName: row.instanceName }
+  }
+  return null
+}
+async function ensureTaskAssets(taskId) {
+  if (taskId == null) return null
+  if (taskAssets.value[taskId]) return taskAssets.value[taskId]
+  try {
+    const res = await axios.get(`/api/task/${taskId}/data-assets`)
+    taskAssets.value = { ...taskAssets.value, [taskId]: res.data?.data || { instances: [] } }
+  } catch (err) {
+    ElMessage.error(errorMessage(err, '加载任务数据失败'))
+    taskAssets.value = { ...taskAssets.value, [taskId]: { instances: [] } }
+  }
+  return taskAssets.value[taskId]
+}
+function openInstanceDataset(row) {
+  if (selectedTask.value) {
+    selectDataset(row, {
+      task: selectedTask.value,
+      physicalInstanceId: selectedInstance.value?.physicalInstanceId || instanceId(selectedInstance.value),
+      instanceName: selectedInstance.value?.instanceName
+    })
+    return
+  }
+  selectDataset(row)
+}
 function categoryModels(category) { if (!category) return []; const cId = String(category.id); return models.value.filter(m => String(m.categoryId) === cId) }
 function categoryInstances(category) { const cModels = categoryModels(category); const mIds = new Set(cModels.map(m => String(modelId(m)))); return instances.value.filter(ins => mIds.has(String(ins.deviceModelId || ins.modelId))) }
 function categoryDatasets(category) { const cInstances = categoryInstances(category); const iIds = new Set(cInstances.map(ins => String(instanceId(ins)))); return datasets.value.filter(ds => iIds.has(String(ds.deviceInstanceId))) }
@@ -1239,18 +2152,45 @@ function propertyTypeId(type) {
   return match?.id || null
 }
 function uid() { return Math.random().toString(36).slice(2, 10) }
-function disposeChart() { chart.value?.dispose(); chart.value = null }
+function disposeChart() {
+  chart.value?.dispose()
+  chart.value = null
+  resetChartLegendState()
+  resetChartViewState()
+}
 function resizeChart() { chart.value?.resize() }
 
 let refreshInterval = null
-watch(templateDetails, () => nextTick(renderChart))
+watch(templateDetails, () => {
+  if (!selectedDataset.value) return
+  nextTick(renderChart)
+})
+watch([chartViewMode, compareLeftUnit, compareRightUnit, chartBoxHeight], () => {
+  if (!selectedDataset.value) return
+  nextTick(() => {
+    renderChart()
+    nextTick(() => chart.value?.resize())
+  })
+})
+watch(compareLeftUnit, (left) => {
+  if (!left || left === compareRightUnit.value) {
+    syncCompareUnitDefaults(chartUnits.value)
+  }
+})
+watch(compareRightUnit, (right) => {
+  if (!right || right === compareLeftUnit.value) {
+    syncCompareUnitDefaults(chartUnits.value)
+  }
+})
 onMounted(() => { 
   loadAll(); 
   window.addEventListener('resize', resizeChart)
   refreshInterval = setInterval(() => {
-    if (selectedDataset.value && !loadingRecords.value) {
-      loadRecords(true) // 后台静默刷新
+    if (!selectedDataset.value) return
+    if (chartLiveFollow.value) {
+      loadChartRecords(true)
     }
+    loadRecords(true)
   }, 1000)
 })
 onUnmounted(() => { 
@@ -1408,7 +2348,15 @@ onUnmounted(() => {
 }
 .chart-box {
   width: 100%;
-  height: 255px;
+  min-height: 255px;
+  transition: height 0.2s ease;
+}
+.chart-window-label {
+  font-weight: 500;
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 表格自适应区 (微边距大卡片包裹) */

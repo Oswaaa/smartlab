@@ -1,10 +1,13 @@
 package com.smartlab.management.service.db.resource.device;
 
+import com.smartlab.global.event.DeviceInstanceDeletedEvent;
+import com.smartlab.global.event.DeviceInstanceRetiredEvent;
+import com.smartlab.management.entity.resource.data.DataIndex;
+import com.smartlab.management.entity.resource.device.DeviceInstanceKind;
+import com.smartlab.management.entity.resource.device.DeviceInstanceLifecycle;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
 import com.smartlab.management.entity.resource.device.DeviceModels;
 import com.smartlab.management.entity.resource.device.DeviceTwinStates;
-import com.smartlab.management.entity.resource.device.DeviceInstanceLifecycle;
-import com.smartlab.global.event.DeviceInstanceRetiredEvent;
 import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
 import com.smartlab.management.mapper.resource.device.DeviceModelsMapper;
 import com.smartlab.management.mapper.resource.device.DeviceTwinStatesMapper;
@@ -20,6 +23,7 @@ import java.util.Map;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
@@ -39,6 +43,7 @@ class DeviceInstanceServiceTest {
         }).when(fixture.instances).insert(any(DeviceInstances.class));
         DeviceInstances saved = fixture.service.savePayload(Map.of("deviceModelId", 3L, "instanceName", "Reactor-01"));
         assertEquals(DeviceInstanceLifecycle.IN_USE, saved.getLifecycleStatus());
+        assertEquals(DeviceInstanceKind.PHYSICAL, saved.getInstanceKind());
     }
 
     @Test
@@ -136,6 +141,103 @@ class DeviceInstanceServiceTest {
     }
 
     @Test
+    void createTemporarySkipsDataIndexAndBom() {
+        Fixture fixture = new Fixture();
+        DeviceModels model = new DeviceModels();
+        model.setId(3L);
+        model.setModelName("Reactor");
+        when(fixture.modelService.requireRuntimeReady(3L)).thenReturn(model);
+        when(fixture.models.selectById(3L)).thenReturn(model);
+        doAnswer(invocation -> {
+            DeviceInstances instance = invocation.getArgument(0);
+            instance.setId(22L);
+            return 1;
+        }).when(fixture.instances).insert(any(DeviceInstances.class));
+
+        DeviceInstances saved = fixture.service.createTemporary(3L);
+
+        assertEquals(DeviceInstanceKind.TEMPORARY, saved.getInstanceKind());
+        verify(fixture.data, never()).createDefaultDataSetsForDeviceInstance(any(), any(), any());
+        verifyNoInteractions(fixture.components);
+        verify(fixture.twins).insert(any(DeviceTwinStates.class));
+    }
+
+    @Test
+    void createVirtualCreatesDefaultDataSetsWithoutBom() {
+        Fixture fixture = new Fixture();
+        DeviceModels model = new DeviceModels();
+        model.setId(3L);
+        model.setModelName("Reactor");
+        when(fixture.modelService.requireRuntimeReady(3L)).thenReturn(model);
+        when(fixture.models.selectById(3L)).thenReturn(model);
+        when(fixture.routes.buildVirtualAdapterBinding(any(DeviceInstances.class), eq("Reactor1_sim_11")))
+                .thenReturn(com.smartlab.global.util.JsonNodeSupport.objectNode());
+        when(fixture.instances.selectOne(any())).thenReturn(null);
+        doAnswer(invocation -> {
+            DeviceInstances instance = invocation.getArgument(0);
+            instance.setId(24L);
+            return 1;
+        }).when(fixture.instances).insert(any(DeviceInstances.class));
+
+        DeviceInstances physical = instance(7L, DeviceInstanceLifecycle.IN_USE);
+        physical.setInstanceKind(DeviceInstanceKind.PHYSICAL);
+        physical.setBoundAdapterName("adapter-a");
+        physical.setBoundDevicePoint("Reactor1");
+        DeviceInstances saved = fixture.service.createVirtual(physical, "Reactor1_sim_11");
+
+        assertEquals(DeviceInstanceKind.VIRTUAL, saved.getInstanceKind());
+        assertEquals("adapter-a", saved.getBoundAdapterName());
+        assertEquals("Reactor1_sim_11", saved.getBoundDevicePoint());
+        verify(fixture.data).createDefaultDataSetsForDeviceInstance(eq(3L), eq(24L), any());
+        verifyNoInteractions(fixture.components);
+        verify(fixture.routes).refreshAdapterRouteTable();
+        verify(fixture.twins).insert(any(DeviceTwinStates.class));
+    }
+
+    @Test
+    void deleteVirtualRejectsPhysicalInstance() {
+        Fixture fixture = new Fixture();
+        DeviceInstances physical = instance(7L, DeviceInstanceLifecycle.IN_USE);
+        physical.setInstanceKind(DeviceInstanceKind.PHYSICAL);
+        when(fixture.instances.selectById(7L)).thenReturn(physical);
+
+        assertThrows(IllegalStateException.class, () -> fixture.service.deleteVirtual(7L));
+        verify(fixture.instances, never()).deleteById(any(java.io.Serializable.class));
+    }
+
+    @Test
+    void deleteVirtualRemovesOnlyVirtualRow() {
+        Fixture fixture = new Fixture();
+        DeviceInstances virtual = instance(24L, DeviceInstanceLifecycle.IN_USE);
+        virtual.setInstanceKind(DeviceInstanceKind.VIRTUAL);
+        when(fixture.instances.selectById(24L)).thenReturn(virtual);
+
+        fixture.service.deleteVirtual(24L);
+
+        verify(fixture.events).publishEvent(new DeviceInstanceRetiredEvent(24L));
+        verify(fixture.instances).deleteById(24L);
+        verify(fixture.twins).delete(any());
+        verify(fixture.routes).refreshAdapterRouteTable();
+        verify(fixture.events).publishEvent(new DeviceInstanceDeletedEvent(24L));
+    }
+
+    @Test
+    void deleteVirtualDropsRemainingDatasets() {
+        Fixture fixture = new Fixture();
+        DeviceInstances virtual = instance(24L, DeviceInstanceLifecycle.IN_USE);
+        virtual.setInstanceKind(DeviceInstanceKind.VIRTUAL);
+        when(fixture.instances.selectById(24L)).thenReturn(virtual);
+        DataIndex remaining = new DataIndex();
+        remaining.setId(91L);
+        when(fixture.data.listByDeviceInstance(24L)).thenReturn(java.util.List.of(remaining));
+
+        fixture.service.deleteVirtual(24L);
+
+        verify(fixture.data).delete(91L);
+        verify(fixture.instances).deleteById(24L);
+    }
+
+    @Test
     void retirementRejectsRunningCommand() {
         Fixture fixture = new Fixture();
         DeviceInstances active = instance(7L, DeviceInstanceLifecycle.IN_USE);
@@ -206,6 +308,7 @@ class DeviceInstanceServiceTest {
         verify(fixture.instances).deleteById(7L);
         verify(fixture.twins).delete(any());
         verify(fixture.routes).refreshAdapterRouteTable();
+        verify(fixture.events).publishEvent(new DeviceInstanceDeletedEvent(7L));
     }
 
     private static DeviceInstances instance(Long id, String status) {

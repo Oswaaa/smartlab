@@ -1309,7 +1309,7 @@ const runtimeStatusClass = adapter => {
   const heartbeat = new Date(adapter.lastHeartbeat).getTime()
   if (!Number.isFinite(heartbeat)) return 'unknown'
   const age = Date.now() - heartbeat
-  if (age <= 120000) return 'online'
+  if (age <= 30000) return 'online'
   return 'stale'
 }
 const runtimeStatusLabel = adapter => ({ online: '在线', stale: '心跳超时', unknown: '未连接' }[runtimeStatusClass(adapter)] || '未知')

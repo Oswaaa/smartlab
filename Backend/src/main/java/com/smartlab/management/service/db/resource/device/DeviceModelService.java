@@ -13,6 +13,7 @@ import com.smartlab.management.dto.resource.data.DataTemplateSaveDTO;
 import com.smartlab.management.dto.resource.device.DeviceModelSaveDTO;
 import com.smartlab.management.entity.resource.data.DataTemplateDetail;
 import com.smartlab.management.entity.resource.data.DataTemplateMain;
+import com.smartlab.management.entity.resource.device.DeviceInstanceKind;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
 import com.smartlab.management.entity.resource.device.DeviceModels;
 import com.smartlab.management.entity.workflow.FlowNode;
@@ -240,7 +241,10 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
             model.setCreateTime(existing.getCreateTime());
             Long count = deviceInstancesMapper.selectCount(
                     com.baomidou.mybatisplus.core.toolkit.Wrappers.<DeviceInstances>lambdaQuery()
-                            .eq(DeviceInstances::getDeviceModelId, payload.getModelId()));
+                            .eq(DeviceInstances::getDeviceModelId, payload.getModelId())
+                            .and(wrapper -> wrapper.eq(DeviceInstances::getInstanceKind, DeviceInstanceKind.PHYSICAL)
+                                    .or().isNull(DeviceInstances::getInstanceKind)
+                                    .or().eq(DeviceInstances::getInstanceKind, "")));
             if (count != null && count > 0) {
                 throw new IllegalStateException("该物模型已实例化为 " + count + " 台设备，已被锁定无法编辑");
             }
@@ -646,7 +650,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         Long modelId = parseId(String.valueOf(id));
         lockExistingModel(modelId);
 
-        // 1. 检查是否有设备实例（无论在役或已注销）
+        // 1. 检查是否有设备实例（无论在役或已注销，含 PHYSICAL / VIRTUAL / TEMPORARY）
         Long count = deviceInstancesMapper.selectCount(
                 Wrappers.<DeviceInstances>lambdaQuery().eq(DeviceInstances::getDeviceModelId, modelId));
         if (count != null && count > 0) {

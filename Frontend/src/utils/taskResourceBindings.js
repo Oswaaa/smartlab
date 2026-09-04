@@ -155,12 +155,15 @@ export function missingHoleCount(requirements, parameterBindings = {}) {
   }, 0)
 }
 
-export function buildDeviceBindings(requirements, selections, parameterBindings = {}) {
+export function buildDeviceBindings(requirements, selections, parameterBindings = {}, options = {}) {
   if (!Array.isArray(requirements)) return []
+  const allowMissingInstance = Boolean(options.allowMissingInstance)
   return requirements
-    .filter(item => selections[item.slotId] != null && selections[item.slotId] !== '')
+    .filter(item => allowMissingInstance || (selections[item.slotId] != null && selections[item.slotId] !== ''))
     .map(item => {
-      const binding = { slotId: item.slotId, deviceInstanceId: Number(selections[item.slotId]) }
+      const instanceId = Number(selections[item.slotId])
+      const binding = { slotId: item.slotId }
+      if (Number.isInteger(instanceId) && instanceId > 0) binding.deviceInstanceId = instanceId
       const holes = holeParametersOf(item)
       if (!holes.length) return binding
       const values = parameterBindings[item.slotId] || {}
@@ -174,10 +177,16 @@ export function buildDeviceBindings(requirements, selections, parameterBindings 
 }
 
 export function buildTaskCreatePayload(form, requirements) {
+  const executionKind = form.executionKind || 'PRODUCTION'
   return {
     taskName: form.taskName,
     flowModelId: form.flowModelId,
-    deviceBindings: buildDeviceBindings(requirements, form.resourceBindings || {}, form.parameterBindings || {}),
+    executionKind,
+    deviceBindings: buildDeviceBindings(
+      requirements,
+      form.resourceBindings || {},
+      form.parameterBindings || {}
+    ),
     taskConstraints: form.taskConstraints || [],
     taskVariables: {}
   }
@@ -267,6 +276,9 @@ export function compatibleInstances(requirement, instances, models) {
   const targetModelId = Number(requirement.deviceModelId)
   return instances.filter(instance => {
     const instanceModelId = Number(instance.deviceModelId || instance.modelId)
-    return instanceModelId === targetModelId && String(instance.lifecycleStatus || '').toUpperCase() !== 'RETIRED'
+    const kind = String(instance.instanceKind || 'PHYSICAL').toUpperCase()
+    return instanceModelId === targetModelId
+      && kind === 'PHYSICAL'
+      && String(instance.lifecycleStatus || '').toUpperCase() !== 'RETIRED'
   })
 }

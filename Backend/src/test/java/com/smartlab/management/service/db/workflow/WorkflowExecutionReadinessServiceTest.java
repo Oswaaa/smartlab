@@ -1,6 +1,7 @@
 package com.smartlab.management.service.db.workflow;
 
 import com.smartlab.management.entity.resource.adapter.AdapterIndex;
+import com.smartlab.management.entity.resource.device.DeviceInstanceKind;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
 import com.smartlab.management.entity.resource.device.DeviceTwinStates;
 import com.smartlab.management.dto.workflow.WorkflowIssue;
@@ -86,6 +87,27 @@ class WorkflowExecutionReadinessServiceTest {
         assertTrue(issues.get(0).blocking());
         assertEquals("deviceBindings[slot-7]", issues.get(0).path());
         assertEquals("slot-7", issues.get(0).elementId());
+    }
+
+    @Test
+    void skipsAdapterHeartbeatForTemporaryInstances() {
+        WorkflowTaskResourceService resources = mock(WorkflowTaskResourceService.class);
+        DeviceTwinStateService twins = mock(DeviceTwinStateService.class);
+        AdapterIndexService adapters = mock(AdapterIndexService.class);
+        DeviceInstances instance = new DeviceInstances();
+        instance.setId(7L);
+        instance.setInstanceName("tmp");
+        instance.setInstanceKind(DeviceInstanceKind.TEMPORARY);
+        when(resources.boundDeviceBindings(null)).thenReturn(java.util.List.of(
+                new WorkflowTaskResourceService.BoundDeviceBinding("slot-7", 7L)));
+        when(resources.requireUsableInstance(7L)).thenReturn(instance);
+        DeviceTwinStates twin = new DeviceTwinStates();
+        twin.setOnlineStatus("ONLINE");
+        when(twins.getByInstanceId(7L)).thenReturn(twin);
+        WorkflowExecutionReadinessService service = new WorkflowExecutionReadinessService(resources, twins, adapters, 30);
+
+        assertEquals(java.util.List.of(), service.inspect(null).stream().map(WorkflowIssue::code).toList());
+        org.mockito.Mockito.verifyNoInteractions(adapters);
     }
 
     private Fixture fixture() {

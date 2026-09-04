@@ -14,6 +14,15 @@ export function canPublishWorkflow(workflow, { contractReady = false, isEditing 
   return isEditing || !isActiveWorkflow(workflow)
 }
 
+export function workflowCheckFingerprint(workflow) {
+  return JSON.stringify({
+    name: String(workflow?.name || ''),
+    nodesDef: workflow?.nodesDef || [],
+    interfaceConnections: workflow?.interfaceConnections || [],
+    portConnections: workflow?.portConnections || [],
+  })
+}
+
 export function workflowStatusLabel(status) {
   return String(status || '').trim().toUpperCase() === 'ACTIVE' ? '已启用' : '草稿'
 }

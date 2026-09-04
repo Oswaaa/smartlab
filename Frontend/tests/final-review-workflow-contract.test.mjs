@@ -139,6 +139,7 @@ test('designer adopts prepared definitions and restores fixed capabilities for p
   assert.match(designer, /workflowApi\.saveDraft/)
   assert.match(designer, /workflowApi\.saveAsNew/)
   assert.match(designer, /workflowApi\.validate/)
+  assert.match(designer, /workflowApi\.simulate/)
   assert.match(designer, /workflowApi\.publish/)
   assert.match(designer, /adoptPreparedWorkflow/)
   assert.match(designer, /indexWorkflowIssues/)

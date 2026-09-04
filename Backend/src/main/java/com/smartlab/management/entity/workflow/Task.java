@@ -41,4 +41,16 @@ public class Task {
     private OffsetDateTime startTime;
     @TableField("end_time")
     private OffsetDateTime endTime;
+    @TableField("execution_kind")
+    private String executionKind;
+
+    public String getExecutionKind() {
+        return TaskExecutionKind.normalize(executionKind);
+    }
+
+    public void setExecutionKind(String executionKind) {
+        this.executionKind = executionKind == null || executionKind.isBlank()
+                ? TaskExecutionKind.PRODUCTION
+                : TaskExecutionKind.normalize(executionKind);
+    }
 }

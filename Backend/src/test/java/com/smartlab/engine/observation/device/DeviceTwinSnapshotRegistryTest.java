@@ -8,8 +8,12 @@ import com.smartlab.engine.observation.ObservationStatus;
 import com.smartlab.engine.observation.SnapshotOrigin;
 import com.smartlab.engine.observation.statemachine.StateMachineObservationRegistry;
 import com.smartlab.engine.observation.workflow.WorkflowRuntimeSnapshotRegistry;
+import com.smartlab.engine.observation.event.ObservableTopologyChangedEvent;
 import com.smartlab.global.contract.ObservableObjectType;
+import com.smartlab.global.event.DeviceInstanceDeletedEvent;
+import com.smartlab.global.event.DeviceInstanceSavedEvent;
 import com.smartlab.global.util.JsonNodeSupport;
+import com.smartlab.management.entity.resource.device.DeviceInstanceKind;
 import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
 import com.smartlab.management.mapper.resource.device.DeviceTwinStatesMapper;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
@@ -113,5 +117,65 @@ class DeviceTwinSnapshotRegistryTest {
         registry.restorePersistedState();
 
         assertEquals(null, registry.snapshot(7L));
+    }
+
+    @Test
+    void savedVirtualInstanceEntersLiveSnapshotForConstraintExpansion() {
+        DeviceTwinStatesMapper twins = mock(DeviceTwinStatesMapper.class);
+        DeviceInstancesMapper instances = mock(DeviceInstancesMapper.class);
+        ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
+        DeviceInstances virtual = new DeviceInstances();
+        virtual.setId(24L);
+        virtual.setDeviceModelId(3L);
+        virtual.setInstanceKind(DeviceInstanceKind.VIRTUAL);
+        virtual.setLifecycleStatus("IN_USE");
+        DeviceTwinStates state = new DeviceTwinStates();
+        state.setInstanceId(24L);
+        state.setCurrentAttr(JsonNodeSupport.objectNode().put("temperature", 20));
+        state.setOnlineStatus("ONLINE");
+        when(instances.selectById(24L)).thenReturn(virtual);
+        when(twins.selectOne(org.mockito.ArgumentMatchers.any())).thenReturn(state);
+        DeviceTwinSnapshotRegistry registry = new DeviceTwinSnapshotRegistry(twins, instances, events);
+
+        registry.handleInstanceSaved(new DeviceInstanceSavedEvent(24L, 3L, true));
+
+        assertEquals(20, registry.snapshot(24L).attributes().path("temperature").asInt());
+        org.mockito.Mockito.verify(events).publishEvent(org.mockito.ArgumentMatchers.any(ObservableTopologyChangedEvent.class));
+    }
+
+    @Test
+    void temporaryInstanceIsNotRestoredIntoConstraintSnapshots() {
+        DeviceTwinStatesMapper twins = mock(DeviceTwinStatesMapper.class);
+        DeviceInstancesMapper instances = mock(DeviceInstancesMapper.class);
+        DeviceTwinStates state = new DeviceTwinStates();
+        state.setInstanceId(22L);
+        state.setCurrentAttr(JsonNodeSupport.objectNode().put("temperature", 20));
+        DeviceInstances temporary = new DeviceInstances();
+        temporary.setId(22L);
+        temporary.setDeviceModelId(3L);
+        temporary.setInstanceKind(DeviceInstanceKind.TEMPORARY);
+        temporary.setLifecycleStatus("IN_USE");
+        when(twins.selectList(org.mockito.ArgumentMatchers.any())).thenReturn(List.of(state));
+        when(instances.selectById(22L)).thenReturn(temporary);
+        DeviceTwinSnapshotRegistry registry = new DeviceTwinSnapshotRegistry(twins, instances,
+                mock(ApplicationEventPublisher.class));
+
+        registry.restorePersistedState();
+        registry.handleInstanceSaved(new DeviceInstanceSavedEvent(22L, 3L, true));
+
+        assertEquals(null, registry.snapshot(22L));
+    }
+
+    @Test
+    void deletedInstanceLeavesNoLiveSnapshot() {
+        DeviceTwinStatesMapper twins = mock(DeviceTwinStatesMapper.class);
+        when(twins.selectList(org.mockito.ArgumentMatchers.any())).thenReturn(List.of());
+        DeviceTwinSnapshotRegistry registry = new DeviceTwinSnapshotRegistry(twins,
+                mock(DeviceInstancesMapper.class), mock(ApplicationEventPublisher.class));
+        registry.updateAttributes(24L, 3L, JsonNodeSupport.objectNode().put("temperature", 20), Instant.now());
+
+        registry.handleInstanceDeleted(new DeviceInstanceDeletedEvent(24L));
+
+        assertEquals(null, registry.snapshot(24L));
     }
 }

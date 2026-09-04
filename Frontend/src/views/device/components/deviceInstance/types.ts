@@ -69,6 +69,17 @@ export interface MqttTopicRow {
   topic: string
 }
 
+export interface VirtualMachineView {
+  physicalInstanceId: number
+  virtualInstanceId: number
+  leaseId: number
+  virtualDevicePoint?: string
+  instanceName?: string
+  status?: string
+  lastUsedTime?: string
+  createTime?: string
+}
+
 export interface ControlGroup {
   key: string
   name: string

@@ -12,10 +12,14 @@ import com.smartlab.engine.workflow.WorkflowInterfaceSnapshots;
 import com.smartlab.engine.workflow.WorkflowPortSnapshots;
 import com.smartlab.management.entity.workflow.FlowNode;
 import com.smartlab.management.entity.workflow.Task;
+import com.smartlab.management.entity.workflow.TaskExecutionKind;
 import com.smartlab.management.entity.workflow.TaskStep;
 import com.smartlab.management.mapper.workflow.FlowNodeMapper;
 import com.smartlab.management.mapper.workflow.TaskMapper;
 import com.smartlab.management.mapper.workflow.TaskStepMapper;
+import com.smartlab.management.service.db.resource.adapter.VirtualLeaseService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
@@ -28,6 +32,7 @@ import java.util.Set;
 
 @Service
 public class WorkflowRuntimeService {
+    private static final Logger log = LoggerFactory.getLogger(WorkflowRuntimeService.class);
     private static final Set<String> ACTIVE_NODE_STATES = Set.of("PENDING", "RUNNING", "TERMINATING");
     private static final Set<String> TERMINAL_NODE_STATES = Set.of("SUCCEEDED", "FAILED", "TERMINATED");
 
@@ -37,22 +42,30 @@ public class WorkflowRuntimeService {
     private final ExecutionLogService logService;
     private final ApplicationEventPublisher eventPublisher;
     private final WorkflowService workflowService;
+    private final VirtualLeaseService virtualLeaseService;
 
     public WorkflowRuntimeService(TaskMapper taskMapper, TaskStepMapper stepMapper, FlowNodeMapper flowNodeMapper,
                                   ExecutionLogService logService, ApplicationEventPublisher eventPublisher) {
-        this(taskMapper, stepMapper, flowNodeMapper, logService, eventPublisher, null);
+        this(taskMapper, stepMapper, flowNodeMapper, logService, eventPublisher, null, null);
+    }
+
+    public WorkflowRuntimeService(TaskMapper taskMapper, TaskStepMapper stepMapper, FlowNodeMapper flowNodeMapper,
+                                  ExecutionLogService logService, ApplicationEventPublisher eventPublisher,
+                                  WorkflowService workflowService) {
+        this(taskMapper, stepMapper, flowNodeMapper, logService, eventPublisher, workflowService, null);
     }
 
     @Autowired
     public WorkflowRuntimeService(TaskMapper taskMapper, TaskStepMapper stepMapper, FlowNodeMapper flowNodeMapper,
                                   ExecutionLogService logService, ApplicationEventPublisher eventPublisher,
-                                  WorkflowService workflowService) {
+                                  WorkflowService workflowService, VirtualLeaseService virtualLeaseService) {
         this.taskMapper = taskMapper;
         this.stepMapper = stepMapper;
         this.flowNodeMapper = flowNodeMapper;
         this.logService = logService;
         this.eventPublisher = eventPublisher;
         this.workflowService = workflowService;
+        this.virtualLeaseService = virtualLeaseService;
     }
 
     public List<Task> runningTasks() {
@@ -75,6 +88,7 @@ public class WorkflowRuntimeService {
         taskMapper.updateById(task);
         logService.append("TASK", taskId, null, null, "WARN", "任务终止完成");
         publishTask(task);
+        releaseSimulationLeases(task);
         return task;
     }
 
@@ -300,6 +314,7 @@ public class WorkflowRuntimeService {
         taskMapper.updateById(task);
         logService.append("TASK", task.getId(), null, null, "INFO", "任务执行成功");
         publishTask(task);
+        releaseSimulationLeases(task);
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -313,6 +328,7 @@ public class WorkflowRuntimeService {
         taskMapper.updateById(task);
         logService.append("TASK", task.getId(), null, null, "ERROR", "任务执行失败: " + reason);
         publishTask(task);
+        releaseSimulationLeases(task);
     }
 
     public List<TaskStep> runningDeviceSteps() {
@@ -434,5 +450,19 @@ public class WorkflowRuntimeService {
 
     private void publishTask(Task task) {
         eventPublisher.publishEvent(new TaskLifecycleObservationEvent(task.getId(), task.getTaskStatus(), Instant.now()));
+    }
+
+    private void releaseSimulationLeases(Task task) {
+        if (virtualLeaseService == null || task == null || task.getId() == null) {
+            return;
+        }
+        if (!TaskExecutionKind.isSimulation(task)) {
+            return;
+        }
+        try {
+            virtualLeaseService.releaseForTask(task.getId());
+        } catch (RuntimeException error) {
+            log.warn("模拟任务释放虚拟点租约失败: taskId={}", task.getId(), error);
+        }
     }
 }

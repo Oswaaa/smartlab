@@ -2,6 +2,7 @@ package com.smartlab.management.controller.resource.data;
 
 import com.smartlab.management.dto.common.ApiResponse;
 import com.smartlab.management.dto.common.PageResult;
+import com.smartlab.management.dto.resource.data.DataSeriesResponse;
 import com.smartlab.management.entity.resource.data.DataIndex;
 import com.smartlab.management.service.db.resource.data.DataRecordService;
 import org.springframework.web.bind.annotation.*;
@@ -59,6 +60,24 @@ public class DataRecordController {
                                                                         @RequestParam(defaultValue = "50") long pageSize) {
         try {
             return ApiResponse.ok(dataRecordService.pageByDataIndexId(dataIndexId, pageNo, pageSize));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    /**
+     * 按 DATA_INDEX.ID 查询遥测走势图时序窗口（与表格分页解耦）。
+     * 不传 from/to 时跟随最新采样（live）；传入 from/to 时按绝对窗口查询（最长 60 分钟）。
+     */
+    @GetMapping("/dataset/{dataIndexId}/series")
+    public ApiResponse<DataSeriesResponse> seriesByDataIndex(@PathVariable Long dataIndexId,
+                                                             @RequestParam(defaultValue = "60") int windowMinutes,
+                                                             @RequestParam(defaultValue = "4000") int maxPoints,
+                                                             @RequestParam(required = false) String from,
+                                                             @RequestParam(required = false) String to) {
+        try {
+            return ApiResponse.ok(dataRecordService.seriesByDataIndexId(
+                    dataIndexId, windowMinutes, maxPoints, from, to));
         } catch (Exception e) {
             return ApiResponse.fail(e.getMessage());
         }

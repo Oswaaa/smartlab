@@ -23,7 +23,8 @@ public class ListDeviceCatalogTool implements AgentTool {
 
     @Override
     public String description() {
-        return "列出设备模型的能力与属性（含参数名/显示名/类型，供填写 capabilityParameters）。不含端口、状态机接口、适配器字段。生成流程前必须先调用。";
+        return "列出设备模型的能力与属性（含参数名/显示名/类型，供填写 capabilityParameters）。"
+                + "不含端口、状态机接口、适配器字段。初筛设备时调用，须与 list_workflow_catalog 一起使用。";
     }
 
     @Override

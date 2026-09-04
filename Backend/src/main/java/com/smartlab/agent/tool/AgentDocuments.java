@@ -7,6 +7,7 @@ import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.workflow.WorkflowIssue;
 import com.smartlab.management.dto.workflow.WorkflowModelDocument;
 import com.smartlab.management.dto.workflow.WorkflowPreparationResponse;
+import com.smartlab.management.dto.workflow.WorkflowSimulationReport;
 
 final class AgentDocuments {
     private AgentDocuments() {
@@ -16,12 +17,12 @@ final class AgentDocuments {
         JsonNode source = arguments == null ? null : arguments.get("document");
         if (source == null || source.isNull() || source.isMissingNode()) source = arguments;
         if (source == null || !source.isObject() || !source.has("metadata")) {
-            throw new IllegalArgumentException("缺少 document（工作流模型文件）");
+            throw new IllegalArgumentException("缺少 document（工作流草稿）");
         }
         try {
             return JsonNodeSupport.MAPPER.treeToValue(source, WorkflowModelDocument.class);
         } catch (Exception exception) {
-            throw new IllegalArgumentException("无法解析工作流模型文件: " + exception.getMessage());
+            throw new IllegalArgumentException(AgentRepairHints.forParseFailure(exception.getMessage()));
         }
     }
 
@@ -33,6 +34,31 @@ final class AgentDocuments {
         return compactPreparation(prepared, true);
     }
 
+    static JsonNode simulationNode(WorkflowSimulationReport report) {
+        ObjectNode result = JsonNodeSupport.objectNode();
+        result.put("walkable", report != null && report.walkable());
+        if (report != null && report.flowModelId() != null) result.put("flowModelId", report.flowModelId());
+        ArrayNode pathTaken = result.putArray("pathTaken");
+        if (report != null && report.pathTaken() != null) {
+            for (String name : report.pathTaken()) {
+                if (name != null && !name.isBlank()) pathTaken.add(name);
+            }
+        }
+        ArrayNode paths = result.putArray("paths");
+        if (report != null && report.paths() != null) {
+            for (java.util.List<String> route : report.paths()) {
+                ArrayNode one = paths.addArray();
+                if (route == null) continue;
+                for (String name : route) {
+                    if (name != null && !name.isBlank()) one.add(name);
+                }
+            }
+        }
+        result.set("issues", issuesNode(report == null ? java.util.List.of() : report.issues()));
+        result.put("blocking", report == null || !report.walkable() || hasBlocking(report.issues()));
+        return result;
+    }
+
     static JsonNode documentParameterSchema() {
         try {
             return JsonNodeSupport.MAPPER.readTree("""
@@ -42,7 +68,7 @@ final class AgentDocuments {
                       "properties": {
                         "document": {
                           "type": "object",
-                          "description": "工作流模型文件。节点用 name 标识；控制流只走 interfaceConnections 的 source/target，不要写 fromNodeId。lifecycle/interfaces 由后端补全。",
+                          "description": "工作流草稿。系统 lifecycle/接口由后端补全；BRANCH 等用户接口写在节点 interfaces。控制连线只走 interfaceConnections 的 source/target。",
                           "required": ["metadata", "nodes", "interfaceConnections", "portConnections"],
                           "properties": {
                             "metadata": {
@@ -61,9 +87,12 @@ final class AgentDocuments {
                                 "required": ["name", "nodeType"],
                                 "properties": {
                                   "name": { "type": "string" },
-                                  "nodeType": { "type": "string", "enum": ["FUNC_NODE", "DEV_NODE"] },
-                                  "functionType": { "type": "string", "enum": ["START", "END"] },
+                                  "nodeType": { "type": "string", "enum": ["FUNC_NODE", "DEV_NODE", "SUBFLOW_NODE"] },
+                                  "functionType": { "type": "string", "enum": ["START", "END", "BRANCH", "AGGREGATE"] },
                                   "deviceModelId": { "type": "integer" },
+                                  "subFlowModelId": { "type": "integer" },
+                                  "subFlowModelDescription": { "type": "string" },
+                                  "expression": { "type": "string" },
                                   "capability": {
                                     "type": "object",
                                     "required": ["capabilityName"],
@@ -72,7 +101,11 @@ final class AgentDocuments {
                                       "capabilityParameters": { "type": "object" }
                                     }
                                   },
-                                  "ports": { "type": "array" }
+                                  "ports": { "type": "array" },
+                                  "interfaces": {
+                                    "type": "array",
+                                    "description": "仅写用户自定义控制接口（如 BRANCH 出口）。系统默认控制接口不要写，由规范化器补全。"
+                                  }
                                 }
                               }
                             },
@@ -128,6 +161,8 @@ final class AgentDocuments {
             if (issue.path() != null && !issue.path().isBlank()) item.put("path", issue.path());
             if (issue.message() != null) item.put("message", issue.message());
             if (issue.suggestion() != null) item.put("suggestion", issue.suggestion());
+            String repair = AgentRepairHints.forIssue(issue.code(), issue.message(), issue.suggestion());
+            if (repair != null && !repair.isBlank()) item.put("repair", repair);
         }
         return array;
     }

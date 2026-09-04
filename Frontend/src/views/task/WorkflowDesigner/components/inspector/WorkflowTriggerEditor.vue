@@ -51,7 +51,7 @@
         <!-- 1. 条件区域 (Condition Block) -->
         <div class="trigger-block condition-block">
           <div v-if="conditionItems(trigger).length > 1" class="condition-logic-bar">
-            <strong>全部满足 (AND)</strong>
+            <strong>满足全部条件</strong>
             <span>以下条件同时成立时触发</span>
           </div>
 
@@ -60,46 +60,50 @@
             :key="conditionIndex"
             class="rule-row-container"
           >
-            <div class="rule-inputs-row condition-grid">
+            <div
+              class="rule-inputs-row condition-rule-row"
+              :class="{ 'is-wide-value': isWideConditionValue(condition) }"
+            >
               <span class="rule-badge cond-badge">{{ conditionIndex ? '且' : '当' }}</span>
 
-              <!-- 观测对象 -->
-              <el-select
-                :model-value="condition.object"
-                placeholder="观测对象"
-                :disabled="!canEditTrigger(trigger)"
-                class="col-cond-obj"
-                @update:model-value="updateCondition(index, conditionIndex, 'object', $event)"
-              >
-                <el-option-group
-                  v-for="group in conditionGroups(condition)"
-                  :key="group.label"
-                  :label="group.label"
+              <div class="col-cond-obj">
+                <el-select
+                  :model-value="condition.object"
+                  placeholder="观测对象"
+                  :disabled="!canEditTrigger(trigger)"
+                  :title="conditionObjectLabel(condition)"
+                  @update:model-value="updateCondition(index, conditionIndex, 'object', $event)"
+                >
+                  <el-option-group
+                    v-for="group in conditionGroups(condition)"
+                    :key="group.label"
+                    :label="group.label"
+                  >
+                    <el-option
+                      v-for="item in group.options"
+                      :key="item.value"
+                      :label="item.label"
+                      :value="item.value"
+                    />
+                  </el-option-group>
+                </el-select>
+              </div>
+
+              <div class="col-cond-op">
+                <el-select
+                  :model-value="condition.operator"
+                  placeholder="比较"
+                  :disabled="!canEditTrigger(trigger)"
+                  @update:model-value="updateCondition(index, conditionIndex, 'operator', $event)"
                 >
                   <el-option
-                    v-for="item in group.options"
-                    :key="item.value"
-                    :label="item.label"
-                    :value="item.value"
+                    v-for="operator in operatorsFor(condition)"
+                    :key="operator"
+                    :label="operatorLabel(operator)"
+                    :value="operator"
                   />
-                </el-option-group>
-              </el-select>
-
-              <!-- 比较运算符 -->
-              <el-select
-                :model-value="condition.operator"
-                placeholder="比较"
-                :disabled="!canEditTrigger(trigger)"
-                class="col-cond-op"
-                @update:model-value="updateCondition(index, conditionIndex, 'operator', $event)"
-              >
-                <el-option
-                  v-for="operator in operatorsFor(condition)"
-                  :key="operator"
-                  :label="operatorLabel(operator)"
-                  :value="operator"
-                />
-              </el-select>
+                </el-select>
+              </div>
 
               <!-- 比较值 -->
               <div class="col-cond-val">
@@ -188,73 +192,71 @@
           >
             <!-- 动作主配置行 -->
             <div
-              class="rule-inputs-row action-grid"
-              :class="{
-                'emit-grid': action.actionName === 'EMIT',
-                'update-grid': action.actionName === 'UPDATE'
-              }"
+              class="rule-inputs-row action-rule-row"
+              :class="action.actionName === 'EMIT' ? 'is-emit' : 'is-update'"
             >
               <span class="rule-badge act-badge">{{ actionIndex ? '再' : '则' }}</span>
 
-              <!-- 动作类型 (EMIT / UPDATE) -->
-              <el-select
-                :model-value="action.actionName"
-                placeholder="动作"
-                :disabled="!canEditTrigger(trigger)"
-                class="col-act-name"
-                @update:model-value="changeAction(index, actionIndex, $event)"
-              >
-                <el-option v-for="name in availableActions" :key="name" :label="name" :value="name" />
-              </el-select>
+              <div class="col-act-name">
+                <el-select
+                  :model-value="action.actionName"
+                  placeholder="动作"
+                  :disabled="!canEditTrigger(trigger)"
+                  @update:model-value="changeAction(index, actionIndex, $event)"
+                >
+                  <el-option v-for="name in availableActions" :key="name" :label="name" :value="name" />
+                </el-select>
+              </div>
 
-              <!-- EMIT：发送接口标签 + 发送信号选择 -->
               <template v-if="action.actionName === 'EMIT'">
-                <div class="host-interface-tag" title="发送接口">
-                  <span class="tag-lbl">接口:</span>
+                <div class="host-interface-tag" :title="interfaceItem.name">
+                  <span class="tag-lbl">接口</span>
                   <span class="tag-val">{{ interfaceItem.name }}</span>
                 </div>
-                <el-select
-                  :model-value="action.payload?.signalName"
-                  placeholder="选择发送信号"
-                  :disabled="!canEditTrigger(trigger)"
-                  class="col-act-signal"
-                  @update:model-value="updatePayload(index, actionIndex, 'signalName', $event)"
-                >
-                  <el-option
-                    v-for="signal in interfaceItem.allowedSignals || []"
-                    :key="signal"
-                    :label="signal"
-                    :value="signal"
-                  />
-                </el-select>
+                <div class="col-act-signal">
+                  <el-select
+                    :model-value="action.payload?.signalName"
+                    placeholder="选择发送信号"
+                    :disabled="!canEditTrigger(trigger)"
+                    @update:model-value="updatePayload(index, actionIndex, 'signalName', $event)"
+                  >
+                    <el-option
+                      v-for="signal in interfaceItem.allowedSignals || []"
+                      :key="signal"
+                      :label="signal"
+                      :value="signal"
+                    />
+                  </el-select>
+                </div>
               </template>
 
-              <!-- UPDATE：选择更新类型与目标 -->
               <template v-else-if="action.actionName === 'UPDATE'">
-                <el-select
-                  :model-value="action.payload?.updateType"
-                  placeholder="更新类型"
-                  :disabled="!canEditTrigger(trigger)"
-                  class="col-act-update-type"
-                  @update:model-value="changeUpdateType(index, actionIndex, $event)"
-                >
-                  <el-option label="内部变量" value="INTERNAL_VARIABLE" />
-                  <el-option label="节点生命周期" value="NODE_LIFECYCLE" />
-                </el-select>
-                <el-select
-                  :model-value="action.payload?.targetName"
-                  placeholder="更新目标"
-                  :disabled="!canEditTrigger(trigger)"
-                  class="col-act-update-target"
-                  @update:model-value="changeUpdateTarget(index, actionIndex, $event)"
-                >
-                  <el-option
-                    v-for="target in updateTargets(action)"
-                    :key="target"
-                    :label="target"
-                    :value="target"
-                  />
-                </el-select>
+                <div class="col-act-update-type">
+                  <el-select
+                    :model-value="action.payload?.updateType"
+                    placeholder="更新类型"
+                    :disabled="!canEditTrigger(trigger)"
+                    @update:model-value="changeUpdateType(index, actionIndex, $event)"
+                  >
+                    <el-option label="内部变量" value="INTERNAL_VARIABLE" />
+                    <el-option label="节点生命周期" value="NODE_LIFECYCLE" />
+                  </el-select>
+                </div>
+                <div class="col-act-update-target">
+                  <el-select
+                    :model-value="action.payload?.targetName"
+                    placeholder="更新目标"
+                    :disabled="!canEditTrigger(trigger)"
+                    @update:model-value="changeUpdateTarget(index, actionIndex, $event)"
+                  >
+                    <el-option
+                      v-for="target in updateTargets(action)"
+                      :key="target"
+                      :label="target"
+                      :value="target"
+                    />
+                  </el-select>
+                </div>
               </template>
 
               <!-- 移除动作按钮 (行内右侧，绝不换行) -->
@@ -272,18 +274,19 @@
             <!-- UPDATE 变量专属：值设置第二行 -->
             <div
               v-if="action.actionName === 'UPDATE' && action.payload?.updateType !== 'NODE_LIFECYCLE'"
-              class="rule-inputs-row action-extra-grid"
+              class="rule-inputs-row action-value-row"
             >
               <span class="rule-badge val-badge">值</span>
-              <el-select
-                :model-value="updateSource(action)"
-                :disabled="!canEditTrigger(trigger)"
-                class="col-val-source"
-                @update:model-value="changeUpdateSource(index, actionIndex, $event)"
-              >
-                <el-option label="直接常量" value="VALUE" />
-                <el-option label="计算表达式" value="EXPRESSION" />
-              </el-select>
+              <div class="col-val-source">
+                <el-select
+                  :model-value="updateSource(action)"
+                  :disabled="!canEditTrigger(trigger)"
+                  @update:model-value="changeUpdateSource(index, actionIndex, $event)"
+                >
+                  <el-option label="直接常量" value="VALUE" />
+                  <el-option label="计算表达式" value="EXPRESSION" />
+                </el-select>
+              </div>
               <div class="col-val-input">
                 <WorkflowExpressionEditor
                   v-if="updateSource(action) === 'EXPRESSION'"
@@ -424,6 +427,16 @@ function conditionGroups(condition: Item) {
   ]
 }
 
+function conditionObjectLabel(condition: Item) {
+  for (const group of conditionGroups(condition)) {
+    const match = group.options.find((item: Item) => item.value === condition?.object)
+    if (match) return match.label
+  }
+  return condition?.object || ''
+}
+function isWideConditionValue(condition: Item) {
+  return condition?.operator === 'IN' || conditionType(condition) === 'JSON'
+}
 function canEditTrigger(trigger: Item) {
   return props.editable && !isSystemItem(trigger)
 }
@@ -728,14 +741,15 @@ function operatorLabel(value: string) {
 }
 
 .trigger-editor-section :deep(.el-select),
-.trigger-editor-section :deep(.el-input) {
+.trigger-editor-section :deep(.el-input),
+.trigger-editor-section :deep(.el-input-number) {
   width: 100%;
 }
 
-/* 紧凑下拉框内边距，彻底杜绝 UPDA... 等... 截断 */
-.trigger-editor-section :deep(.el-select .el-input__wrapper) {
-  padding-left: 6px;
-  padding-right: 6px;
+.trigger-editor-section :deep(.el-select .el-input__wrapper),
+.trigger-editor-section :deep(.el-select .el-select__wrapper) {
+  padding-left: 8px;
+  padding-right: 8px;
 }
 .trigger-editor-section :deep(.el-select .el-input__suffix) {
   margin-left: 2px;
@@ -786,6 +800,7 @@ function operatorLabel(value: string) {
   padding: 10px 14px 12px;
   border-bottom: 1px solid var(--sl-border-subtle, #f1f5f9);
   background: #ffffff;
+  min-width: 0;
   transition: background-color 0.15s ease;
 }
 
@@ -865,48 +880,30 @@ function operatorLabel(value: string) {
   flex-direction: column;
 }
 
-/* 行栅格结构 */
+/* 规则行：按内容定宽，剩余空白留在右侧，窄抽屉里自动换行而不是截断 */
 .rule-inputs-row {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 6px;
   width: 100%;
 }
 
-.condition-grid {
-  display: grid;
-  grid-template-columns: 24px minmax(110px, 1.2fr) 74px minmax(90px, 1fr) 36px;
-  gap: 6px;
+.condition-rule-row,
+.action-rule-row {
   align-items: center;
 }
 
-.action-grid {
-  display: grid;
-  grid-template-columns: 24px 100px minmax(0, 1fr) 36px;
-  gap: 6px;
-  align-items: center;
-}
-
-/* EMIT 动作行：接口名称自适应，信号选择拓宽至 102px 确保 ACTIVE 完整展示 */
-.action-grid.emit-grid {
-  grid-template-columns: 24px 100px minmax(105px, 1fr) 102px 36px;
-}
-
-/* UPDATE 动作行：节点生命周期扩宽至 135px，目标值选择保持 88px+ 自适应 */
-.action-grid.update-grid {
-  grid-template-columns: 24px 100px 135px minmax(88px, 1fr) 36px;
-}
-
-.action-extra-grid {
-  display: grid;
-  grid-template-columns: 24px 115px minmax(0, 1fr);
-  gap: 6px;
+.action-value-row {
   align-items: flex-start;
   margin-top: 4px;
 }
 
 .host-interface-tag {
   height: 28px;
+  flex: 0 1 200px;
+  min-width: 120px;
+  max-width: 240px;
   display: flex;
   align-items: center;
   gap: 4px;
@@ -917,7 +914,6 @@ function operatorLabel(value: string) {
   font-size: 11px;
   box-sizing: border-box;
   overflow: hidden;
-  min-width: 0;
 }
 
 .tag-lbl {
@@ -934,11 +930,14 @@ function operatorLabel(value: string) {
   overflow: hidden;
   text-overflow: ellipsis;
   min-width: 0;
+  flex: 1;
 }
 
 /* 徽标 */
 .rule-badge {
+  width: 24px;
   height: 28px;
+  flex: none;
   display: grid;
   place-items: center;
   font-size: 10.5px;
@@ -962,15 +961,72 @@ function operatorLabel(value: string) {
   color: #9333ea;
 }
 
-.col-cond-obj { min-width: 0; }
-.col-cond-op { min-width: 0; }
-.col-cond-val { min-width: 0; }
-.col-act-name { min-width: 0; }
-.col-act-signal { min-width: 0; }
-.col-act-update-type { min-width: 0; }
-.col-act-update-target { min-width: 0; }
-.col-val-source { min-width: 0; }
-.col-val-input { min-width: 0; }
+.col-cond-obj {
+  flex: 1 1 160px;
+  min-width: 132px;
+  max-width: 220px;
+}
+
+.col-cond-op {
+  flex: 0 0 96px;
+  width: 96px;
+}
+
+.col-cond-val {
+  flex: 1 1 148px;
+  min-width: 120px;
+  max-width: 200px;
+}
+
+.condition-rule-row.is-wide-value .col-cond-val {
+  flex: 1 1 100%;
+  min-width: 0;
+  max-width: none;
+  order: 2;
+}
+
+.condition-rule-row.is-wide-value .btn-row-action {
+  order: 1;
+  margin-left: auto;
+}
+
+.condition-rule-row.is-wide-value :deep(.json-entry-row) {
+  grid-template-columns: minmax(80px, 1fr) minmax(100px, 1.4fr) auto;
+  padding: 6px;
+}
+
+.col-act-name {
+  flex: 0 0 100px;
+  width: 100px;
+}
+
+.col-act-signal,
+.col-act-update-target {
+  flex: 1 1 132px;
+  min-width: 112px;
+  max-width: 180px;
+}
+
+.col-act-update-type {
+  flex: 0 0 140px;
+  width: 140px;
+  min-width: 140px;
+}
+
+.col-val-source {
+  flex: 0 0 108px;
+  width: 108px;
+}
+
+.col-val-input {
+  flex: 1 1 220px;
+  min-width: 180px;
+}
+
+.trigger-editor-section :deep(.el-select__selected-item) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .btn-row-action {
   background: transparent;
@@ -979,7 +1035,8 @@ function operatorLabel(value: string) {
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;
-  padding: 0 4px;
+  flex: none;
+  padding: 0 2px;
   height: 28px;
   display: flex;
   align-items: center;

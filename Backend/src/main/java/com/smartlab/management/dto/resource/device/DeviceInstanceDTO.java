@@ -19,6 +19,7 @@ public class DeviceInstanceDTO {
     private String boundAdapterName;
     private String boundDevicePoint;
     private String lifecycleStatus;
+    private String instanceKind;
     private String onlineStatus;
     private Boolean isOnline;
     private String currentCmdState;

@@ -4,11 +4,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.management.dto.resource.adapter.AdapterRouteDTO;
 import com.smartlab.management.dto.resource.device.DeviceInstanceDTO;
+import com.smartlab.management.dto.resource.device.VirtualMachineView;
 import com.smartlab.management.dto.common.ApiResponse;
 import com.smartlab.management.dto.common.PageResult;
+import com.smartlab.management.entity.resource.device.DeviceInstanceKind;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
 import com.smartlab.management.entity.resource.device.DeviceTwinStates;
 import com.smartlab.adapter.MqttAdapterMessagingService;
+import com.smartlab.management.service.db.resource.adapter.VirtualLeaseService;
 import com.smartlab.management.service.db.resource.device.DeviceInstanceService;
 import com.smartlab.management.service.db.user.CurrentUserPermissionService;
 import com.smartlab.management.service.protocol.AdapterPayloadMapperService;
@@ -38,13 +41,23 @@ public class DeviceInstanceController {
     private final AdapterPayloadMapperService protocolMapperService;
     private final CurrentUserPermissionService permissionService;
     private final DeviceConsoleSseHub deviceConsoleSseHub;
+    private final VirtualLeaseService virtualLeaseService;
 
     public DeviceInstanceController(DeviceInstanceService deviceInstanceService,
                                     MqttAdapterMessagingService mqttAdapterMessagingService,
                                     StateMachineEngine stateMachineEngine,
                                     AdapterPayloadMapperService protocolMapperService,
                                     CurrentUserPermissionService permissionService) {
-        this(deviceInstanceService, mqttAdapterMessagingService, stateMachineEngine, protocolMapperService, permissionService, null);
+        this(deviceInstanceService, mqttAdapterMessagingService, stateMachineEngine, protocolMapperService, permissionService, null, null);
+    }
+
+    public DeviceInstanceController(DeviceInstanceService deviceInstanceService,
+                                    MqttAdapterMessagingService mqttAdapterMessagingService,
+                                    StateMachineEngine stateMachineEngine,
+                                    AdapterPayloadMapperService protocolMapperService,
+                                    CurrentUserPermissionService permissionService,
+                                    DeviceConsoleSseHub deviceConsoleSseHub) {
+        this(deviceInstanceService, mqttAdapterMessagingService, stateMachineEngine, protocolMapperService, permissionService, deviceConsoleSseHub, null);
     }
 
     @Autowired
@@ -53,18 +66,21 @@ public class DeviceInstanceController {
                                     StateMachineEngine stateMachineEngine,
                                     AdapterPayloadMapperService protocolMapperService,
                                     CurrentUserPermissionService permissionService,
-                                    DeviceConsoleSseHub deviceConsoleSseHub) {
+                                    DeviceConsoleSseHub deviceConsoleSseHub,
+                                    VirtualLeaseService virtualLeaseService) {
         this.deviceInstanceService = deviceInstanceService;
         this.mqttAdapterMessagingService = mqttAdapterMessagingService;
         this.stateMachineEngine = stateMachineEngine;
         this.protocolMapperService = protocolMapperService;
         this.permissionService = permissionService;
         this.deviceConsoleSseHub = deviceConsoleSseHub;
+        this.virtualLeaseService = virtualLeaseService;
     }
 
     @GetMapping("/list")
-    public ApiResponse<List<DeviceInstanceDTO>> list(@RequestParam(required = false) String lifecycleStatus) {
-        return ApiResponse.ok(deviceInstanceService.listDTO(lifecycleStatus));
+    public ApiResponse<List<DeviceInstanceDTO>> list(@RequestParam(required = false) String lifecycleStatus,
+                                                      @RequestParam(required = false) String instanceKind) {
+        return ApiResponse.ok(deviceInstanceService.listDTO(lifecycleStatus, instanceKind));
     }
 
     @GetMapping("/page")
@@ -73,8 +89,9 @@ public class DeviceInstanceController {
                                                           @RequestParam(required = false) String modelId,
                                                           @RequestParam(required = false) String keyword,
                                                           @RequestParam(required = false) Boolean online,
-                                                          @RequestParam(required = false) String lifecycleStatus) {
-        return ApiResponse.ok(deviceInstanceService.pageDTO(pageNo, pageSize, modelId, keyword, online, lifecycleStatus));
+                                                          @RequestParam(required = false) String lifecycleStatus,
+                                                          @RequestParam(required = false) String instanceKind) {
+        return ApiResponse.ok(deviceInstanceService.pageDTO(pageNo, pageSize, modelId, keyword, online, lifecycleStatus, instanceKind));
     }
 
     @GetMapping("/summary")
@@ -168,10 +185,11 @@ public class DeviceInstanceController {
     public ApiResponse<ObjectNode> control(@PathVariable String id, @RequestBody Map<String, Object> body) {
         try {
             permissionService.require("device_instance", "control");
-            deviceInstanceService.requireUsable(Long.valueOf(id));
+            Long targetId = Long.valueOf(id);
+            DeviceInstances target = deviceInstanceService.requireControllable(targetId);
             String signalName = body == null ? "MANUAL_EXECUTE_START" : String.valueOf(body.getOrDefault("signalName", "MANUAL_EXECUTE_START"));
-            if (SystemExecutionContract.isCommandStartSignal(signalName)) {
-                deviceInstanceService.requireOnline(Long.valueOf(id));
+            if (DeviceInstanceKind.isPhysical(target) && SystemExecutionContract.isCommandStartSignal(signalName)) {
+                deviceInstanceService.requireOnline(targetId);
             }
             Object capabilityValue = body == null ? null
                     : body.getOrDefault("capabilityName", body.get("commandId"));
@@ -183,8 +201,44 @@ public class DeviceInstanceController {
             if (body != null && body.get("parameters") instanceof Map<?, ?> raw) {
                 raw.forEach((key, value) -> parameters.put(String.valueOf(key), value));
             }
-            ObjectNode result = stateMachineEngine.handleManualControl(Long.valueOf(id), signalName, capabilityName, parameters);
+            ObjectNode result = stateMachineEngine.handleManualControl(targetId, signalName, capabilityName, parameters);
+            if (DeviceInstanceKind.isVirtual(target) && virtualLeaseService != null) {
+                virtualLeaseService.touchLastUsedForInstance(targetId);
+            }
             return ApiResponse.ok(result);
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    @GetMapping("/{id}/virtuals")
+    public ApiResponse<List<VirtualMachineView>> listVirtuals(@PathVariable String id) {
+        try {
+            permissionService.require("device_instance", "control");
+            deviceInstanceService.requirePhysical(Long.valueOf(id));
+            return ApiResponse.ok(requireLeaseService().listPokeVirtuals(Long.valueOf(id)));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    @PostMapping("/{id}/virtuals")
+    public ApiResponse<VirtualMachineView> applyVirtual(@PathVariable String id) {
+        try {
+            permissionService.require("device_instance", "control");
+            deviceInstanceService.requirePhysical(Long.valueOf(id));
+            return ApiResponse.ok(requireLeaseService().applyPokeVirtual(Long.valueOf(id)));
+        } catch (Exception e) {
+            return ApiResponse.fail(e.getMessage());
+        }
+    }
+
+    @DeleteMapping("/virtuals/{leaseId}")
+    public ApiResponse<String> releaseVirtual(@PathVariable Long leaseId) {
+        try {
+            permissionService.require("device_instance", "control");
+            requireLeaseService().releasePokeVirtual(leaseId);
+            return ApiResponse.ok("虚拟机已申请注销");
         } catch (Exception e) {
             return ApiResponse.fail(e.getMessage());
         }
@@ -194,7 +248,7 @@ public class DeviceInstanceController {
     public ApiResponse<List<ObjectNode>> clearException(@PathVariable String id, @RequestBody Map<String, Object> body) {
         try {
             permissionService.require("device_instance", "control");
-            deviceInstanceService.requireUsable(Long.valueOf(id));
+            deviceInstanceService.requirePhysical(Long.valueOf(id));
             String violationStateName = body == null ? "" : String.valueOf(body.getOrDefault("violationStateName", "")).trim();
             if (violationStateName.isBlank()) {
                 throw new IllegalArgumentException("异常状态名称 violationStateName 不能为空");
@@ -204,5 +258,12 @@ public class DeviceInstanceController {
         } catch (Exception e) {
             return ApiResponse.fail(e.getMessage());
         }
+    }
+
+    private VirtualLeaseService requireLeaseService() {
+        if (virtualLeaseService == null) {
+            throw new IllegalStateException("租约服务未装配");
+        }
+        return virtualLeaseService;
     }
 }

@@ -41,6 +41,16 @@ public interface DeviceTwinStatesMapper extends BaseMapper<DeviceTwinStates> {
 
     @Update("""
             UPDATE "DEVICE_TWIN_STATES"
+            SET current_attr = COALESCE(current_attr, '{}'::jsonb) || CAST(#{attributePatchJson} AS jsonb),
+                update_time = #{updateTime}
+            WHERE instance_id = #{instanceId}
+            """)
+    int patchAttributesOnly(@Param("instanceId") Long instanceId,
+                            @Param("attributePatchJson") String attributePatchJson,
+                            @Param("updateTime") OffsetDateTime updateTime);
+
+    @Update("""
+            UPDATE "DEVICE_TWIN_STATES"
             SET current_op_state = jsonb_set(
                     COALESCE(current_op_state, '{}'::jsonb),
                     ARRAY[#{regionName}]::text[],

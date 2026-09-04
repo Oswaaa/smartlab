@@ -3,6 +3,7 @@ package com.smartlab.management.service.db.workflow;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.smartlab.management.entity.resource.adapter.AdapterIndex;
 import com.smartlab.management.dto.workflow.WorkflowIssue;
+import com.smartlab.management.entity.resource.device.DeviceInstanceKind;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
 import com.smartlab.management.entity.resource.device.DeviceTwinStates;
 import com.smartlab.management.service.db.resource.adapter.AdapterIndexService;
@@ -56,6 +57,9 @@ public class WorkflowExecutionReadinessService {
             }
             try { requireDeviceOnline(instance); }
             catch (RuntimeException error) { issues.add(issue("DEVICE_OFFLINE", binding.slotId(), instanceId, error.getMessage(), "等待设备上线后重试")); }
+            if (DeviceInstanceKind.isTemporary(instance)) {
+                continue;
+            }
             try { requireAdapterOnline(instance); }
             catch (RuntimeException error) {
                 String message = error.getMessage();

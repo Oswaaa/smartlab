@@ -20,4 +20,5 @@ public class TaskCreateRequest {
     private List<TaskDeviceBindingRequest> deviceBindings;
     private JsonNode taskConstraints;
     private Long creatorId;
+    private String executionKind;
 }

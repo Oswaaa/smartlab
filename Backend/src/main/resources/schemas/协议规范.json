@@ -61,9 +61,11 @@
         "heartbeatTopic": { "const": "smartlab/adapter/{adapterName}/heartbeat", "description": "系统订阅，adapter发布：心跳检测" },
         "commandTopic": { "const": "smartlab/adapter/{adapterName}/{devicePoint}/command", "description": "系统发布，adapter订阅：系统下发指令" },
         "telemetryTopic": { "const": "smartlab/adapter/{adapterName}/{devicePoint}/telemetry", "description": "系统订阅，adapter发布：上报遥测数据" },
-        "eventTopic": { "const": "smartlab/adapter/{adapterName}/{devicePoint}/event", "description": "系统订阅，adapter发布：上报事件" }
+        "eventTopic": { "const": "smartlab/adapter/{adapterName}/{devicePoint}/event", "description": "系统订阅，adapter发布：上报事件" },
+        "leaseRequestTopic": { "const": "smartlab/adapter/{adapterName}/leaserequest", "description": "系统发布，adapter订阅：虚拟点位租约申请，报文为LeaseRequestFormat；action=LEASE申请租赁，action=RELEASE申请释放；不得走commandTopic" },
+        "leaseResultTopic": { "const": "smartlab/adapter/{adapterName}/leaseresult", "description": "系统订阅，adapter发布：租约申请结果，报文为LeaseResultFormat；不另发已收到确认" }
       },
-      "required": [ "registerTopic", "heartbeatTopic", "commandTopic", "telemetryTopic", "eventTopic" ]
+      "required": [ "registerTopic", "heartbeatTopic", "commandTopic", "telemetryTopic", "eventTopic", "leaseRequestTopic", "leaseResultTopic" ]
     },
     "AdapterRegisterRequest": {
       "type": "object",
@@ -97,12 +99,29 @@
       "type": "object",
       "description": "telemetryTopic消息格式规范",
       "properties": {
+        "formatType": {
+          "type": "string",
+          "enum": [ "SINGLE", "BATCH" ],
+          "description": "（可选）报文模式：SINGLE为单点上报（默认），BATCH为批量上报"
+        },
         "timestamp": { "type": "number" },
         "adapterName": { "type": "string", "description": "adapter标识名" },
         "devicePoint": { "type": "string", "description": "设备点" },
-        "telemetryData": { "type": "object", "description": "属性键值对" }
+        "telemetryData": { "type": "object", "description": "【该字段仅在SINGLE模式使用】单个数据点的属性键值对" },
+        "items": {
+          "type": "array",
+          "description": "【该字段仅在BATCH模式使用】数据包，每个元素包含独立的timestamp和telemetryData",
+          "items": {
+            "type": "object",
+            "properties": {
+              "timestamp": { "type": "number", "description": "数据点采集/仿真时间戳" },
+              "telemetryData": { "type": "object", "description": "属性键值对" }
+            },
+            "required": [ "timestamp", "telemetryData" ]
+          }
+        }
       },
-      "required": [ "timestamp", "adapterName", "devicePoint", "telemetryData" ]
+      "required": [ "timestamp", "adapterName", "devicePoint" ]
     },
     "EventMessageFormat": {
       "type": "object",
@@ -128,6 +147,36 @@
         "timestamp": { "type": "number" }
       },
       "required": [ "status", "timestamp" ]
+    },
+    "LeaseRequestFormat": {
+      "type": "object",
+      "description": "leaseRequestTopic消息格式规范；同一leaseId重复LEASE必须返回同一虚拟点位，重复RELEASE视为已释放",
+      "properties": {
+        "leaseId": { "type": "integer", "description": "VIRTUAL_LEASE.ID，本次租约唯一标识" },
+        "adapterName": { "type": "string", "description": "adapter标识名" },
+        "action": { "type": "string", "enum": [ "LEASE", "RELEASE" ], "description": "LEASE=申请租赁；RELEASE=申请释放，Adapter收到后直接开始注销" },
+        "devicePoint": { "type": "string", "description": "action=LEASE时填物理实例的bound_device_point（克隆来源）；action=RELEASE时填虚拟实例的bound_device_point（要拆除的虚拟点）" },
+        "timestamp": { "type": "number" }
+      },
+      "required": [ "leaseId", "adapterName", "action", "devicePoint", "timestamp" ]
+    },
+    "LeaseResultFormat": {
+      "type": "object",
+      "description": "leaseResultTopic消息格式规范；回传请求中的leaseId与action；这是该次申请是否成功的唯一回包",
+      "properties": {
+        "leaseId": { "type": "integer", "description": "回传请求中的VIRTUAL_LEASE.ID" },
+        "adapterName": { "type": "string", "description": "adapter标识名" },
+        "action": { "type": "string", "enum": [ "LEASE", "RELEASE" ], "description": "与请求中的action一致" },
+        "devicePoint": { "type": "string", "description": "始终为虚拟点位名；GRANTED为新批复的点，RELEASED为被拆除的点；GRANTED与RELEASED必须携带，LEASE+FAILED可以没有" },
+        "status": {
+          "type": "string",
+          "enum": [ "GRANTED", "RELEASED", "FAILED" ],
+          "description": "LEASE成功=GRANTED，LEASE失败=FAILED；RELEASE成功=RELEASED，RELEASE失败=FAILED。LEASE不得返回RELEASED，RELEASE不得返回GRANTED"
+        },
+        "errorMessage": { "type": "string", "description": "status为FAILED时的原因" },
+        "timestamp": { "type": "number" }
+      },
+      "required": [ "leaseId", "adapterName", "action", "status", "timestamp" ]
     },
     "ConstraintExecutePayload": {
       "type": "object",

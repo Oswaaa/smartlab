@@ -6,10 +6,12 @@ import java.util.List;
 
 public record TaskPreflightRequest(
         Long flowModelId, JsonNode taskVariables,
-        List<TaskDeviceBindingRequest> deviceBindings, JsonNode taskConstraints) {
+        List<TaskDeviceBindingRequest> deviceBindings, JsonNode taskConstraints,
+        String executionKind) {
     public static TaskPreflightRequest from(TaskCreateRequest request) {
         return new TaskPreflightRequest(request.getFlowModelId(), request.getTaskVariables(),
-                request.getDeviceBindings(), request.getTaskConstraints());
+                request.getDeviceBindings(), request.getTaskConstraints(),
+                request == null ? null : request.getExecutionKind());
     }
 
 }

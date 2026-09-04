@@ -13,8 +13,11 @@ import com.smartlab.management.entity.workflow.TaskStep;
 import com.smartlab.management.service.db.workflow.TaskExecutionViewService;
 import com.smartlab.management.service.db.workflow.TaskService;
 import com.smartlab.management.dto.workflow.TaskExecutionView;
+import com.smartlab.management.dto.workflow.TaskDataAssetsResponse;
+import com.smartlab.management.service.db.workflow.TaskDataAssetService;
 import com.smartlab.management.sse.TaskExecutionSseHub;
 import jakarta.validation.Valid;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -29,14 +32,24 @@ public class TaskController {
     private final WorkflowTaskControlService taskControlService;
     private final TaskExecutionViewService executionViewService;
     private final TaskExecutionSseHub taskExecutionSseHub;
+    private final TaskDataAssetService dataAssetService;
 
     public TaskController(TaskService taskService, WorkflowTaskControlService taskControlService,
                           TaskExecutionViewService executionViewService,
                           TaskExecutionSseHub taskExecutionSseHub) {
+        this(taskService, taskControlService, executionViewService, taskExecutionSseHub, null);
+    }
+
+    @Autowired
+    public TaskController(TaskService taskService, WorkflowTaskControlService taskControlService,
+                          TaskExecutionViewService executionViewService,
+                          TaskExecutionSseHub taskExecutionSseHub,
+                          TaskDataAssetService dataAssetService) {
         this.taskService = taskService;
         this.taskControlService = taskControlService;
         this.executionViewService = executionViewService;
         this.taskExecutionSseHub = taskExecutionSseHub;
+        this.dataAssetService = dataAssetService;
     }
 
     @GetMapping("/page")
@@ -44,8 +57,9 @@ public class TaskController {
                                               @RequestParam(defaultValue = "20") long pageSize,
                                               @RequestParam(required = false) String keyword,
                                               @RequestParam(required = false) String status,
-                                              @RequestParam(required = false) Long flowModelId) {
-        return ApiResponse.ok(taskService.page(pageNo, pageSize, keyword, status, flowModelId));
+                                              @RequestParam(required = false) Long flowModelId,
+                                              @RequestParam(required = false) String executionKind) {
+        return ApiResponse.ok(taskService.page(pageNo, pageSize, keyword, status, flowModelId, executionKind));
     }
 
     @GetMapping("/summary")
@@ -54,10 +68,24 @@ public class TaskController {
     @GetMapping("/monitor/summary")
     public ApiResponse<TaskMonitorSummary> monitorSummary() { return ApiResponse.ok(taskService.monitorSummary()); }
 
+    @GetMapping("/list")
+    public ApiResponse<List<Task>> list() {
+        return ApiResponse.ok(taskService.list());
+    }
+
     @GetMapping("/{id}")
     public ApiResponse<Task> get(@PathVariable Long id) {
         Task task = taskService.getById(id);
         return task == null ? ApiResponse.fail("任务不存在") : ApiResponse.ok(task);
+    }
+
+    @GetMapping("/{id}/data-assets")
+    public ApiResponse<TaskDataAssetsResponse> dataAssets(@PathVariable Long id) {
+        try {
+            return ApiResponse.ok(requireDataAssetService().listDataAssets(id));
+        } catch (IllegalArgumentException e) {
+            return ApiResponse.fail(e.getMessage());
+        }
     }
 
     @PostMapping("/save")
@@ -72,8 +100,9 @@ public class TaskController {
     }
 
     @PostMapping("/start/{id}")
-    public ApiResponse<Task> start(@PathVariable Long id) {
-        try { return ApiResponse.ok(taskControlService.start(id)); }
+    public ApiResponse<Task> start(@PathVariable Long id,
+                                    @RequestParam(required = false) String executionKind) {
+        try { return ApiResponse.ok(taskControlService.start(id, executionKind)); }
         catch (Exception e) { return ApiResponse.fail(e.getMessage()); }
     }
 
@@ -122,5 +151,12 @@ public class TaskController {
     @GetMapping(value = "/stream/{id}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter stream(@PathVariable Long id) {
         return taskExecutionSseHub.register(id);
+    }
+
+    private TaskDataAssetService requireDataAssetService() {
+        if (dataAssetService == null) {
+            throw new IllegalStateException("任务数据资产服务未装配");
+        }
+        return dataAssetService;
     }
 }

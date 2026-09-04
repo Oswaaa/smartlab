@@ -37,15 +37,31 @@ export async function readAgentGenerateStream(response, onLog) {
     if (parsed.event === 'log' && parsed.data) onLog?.(parsed.data)
     if (parsed.event === 'done' || parsed.event === 'error') terminal = parsed
   }
-  while (true) {
-    const { done, value } = await reader.read()
-    if (done) break
-    buffer += decoder.decode(value, { stream: true })
-    const frames = buffer.split(/\r?\n\r?\n/)
-    buffer = frames.pop() || ''
-    frames.forEach(consume)
+  try {
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+      buffer += decoder.decode(value, { stream: true })
+      const frames = buffer.split(/\r?\n\r?\n/)
+      buffer = frames.pop() || ''
+      frames.forEach(consume)
+      if (terminal) {
+        try {
+          await reader.cancel()
+        } catch {
+          // ignore cancel error
+        }
+        break
+      }
+    }
+    if (buffer.trim() && !terminal) consume(buffer)
+  } finally {
+    try {
+      reader.releaseLock()
+    } catch {
+      // ignore
+    }
   }
-  if (buffer.trim()) consume(buffer)
   return terminal
 }
 
@@ -56,6 +72,7 @@ export const workflowApi = {
   saveDraft: definition => axios.post('/api/workflow/draft', definition),
   saveAsNew: definition => axios.post('/api/workflow/copy', definition),
   validate: definition => axios.post('/api/workflow/validate', definition),
+  simulate: payload => axios.post('/api/workflow/simulate', payload, { timeout: 70000 }),
   generate: prompt => axios.post('/api/agent/workflow/generate', { prompt }, { timeout: 600000 }),
   generateStream: async (prompt, onLog) => {
     const response = await fetch('/api/agent/workflow/generate/stream', {

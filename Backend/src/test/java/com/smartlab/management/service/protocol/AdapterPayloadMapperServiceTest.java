@@ -6,6 +6,7 @@ import com.smartlab.global.protocol.ProtocolDictionaryService;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.entity.resource.adapter.AdapterIndex;
 import com.smartlab.management.entity.resource.data.DataIndex;
+import com.smartlab.management.entity.resource.device.DeviceInstanceKind;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
 import com.smartlab.management.entity.resource.device.DeviceTwinStates;
 import com.smartlab.management.entity.resource.device.DeviceModels;
@@ -30,6 +31,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -70,6 +72,38 @@ class AdapterPayloadMapperServiceTest {
                 () -> service.buildAdapterBinding(9L, "adapter-B", "point-1"));
 
         assertEquals("设备模型绑定的是 Adapter adapter-A，不能绑定 Adapter adapter-B", error.getMessage());
+    }
+
+    @Test
+    void virtualBindingClonesPhysicalBindingAndRewritesTopics() {
+        AdapterIndexService adapters = mock(AdapterIndexService.class);
+        AdapterPayloadMapperService service = new AdapterPayloadMapperService(
+                mock(DeviceInstancesMapper.class), mock(DeviceModelsMapper.class),
+                mock(DeviceTwinStatesMapper.class), adapters,
+                new AdapterManifestService(), new ProtocolDictionaryService(),
+                mock(DataIndexService.class), mock(DataRecordService.class),
+                mock(ApplicationEventPublisher.class), mock(StateMachineEngine.class));
+
+        DeviceInstances physical = new DeviceInstances();
+        physical.setDeviceModelId(9L);
+        physical.setInstanceKind(DeviceInstanceKind.PHYSICAL);
+        physical.setBoundAdapterName("adapter-A");
+        physical.setBoundDevicePoint("point-1");
+        var config = JsonNodeSupport.objectNode();
+        var stored = config.putObject("adapterBinding");
+        stored.put("adapterName", "adapter-A");
+        stored.put("devicePoint", "point-1");
+        stored.put("templateName", "ReactorTemplate");
+        stored.putObject("topics").put("command", "smartlab/adapter/adapter-A/point-1/command");
+        physical.setInstanceConfig(config);
+
+        var binding = service.buildVirtualAdapterBinding(physical, "point-1_sim_4");
+
+        assertEquals("point-1_sim_4", binding.path("devicePoint").asText());
+        assertEquals("smartlab/adapter/adapter-A/point-1_sim_4/command",
+                binding.path("topics").path("command").asText());
+        assertEquals("ReactorTemplate", binding.path("templateName").asText());
+        verify(adapters, never()).requireAdapter(any());
     }
 
     @Test
@@ -173,7 +207,7 @@ class AdapterPayloadMapperServiceTest {
         binding.putObject("rawToModelAttribute").put("MW0", "temperature");
         binding.putArray("resolvedAttributes").addObject()
                 .put("modelAttributeName", "temperature")
-                .put("rawAttributeName", "MW0")
+                .put("templateAttributeName", "MW0")
                 .put("dataType", "DOUBLE");
         instance.setInstanceConfig(config);
         when(instances.selectList(any())).thenReturn(List.of(instance));
@@ -190,8 +224,8 @@ class AdapterPayloadMapperServiceTest {
                 any(com.smartlab.management.entity.resource.device.DeviceTwinStates.class));
         org.mockito.Mockito.verify(twins, org.mockito.Mockito.never()).updateById(
                 any(com.smartlab.management.entity.resource.device.DeviceTwinStates.class));
-        org.mockito.Mockito.verify(twins, org.mockito.Mockito.never()).patchAttributes(
-                any(), any(), any(), any());
+        org.mockito.Mockito.verify(twins, org.mockito.Mockito.never()).patchAttributesOnly(
+                any(), any(), any());
     }
     @Test
     void telemetryPatchesOnlyCurrentAdapterFieldsWithSourceTime() {
@@ -214,7 +248,7 @@ class AdapterPayloadMapperServiceTest {
         binding.putObject("rawToModelAttribute").put("MW0", "temperature");
         binding.putArray("resolvedAttributes").addObject()
                 .put("modelAttributeName", "temperature")
-                .put("rawAttributeName", "MW0")
+                .put("templateAttributeName", "MW0")
                 .put("dataType", "DOUBLE");
         instance.setInstanceConfig(config);
         when(instances.selectList(any())).thenReturn(List.of(instance));
@@ -223,7 +257,7 @@ class AdapterPayloadMapperServiceTest {
         twin.setInstanceId(7L);
         twin.setCurrentAttr(JsonNodeSupport.objectNode().put("pressure", 8.0));
         when(twins.selectOne(any())).thenReturn(twin);
-        when(twins.patchAttributes(eq(7L), any(), any(), any())).thenReturn(1);
+        when(twins.patchAttributesOnly(eq(7L), any(), any())).thenReturn(1);
         DataIndex dataSet = new DataIndex();
         dataSet.setId(33L);
         when(dataSets.listByDeviceInstance(7L)).thenReturn(List.of(dataSet));
@@ -233,10 +267,62 @@ class AdapterPayloadMapperServiceTest {
 
         service.applyTelemetry("adapter-1", "point-1", telemetry);
 
-        verify(twins).patchAttributes(eq(7L), argThat(json -> json.contains("\"temperature\":21.5")
-                && !json.contains("pressure")), any(), any());
+        verify(twins).patchAttributesOnly(eq(7L), argThat(json -> json.contains("\"temperature\":21.5")
+                && !json.contains("pressure")), any());
+        verify(twins, never()).patchAttributes(any(), any(), any(), any());
         verify(records).appendRecord(eq(33L), argThat(row -> row.size() == 1
                 && ((Number) row.get("temperature")).doubleValue() == 21.5), eq(Instant.ofEpochMilli(timestamp)));
+    }
+
+    @Test
+    void batchTelemetryMapsAllItemsAndAppendsRecords() {
+        DeviceInstancesMapper instances = mock(DeviceInstancesMapper.class);
+        DeviceTwinStatesMapper twins = mock(DeviceTwinStatesMapper.class);
+        DataIndexService dataSets = mock(DataIndexService.class);
+        DataRecordService records = mock(DataRecordService.class);
+        AdapterPayloadMapperService service = new AdapterPayloadMapperService(
+                instances, mock(DeviceModelsMapper.class), twins, mock(AdapterIndexService.class),
+                new AdapterManifestService(), new ProtocolDictionaryService(),
+                dataSets, records, mock(ApplicationEventPublisher.class), mock(StateMachineEngine.class));
+        DeviceInstances instance = new DeviceInstances();
+        instance.setId(17L);
+        instance.setDeviceModelId(9L);
+        instance.setBoundAdapterName("adapter-1");
+        instance.setBoundDevicePoint("point-1");
+        instance.setLifecycleStatus("IN_USE");
+        var config = JsonNodeSupport.objectNode();
+        var binding = config.putObject("adapterBinding");
+        binding.putObject("rawToModelAttribute").put("MW0", "temperature");
+        binding.putArray("resolvedAttributes").addObject()
+                .put("modelAttributeName", "temperature")
+                .put("templateAttributeName", "MW0")
+                .put("dataType", "DOUBLE");
+        instance.setInstanceConfig(config);
+        when(instances.selectList(any())).thenReturn(List.of(instance));
+        DeviceTwinStates twin = new DeviceTwinStates();
+        twin.setId(5L);
+        twin.setInstanceId(17L);
+        when(twins.selectOne(any())).thenReturn(twin);
+        when(twins.patchAttributesOnly(eq(17L), any(), any())).thenReturn(1);
+        DataIndex dataSet = new DataIndex();
+        dataSet.setId(33L);
+        when(dataSets.listByDeviceInstance(17L)).thenReturn(List.of(dataSet));
+
+        var batch = JsonNodeSupport.objectNode();
+        batch.put("formatType", "BATCH");
+        batch.put("timestamp", 1_700_000_000_000L);
+        batch.put("adapterName", "adapter-1");
+        batch.put("devicePoint", "point-1");
+        var items = batch.putArray("items");
+        items.addObject().put("timestamp", 1_700_000_001_000L).putObject("telemetryData").put("MW0", 25.0);
+        items.addObject().put("timestamp", 1_700_000_002_000L).putObject("telemetryData").put("MW0", 26.0);
+
+        service.applyBatchTelemetry("adapter-1", "point-1", batch);
+
+        verify(records).appendRecords(eq(33L), argThat(list -> list.size() == 2
+                && ((Number) list.get(0).get("temperature")).doubleValue() == 25.0
+                && ((Number) list.get(1).get("temperature")).doubleValue() == 26.0), any());
+        verify(twins).patchAttributesOnly(eq(17L), argThat(json -> json.contains("\"temperature\":26.0")), any());
     }
 
 }

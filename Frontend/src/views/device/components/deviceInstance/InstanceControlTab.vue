@@ -5,6 +5,35 @@
         <div class="card-title-bar">
           <span class="card-title">下发指令</span>
         </div>
+        <div class="target-bar">
+          <span class="target-label">目标</span>
+          <el-select
+            v-model="selectedTargetKey"
+            size="small"
+            class="target-select"
+            :disabled="retired || applyingVirtual || releasingVirtual"
+          >
+            <el-option label="本机" value="physical" />
+            <el-option
+              v-for="vm in virtualMachines"
+              :key="vm.leaseId"
+              :label="virtualOptionLabel(vm)"
+              :value="String(vm.leaseId)"
+            />
+          </el-select>
+          <button class="btn-primary-blue" type="button" :disabled="retired || applyingVirtual" @click="applyVirtual">
+            <span>{{ applyingVirtual ? '申请中...' : '申请虚拟机' }}</span>
+          </button>
+          <button
+            v-if="selectedVirtual"
+            class="btn-danger-outline"
+            type="button"
+            :disabled="releasingVirtual"
+            @click="releaseSelectedVirtual"
+          >
+            <span>{{ releasingVirtual ? '注销中...' : '注销' }}</span>
+          </button>
+        </div>
         <el-form label-position="top" size="small" class="manual-control-form">
           <el-form-item label="设备操作能力" required class="tree-select-form-item">
             <div class="custom-tree-select-trigger" :class="{ open: treeDropdownOpen }" @click="treeDropdownOpen = !treeDropdownOpen">
@@ -107,11 +136,11 @@
               <span class="text-heading">{{ cmdStateDescription(activeInstanceCommandState) }}</span>
             </el-descriptions-item>
             <el-descriptions-item label="下发点位">
-              <strong class="mono-text text-primary">{{ activeControlGroup?.boundDevicePoint || '-' }}</strong>
+              <strong class="mono-text text-primary">{{ commandDevicePoint }}</strong>
               <span class="text-secondary" style="margin-left: 6px;">(所属 Adapter: {{ activeControlGroup?.boundAdapterName || '-' }})</span>
             </el-descriptions-item>
             <el-descriptions-item label="指令主题">
-              <code class="mono-text topic-inline-code">smartlab/adapter/{{ activeControlGroup?.boundAdapterName || '-' }}/{{ activeControlGroup?.boundDevicePoint || '-' }}/command</code>
+              <code class="mono-text topic-inline-code">smartlab/adapter/{{ activeControlGroup?.boundAdapterName || '-' }}/{{ commandDevicePoint }}/command</code>
             </el-descriptions-item>
           </el-descriptions>
         </div>
@@ -161,7 +190,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onUnmounted, ref, watch } from 'vue'
 import { Connection, CopyDocument, Warning } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { normalizeManualControlCapabilities } from '../../../../utils/manualControlCapabilities.js'
@@ -179,7 +208,7 @@ import {
   isNumberType,
   paramKey
 } from './normalizers'
-import type { ControlGroup, DeviceInstance, DeviceModel, DeviceSnapshot } from './types'
+import type { ControlGroup, DeviceInstance, DeviceModel, DeviceSnapshot, VirtualMachineView } from './types'
 
 const props = defineProps<{
   instance: DeviceInstance
@@ -205,10 +234,24 @@ const selectedControlEntityKey = ref('main')
 const treeDropdownOpen = ref(false)
 const collapsedEntityGroups = ref<Record<string, boolean>>({})
 const consoleBodyRef = ref<HTMLElement | null>(null)
+const virtualMachines = ref<VirtualMachineView[]>([])
+const selectedTargetKey = ref('physical')
+const applyingVirtual = ref(false)
+const releasingVirtual = ref(false)
+const virtualSnapshot = ref<DeviceSnapshot | null>(null)
+let virtualSnapshotTimer: any = null
 
-const consoleLogs = computed(() => consoleStore.getLogs(props.instance?.instanceId).value)
+const selectedVirtual = computed(() =>
+  virtualMachines.value.find(vm => String(vm.leaseId) === selectedTargetKey.value) || null
+)
+const controlSnapshot = computed(() => selectedVirtual.value ? virtualSnapshot.value : props.snapshot)
+const commandTargetId = computed(() =>
+  selectedVirtual.value ? String(selectedVirtual.value.virtualInstanceId) : (props.instance?.instanceId || '')
+)
+
+const consoleLogs = computed(() => consoleStore.getLogs(commandTargetId.value).value)
 const activeInstanceModel = computed(() => findModelById(props.instance?.modelId || '', props.models, props.modelOptions))
-const activeInstanceCommandState = computed(() => String(props.snapshot?.currentCommandState || 'IDLE').toUpperCase())
+const activeInstanceCommandState = computed(() => String(controlSnapshot.value?.currentCommandState || 'IDLE').toUpperCase())
 
 const aggregatedControlGroups = computed(() => {
   const groups: ControlGroup[] = []
@@ -217,18 +260,20 @@ const aggregatedControlGroups = computed(() => {
   const mainCaps = normalizeManualControlCapabilities(
     asArray(activeInstanceModel.value?.capabilitySpec?.capabilities || activeInstanceModel.value?.capabilities)
   )
+  const virtual = selectedVirtual.value
   groups.push({
     key: 'main',
-    name: inst.instanceName || inst.instanceId,
-    shortName: inst.instanceName || inst.instanceId,
+    name: virtual ? (virtual.instanceName || virtual.virtualDevicePoint || inst.instanceName) : (inst.instanceName || inst.instanceId),
+    shortName: virtual ? (virtual.virtualDevicePoint || '虚拟机') : (inst.instanceName || inst.instanceId),
     modelName: activeInstanceModel.value?.modelName || inst.modelId || '-',
     isComponent: false,
-    targetInstanceId: inst.instanceId,
+    targetInstanceId: virtual ? String(virtual.virtualInstanceId) : inst.instanceId,
     boundAdapterName: inst.boundAdapterName || '',
-    boundDevicePoint: inst.boundDevicePoint || '',
+    boundDevicePoint: virtual?.virtualDevicePoint || inst.boundDevicePoint || '',
     capabilities: mainCaps
   })
-  const comps = asArray(props.instanceComponents).filter((c: any) => c.selfInstanceId && c.status !== '已更换')
+  if (virtual) return groups
+  const comps = asArray(props.instanceComponents).filter((c: any) => c.selfInstanceId && c.status !== '已更换' && c.status !== 'REPLACED')
   for (const comp of comps) {
     const childInstance = props.instances.find(d => String(d.instanceId) === String(comp.selfInstanceId))
     if (!childInstance) continue
@@ -273,6 +318,11 @@ const commandButtonText = computed(() => {
   if (activeInstanceCommandState.value !== 'IDLE') return '指令执行中'
   return '开始执行'
 })
+const commandDevicePoint = computed(() =>
+  selectedVirtual.value?.virtualDevicePoint
+    || activeControlGroup.value?.boundDevicePoint
+    || '-'
+)
 
 const resetControlParams = () => {
   const next: Record<string, any> = {}
@@ -352,6 +402,126 @@ const selectControlCapability = (groupKey: string, capName: string) => {
   treeDropdownOpen.value = false
 }
 
+const virtualOptionLabel = (vm: VirtualMachineView) =>
+  vm.virtualDevicePoint || vm.instanceName || `虚拟机 #${vm.leaseId}`
+
+const stopVirtualSnapshotPoll = () => {
+  if (virtualSnapshotTimer) {
+    clearInterval(virtualSnapshotTimer)
+    virtualSnapshotTimer = null
+  }
+}
+
+const fetchVirtualSnapshot = async () => {
+  const virtualId = selectedVirtual.value?.virtualInstanceId
+  if (!virtualId) {
+    virtualSnapshot.value = null
+    return
+  }
+  try {
+    const data = await api.getSnapshot(String(virtualId))
+    if (selectedVirtual.value?.virtualInstanceId !== virtualId) return
+    if (data?.success) virtualSnapshot.value = data.data || null
+    else virtualSnapshot.value = null
+  } catch {
+    if (selectedVirtual.value?.virtualInstanceId !== virtualId) return
+    virtualSnapshot.value = null
+  }
+}
+
+const loadVirtualMachines = async () => {
+  const physicalId = props.instance?.instanceId
+  if (!physicalId || props.retired) {
+    virtualMachines.value = []
+    selectedTargetKey.value = 'physical'
+    return
+  }
+  try {
+    const data = await api.listVirtualMachines(physicalId)
+    if (props.instance?.instanceId !== physicalId) return
+    virtualMachines.value = data?.success ? (data.data || []) : []
+    if (selectedTargetKey.value !== 'physical'
+        && !virtualMachines.value.some(vm => String(vm.leaseId) === selectedTargetKey.value)) {
+      selectedTargetKey.value = 'physical'
+    }
+  } catch {
+    if (props.instance?.instanceId !== physicalId) return
+    virtualMachines.value = []
+  }
+}
+
+const applyVirtual = async () => {
+  const physicalId = props.instance?.instanceId
+  if (!physicalId || props.retired || applyingVirtual.value) return
+  applyingVirtual.value = true
+  try {
+    const data = await api.applyVirtualMachine(physicalId)
+    if (!data?.success) {
+      ElMessage.error(data?.message || '申请虚拟机失败')
+      return
+    }
+    const created = data.data as VirtualMachineView
+    await loadVirtualMachines()
+    if (created?.leaseId) selectedTargetKey.value = String(created.leaseId)
+    ElMessage.success(created?.virtualDevicePoint ? `已接入虚拟点 ${created.virtualDevicePoint}` : '虚拟机已申请')
+  } catch (err: any) {
+    ElMessage.error(err.response?.data?.message || err.message || '申请虚拟机失败')
+  } finally {
+    applyingVirtual.value = false
+  }
+}
+
+const releaseSelectedVirtual = async () => {
+  const vm = selectedVirtual.value
+  if (!vm || releasingVirtual.value) return
+  try {
+    await ElMessageBox.confirm(
+      `确定注销虚拟机「${virtualOptionLabel(vm)}」？Adapter 将收回该虚拟点。`,
+      '注销虚拟机',
+      { confirmButtonText: '注销', cancelButtonText: '取消', type: 'warning' }
+    )
+  } catch {
+    return
+  }
+  releasingVirtual.value = true
+  try {
+    const data = await api.releaseVirtualMachine(vm.leaseId)
+    if (!data?.success) {
+      ElMessage.error(data?.message || '注销虚拟机失败')
+      return
+    }
+    selectedTargetKey.value = 'physical'
+    await loadVirtualMachines()
+    ElMessage.success('已注销虚拟机')
+  } catch (err: any) {
+    ElMessage.error(err.response?.data?.message || err.message || '注销虚拟机失败')
+  } finally {
+    releasingVirtual.value = false
+  }
+}
+
+watch(
+  () => props.instance?.instanceId,
+  async (instanceId) => {
+    selectedTargetKey.value = 'physical'
+    virtualMachines.value = []
+    virtualSnapshot.value = null
+    if (!instanceId) return
+    await loadVirtualMachines()
+  },
+  { immediate: true }
+)
+
+watch(selectedVirtual, (vm) => {
+  stopVirtualSnapshotPoll()
+  virtualSnapshot.value = null
+  if (!vm) return
+  fetchVirtualSnapshot()
+  virtualSnapshotTimer = setInterval(fetchVirtualSnapshot, 1000)
+})
+
+onUnmounted(stopVirtualSnapshotPoll)
+
 const buildControlParameters = () => {
   const parameters: Record<string, any> = {}
   activeControlParams.value.forEach((param: any) => {
@@ -403,6 +573,7 @@ const sendManualCommand = async () => {
     })
     if (data?.success) {
       emit('refresh-snapshot')
+      if (selectedVirtual.value) await fetchVirtualSnapshot()
     } else {
       const errMsg = data?.message || '未知异常'
       appendConsoleLog('失败', 'fail', `指令发送被拒: ${errMsg}`)
@@ -423,7 +594,9 @@ const handleAbortCommand = async () => {
   const targetName = activeControlGroup.value?.shortName || '设备'
   try {
     await ElMessageBox.confirm(
-      `确定要向【${targetName}】下发终止信号 (MANUAL_EXECUTE_ABORT) 吗？物理设备将执行安全停机并退出当前指令周期。`,
+      selectedVirtual.value
+        ? `确定要向【${targetName}】下发终止信号 (MANUAL_EXECUTE_ABORT) 吗？虚拟机会退出当前指令周期。`
+        : `确定要向【${targetName}】下发终止信号 (MANUAL_EXECUTE_ABORT) 吗？物理设备将执行安全停机并退出当前指令周期。`,
       '终止执行确认',
       { confirmButtonText: '确定终止', cancelButtonText: '取消', type: 'warning' }
     )
@@ -437,6 +610,7 @@ const handleAbortCommand = async () => {
     if (data?.success) {
       ElMessage.success('终止信号已下发')
       emit('refresh-snapshot')
+      if (selectedVirtual.value) await fetchVirtualSnapshot()
     } else {
       const errMsg = data?.message || '终止请求被拒'
       appendConsoleLog('失败', 'fail', `终止被拒: ${errMsg}`)
@@ -474,6 +648,7 @@ const handleForceResetCommand = async () => {
       ElMessage.success('已成功人工复位')
       appendConsoleLog('系统', 'info', '已发送人工复位信号 (MANUAL_EXECUTE_RESET)，状态机已恢复空闲就绪 (IDLE)')
       emit('refresh-snapshot')
+      if (selectedVirtual.value) await fetchVirtualSnapshot()
     } else {
       ElMessage.error(`复位失败: ${data?.message || '未知错误'}`)
     }
@@ -505,7 +680,12 @@ const handleForceResetCommand = async () => {
   flex-direction: column;
   overflow: hidden;
 }
-.control-form-card { flex-shrink: 0; }
+.control-form-card {
+  flex-shrink: 0;
+  overflow: visible !important;
+  position: relative;
+  z-index: 50;
+}
 .control-meta-card { flex: 1; min-height: 0; }
 .card-title-bar {
   padding: 8px 14px;
@@ -518,7 +698,19 @@ const handleForceResetCommand = async () => {
   flex-shrink: 0;
 }
 .card-title { font-size: 13px; font-weight: 600; color: var(--sl-text-heading, #0f172a); }
-.manual-control-form { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.target-bar {
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.target-label { font-size: 12px; font-weight: 600; color: var(--sl-text-heading, #0f172a); flex-shrink: 0; }
+.target-select { width: 220px; }
+.target-bar .btn-primary-blue,
+.target-bar .btn-danger-outline { height: 28px; padding: 0 10px; font-size: 12px; }
+.manual-control-form { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; position: relative; overflow: visible; }
 .manual-control-form :deep(.el-form-item) { margin-bottom: 0 !important; }
 .manual-control-form :deep(.el-form-item__label) {
   padding-bottom: 3px !important; font-size: 12px; font-weight: 600; color: var(--sl-text-heading, #0f172a); line-height: 1.2;
@@ -546,13 +738,28 @@ const handleForceResetCommand = async () => {
   border-top: 5px solid var(--sl-text-secondary, #94a3b8);
   transition: transform 0.2s ease; flex-shrink: 0;
 }
+.custom-select-caret.open { transform: rotate(180deg); }
 .custom-tree-select-trigger.open .custom-select-caret { transform: rotate(180deg); }
 .tree-select-backdrop { position: fixed; inset: 0; z-index: 199; }
 .tree-select-dropdown-panel {
   position: absolute; top: calc(100% + 4px); left: 0; right: 0;
   background: #ffffff; border: 1px solid var(--sl-border-base, #e2e8f0);
-  border-radius: var(--sl-radius-sm, 6px); box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1);
-  z-index: 200; max-height: 260px; overflow-y: auto; padding: 4px;
+  border-radius: var(--sl-radius-sm, 6px); box-shadow: 0 10px 25px rgba(0, 0, 0, 0.15);
+  z-index: 200; max-height: 280px; overflow-y: auto; overflow-x: hidden; padding: 4px;
+}
+.tree-select-dropdown-panel::-webkit-scrollbar {
+  width: 6px;
+}
+.tree-select-dropdown-panel::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 3px;
+}
+.tree-select-dropdown-panel::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+.tree-select-dropdown-panel::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 .tree-group-section { border-radius: 4px; margin-bottom: 2px; overflow: hidden; }
 .tree-group-header {

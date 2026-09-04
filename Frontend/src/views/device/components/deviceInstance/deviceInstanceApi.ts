@@ -62,6 +62,21 @@ export async function controlInstance(id: string, body: Record<string, any>) {
   return res.data
 }
 
+export async function listVirtualMachines(physicalId: string) {
+  const res = await axios.get(`/api/device/instance/${physicalId}/virtuals`)
+  return res.data
+}
+
+export async function applyVirtualMachine(physicalId: string) {
+  const res = await axios.post(`/api/device/instance/${physicalId}/virtuals`)
+  return res.data
+}
+
+export async function releaseVirtualMachine(leaseId: string | number) {
+  const res = await axios.delete(`/api/device/instance/virtuals/${leaseId}`)
+  return res.data
+}
+
 export async function listComponents(parentInstanceId: string) {
   const res = await axios.get('/api/device/component/list', { params: { parentInstanceId } })
   return res.data

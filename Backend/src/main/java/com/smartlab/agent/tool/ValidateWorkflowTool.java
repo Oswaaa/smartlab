@@ -23,7 +23,7 @@ public class ValidateWorkflowTool implements AgentTool {
 
     @Override
     public String description() {
-        return "用现有编译器校验工作流模型文件，不写库。返回 issues 摘要（不含规范化后的完整 definition）。保存草稿前必须在无 blocking issue 时调用。";
+        return "用现有编译器校验工作流草稿，不写库。返回 issues 与 repair（不含规范化后的完整 definition）。保存前必须在无 blocking 时调用。";
     }
 
     @Override

@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartLab 2.0 · 校验进度 + 可折叠检查 · 效果图</title>
+  <style>
+    :root {
+      --sl-primary: #2563eb;
+      --sl-primary-light: #eff6ff;
+      --sl-primary-border: #bfdbfe;
+      --sl-success: #16a34a;
+      --sl-success-light: #f0fdf4;
+      --sl-success-border: #bbf7d0;
+      --sl-danger: #dc2626;
+      --sl-danger-light: #fef2f2;
+      --sl-danger-border: #fecaca;
+      --sl-warning: #d97706;
+      --sl-warning-light: #fffbeb;
+      --sl-text-heading: #0f172a;
+      --sl-text-body: #334155;
+      --sl-text-secondary: #64748b;
+      --sl-text-disabled: #94a3b8;
+      --sl-bg-page: #f1f5f9;
+      --sl-border: #e2e8f0;
+      --sl-border-subtle: #f1f5f9;
+      --sl-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: var(--sl-font); background: #0b1220; color: var(--sl-text-body); }
+
+    .shell { min-height: 100vh; display: flex; flex-direction: column; }
+    .bar {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      padding: 8px 18px; background: #1e293b; border-bottom: 2px solid var(--sl-primary); color: #e2e8f0;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; }
+    .badge {
+      background: var(--sl-primary); color: #fff; font-size: 10.5px; font-weight: 700;
+      letter-spacing: .06em; padding: 2px 6px; border-radius: 4px;
+    }
+    .brand strong { font-size: 13px; color: #f8fafc; }
+    .brand em { font-size: 12px; color: #94a3b8; font-style: normal; }
+    .bar-note { font-size: 11.5px; color: #94a3b8; }
+
+    .intro {
+      padding: 14px 18px 8px; color: #cbd5e1; font-size: 12.5px; line-height: 1.55; max-width: 1280px;
+    }
+    .intro b { color: #f8fafc; }
+    .intro code { font-size: 11px; background: #1e293b; padding: 1px 5px; border-radius: 4px; color: #93c5fd; }
+
+    .tabs { display: flex; gap: 6px; padding: 8px 18px 12px; flex-wrap: wrap; }
+    .tabs button {
+      border: 1px solid #334155; background: #1e293b; color: #cbd5e1;
+      border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer;
+    }
+    .tabs button.active { background: var(--sl-primary); border-color: var(--sl-primary); color: #fff; font-weight: 600; }
+
+    .stage { padding: 0 18px 24px; }
+    .frame {
+      display: grid; grid-template-rows: auto 1fr;
+      height: calc(100vh - 220px); min-height: 640px;
+      background: var(--sl-bg-page); border: 1px solid #334155; border-radius: 10px; overflow: hidden;
+    }
+    .toolbar {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 8px 12px; background: #fff; border-bottom: 1px solid var(--sl-border);
+    }
+    .title-row { display: flex; align-items: center; gap: 8px; }
+    .title-row strong { font-size: 13px; color: var(--sl-text-heading); }
+    .chip { font-size: 10.5px; padding: 1px 6px; border-radius: 3px; background: #f1f5f9; color: #475569; font-weight: 500; }
+    .actions { display: flex; align-items: center; gap: 6px; }
+    .btn {
+      height: 28px; padding: 0 10px; border-radius: 4px; border: 1px solid var(--sl-border);
+      background: #fff; color: var(--sl-text-body); font-size: 12px; cursor: pointer;
+    }
+    .btn.primary { background: var(--sl-primary); border-color: var(--sl-primary); color: #fff; }
+    .btn.disabled { opacity: .45; pointer-events: none; background: #f8fafc; }
+    .lock-hint {
+      font-size: 11px; color: #b45309; background: #fffbeb; border: 1px solid #fde68a;
+      padding: 2px 8px; border-radius: 4px;
+    }
+
+    .workbench { display: grid; grid-template-columns: 1fr 332px; min-height: 0; }
+    .canvas {
+      position: relative;
+      background:
+        linear-gradient(#f3f5f8 1px, transparent 1px),
+        linear-gradient(90deg, #f3f5f8 1px, transparent 1px);
+      background-size: 16px 16px; background-color: #f8fafc;
+      border-right: 1px solid var(--sl-border);
+    }
+    .node {
+      position: absolute; min-width: 128px; padding: 8px 10px; background: #fff;
+      border: 1px solid var(--sl-border); border-radius: 8px; font-size: 12px;
+    }
+    .node b { display: block; color: var(--sl-text-heading); }
+    .node small { color: var(--sl-text-secondary); font-size: 10.5px; }
+    .node.active { border-color: var(--sl-primary); box-shadow: 0 0 0 3px #dbeafe; }
+    .node.fail { border-color: #fecaca; box-shadow: 0 0 0 3px #fecaca; }
+    .n-start { left: 32px; top: 48px; }
+    .n-cool20 { left: 190px; top: 48px; }
+    .n-branch { left: 350px; top: 48px; }
+    .n-heat { left: 530px; top: 16px; }
+    .n-cool { left: 530px; top: 100px; }
+    .n-merge { left: 700px; top: 48px; }
+    .n-end { left: 860px; top: 48px; }
+    .canvas-caption {
+      position: absolute; left: 16px; bottom: 12px; font-size: 11px; color: var(--sl-text-secondary);
+    }
+
+    .inspector { background: #fff; display: flex; flex-direction: column; min-width: 0; }
+    .insp-head {
+      min-height: 36px; display: flex; align-items: center; justify-content: space-between;
+      padding: 0 12px; border-bottom: 1px solid var(--sl-border);
+    }
+    .insp-head strong { font-size: 12.5px; color: var(--sl-text-heading); }
+    .scroll { flex: 1; overflow: auto; }
+
+    .fold-row {
+      width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 8px;
+      padding: 9px 12px; border: 0; border-bottom: 1px solid var(--sl-border-subtle);
+      background: #fff; cursor: pointer; text-align: left;
+    }
+    .fold-row:hover { background: #f8fafc; }
+    .fold-row .left { display: flex; align-items: center; gap: 8px; min-width: 0; }
+    .chev {
+      width: 14px; color: #94a3b8; font-size: 10px; transition: transform .15s;
+    }
+    .fold-row.open .chev { transform: rotate(90deg); }
+    .fold-row.locked { cursor: default; }
+    .fold-row.locked:hover { background: #fff; }
+    .fold-row.locked .chev { color: #e2e8f0; }
+
+    .identity { padding: 10px 12px 12px; border-bottom: 1px solid var(--sl-border); }
+    .id-name {
+      width: 100%; border: 0; outline: none; background: transparent;
+      font-size: 16px; font-weight: 650; color: var(--sl-text-heading); line-height: 1.35;
+      padding: 2px 4px; margin: 0 -4px; border-radius: 4px;
+    }
+    .id-name:hover, .id-name:focus { background: #f8fafc; }
+    .id-name:focus { box-shadow: inset 0 0 0 1px #cbd5e1; }
+    .id-name::placeholder { color: #94a3b8; font-weight: 500; }
+    .id-desc {
+      width: 100%; border: 0; outline: none; resize: none; background: transparent;
+      font-size: 12.5px; color: var(--sl-text-secondary); line-height: 1.5;
+      padding: 4px 4px 0; margin: 2px -4px 0; border-radius: 4px; min-height: 40px;
+      font-family: inherit;
+    }
+    .id-desc:hover, .id-desc:focus { background: #f8fafc; }
+    .id-desc:focus { box-shadow: inset 0 0 0 1px #cbd5e1; }
+    .id-hint { font-size: 11px; color: #94a3b8; padding: 4px 0 0; }
+
+    .check { border-bottom: 1px solid var(--sl-border); }
+    .sec-title {
+      min-height: 34px; display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 12px; border-bottom: 1px solid var(--sl-border-subtle);
+    }
+    .sec-title strong { font-size: 12.5px; color: var(--sl-text-heading); }
+
+    .badge-idle, .badge-pass, .badge-err, .badge-run, .badge-warn {
+      font-size: 10.5px; font-weight: 600; padding: 1px 6px; border-radius: 3px;
+    }
+    .badge-idle { color: #475569; background: #f8fafc; border: 1px solid var(--sl-border); }
+    .badge-pass { color: var(--sl-success); background: var(--sl-success-light); border: 1px solid var(--sl-success-border); }
+    .badge-err { color: var(--sl-danger); background: var(--sl-danger-light); border: 1px solid var(--sl-danger-border); }
+    .badge-run { color: var(--sl-primary); background: var(--sl-primary-light); border: 1px solid var(--sl-primary-border); }
+    .badge-warn { color: var(--sl-warning); background: var(--sl-warning-light); border: 1px solid #fed7aa; }
+
+    .progress {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 28px 16px 22px; gap: 14px;
+    }
+    .spinner {
+      width: 28px; height: 28px; border: 2.5px solid #dbeafe; border-top-color: var(--sl-primary);
+      border-radius: 50%; animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .progress .phase { font-size: 13px; font-weight: 650; color: var(--sl-text-heading); }
+    .progress .item { font-size: 12px; color: var(--sl-text-secondary); }
+    .progress .item b { color: var(--sl-primary); font-weight: 650; }
+    .steps {
+      width: 100%; display: flex; flex-direction: column; gap: 6px; padding: 0 4px;
+    }
+    .pstep {
+      display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--sl-text-secondary);
+    }
+    .pstep .dot {
+      width: 8px; height: 8px; border-radius: 50%; background: #e2e8f0;
+    }
+    .pstep.done { color: var(--sl-success); }
+    .pstep.done .dot { background: var(--sl-success); }
+    .pstep.now { color: var(--sl-text-heading); font-weight: 600; }
+    .pstep.now .dot { background: var(--sl-primary); box-shadow: 0 0 0 3px #dbeafe; }
+    .pstep.wait { color: #94a3b8; }
+
+    .row-meta { font-size: 11px; color: var(--sl-text-secondary); }
+    .row-title { font-size: 12.5px; font-weight: 650; color: var(--sl-text-heading); }
+
+    .panel { padding: 0 8px 10px; }
+    .issue {
+      display: grid; grid-template-columns: 36px 1fr; gap: 8px;
+      border: 1px solid var(--sl-danger-border); background: #fffafa;
+      border-radius: 6px; padding: 8px; margin-top: 6px; text-align: left; width: 100%;
+    }
+    .issue b { font-size: 10px; color: var(--sl-danger); }
+    .issue strong { display: block; font-size: 12px; color: var(--sl-text-heading); }
+    .issue small { display: block; font-size: 11px; color: var(--sl-text-secondary); margin-top: 2px; line-height: 1.4; }
+    .empty-idle {
+      padding: 14px 12px 16px; font-size: 12px; color: var(--sl-text-secondary); line-height: 1.5;
+    }
+    .path {
+      margin-top: 6px; border: 1px solid var(--sl-border); border-radius: 6px; padding: 8px 10px; background: #f8fafc;
+    }
+    .path.fail { border-color: #fecaca; background: #fffafa; }
+    .path-label { font-size: 10.5px; color: var(--sl-text-secondary); margin-bottom: 3px; }
+    .path-nodes { font-size: 11.5px; color: var(--sl-text-heading); line-height: 1.45; }
+    .path-nodes em { font-style: normal; color: #94a3b8; }
+
+    .note {
+      margin-top: 12px; max-width: 1280px; color: #94a3b8; font-size: 12px; line-height: 1.6;
+    }
+    .note b { color: #e2e8f0; }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <header class="bar">
+      <div class="brand">
+        <span class="badge">MOCK</span>
+        <strong>校验进度 · 折叠检查 · 无框基本信息</strong>
+        <em>点击校验转圈 → 完成后结构 / 走图两行 · 有问题才可展开</em>
+      </div>
+      <span class="bar-note">效果图 · 非产品页面</span>
+    </header>
+
+    <p class="intro">
+      名称、描述做成<strong>文档标题</strong>：平时没有输入框，点一下才进入编辑。
+      「基本配置」默认可折起。校验中转圈并列出当前步骤；走图阶段展示当前节点（需进度上报，见下方说明）。
+    </p>
+
+    <div class="tabs" id="stateTabs">
+      <button type="button" data-state="idle" class="active">尚未校验</button>
+      <button type="button" data-state="struct">结构检查中</button>
+      <button type="button" data-state="walk">走图中（到节点）</button>
+      <button type="button" data-state="modelFail">结构未通过</button>
+      <button type="button" data-state="walkFail">走图未通过</button>
+      <button type="button" data-state="pass">全部通过</button>
+      <button type="button" data-state="play">▶ 播放一次校验</button>
+    </div>
+
+    <div class="stage">
+      <div class="frame">
+        <div class="toolbar">
+          <div class="title-row">
+            <strong id="barTitle">分段加热流程</strong>
+            <span class="chip">草稿 V2</span>
+            <span class="chip">8 节点</span>
+          </div>
+          <div class="actions">
+            <button class="btn" type="button">保存草稿</button>
+            <button class="btn" id="validateBtn" type="button">校验</button>
+            <button class="btn primary" id="publishBtn">发布启用</button>
+            <span class="lock-hint" id="lockHint">请先完成校验</span>
+          </div>
+        </div>
+
+        <div class="workbench">
+          <div class="canvas">
+            <div class="node n-start" data-node="start"><b>start</b><small>开始</small></div>
+            <div class="node n-cool20" data-node="cool_20"><b>cool_20</b><small>冷却</small></div>
+            <div class="node n-branch" data-node="branch"><b>branch</b><small>分支</small></div>
+            <div class="node n-heat" data-node="heat_to_300"><b>heat_to_300</b><small>加热</small></div>
+            <div class="node n-cool" data-node="cool_10"><b>cool_10</b><small>冷却</small></div>
+            <div class="node n-merge" data-node="merge"><b>merge</b><small>聚合</small></div>
+            <div class="node n-end" data-node="end"><b>end</b><small>结束</small></div>
+            <div class="canvas-caption">走图进行中时，当前节点会在画布上高亮。</div>
+          </div>
+
+          <aside class="inspector">
+            <div class="insp-head">
+              <strong>流程属性</strong>
+              <span class="chip">草稿 V2</span>
+            </div>
+            <div class="scroll">
+              <button type="button" class="fold-row open" id="basicToggle">
+                <span class="left">
+                  <span class="chev">▶</span>
+                  <span class="row-title">基本配置</span>
+                </span>
+                <span class="row-meta" id="basicMeta">已展开</span>
+              </button>
+              <div class="identity" id="basicBody">
+                <input class="id-name" id="nameInput" maxlength="80" value="分段加热流程" placeholder="流程名称" />
+                <textarea class="id-desc" id="descInput" rows="2" placeholder="添加描述，说明前置条件与适用范围">按温度分段加热，分支后汇合再升温。</textarea>
+                <div class="id-hint">点文字即可改，没有输入框描边。只改描述不废校验；改名称会作废。</div>
+              </div>
+
+              <div class="check">
+                <div class="sec-title">
+                  <strong>检查</strong>
+                  <span id="checkBadge" class="badge-idle">尚未校验</span>
+                </div>
+                <div id="checkBody"></div>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </div>
+      <p class="note">
+        <b>对这套 UI 的判断：</b>适合作为右侧唯一检查面。转圈 + 当前步骤能解释「校验为什么还没完」；完成后两行（结构 / 走图）对应两步，有问题才展开，避免空的成功卡片。
+        建议微调：走图<strong>通过</strong>时仍在折叠行上显示「2 条路径」，不要点开；不要把成功路径藏得完全看不见。
+        <b>实现注意：</b>现在 <code>POST /api/workflow/simulate</code> 是一次返回，前端无法真的报到「正在 heat_to_300」。效果图里的「具体到节点」是目标态，落地要么加进度推送，要么走图阶段只显示「走图中…」而不假装知道当前节点。
+      </p>
+    </div>
+  </div>
+
+  <script>
+    const walkNodes = ["start", "cool_20", "branch", "heat_to_300", "cool_10", "merge", "end"];
+    let state = "idle";
+    let basicOpen = true;
+    let expandStruct = false;
+    let expandWalk = false;
+    let playTimer = null;
+    let playIndex = 0;
+
+    const structFailHtml = `
+      <div class="panel">
+        <button class="issue" type="button">
+          <b>错误</b>
+          <span>
+            <strong>heat_to_400：设备模型未声明能力</strong>
+            <small>capability.capabilityName: 设备模型未声明能力 heat_to_400</small>
+          </span>
+        </button>
+      </div>`;
+    const walkFailHtml = `
+      <div class="panel">
+        <button class="issue" type="button">
+          <b>错误</b>
+          <span>
+            <strong>停在 heat_to_300</strong>
+            <small>SIM_NO_ADAPTER_EVENT · 配置文件未声明该指令完成后的 cmd 事件</small>
+          </span>
+        </button>
+        <div class="path fail">
+          <div class="path-label">已走到</div>
+          <div class="path-nodes">start <em>→</em> cool_20 <em>→</em> branch <em>→</em> heat_to_300</div>
+        </div>
+      </div>`;
+
+    function setBadge(el, kind, text) {
+      el.className = ({ idle: "badge-idle", pass: "badge-pass", err: "badge-err", run: "badge-run" })[kind];
+      el.textContent = text;
+    }
+
+    function highlight(name) {
+      document.querySelectorAll(".canvas .node").forEach(n => {
+        n.classList.toggle("active", n.dataset.node === name);
+        n.classList.toggle("fail", state === "walkFail" && n.dataset.node === "heat_to_300");
+      });
+    }
+
+    function foldRow(opts) {
+      const { id, title, meta, badgeHtml, locked, open, extra } = opts;
+      return `
+        <button type="button" class="fold-row ${open ? "open" : ""} ${locked ? "locked" : ""}" data-fold="${id}">
+          <span class="left">
+            <span class="chev">▶</span>
+            <span class="row-title">${title}</span>
+          </span>
+          <span style="display:flex;align-items:center;gap:8px">
+            ${extra || ""}
+            <span class="row-meta">${meta}</span>
+            ${badgeHtml}
+          </span>
+        </button>`;
+    }
+
+    function progressView(kind, currentNode) {
+      const structNow = kind === "struct";
+      const walkNow = kind === "walk";
+      const nodeLine = currentNode
+        ? `当前节点 <b>${currentNode}</b>`
+        : "覆盖全部连线，不求值分支条件";
+      return `
+        <div class="progress">
+          <div class="spinner"></div>
+          <div class="phase">${structNow ? "结构检查" : "走图检查"}</div>
+          <div class="item">${structNow ? "编译、设备模型、子流程引用" : nodeLine}</div>
+          <div class="steps">
+            <div class="pstep ${structNow ? "now" : "done"}"><span class="dot"></span>结构检查${structNow ? "" : " · 已通过"}</div>
+            <div class="pstep ${walkNow ? "now" : "wait"}"><span class="dot"></span>走图检查${walkNow && currentNode ? " · " + currentNode : ""}</div>
+          </div>
+        </div>`;
+    }
+
+    function resultRows() {
+      const structBad = state === "modelFail";
+      const walkBad = state === "walkFail";
+      const passed = state === "pass";
+      const structOpen = structBad && expandStruct;
+      const walkOpen = walkBad && expandWalk;
+      const structBadge = structBad
+        ? `<span class="badge-err">未通过</span>`
+        : `<span class="badge-pass">通过</span>`;
+      const walkBadge = walkBad
+        ? `<span class="badge-err">未走通</span>`
+        : passed
+          ? `<span class="badge-pass">走通</span>`
+          : `<span class="badge-idle">未开始</span>`;
+      const walkExtra = passed ? `<span class="row-meta">2 条路径</span>` : "";
+      let html = foldRow({
+        id: "struct",
+        title: "结构检查",
+        meta: structBad ? "1 个问题 · 点击展开" : "编译与模型引用",
+        badgeHtml: structBadge,
+        locked: !structBad,
+        open: structOpen,
+      });
+      if (structOpen) html += structFailHtml;
+      html += foldRow({
+        id: "walk",
+        title: "走图检查",
+        meta: walkBad ? "停在 heat_to_300 · 点击展开" : (passed ? "全部 NODE_TO_NODE 已覆盖" : "等待结构通过"),
+        badgeHtml: walkBadge,
+        locked: !walkBad,
+        open: walkOpen,
+        extra: walkExtra,
+      });
+      if (walkOpen) html += walkFailHtml;
+      return html;
+    }
+
+    function render() {
+      document.querySelectorAll("#stateTabs button").forEach(b => b.classList.toggle("active", b.dataset.state === state || (b.dataset.state === "play" && false)));
+      document.getElementById("basicToggle").classList.toggle("open", basicOpen);
+      document.getElementById("basicBody").classList.toggle("hidden", !basicOpen);
+      document.getElementById("basicMeta").textContent = basicOpen ? "点文字编辑" : document.getElementById("nameInput").value;
+
+      const running = state === "struct" || state === "walk";
+      const canPublish = state === "pass";
+      document.getElementById("publishBtn").className = canPublish ? "btn primary" : "btn primary disabled";
+      document.getElementById("lockHint").classList.toggle("hidden", canPublish || running);
+      document.getElementById("validateBtn").textContent = running ? "校验中" : (state === "idle" ? "校验" : "重新校验");
+      document.getElementById("validateBtn").classList.toggle("disabled", running);
+
+      const badge = document.getElementById("checkBadge");
+      const body = document.getElementById("checkBody");
+
+      if (state === "idle") {
+        setBadge(badge, "idle", "尚未校验");
+        body.innerHTML = `<div class="empty-idle">点上方「校验」开始：先结构检查，通过后再走图。通过后才能发布启用。</div>`;
+        highlight("");
+      }
+      if (state === "struct") {
+        setBadge(badge, "run", "检查中");
+        body.innerHTML = progressView("struct");
+        highlight("");
+      }
+      if (state === "walk") {
+        setBadge(badge, "run", "检查中");
+        const node = walkNodes[Math.min(playIndex, walkNodes.length - 1)];
+        body.innerHTML = progressView("walk", node);
+        highlight(node);
+      }
+      if (state === "modelFail") {
+        setBadge(badge, "err", "未通过");
+        body.innerHTML = resultRows();
+        highlight("");
+      }
+      if (state === "walkFail") {
+        setBadge(badge, "err", "未通过");
+        body.innerHTML = resultRows();
+        highlight("heat_to_300");
+      }
+      if (state === "pass") {
+        setBadge(badge, "pass", "已通过");
+        body.innerHTML = resultRows();
+        highlight("");
+      }
+
+      body.querySelectorAll("[data-fold]").forEach(btn => {
+        btn.addEventListener("click", () => {
+          if (btn.classList.contains("locked")) return;
+          if (btn.dataset.fold === "struct") expandStruct = !expandStruct;
+          if (btn.dataset.fold === "walk") expandWalk = !expandWalk;
+          render();
+        });
+      });
+    }
+
+    function stopPlay() {
+      if (playTimer) { clearInterval(playTimer); playTimer = null; }
+    }
+
+    function playOnce() {
+      stopPlay();
+      expandStruct = false;
+      expandWalk = false;
+      playIndex = 0;
+      state = "struct";
+      render();
+      playTimer = setTimeout(() => {
+        state = "walk";
+        playIndex = 0;
+        render();
+        playTimer = setInterval(() => {
+          playIndex += 1;
+          if (playIndex >= walkNodes.length) {
+            stopPlay();
+            state = "pass";
+            render();
+            return;
+          }
+          render();
+        }, 700);
+      }, 900);
+    }
+
+    document.getElementById("stateTabs").addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-state]");
+      if (!btn) return;
+      stopPlay();
+      if (btn.dataset.state === "play") { playOnce(); return; }
+      state = btn.dataset.state;
+      expandStruct = state === "modelFail";
+      expandWalk = state === "walkFail";
+      playIndex = state === "walk" ? 3 : 0;
+      render();
+    });
+
+    document.getElementById("validateBtn").addEventListener("click", () => playOnce());
+    document.getElementById("basicToggle").addEventListener("click", () => {
+      basicOpen = !basicOpen;
+      render();
+    });
+    document.getElementById("nameInput").addEventListener("input", () => {
+      document.getElementById("barTitle").textContent = document.getElementById("nameInput").value || "未命名流程";
+    });
+
+    render();
+  </script>
+</body>
+</html>

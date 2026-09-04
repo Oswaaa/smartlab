@@ -17,5 +17,7 @@ class ProtocolDictionaryControllerTest {
 
         assertTrue(response.isSuccess());
         assertTrue(response.getData().path("definitions").has("MqttTopicConvention"));
+        assertTrue(response.getData().path("definitions").has("LeaseRequestFormat"));
+        assertTrue(response.getData().path("definitions").has("LeaseResultFormat"));
     }
 }

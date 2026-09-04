@@ -1,0 +1,1302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SmartLab 2.0 · 流程编排智能体 UI 效果图</title>
+  <style>
+    /* ==========================================================================
+       SmartLab 2.0 极简素雅与柔和微动效设计系统 (纯净对话与思考流)
+       ========================================================================== */
+    :root {
+      /* 基础灰阶 (柔和纯净) */
+      --sl-bg-page: #f8fafc;
+      --sl-bg-surface: #ffffff;
+      --sl-bg-subtle: #f4f5f7;
+      --sl-bg-hover: #f1f3f6;
+      --sl-bg-active: #edf2f7;
+
+      /* 柔和边框体系 */
+      --sl-border-light: rgba(0, 0, 0, 0.05);
+      --sl-border-base: rgba(0, 0, 0, 0.08);
+      --sl-border-input: #d1d5db;
+      --sl-border-focus: #2563eb;
+
+      /* 文本层级 */
+      --sl-text-primary: #0f172a;
+      --sl-text-body: #334155;
+      --sl-text-secondary: #64748b;
+      --sl-text-disabled: #94a3b8;
+
+      /* 核心主色 */
+      --sl-primary: #2563eb;
+      --sl-primary-hover: #1d4ed8;
+      --sl-primary-light: #eff6ff;
+      --sl-primary-border: #bfdbfe;
+
+      /* 语义色 */
+      --sl-success: #16a34a;
+      --sl-success-light: #f0fdf4;
+      --sl-warning: #d97706;
+      --sl-warning-light: #fffbeb;
+      --sl-danger: #dc2626;
+      --sl-danger-light: #fef2f2;
+
+      /* 圆角与阴影体系 */
+      --sl-radius-xs: 4px;
+      --sl-radius-sm: 6px;
+      --sl-radius-md: 8px;
+      --sl-radius-lg: 12px;
+
+      --sl-shadow-card: 0 1px 3px rgba(0, 0, 0, 0.03), 0 2px 6px rgba(0, 0, 0, 0.02);
+      --sl-shadow-hover: 0 3px 10px rgba(0, 0, 0, 0.05), 0 1px 3px rgba(0, 0, 0, 0.03);
+      --sl-shadow-composer: 0 2px 12px rgba(0, 0, 0, 0.04), 0 0 0 1px rgba(0, 0, 0, 0.05);
+
+      /* 丝滑物理缓动 */
+      --sl-ease: cubic-bezier(0.16, 1, 0.3, 1);
+      --sl-duration: 0.18s;
+
+      /* 严谨排版字体 */
+      --sl-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      --sl-font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; width: 100%; overflow: hidden; }
+    body {
+      font-family: var(--sl-font-sans);
+      background: var(--sl-bg-page);
+      color: var(--sl-text-body);
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* 顶部场景控制器 (演示用) */
+    .demo-bar {
+      height: 42px;
+      background: #0f172a;
+      color: #f8fafc;
+      padding: 0 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      z-index: 100;
+      border-bottom: 1px solid #1e293b;
+    }
+    .demo-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .demo-tag {
+      font-size: 11px;
+      padding: 2px 6px;
+      background: rgba(37, 99, 235, 0.2);
+      color: #93c5fd;
+      border-radius: 4px;
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      font-family: var(--sl-font-mono);
+    }
+    .demo-tabs {
+      display: flex;
+      gap: 4px;
+      background: #1e293b;
+      padding: 3px;
+      border-radius: 6px;
+    }
+    .demo-tab-btn {
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 4px 10px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all var(--sl-duration) var(--sl-ease);
+    }
+    .demo-tab-btn:hover {
+      color: #f8fafc;
+    }
+    .demo-tab-btn.active {
+      background: var(--sl-primary);
+      color: #ffffff;
+      font-weight: 600;
+    }
+    .demo-action-btn {
+      background: #2563eb;
+      color: #ffffff;
+      border: none;
+      font-size: 12px;
+      font-weight: 500;
+      padding: 4px 12px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .demo-action-btn:hover {
+      background: #1d4ed8;
+    }
+
+    /* 主界面工作台 */
+    .agent-workspace {
+      flex: 1;
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 230px minmax(0, 1fr);
+      background: #ffffff;
+      position: relative;
+    }
+
+    /* 1. 左侧：极简历史会话侧边栏 */
+    .conversation-rail {
+      background: #f8fafc;
+      border-right: 1px solid var(--sl-border-base);
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .rail-header-actions {
+      padding: 12px 10px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      border-bottom: 1px solid var(--sl-border-light);
+    }
+
+    .btn-return-home {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 6px 10px;
+      background: #ffffff;
+      border: 1px solid var(--sl-border-base);
+      border-radius: var(--sl-radius-sm);
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--sl-text-body);
+      cursor: pointer;
+      transition: all var(--sl-duration) var(--sl-ease);
+    }
+    .btn-return-home:hover {
+      background: #f1f5f9;
+      color: var(--sl-text-primary);
+      border-color: #cbd5e1;
+    }
+
+    .btn-new-conversation {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 8px 12px;
+      background: var(--sl-primary);
+      border: 1px solid var(--sl-primary);
+      border-radius: var(--sl-radius-sm);
+      font-size: 12.5px;
+      font-weight: 600;
+      color: #ffffff;
+      cursor: pointer;
+      transition: all var(--sl-duration) var(--sl-ease);
+    }
+    .btn-new-conversation:hover {
+      background: var(--sl-primary-hover);
+      border-color: var(--sl-primary-hover);
+      transform: translateY(-1px);
+    }
+
+    .conversation-list {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    .history-label {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--sl-text-secondary);
+      padding: 6px 8px 4px;
+    }
+
+    .conversation-item {
+      position: relative;
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid transparent;
+      border-radius: var(--sl-radius-sm);
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      transition: all var(--sl-duration) var(--sl-ease);
+    }
+    .conversation-item:hover {
+      background: var(--sl-bg-subtle);
+    }
+    .conversation-item.active {
+      background: var(--sl-primary-light);
+      border-color: var(--sl-primary-border);
+    }
+
+    .conversation-title {
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--sl-text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .conversation-item.active .conversation-title {
+      font-weight: 600;
+      color: var(--sl-primary);
+    }
+
+    .conversation-meta-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .conversation-time {
+      font-size: 10.5px;
+      color: var(--sl-text-secondary);
+      font-family: var(--sl-font-mono);
+    }
+
+    .conversation-delete {
+      font-size: 14px;
+      line-height: 1;
+      color: var(--sl-text-secondary);
+      padding: 0 2px;
+      opacity: 0;
+      transition: opacity 0.15s, color 0.15s;
+    }
+    .conversation-item:hover .conversation-delete {
+      opacity: 1;
+    }
+    .conversation-delete:hover {
+      color: var(--sl-danger);
+    }
+
+    /* 2. 中间主区域 */
+    .agent-main {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      min-width: 0;
+      background: #ffffff;
+      position: relative;
+    }
+
+    .agent-stage-header {
+      height: 46px;
+      padding: 0 24px;
+      border-bottom: 1px solid var(--sl-border-light);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      background: #ffffff;
+      flex-shrink: 0;
+    }
+
+    .stage-title-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .stage-title {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: var(--sl-text-primary);
+    }
+
+    .stage-status-group {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .model-trace-tip {
+      font-size: 11px;
+      color: var(--sl-text-secondary);
+      font-family: var(--sl-font-mono);
+    }
+
+    .result-pill {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: var(--sl-radius-xs);
+      border: 1px solid var(--sl-border-base);
+      color: var(--sl-text-secondary);
+      background: var(--sl-bg-subtle);
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      transition: all var(--sl-duration) var(--sl-ease);
+    }
+    .result-pill.running {
+      color: var(--sl-warning);
+      background: var(--sl-warning-light);
+      border-color: rgba(245, 158, 11, 0.3);
+    }
+    .result-pill.success {
+      color: var(--sl-primary);
+      background: var(--sl-primary-light);
+      border-color: var(--sl-primary-border);
+    }
+    .result-pill.failure {
+      color: var(--sl-danger);
+      background: var(--sl-danger-light);
+      border-color: rgba(239, 68, 68, 0.3);
+    }
+
+    /* 呼吸小圆点动效 */
+    .pulse-dot-subtle {
+      width: 5px;
+      height: 5px;
+      border-radius: 50%;
+      background: currentColor;
+      animation: pulseSubtle 1.8s infinite ease-in-out;
+    }
+    @keyframes pulseSubtle {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.3; transform: scale(1.2); }
+    }
+
+    .btn-link-action {
+      font-size: 11.5px;
+      font-weight: 500;
+      color: var(--sl-primary);
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+      transition: color 0.15s;
+    }
+    .btn-link-action:hover {
+      text-decoration: underline;
+      color: var(--sl-primary-hover);
+    }
+
+    /* 对话流滚动视口 */
+    .agent-chat-messages {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      padding: 20px 24px;
+      scroll-behavior: smooth;
+    }
+
+    .chat-full-flow {
+      width: 100%;
+      max-width: 880px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    /* 朴素纯净的欢迎态 */
+    .chat-welcome-state {
+      margin: 40px auto 24px;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      animation: fadeIn 0.3s var(--sl-ease) both;
+    }
+    .welcome-header-tag {
+      font-size: 11px;
+      font-weight: 700;
+      color: var(--sl-primary);
+      background: var(--sl-primary-light);
+      border: 1px solid var(--sl-primary-border);
+      padding: 2px 8px;
+      border-radius: var(--sl-radius-xs);
+      font-family: var(--sl-font-mono);
+      margin-bottom: 2px;
+    }
+    .chat-welcome-state h2 {
+      font-size: 17px;
+      font-weight: 700;
+      color: var(--sl-text-primary);
+    }
+    .chat-welcome-state p {
+      font-size: 13px;
+      line-height: 1.6;
+      color: var(--sl-text-secondary);
+      max-width: 580px;
+    }
+
+    /* 柔和微边框提示词选单 */
+    .preset-prompts-row {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      width: 100%;
+      margin-top: 16px;
+    }
+    .preset-chip-btn {
+      background: #ffffff;
+      border: 1px solid var(--sl-border-base);
+      border-radius: var(--sl-radius-md);
+      padding: 12px 14px;
+      text-align: left;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      box-shadow: var(--sl-shadow-card);
+      transition: all var(--sl-duration) var(--sl-ease);
+    }
+    .preset-chip-btn:hover {
+      border-color: var(--sl-primary);
+      background: var(--sl-primary-light);
+      transform: translateY(-1px);
+      box-shadow: var(--sl-shadow-hover);
+    }
+    .preset-chip-head {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .preset-chip-tag {
+      font-size: 10.5px;
+      font-weight: 600;
+      color: var(--sl-primary);
+      font-family: var(--sl-font-mono);
+    }
+    .preset-chip-title {
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--sl-text-primary);
+    }
+    .preset-chip-desc {
+      font-size: 11.5px;
+      color: var(--sl-text-secondary);
+      line-height: 1.45;
+    }
+
+    /* 消息条目容器与微动效 */
+    .chat-msg-row {
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      animation: msgSlideIn 0.22s var(--sl-ease) both;
+    }
+    @keyframes msgSlideIn {
+      0% { opacity: 0; transform: translateY(6px); }
+      100% { opacity: 1; transform: translateY(0); }
+    }
+
+    /* 用户消息 (浅灰柔和气泡) */
+    .user-msg-container {
+      display: flex;
+      justify-content: flex-end;
+    }
+    .user-msg-bubble {
+      max-width: 82%;
+      background: var(--sl-bg-subtle);
+      border: 1px solid var(--sl-border-light);
+      color: var(--sl-text-primary);
+      padding: 10px 16px;
+      border-radius: var(--sl-radius-lg);
+      font-size: 13px;
+      line-height: 1.6;
+      word-break: break-word;
+      transition: background 0.15s;
+    }
+
+    /* AI 消息体 */
+    .ai-msg-container {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      width: 100%;
+    }
+
+    .formatted-text {
+      font-size: 13.5px;
+      line-height: 1.68;
+      color: var(--sl-text-primary);
+    }
+    .formatted-text p {
+      margin-bottom: 6px;
+    }
+    .formatted-text p:last-child {
+      margin-bottom: 0;
+    }
+
+    /* ==========================================================================
+       3. 思考过程组件 (柔和极简 · 丝滑折叠 · 真实过程呈现)
+       ========================================================================== */
+    .live-thinking-section {
+      width: 100%;
+    }
+
+    .ds-thinking-card {
+      background: #fafbfc;
+      border: 1px solid var(--sl-border-base);
+      border-radius: var(--sl-radius-md);
+      overflow: hidden;
+      box-shadow: var(--sl-shadow-card);
+      transition: border-color var(--sl-duration);
+    }
+    .ds-thinking-card:hover {
+      border-color: #cbd5e1;
+    }
+
+    /* 思考折叠头部 */
+    .ds-thinking-toggle {
+      padding: 9px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
+      background: #fafbfc;
+      border-bottom: 1px solid transparent;
+      transition: background 0.15s;
+    }
+    .ds-thinking-toggle:hover {
+      background: #f1f5f9;
+    }
+    .ds-thinking-toggle.open {
+      border-bottom-color: var(--sl-border-light);
+    }
+
+    .thinking-title-left {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      font-size: 12.5px;
+      font-weight: 600;
+      color: var(--sl-text-primary);
+    }
+
+    .caret-icon {
+      color: var(--sl-text-secondary);
+      transition: transform var(--sl-duration) var(--sl-ease);
+    }
+    .caret-icon.collapsed {
+      transform: rotate(-90deg);
+    }
+
+    .thinking-live-text {
+      font-size: 11.5px;
+      font-weight: 500;
+      color: var(--sl-warning);
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    .thinking-done-text {
+      font-size: 11.5px;
+      font-weight: normal;
+      color: var(--sl-text-secondary);
+      font-family: var(--sl-font-mono);
+    }
+
+    /* 思考内容面板 */
+    .ds-thinking-content {
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      background: #fafbfc;
+      animation: fadeIn 0.2s var(--sl-ease);
+    }
+    @keyframes fadeIn {
+      0% { opacity: 0; }
+      100% { opacity: 1; }
+    }
+
+    .round-block {
+      background: #ffffff;
+      border: 1px solid var(--sl-border-light);
+      border-radius: var(--sl-radius-sm);
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .round-head-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--sl-text-primary);
+      cursor: pointer;
+      user-select: none;
+    }
+    .round-head-toggle:hover {
+      color: var(--sl-primary);
+    }
+
+    .round-log-entry {
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      font-size: 12px;
+      padding: 4px 0;
+      border-bottom: 1px dashed rgba(0, 0, 0, 0.04);
+    }
+    .round-log-entry:last-child {
+      border-bottom: none;
+    }
+
+    .entry-main-line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .log-kind-tag {
+      font-size: 11px;
+      font-weight: 600;
+      font-family: var(--sl-font-mono);
+      color: var(--sl-primary);
+      flex-shrink: 0;
+    }
+    .log-kind-tag.tool { color: #2563eb; }
+    .log-kind-tag.done { color: #16a34a; }
+    .log-kind-tag.gate { color: #dc2626; }
+    .log-kind-tag.rule { color: #7c3aed; }
+
+    .log-entry-title {
+      color: var(--sl-text-body);
+      font-weight: 500;
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .btn-caret-sub {
+      background: transparent;
+      border: none;
+      font-size: 11px;
+      color: var(--sl-primary);
+      cursor: pointer;
+      padding: 0 4px;
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+    }
+    .btn-caret-sub:hover {
+      text-decoration: underline;
+    }
+
+    .entry-detail-box {
+      margin: 4px 0 2px 6px;
+      background: #f8fafc;
+      border: 1px solid var(--sl-border-light);
+      border-radius: var(--sl-radius-xs);
+      padding: 8px 10px;
+      font-family: var(--sl-font-mono);
+      font-size: 11.5px;
+      color: #334155;
+      line-height: 1.5;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+
+    /* 4. 底部输入框 (柔和微边框 · 呼吸光晕) */
+    .agent-chat-composer {
+      flex-shrink: 0;
+      width: 100%;
+      max-width: 880px;
+      margin: 0 auto;
+      padding: 0 24px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      box-sizing: border-box;
+    }
+
+    .composer-card-box {
+      background: #ffffff;
+      border: 1px solid var(--sl-border-base);
+      border-radius: var(--sl-radius-lg);
+      padding: 10px 14px 8px;
+      box-shadow: var(--sl-shadow-composer);
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      transition: all var(--sl-duration) var(--sl-ease);
+    }
+    .composer-card-box:focus-within {
+      border-color: var(--sl-border-focus);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.08);
+    }
+
+    .composer-card-box textarea {
+      width: 100%;
+      border: none;
+      outline: none;
+      resize: none;
+      font-family: inherit;
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--sl-text-primary);
+      background: transparent;
+      min-height: 46px;
+    }
+    .composer-card-box textarea::placeholder {
+      color: var(--sl-text-disabled);
+    }
+
+    .composer-card-bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .composer-note {
+      margin: 0;
+      font-size: 11.5px;
+      color: var(--sl-text-secondary);
+    }
+
+    .btn-send-round {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--sl-primary);
+      color: #ffffff;
+      border: none;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all var(--sl-duration) var(--sl-ease);
+      flex-shrink: 0;
+    }
+    .btn-send-round:hover {
+      background: var(--sl-primary-hover);
+      transform: scale(1.05);
+    }
+    .btn-send-round:disabled {
+      background: #e2e8f0;
+      color: #94a3b8;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .composer-bottom-disclaimer {
+      text-align: center;
+      font-size: 11px;
+      color: var(--sl-text-secondary);
+    }
+
+    /* Toast 提示 */
+    .toast-pill {
+      position: fixed;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%) translateY(10px);
+      background: #0f172a;
+      color: #ffffff;
+      padding: 6px 16px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      z-index: 1000;
+      opacity: 0;
+      pointer-events: none;
+      transition: all 0.2s var(--sl-ease);
+    }
+    .toast-pill.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- 顶部场景控制器 (演示用) -->
+  <header class="demo-bar">
+    <div class="demo-brand">
+      <span>SmartLab 2.0 对话工作台</span>
+      <span class="demo-tag">纯净思考与对话版</span>
+    </div>
+
+    <!-- 演示场景切换器 -->
+    <div class="demo-tabs">
+      <button class="demo-tab-btn active" onclick="switchState('welcome')">1. 欢迎引导态</button>
+      <button class="demo-tab-btn" onclick="switchState('thinking')">2. 规程推演中</button>
+      <button class="demo-tab-btn" onclick="switchState('success')">3. 完成回复</button>
+      <button class="demo-tab-btn" onclick="switchState('clarify')">4. 守卫与追问</button>
+    </div>
+
+    <div>
+      <button class="demo-action-btn" onclick="runSimulation()">
+        <span>演示完整生成交互</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- 主工作台结构 (纯净思考与对话流) -->
+  <main class="agent-workspace">
+    <!-- 1. 左侧：极简历史会话侧边栏 -->
+    <aside class="conversation-rail">
+      <div class="rail-header-actions">
+        <button class="btn-return-home" type="button" onclick="showToast('返回实验室设备主控')">
+          <span>返回实验室主控</span>
+        </button>
+
+        <button class="btn-new-conversation" type="button" onclick="switchState('welcome')">
+          <span>+ 新对话</span>
+        </button>
+      </div>
+
+      <div class="conversation-list">
+        <div class="history-label">对话历史</div>
+        <button class="conversation-item active" type="button" onclick="switchState('success')">
+          <span class="conversation-title">恒温水浴与离心反应全自动流程</span>
+          <div class="conversation-meta-row">
+            <span class="conversation-time">08-28 10:32</span>
+            <span class="conversation-delete" title="删除" onclick="event.stopPropagation(); showToast('已删除会话')">×</span>
+          </div>
+        </button>
+        <button class="conversation-item" type="button" onclick="switchState('clarify')">
+          <span class="conversation-title">微孔板梯度稀释温度守卫</span>
+          <div class="conversation-meta-row">
+            <span class="conversation-time">08-28 09:15</span>
+            <span class="conversation-delete" title="删除" onclick="event.stopPropagation(); showToast('已删除会话')">×</span>
+          </div>
+        </button>
+        <button class="conversation-item" type="button" onclick="switchState('thinking')">
+          <span class="conversation-title">气相色谱全自动进样监测流</span>
+          <div class="conversation-meta-row">
+            <span class="conversation-time">08-27 16:40</span>
+            <span class="conversation-delete" title="删除" onclick="event.stopPropagation(); showToast('已删除会话')">×</span>
+          </div>
+        </button>
+      </div>
+    </aside>
+
+    <!-- 2. 中间：全宽交互区域 -->
+    <div class="agent-main">
+      <header class="agent-stage-header">
+        <div class="stage-title-group">
+          <span class="stage-title">SmartLab 流程编排 Agent</span>
+        </div>
+        <div class="stage-status-group">
+          <span id="stageStatusPill" class="result-pill">就绪</span>
+          <span id="stageTraceTip" class="model-trace-tip">模型交互 · 2 轮</span>
+          <button class="btn-link-action" type="button" onclick="showToast('已复制过程日志')">复制过程日志</button>
+        </div>
+      </header>
+
+      <!-- 对话与实时思考滚动视口 -->
+      <div id="messageViewport" class="agent-chat-messages">
+        <div id="flowContainer" class="chat-full-flow">
+          <!-- 动态渲染内容 -->
+        </div>
+      </div>
+
+      <!-- 3. 底部：全宽输入框 -->
+      <form class="agent-chat-composer" onsubmit="event.preventDefault(); handleSend();">
+        <div class="composer-card-box">
+          <textarea
+            id="promptInput"
+            rows="2"
+            placeholder="给 SmartLab Agent 发送消息或修改指令（例如：把加热保持时间延长到 60 秒）..."
+            onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();handleSend();}"
+          ></textarea>
+          <div class="composer-card-bottom">
+            <span class="composer-note">发送将根据实验需求推理生成并回复</span>
+            <button id="sendBtn" class="btn-send-round" type="submit" title="发送">
+              <span style="font-size: 13px; line-height: 1;">↑</span>
+            </button>
+          </div>
+        </div>
+        <div class="composer-bottom-disclaimer">内容由 SmartLab 实验室 AI Agent 规程推演生成，请在流程设计器中确认后发布使用。</div>
+      </form>
+    </div>
+  </main>
+
+  <!-- Toast 提示 -->
+  <div id="toast" class="toast-pill">已复制过程日志</div>
+
+  <script>
+    /* ==========================================================================
+       页面状态模板定义 (纯净思考过程 + 最终对话内容)
+       ========================================================================== */
+    const STATES = {
+      // 1. 欢迎引导态
+      welcome: `
+        <div class="chat-welcome-state">
+          <span class="welcome-header-tag">AGENT WORKSPACE</span>
+          <h2>SmartLab 流程设计 Agent</h2>
+          <p>使用自然语言描述您的实验流程逻辑，Agent 将实时调用设备检索、模型校验与规则生成规程，完成符合工业规范的工作流模型推演。</p>
+
+          <div class="preset-prompts-row">
+            <div class="preset-chip-btn" onclick="fillPrompt('恒温离心提取流程：先将离心机转速提升至 4000 rpm 保持 5 分钟，随后开启恒温水浴加热至 65℃')">
+              <div class="preset-chip-head">
+                <span class="preset-chip-tag">[设备联用]</span>
+                <span class="preset-chip-title">恒温离心反应联用流程</span>
+              </div>
+              <span class="preset-chip-desc">离心机转速爬升与恒温水浴加热时序控制</span>
+            </div>
+
+            <div class="preset-chip-btn" onclick="fillPrompt('微孔板高精度梯度稀释：控制移液机器人完成 96 孔板 1:2 梯度加样，并在加样后触发超声混匀')">
+              <div class="preset-chip-head">
+                <span class="preset-chip-tag">[梯度加样]</span>
+                <span class="preset-chip-title">96 孔板梯度稀释规程</span>
+              </div>
+              <span class="preset-chip-desc">多通道移液动作绑定与超声混匀同步</span>
+            </div>
+
+            <div class="preset-chip-btn" onclick="fillPrompt('气相色谱进样监测：进样臂抓取样品注入 GC 进样口，待柱温箱稳定后启动质谱采集')">
+              <div class="preset-chip-head">
+                <span class="preset-chip-tag">[色谱分析]</span>
+                <span class="preset-chip-title">气相色谱-质谱全自动进样</span>
+              </div>
+              <span class="preset-chip-desc">多设备时序协调与压力守卫规则</span>
+            </div>
+
+            <div class="preset-chip-btn" onclick="fillPrompt('生物反应器闭环控制：当 pH 低于 6.8 时启动补碱蠕动泵，超时 30 秒未响应停机')">
+              <div class="preset-chip-head">
+                <span class="preset-chip-tag">[闭环控制]</span>
+                <span class="preset-chip-title">反应器 pH/DO 闭环控制</span>
+              </div>
+              <span class="preset-chip-desc">遥测信号轮询、阈值判定与泵伺服驱动</span>
+            </div>
+          </div>
+        </div>
+      `,
+
+      // 2. 思考中与多工具推演
+      thinking: `
+        <article class="chat-msg-row user">
+          <div class="user-msg-container">
+            <div class="user-msg-bubble">
+              帮我设计一个恒温离心提取流程：离心机 4000 rpm 离心 5 分钟，随后触发恒温水浴槽加热到 65℃ 保持 2 分钟，如果超温 70℃ 立即停机。
+            </div>
+          </div>
+        </article>
+
+        <section class="live-thinking-section">
+          <div class="ds-thinking-card">
+            <div class="ds-thinking-toggle open" onclick="toggleThinkingCard(this)">
+              <div class="thinking-title-left">
+                <svg class="caret-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+                <span>思考过程</span>
+                <span class="thinking-live-text">
+                  <i class="pulse-dot-subtle"></i> 正在执行规程与工具调用...
+                </span>
+              </div>
+            </div>
+
+            <div class="ds-thinking-content">
+              <div class="round-block">
+                <div class="round-head-toggle" onclick="toggleRoundBlock(this)">
+                  <svg class="caret-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                  <span>第 1 轮推理与规程执行</span>
+                  <span style="font-size: 11px; color: var(--sl-text-secondary); font-weight: normal;">(2 项操作)</span>
+                </div>
+
+                <div class="round-entries-list">
+                  <div class="round-log-entry">
+                    <div class="entry-main-line">
+                      <span class="log-kind-tag tool">[调用]</span>
+                      <span class="log-entry-title">模型调用工具：get_device_catalog (Centrifuge, WaterBath)</span>
+                      <button class="btn-caret-sub" onclick="toggleEntryDetail(this)">展开详情</button>
+                    </div>
+                    <div class="entry-detail-box" style="display:none;">{\n  "query": ["Centrifuge-5430R", "WaterBath-WB20"],\n  "status": "MATCHED_2_MODELS"\n}</div>
+                  </div>
+
+                  <div class="round-log-entry">
+                    <div class="entry-main-line">
+                      <span class="log-kind-tag rule">[规则]</span>
+                      <span class="log-entry-title">提取安全守卫约束：WaterBath.Temp > 70℃ 映射为紧急停机规则</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      `,
+
+      // 3. 最终对话回复态 (仅保留思考过程与最后的纯文本对话)
+      success: `
+        <article class="chat-msg-row user">
+          <div class="user-msg-container">
+            <div class="user-msg-bubble">
+              帮我设计一个恒温离心提取流程：离心机 4000 rpm 离心 5 分钟，随后触发恒温水浴槽加热到 65℃ 保持 2 分钟，如果超温 70℃ 立即停机。
+            </div>
+          </div>
+        </article>
+
+        <!-- 思考过程 (支持平滑折叠) -->
+        <section class="live-thinking-section">
+          <div class="ds-thinking-card">
+            <div class="ds-thinking-toggle" onclick="toggleThinkingCard(this)">
+              <div class="thinking-title-left">
+                <svg class="caret-icon collapsed" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+                <span>思考过程</span>
+                <span class="thinking-done-text">(2 轮规程已执行 · 耗时 1.6s)</span>
+              </div>
+            </div>
+
+            <div class="ds-thinking-content" style="display: none;">
+              <div class="round-block">
+                <div class="round-head-toggle" onclick="toggleRoundBlock(this)">
+                  <svg class="caret-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                  <span>第 1 轮推理与规程执行</span>
+                  <span style="font-size: 11px; color: var(--sl-text-secondary); font-weight: normal;">(2 项操作)</span>
+                </div>
+                <div class="round-entries-list">
+                  <div class="round-log-entry">
+                    <div class="entry-main-line">
+                      <span class="log-kind-tag tool">[调用]</span>
+                      <span class="log-entry-title">模型调用工具：get_device_catalog</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 最后的纯净 AI 对话内容 -->
+        <article class="chat-msg-row assistant">
+          <div class="ai-msg-container">
+            <div class="formatted-text">
+              <p>已根据您的实验需求完成工作流模型推演并保存为草稿「<strong>恒温水浴与离心反应全自动流程</strong>」#1042。</p>
+              <p>该流程包含以下核心控制逻辑：</p>
+              <p>1. <strong>离心阶段</strong>：控制高速冷冻离心机以 4000 rpm 持续运行 300 秒，采集转速与振动指标稳定后触发完成信号；<br>
+                 2. <strong>恒温加热阶段</strong>：接收到离心结束信号后，启动恒温水浴槽加热至 65℃，温度稳定后保持 120 秒；<br>
+                 3. <strong>安全守卫规则</strong>：绑定实时温度监测守卫，当水浴槽温度超过 70℃ 时立即触发紧急停机信号，切断加热并转移至安全就绪状态。</p>
+            </div>
+          </div>
+        </article>
+      `,
+
+      // 4. 追问与守卫拦截
+      clarify: `
+        <article class="chat-msg-row user">
+          <div class="user-msg-container">
+            <div class="user-msg-bubble">
+              把水浴槽温度直接设定到 120℃，并连续加热 2 小时。
+            </div>
+          </div>
+        </article>
+
+        <!-- 思考过程 -->
+        <section class="live-thinking-section">
+          <div class="ds-thinking-card">
+            <div class="ds-thinking-toggle" onclick="toggleThinkingCard(this)">
+              <div class="thinking-title-left">
+                <svg class="caret-icon collapsed" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <polyline points="6 9 12 15 18 9"></polyline>
+                </svg>
+                <span>思考过程</span>
+                <span class="thinking-done-text">(1 轮规则拦截)</span>
+              </div>
+            </div>
+
+            <div class="ds-thinking-content" style="display: none;">
+              <div class="round-block">
+                <div class="round-head-toggle" onclick="toggleRoundBlock(this)">
+                  <svg class="caret-icon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <polyline points="6 9 12 15 18 9"></polyline>
+                  </svg>
+                  <span>第 1 轮安全边界校验</span>
+                </div>
+                <div class="round-entries-list">
+                  <div class="round-log-entry">
+                    <div class="entry-main-line">
+                      <span class="log-kind-tag gate">[拦截]</span>
+                      <span class="log-entry-title">参数 WaterBath.TargetTemp = 120℃ 超出安全物理极限 99.5℃</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 最后的纯净 AI 对话内容 -->
+        <article class="chat-msg-row assistant">
+          <div class="ai-msg-container">
+            <div class="formatted-text">
+              <p><strong>检测到参数超出设备物模型安全边界</strong>：标准水浴槽（WaterBath-WB20）的最高安全物理上限为 <strong>99.5℃</strong>，设定 120℃ 存在液体剧烈沸腾与干烧风险。</p>
+              <p>建议您选择以下调整方案：</p>
+              <p>• <strong>方案 A</strong>：修正为水浴槽最高安全温度 95℃ 加热 2 小时；<br>
+                 • <strong>方案 B</strong>：切换为「高温油浴槽」设备模型并设定 120℃。</p>
+            </div>
+
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px;">
+              <button class="btn-return-home" style="border-color: var(--sl-primary-border); color: var(--sl-primary); background: var(--sl-primary-light);" onclick="fillPrompt('修正为水浴槽最高安全温度 95℃ 加热 2 小时')">
+                修正为水浴槽安全上限 95℃
+              </button>
+              <button class="btn-return-home" onclick="fillPrompt('自动切换为高温油浴槽设备并设定 120℃')">
+                切换为「高温油浴槽」设备模型
+              </button>
+            </div>
+          </div>
+        </article>
+      `
+    };
+
+    // 页面初始化
+    window.addEventListener('DOMContentLoaded', () => {
+      switchState('welcome');
+    });
+
+    // 切换演示状态
+    function switchState(stateKey) {
+      const container = document.getElementById('flowContainer');
+      const pill = document.getElementById('stageStatusPill');
+      const tip = document.getElementById('stageTraceTip');
+      
+      document.querySelectorAll('.demo-tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.getAttribute('onclick').includes(stateKey)) {
+          btn.classList.add('active');
+        }
+      });
+
+      if (stateKey === 'thinking') {
+        pill.className = 'result-pill running';
+        pill.innerHTML = '<i class="pulse-dot-subtle"></i> 生成中';
+        tip.innerText = '模型交互 · 第 1 轮';
+      } else if (stateKey === 'success') {
+        pill.className = 'result-pill success';
+        pill.innerText = '已回复';
+        tip.innerText = '模型交互 · 2 轮';
+      } else if (stateKey === 'clarify') {
+        pill.className = 'result-pill failure';
+        pill.innerText = '守卫拦截';
+        tip.innerText = '模型交互 · 1 轮';
+      } else {
+        pill.className = 'result-pill';
+        pill.innerText = '就绪';
+        tip.innerText = '';
+      }
+
+      container.innerHTML = STATES[stateKey] || STATES.welcome;
+      scrollBottom();
+    }
+
+    // 模拟完整生成流程
+    function runSimulation() {
+      showToast('正在启动 Agent 规程推演...');
+      switchState('thinking');
+
+      setTimeout(() => {
+        switchState('success');
+        showToast('已完成推理回复');
+      }, 1600);
+    }
+
+    // 输入框快速填充
+    function fillPrompt(text) {
+      const input = document.getElementById('promptInput');
+      input.value = text;
+      input.focus();
+    }
+
+    // 发送处理
+    function handleSend() {
+      const input = document.getElementById('promptInput');
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = '';
+      runSimulation();
+    }
+
+    // 折叠思考卡片
+    function toggleThinkingCard(toggleHeader) {
+      const card = toggleHeader.closest('.ds-thinking-card');
+      const content = card.querySelector('.ds-thinking-content');
+      const caret = toggleHeader.querySelector('.caret-icon');
+      
+      if (content.style.display === 'none') {
+        content.style.display = 'flex';
+        toggleHeader.classList.add('open');
+        caret.classList.remove('collapsed');
+      } else {
+        content.style.display = 'none';
+        toggleHeader.classList.remove('open');
+        caret.classList.add('collapsed');
+      }
+    }
+
+    // 折叠轮次区块
+    function toggleRoundBlock(roundHeader) {
+      const block = roundHeader.closest('.round-block');
+      const list = block.querySelector('.round-entries-list');
+      const caret = roundHeader.querySelector('.caret-icon');
+
+      if (list.style.display === 'none') {
+        list.style.display = 'flex';
+        caret.classList.remove('collapsed');
+      } else {
+        list.style.display = 'none';
+        caret.classList.add('collapsed');
+      }
+    }
+
+    // 展开/收起单条详情
+    function toggleEntryDetail(btn) {
+      const entry = btn.closest('.round-log-entry');
+      const detail = entry.querySelector('.entry-detail-box');
+      if (detail.style.display === 'none') {
+        detail.style.display = 'block';
+        btn.innerText = '收起详情';
+      } else {
+        detail.style.display = 'none';
+        btn.innerText = '展开详情';
+      }
+    }
+
+    // 滚动到底部
+    function scrollBottom() {
+      const viewport = document.getElementById('messageViewport');
+      viewport.scrollTop = viewport.scrollHeight;
+    }
+
+    // Toast
+    let toastTimer = null;
+    function showToast(msg) {
+      const toast = document.getElementById('toast');
+      toast.innerText = msg;
+      toast.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        toast.classList.remove('show');
+      }, 2000);
+    }
+  </script>
+</body>
+</html>

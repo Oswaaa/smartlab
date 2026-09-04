@@ -4,15 +4,23 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.engine.statemachine.StateMachineSendActionEvent;
+import com.smartlab.global.event.AdapterDeletedEvent;
+import com.smartlab.global.event.AdapterLeaseResultEvent;
+import com.smartlab.global.event.DeviceInstanceDeletedEvent;
+import com.smartlab.global.event.DeviceInstanceRetiredEvent;
+import com.smartlab.global.event.DeviceInstanceSavedEvent;
 import com.smartlab.global.protocol.ProtocolDictionaryService;
 import com.smartlab.global.protocol.ProtocolTopicMatch;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.resource.adapter.AdapterRouteDTO;
 import com.smartlab.management.entity.resource.adapter.AdapterIndex;
+import com.smartlab.management.entity.resource.device.DeviceInstanceKind;
+import com.smartlab.management.entity.resource.device.DeviceInstances;
+import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
 import com.smartlab.management.service.db.resource.adapter.AdapterIndexService;
 import com.smartlab.management.service.protocol.AdapterPayloadMapperService;
 import org.eclipse.paho.client.mqttv3.IMqttDeliveryToken;
-import org.eclipse.paho.client.mqttv3.MqttCallback;
+import org.eclipse.paho.client.mqttv3.MqttCallbackExtended;
 import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
 import org.eclipse.paho.client.mqttv3.MqttException;
@@ -20,12 +28,16 @@ import org.eclipse.paho.client.mqttv3.MqttMessage;
 import org.eclipse.paho.client.mqttv3.persist.MemoryPersistence;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.event.TransactionPhase;
+import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import jakarta.annotation.PreDestroy;
@@ -33,8 +45,10 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -49,7 +63,7 @@ import java.util.concurrent.Executor;
 /**
  * MQTT长连接物理接入与心跳监听底座服务。实现设备端原始数据订阅接收与下行控制指令的发布编译。
  */
-public class MqttAdapterMessagingService implements MqttCallback {
+public class MqttAdapterMessagingService implements MqttCallbackExtended {
 
     private static final Logger log = LoggerFactory.getLogger(MqttAdapterMessagingService.class);
 
@@ -57,6 +71,9 @@ public class MqttAdapterMessagingService implements MqttCallback {
     private final AdapterPayloadMapperService protocolMapperService;
     private final ProtocolDictionaryService protocolDictionaryService;
     private final Executor executor;
+    private DeviceInstancesMapper deviceInstancesMapper;
+    private InProcessAdapterSimulator adapterSimulator;
+    private ApplicationEventPublisher events;
     private final Set<String> subscribedTopics = ConcurrentHashMap.newKeySet();
     private final Map<String, Map<String, Object>> pendingAdapterRegistrations = new ConcurrentHashMap<>();
     private final List<SseEmitter> registrationEmitters = new CopyOnWriteArrayList<>();
@@ -93,6 +110,21 @@ public class MqttAdapterMessagingService implements MqttCallback {
         this.executor = executor;
     }
 
+    @Autowired(required = false)
+    public void setDeviceInstancesMapper(DeviceInstancesMapper deviceInstancesMapper) {
+        this.deviceInstancesMapper = deviceInstancesMapper;
+    }
+
+    @Autowired(required = false)
+    public void setAdapterSimulator(InProcessAdapterSimulator adapterSimulator) {
+        this.adapterSimulator = adapterSimulator;
+    }
+
+    @Autowired(required = false)
+    public void setApplicationEventPublisher(ApplicationEventPublisher events) {
+        this.events = events;
+    }
+
     @EventListener(ApplicationReadyEvent.class)
     public void startAfterApplicationReady() {
         if (!autoStart) {
@@ -112,7 +144,7 @@ public class MqttAdapterMessagingService implements MqttCallback {
             return;
         }
         try {
-            subscribeKnownDevicePointTopics();
+            reconcileSubscriptions();
         } catch (Exception e) {
             log.debug("MQTT 订阅保活失败: {}", e.getMessage());
         }
@@ -153,7 +185,7 @@ public class MqttAdapterMessagingService implements MqttCallback {
         List<Map<String, Object>> list = new ArrayList<>();
         for (Map<String, Object> item : pendingAdapterRegistrations.values()) {
             String name = (String) item.get("adapterName");
-            if (name != null && adapterIndexService.getByName(name.trim()) == null) {
+            if (name != null && !adapterIndexService.hasCompletedRegistration(name.trim())) {
                 list.add(item);
             }
         }
@@ -197,9 +229,7 @@ public class MqttAdapterMessagingService implements MqttCallback {
         AdapterIndex adapter = adapterIndexService.register(registerPayload);
         pendingAdapterRegistrations.remove(key);
         emitRegistrationEvent("pending_snapshot", pendingAdapterRegistrations());
-        if (adapter != null) {
-            trySubscribeAdapterHeartbeat(adapter.getAdapterName());
-        }
+        syncRuntimeSubscriptions();
         return adapter;
     }
 
@@ -230,6 +260,23 @@ public class MqttAdapterMessagingService implements MqttCallback {
         if (!"ADAPTER".equals(event.interfaceType())) {
             return;
         }
+        if (deviceInstancesMapper != null) {
+            DeviceInstances instance = deviceInstancesMapper.selectById(event.instanceId());
+            if (instance == null) {
+                throw new IllegalStateException("设备实例不存在，无法下发 Adapter 指令: " + event.instanceId());
+            }
+            String kind = instance.getInstanceKind();
+            if (DeviceInstanceKind.TEMPORARY.equals(kind)) {
+                if (adapterSimulator == null) {
+                    throw new IllegalStateException("流程模拟缺少 Adapter 模拟器，无法下发临时实例指令");
+                }
+                adapterSimulator.handleSendAction(event);
+                return;
+            }
+            if (!DeviceInstanceKind.PHYSICAL.equals(kind) && !DeviceInstanceKind.VIRTUAL.equals(kind)) {
+                throw new IllegalStateException("无法识别的设备实例种类，拒绝出站: " + kind);
+            }
+        }
         ObjectNode commandMessage;
         if ("CMD_START".equals(event.signalName())) {
             commandMessage = protocolMapperService.buildCommandMessage(
@@ -243,47 +290,81 @@ public class MqttAdapterMessagingService implements MqttCallback {
         publishCommand(commandMessage);
     }
 
+    public void publishLeaseRequest(JsonNode payload) {
+        protocolDictionaryService.validateDefinition("LeaseRequestFormat", payload);
+        String adapterName = payload.path("adapterName").asText();
+        String topic = protocolDictionaryService.resolveMqttTopic("leaseRequestTopic", Map.of("adapterName", adapterName));
+        publishJson(topic, payload);
+    }
+
     public void publishCommand(ObjectNode commandMessage) {
         if (commandMessage == null || commandMessage.path("topic").asText("").isBlank()) {
             throw new IllegalArgumentException("MQTT command message 缺少 topic");
         }
         try {
-            connectIfNeeded();
-            String topic = commandMessage.path("topic").asText();
-            byte[] payload = JsonNodeSupport.MAPPER.writeValueAsBytes(commandMessage.path("payload"));
-            client.publish(topic, payload, 1, false);
-        } catch (Exception e) {
-            markError(e);
+            publishJson(commandMessage.path("topic").asText(), commandMessage.path("payload"));
+        } catch (IllegalStateException e) {
             throw new IllegalStateException("MQTT 指令发布失败: " + e.getMessage(), e);
         }
     }
 
+    private void publishJson(String topic, JsonNode payload) {
+        if (topic == null || topic.isBlank()) {
+            throw new IllegalArgumentException("MQTT topic 不能为空");
+        }
+        try {
+            connectIfNeeded();
+            byte[] body = JsonNodeSupport.MAPPER.writeValueAsBytes(payload == null ? JsonNodeSupport.objectNode() : payload);
+            client.publish(topic, body, 1, false);
+        } catch (Exception e) {
+            markError(e);
+            throw new IllegalStateException("MQTT 发布失败: " + e.getMessage(), e);
+        }
+    }
+
     public void subscribeRegistrationTopics() {
-        subscribeTopics(registerTopic());
+        syncRuntimeSubscriptions();
     }
 
     public void trySubscribeDevicePointTopics(String adapterName, String devicePoint) {
-        if (adapterName == null || adapterName.isBlank() || devicePoint == null || devicePoint.isBlank()) {
-            return;
-        }
-        try {
-            subscribeDevicePointTopics(adapterName, devicePoint);
-        } catch (Exception e) {
-            log.warn("MQTT 设备点订阅暂未成功, adapter={}, point={}, reason={}", adapterName, devicePoint, e.getMessage());
-        }
+        syncRuntimeSubscriptions();
     }
 
     public void subscribeDevicePointTopics(String adapterName, String devicePoint) {
-        if (adapterName == null || adapterName.isBlank() || devicePoint == null || devicePoint.isBlank()) {
-            throw new IllegalArgumentException("Adapter 标识和设备点字段不能为空");
+        syncRuntimeSubscriptions();
+    }
+
+    public void syncRuntimeSubscriptions() {
+        try {
+            reconcileSubscriptions();
+        } catch (Exception e) {
+            log.warn("MQTT 订阅同步失败: {}", e.getMessage());
         }
-        subscribeTopics(
-                protocolDictionaryService.resolveMqttTopic("telemetryTopic", Map.of(
-                        "adapterName", adapterName,
-                        "devicePoint", devicePoint)),
-                protocolDictionaryService.resolveMqttTopic("eventTopic", Map.of(
-                        "adapterName", adapterName,
-                        "devicePoint", devicePoint)));
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void handleDeviceInstanceSaved(DeviceInstanceSavedEvent event) {
+        syncRuntimeSubscriptions();
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void handleDeviceInstanceRetired(DeviceInstanceRetiredEvent event) {
+        syncRuntimeSubscriptions();
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void handleDeviceInstanceDeleted(DeviceInstanceDeletedEvent event) {
+        syncRuntimeSubscriptions();
+    }
+
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
+    public void handleAdapterDeleted(AdapterDeletedEvent event) {
+        syncRuntimeSubscriptions();
+    }
+
+    @Override
+    public void connectComplete(boolean reconnect, String serverURI) {
+        executor.execute(this::syncRuntimeSubscriptions);
     }
 
     @Override
@@ -311,8 +392,7 @@ public class MqttAdapterMessagingService implements MqttCallback {
 
     private void tryStartRegistrationListener(boolean warnOnFailure) {
         try {
-            subscribeRegistrationTopics();
-            subscribeKnownDevicePointTopics();
+            reconcileSubscriptions();
         } catch (Exception e) {
             if (warnOnFailure) {
                 log.warn("MQTT 未连接，系统将继续启动并在首页展示状态: {}", e.getMessage());
@@ -332,7 +412,7 @@ public class MqttAdapterMessagingService implements MqttCallback {
             if (adapterName.isBlank()) {
                 throw new IllegalArgumentException("Adapter 注册报文缺少 adapterName");
             }
-            if (adapterIndexService.getByName(adapterName) != null) {
+            if (adapterIndexService.hasCompletedRegistration(adapterName)) {
                 pendingAdapterRegistrations.remove(adapterName);
                 emitRegistrationEvent("pending_snapshot", pendingAdapterRegistrations());
                 log.info("收到 Adapter 注册请求，但 {} 已在数据库中完成注册，忽略该待审核请求", adapterName);
@@ -371,13 +451,31 @@ public class MqttAdapterMessagingService implements MqttCallback {
         if ("telemetryTopic".equals(topicMatch.topicName())) {
             protocolDictionaryService.validateDefinition("TelemetryMessageFormat", payload);
             validatePayloadIdentity(variables, payload);
-            protocolMapperService.applyTelemetry(adapterName, variables.get("devicePoint"), payload);
+            String formatType = payload.path("formatType").asText("SINGLE").trim().toUpperCase();
+            if ("BATCH".equals(formatType)) {
+                protocolMapperService.applyBatchTelemetry(adapterName, variables.get("devicePoint"), payload);
+            } else {
+                protocolMapperService.applyTelemetry(adapterName, variables.get("devicePoint"), payload);
+            }
             return;
         }
         if ("eventTopic".equals(topicMatch.topicName())) {
             protocolDictionaryService.validateDefinition("EventMessageFormat", payload);
             validatePayloadIdentity(variables, payload);
             protocolMapperService.applyAdapterEvent(adapterName, variables.get("devicePoint"), payload);
+            return;
+        }
+        if ("leaseResultTopic".equals(topicMatch.topicName())) {
+            protocolDictionaryService.validateDefinition("LeaseResultFormat", payload);
+            if (!adapterName.equals(payload.path("adapterName").asText(""))) {
+                throw new IllegalArgumentException("MQTT topic 与 payload adapterName 不一致: topic="
+                        + adapterName + ", payload=" + payload.path("adapterName").asText(""));
+            }
+            if (events == null) {
+                log.warn("收到租约结果但未装配事件总线, leaseId={}", payload.path("leaseId"));
+                return;
+            }
+            events.publishEvent(new AdapterLeaseResultEvent(payload));
         }
     }
 
@@ -391,40 +489,94 @@ public class MqttAdapterMessagingService implements MqttCallback {
                     + topicAdapter + "/" + topicPoint + ", payload=" + payloadAdapter + "/" + payloadPoint);
         }
     }
-    private void trySubscribeAdapterHeartbeat(String adapterName) {
-        if (adapterName == null || adapterName.isBlank()) {
-            return;
-        }
+    private void reconcileSubscriptions() {
+        Set<String> desired = desiredRuntimeTopics();
         try {
-            subscribeTopics(protocolDictionaryService.resolveMqttTopic("heartbeatTopic", Map.of("adapterName", adapterName)));
+            connectIfNeeded();
         } catch (Exception e) {
-            log.warn("MQTT Adapter 心跳订阅暂未成功, adapter={}, reason={}", adapterName, e.getMessage());
+            markError(e);
+            throw new IllegalStateException("MQTT 订阅同步失败: " + e.getMessage(), e);
         }
+        applySubscriptionDiff(desired);
     }
 
-    private void subscribeKnownDevicePointTopics() {
-        Map<String, AdapterRouteDTO> routes = protocolMapperService.refreshAdapterRouteTable();
-        List<String> topics = new ArrayList<>();
-        Set<String> adapterNames = new java.util.LinkedHashSet<>();
+    Set<String> desiredRuntimeTopics() {
+        Set<String> desired = new LinkedHashSet<>();
+        desired.add(registerTopic());
+        Set<String> adapterNames = new LinkedHashSet<>();
         for (AdapterIndex adapter : adapterIndexService.list()) {
-            if (adapter.getParsedConfig() != null && adapter.getAdapterName() != null && !adapter.getAdapterName().isBlank()) {
-                adapterNames.add(adapter.getAdapterName());
+            if (adapter == null || adapter.getAdapterName() == null || adapter.getAdapterName().isBlank()) {
+                continue;
             }
+            if (!adapterIndexService.hasCompletedRegistration(adapter)) {
+                continue;
+            }
+            adapterNames.add(adapter.getAdapterName());
         }
+        Map<String, AdapterRouteDTO> routes = protocolMapperService.refreshAdapterRouteTable();
         for (AdapterRouteDTO route : routes.values()) {
             String adapterName = route.getBoundAdapterName();
             String devicePoint = route.getBoundDevicePoint();
-            if (adapterName == null || adapterName.isBlank() || devicePoint == null || devicePoint.isBlank()) continue;
+            if (adapterName == null || adapterName.isBlank() || devicePoint == null || devicePoint.isBlank()) {
+                continue;
+            }
             adapterNames.add(adapterName);
-            topics.add(protocolDictionaryService.resolveMqttTopic("telemetryTopic", Map.of(
+            desired.add(protocolDictionaryService.resolveMqttTopic("telemetryTopic", Map.of(
                     "adapterName", adapterName, "devicePoint", devicePoint)));
-            topics.add(protocolDictionaryService.resolveMqttTopic("eventTopic", Map.of(
+            desired.add(protocolDictionaryService.resolveMqttTopic("eventTopic", Map.of(
                     "adapterName", adapterName, "devicePoint", devicePoint)));
         }
         for (String adapterName : adapterNames) {
-            topics.add(protocolDictionaryService.resolveMqttTopic("heartbeatTopic", Map.of("adapterName", adapterName)));
+            desired.add(protocolDictionaryService.resolveMqttTopic("heartbeatTopic", Map.of("adapterName", adapterName)));
+            desired.add(protocolDictionaryService.resolveMqttTopic("leaseResultTopic", Map.of("adapterName", adapterName)));
         }
-        subscribeTopics(topics.toArray(String[]::new));
+        return desired;
+    }
+
+    TopicSubscriptionDiff diffAgainst(Set<String> desired) {
+        Set<String> toUnsubscribe = new LinkedHashSet<>(subscribedTopics);
+        toUnsubscribe.removeAll(desired);
+        Set<String> toSubscribe = new LinkedHashSet<>(desired);
+        toSubscribe.removeAll(subscribedTopics);
+        return new TopicSubscriptionDiff(Set.copyOf(toSubscribe), Set.copyOf(toUnsubscribe));
+    }
+
+    void replaceTrackedSubscriptions(Collection<String> topics) {
+        subscribedTopics.clear();
+        if (topics != null) {
+            subscribedTopics.addAll(topics);
+        }
+    }
+
+    Set<String> trackedSubscriptions() {
+        return Set.copyOf(subscribedTopics);
+    }
+
+    record TopicSubscriptionDiff(Set<String> toSubscribe, Set<String> toUnsubscribe) {
+    }
+
+    private synchronized void applySubscriptionDiff(Set<String> desired) {
+        if (!isConnected()) {
+            return;
+        }
+        TopicSubscriptionDiff diff = diffAgainst(desired);
+        for (String topic : diff.toUnsubscribe()) {
+            try {
+                client.unsubscribe(topic);
+                subscribedTopics.remove(topic);
+                log.info("MQTT 已退订: {}", topic);
+            } catch (Exception e) {
+                log.warn("MQTT 退订失败, topic={}, reason={}", topic, e.getMessage());
+            }
+        }
+        for (String topic : desired) {
+            try {
+                client.subscribe(topic, 1);
+                subscribedTopics.add(topic);
+            } catch (Exception e) {
+                log.warn("MQTT 订阅失败, topic={}, reason={}", topic, e.getMessage());
+            }
+        }
     }
 
     private synchronized void connectIfNeeded() throws MqttException {
@@ -455,23 +607,6 @@ public class MqttAdapterMessagingService implements MqttCallback {
         } catch (MqttException e) {
             markError(e);
             throw e;
-        }
-    }
-
-    private synchronized void subscribeTopics(String... topics) {
-        try {
-            for (String topic : topics) {
-                if (topic != null && !topic.isBlank()) {
-                    subscribedTopics.add(topic);
-                }
-            }
-            connectIfNeeded();
-            for (String topic : subscribedTopics) {
-                client.subscribe(topic, 1);
-            }
-        } catch (Exception e) {
-            markError(e);
-            throw new IllegalStateException("MQTT 订阅失败: " + e.getMessage(), e);
         }
     }
 

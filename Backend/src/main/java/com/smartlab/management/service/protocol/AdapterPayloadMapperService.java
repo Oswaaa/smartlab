@@ -7,6 +7,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.engine.statemachine.StateMachineEngine;
 import com.smartlab.global.event.DeviceTelemetryUpdatedEvent;
 import com.smartlab.global.protocol.ProtocolDictionaryService;
+import com.smartlab.global.contract.MqttTopic;
+import com.smartlab.management.entity.resource.device.DeviceInstanceKind;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.adapter.AdapterManifestService;
 import com.smartlab.management.dto.resource.adapter.AdapterRouteDTO;
@@ -31,6 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -151,6 +154,32 @@ public class AdapterPayloadMapperService {
         return result;
     }
 
+    public ObjectNode buildVirtualAdapterBinding(DeviceInstances physical, String virtualDevicePoint) {
+        if (physical == null || !DeviceInstanceKind.isPhysical(physical)) {
+            throw new IllegalArgumentException("虚拟绑定必须从物理实例克隆");
+        }
+        String virtualPoint = MqttTopic.requireSafeSegment("devicePoint", virtualDevicePoint);
+        JsonNode stored = physical.getInstanceConfig() == null
+                ? null
+                : physical.getInstanceConfig().path("adapterBinding");
+        ObjectNode binding;
+        if (stored != null && stored.isObject() && !stored.isEmpty()) {
+            binding = (ObjectNode) stored.deepCopy();
+        } else {
+            binding = buildAdapterBinding(
+                    physical.getDeviceModelId(),
+                    physical.getBoundAdapterName(),
+                    physical.getBoundDevicePoint());
+        }
+        binding.put("devicePoint", virtualPoint);
+        String adapterName = physical.getBoundAdapterName().trim();
+        ObjectNode topics = binding.putObject("topics");
+        topics.put("command", commandTopic(adapterName, virtualPoint));
+        topics.put("telemetry", telemetryTopic(adapterName, virtualPoint));
+        topics.put("event", eventTopic(adapterName, virtualPoint));
+        return binding;
+    }
+
     public ObjectNode buildAdapterBinding(Long modelId, String adapterName, String devicePoint) {
         if (modelId == null) {
             throw new IllegalArgumentException("设备实例缺少 deviceModelId");
@@ -211,8 +240,7 @@ public class AdapterPayloadMapperService {
                 contract == null ? null : contract.path("telemetry").path("attributesMapping"))) {
             String modelAttr = mapping.path("modelAttributeName").asText("");
             String templateAttr = mapping.path("adapterAttrName").asText("");
-            String rawAttr = templateAttr; // attributeMapping removed - use template name directly
-            if (modelAttr.isBlank() || templateAttr.isBlank() || rawAttr.isBlank()) {
+            if (modelAttr.isBlank() || templateAttr.isBlank()) {
                 continue;
             }
             String modelType = modelAttrTypes.get(modelAttr);
@@ -221,12 +249,11 @@ public class AdapterPayloadMapperService {
                 throw new IllegalArgumentException("实例属性映射类型不一致: " + modelAttr + " -> " + templateAttr);
             }
 
-            modelToRaw.put(modelAttr, rawAttr);
+            modelToRaw.put(modelAttr, templateAttr);
             rawToModel.put(templateAttr, modelAttr);
             ObjectNode row = resolved.addObject();
             row.put("modelAttributeName", modelAttr);
             row.put("templateAttributeName", templateAttr);
-            row.put("rawAttributeName", templateAttr);
             row.put("dataType", modelType == null ? Objects.toString(adapterType, "STRING") : modelType);
         }
         return binding;
@@ -267,7 +294,7 @@ public class AdapterPayloadMapperService {
         Long instanceId = route.getDeviceInstanceId();
         getOrCreateTwinState(instanceId);
         OffsetDateTime now = OffsetDateTime.now();
-        int updated = twinStatesMapper.patchAttributes(instanceId, mappedValues.toString(), now, now);
+        int updated = twinStatesMapper.patchAttributesOnly(instanceId, mappedValues.toString(), now);
         if (updated != 1) {
             throw new IllegalStateException("设备属性快照更新失败: " + instanceId);
         }
@@ -283,6 +310,74 @@ public class AdapterPayloadMapperService {
         }
         eventPublisher.publishEvent(new DeviceTelemetryUpdatedEvent(
                 instanceId, route.getDeviceModelId(), mappedValues.deepCopy(), sourceTime));
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public void applyBatchTelemetry(String adapterName, String devicePoint, JsonNode message) {
+        AdapterRouteDTO route = resolveAdapterRoute(adapterName, devicePoint);
+        if (route == null) {
+            return;
+        }
+        JsonNode items = message == null ? null : message.path("items");
+        if (items == null || !items.isArray() || items.isEmpty()) {
+            return;
+        }
+        Map<String, String> rawToModel = route.getRawToModelMap();
+        if (rawToModel == null || rawToModel.isEmpty()) {
+            return;
+        }
+        Long instanceId = route.getDeviceInstanceId();
+        List<DataIndex> dataIndexes = dataIndexService.listByDeviceInstance(instanceId);
+        if (dataIndexes == null || dataIndexes.isEmpty()) {
+            throw new IllegalStateException("设备实例缺少数据集，拒绝产生不可追溯的遥测状态: " + instanceId);
+        }
+
+        List<Map<String, Object>> records = new ArrayList<>(items.size());
+        ObjectNode lastMappedValues = null;
+        Instant lastSourceTime = null;
+
+        for (JsonNode item : items) {
+            if (item == null || !item.isObject()) continue;
+            long itemTs = item.path("timestamp").asLong(0L);
+            Instant sourceTime = itemTs > 0L ? Instant.ofEpochMilli(itemTs) : Instant.now();
+            JsonNode data = item.path("telemetryData");
+            if (data == null || !data.isObject()) continue;
+
+            ObjectNode mappedValues = JsonNodeSupport.objectNode();
+            data.fields().forEachRemaining(entry -> {
+                String modelAttr = rawToModel.get(entry.getKey());
+                if (modelAttr == null || modelAttr.isBlank()) return;
+                JsonNode definition = findResolvedAttribute(route.getResolvedAttributes(), entry.getKey(), modelAttr);
+                if (definition != null) {
+                    mappedValues.set(modelAttr, validatedValue(
+                            entry.getValue(), definition, "telemetry." + entry.getKey()));
+                }
+            });
+            if (mappedValues.isEmpty()) continue;
+
+            Map<String, Object> recordMap = new HashMap<>();
+            mappedValues.fields().forEachRemaining(entry -> recordMap.put(entry.getKey(), recordValue(entry.getValue())));
+            recordMap.put("create_time", sourceTime);
+            records.add(recordMap);
+
+            lastMappedValues = mappedValues;
+            lastSourceTime = sourceTime;
+        }
+
+        if (records.isEmpty()) {
+            return;
+        }
+
+        for (DataIndex index : dataIndexes) {
+            dataRecordService.appendRecords(index.getId(), records, lastSourceTime);
+        }
+
+        if (lastMappedValues != null) {
+            getOrCreateTwinState(instanceId);
+            twinStatesMapper.patchAttributesOnly(instanceId, lastMappedValues.toString(), OffsetDateTime.now());
+            eventPublisher.publishEvent(new DeviceTelemetryUpdatedEvent(
+                    instanceId, route.getDeviceModelId(), lastMappedValues.deepCopy(), lastSourceTime));
+        }
     }
 
     private Object recordValue(JsonNode value) {
@@ -372,9 +467,9 @@ public class AdapterPayloadMapperService {
         return result;
     }
 
-    private JsonNode findResolvedAttribute(JsonNode resolvedAttributes, String rawName, String modelName) {
+    private JsonNode findResolvedAttribute(JsonNode resolvedAttributes, String adapterAttrName, String modelName) {
         for (JsonNode definition : iterable(resolvedAttributes)) {
-            if (rawName.equals(definition.path("rawAttributeName").asText(""))
+            if (adapterAttrName.equals(definition.path("templateAttributeName").asText(""))
                     && modelName.equals(definition.path("modelAttributeName").asText(""))) {
                 return definition;
             }

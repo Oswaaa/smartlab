@@ -4,6 +4,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.global.contract.ConstraintOperator;
 import com.smartlab.global.contract.DataType;
+import com.smartlab.global.contract.SystemExecutionContract;
+import com.smartlab.global.contract.TaskLifecycleState;
 import com.smartlab.global.contract.WorkflowNodeActionType;
 import com.smartlab.global.contract.WorkflowNodeFunctionType;
 import com.smartlab.global.contract.WorkflowNodeSystemContract;
@@ -32,6 +34,10 @@ public class WorkflowDefinitionCompiler {
     private static final Set<String> FUNCTION_TYPES = enumNames(WorkflowNodeFunctionType.values());
     private static final Set<String> ACTION_TYPES = enumNames(WorkflowNodeActionType.values());
     private static final Set<String> DATA_TYPES = enumNames(DataType.values());
+    private static final Set<String> TRIGGER_SYSTEM_OBJECTS = Set.of(
+            "nodeLifecycleState", "taskLifecycleState", "signalName", "payload.stateName");
+    private static final Set<String> TASK_LIFECYCLE_STATES = enumNames(TaskLifecycleState.values());
+    private static final Set<String> COMMAND_STATE_NAMES = Set.copyOf(SystemExecutionContract.commandStateNames());
 
 
     private final WorkflowDefinitionCanonicalizer canonicalizer = new WorkflowDefinitionCanonicalizer();
@@ -141,6 +147,12 @@ public class WorkflowDefinitionCompiler {
             }
             if (variable.has("attributesMapping") && !variable.path("attributesMapping").isTextual()) {
                 throw nodeError(name, "internalVariables[" + position + "].attributesMapping", "必须是字符串");
+            }
+            if (variable.path("attributesMapping").isTextual()
+                    && !variable.path("attributesMapping").asText().isBlank()
+                    && !WorkflowNodeType.DEV_NODE.name().equals(type)) {
+                throw nodeError(name, "internalVariables[" + position + "].attributesMapping",
+                        "attributesMapping只允许出现在DEV_NODE");
             }
             position++;
         }
@@ -282,7 +294,7 @@ public class WorkflowDefinitionCompiler {
                 String triggerPath = "interfaces[" + interfacePosition + "].bindingTriggers[" + triggerPosition + "]";
                 JsonNode condition = trigger.path("condition");
                 if (!condition.isObject()) throw nodeError(index.nodeName(), triggerPath + ".condition", "必须是对象");
-                validateTriggerCondition(index, condition, triggerPath + ".condition");
+                validateTriggerCondition(index, node, item, condition, triggerPath + ".condition");
                 java.util.List<JsonNode> actions = WorkflowTriggerState.actions(trigger);
                 if (actions.isEmpty()) {
                     throw nodeError(index.nodeName(), triggerPath, "必须配置action或非空actions");
@@ -378,7 +390,8 @@ public class WorkflowDefinitionCompiler {
         }
     }
 
-    private void validateTriggerCondition(NodeIndex index, JsonNode condition, String conditionPath) {
+    private void validateTriggerCondition(NodeIndex index, JsonNode node, JsonNode hostInterface,
+                                          JsonNode condition, String conditionPath) {
         if (condition.has("logic") || condition.has("conditions")) {
             String logic = requiredText(condition, "logic",
                     nodePath(index.nodeName(), conditionPath + ".logic") + ": 不能为空");
@@ -396,15 +409,16 @@ public class WorkflowDefinitionCompiler {
                 if (item.has("logic") || item.has("conditions")) {
                     throw nodeError(index.nodeName(), itemPath, "工作流条件组不支持嵌套");
                 }
-                validateTriggerPredicate(index, item, itemPath);
+                validateTriggerPredicate(index, node, hostInterface, item, itemPath);
                 position++;
             }
             return;
         }
-        validateTriggerPredicate(index, condition, conditionPath);
+        validateTriggerPredicate(index, node, hostInterface, condition, conditionPath);
     }
 
-    private void validateTriggerPredicate(NodeIndex index, JsonNode condition, String conditionPath) {
+    private void validateTriggerPredicate(NodeIndex index, JsonNode node, JsonNode hostInterface,
+                                          JsonNode condition, String conditionPath) {
         String object = requiredText(condition, "object",
                 nodePath(index.nodeName(), conditionPath + ".object") + ": 不能为空");
         String operator = requiredText(condition, "operator",
@@ -416,9 +430,30 @@ public class WorkflowDefinitionCompiler {
             throw nodeError(index.nodeName(), conditionPath + ".threshold", "不能为空");
         }
         JsonNode variable = index.variables().get(object);
-        if (variable != null && !matchesDataType(condition.path("threshold"), variable.path("dataType").asText())) {
-            throw nodeError(index.nodeName(), conditionPath + ".threshold",
-                    "与内部变量" + object + "的数据类型不一致");
+        if (variable != null) {
+            if (!matchesDataType(condition.path("threshold"), variable.path("dataType").asText())) {
+                throw nodeError(index.nodeName(), conditionPath + ".threshold",
+                        "与内部变量" + object + "的数据类型不一致");
+            }
+            return;
+        }
+        if (!TRIGGER_SYSTEM_OBJECTS.contains(object)) {
+            throw nodeError(index.nodeName(), conditionPath + ".object",
+                    "触发条件object必须是本节点内部变量或系统标识: " + object);
+        }
+        JsonNode threshold = condition.path("threshold");
+        if ("nodeLifecycleState".equals(object)) {
+            requireNamedThreshold(index.nodeName(), conditionPath, threshold,
+                    namedValues(node.path("lifecycle").path("states")), "生命周期状态不存在");
+        } else if ("taskLifecycleState".equals(object)) {
+            requireNamedThreshold(index.nodeName(), conditionPath, threshold,
+                    TASK_LIFECYCLE_STATES, "任务生命周期状态不存在");
+        } else if ("payload.stateName".equals(object)) {
+            requireNamedThreshold(index.nodeName(), conditionPath, threshold,
+                    COMMAND_STATE_NAMES, "指令状态不存在");
+        } else if ("signalName".equals(object) && "IN".equals(hostInterface.path("direction").asText())) {
+            requireNamedThreshold(index.nodeName(), conditionPath, threshold,
+                    namedValues(hostInterface.path("allowedSignals")), "信号不在接口允许列表中");
         }
     }
 
@@ -845,6 +880,35 @@ public class WorkflowDefinitionCompiler {
     private boolean contains(JsonNode values, String value) {
         for (JsonNode item : iterable(values)) if (value.equals(item.asText())) return true;
         return false;
+    }
+
+    private Set<String> namedValues(JsonNode values) {
+        Set<String> result = new HashSet<>();
+        for (JsonNode item : iterable(values)) {
+            if (item.isTextual() && !item.asText().isBlank()) result.add(item.asText());
+        }
+        return result;
+    }
+
+    private void requireNamedThreshold(String nodeName, String conditionPath, JsonNode threshold,
+                                       Set<String> allowed, String reason) {
+        if (threshold != null && threshold.isArray()) {
+            if (threshold.isEmpty()) {
+                throw nodeError(nodeName, conditionPath + ".threshold", reason);
+            }
+            for (JsonNode item : threshold) {
+                String value = item != null && item.isTextual() ? item.asText() : String.valueOf(item);
+                if (item == null || !item.isTextual() || !allowed.contains(item.asText())) {
+                    throw nodeError(nodeName, conditionPath + ".threshold", reason + ": " + value);
+                }
+            }
+            return;
+        }
+        if (threshold == null || !threshold.isTextual() || !allowed.contains(threshold.asText())) {
+            String value = threshold == null || threshold.isNull() ? "" : threshold.asText();
+            throw nodeError(nodeName, conditionPath + ".threshold",
+                    value.isBlank() ? reason : reason + ": " + value);
+        }
     }
 
     private Set<String> protocolSignals(String interfaceType, String direction) {

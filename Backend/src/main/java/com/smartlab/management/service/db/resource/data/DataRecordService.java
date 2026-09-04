@@ -2,6 +2,7 @@ package com.smartlab.management.service.db.resource.data;
 
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.smartlab.management.dto.common.PageResult;
+import com.smartlab.management.dto.resource.data.DataSeriesResponse;
 import com.smartlab.management.entity.resource.data.DataIndex;
 import com.smartlab.management.entity.resource.data.DataTemplateDetail;
 import com.smartlab.management.mapper.resource.data.DataIndexMapper;
@@ -13,6 +14,7 @@ import org.springframework.transaction.annotation.Transactional;
 import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -84,6 +86,107 @@ public class DataRecordService {
     }
 
     /**
+     * 查询遥测走势图时序窗口。
+     * <ul>
+     *   <li>未传 from/to（live）：对齐 Grafana「Last 1h」——轴宽固定 windowMinutes，右边界贴最新采样；
+     *       数据不足 1 小时时左侧留空，不缩短轴宽。</li>
+     *   <li>传入 from/to：按绝对时间窗查询，跨度不超过 60 分钟。</li>
+     * </ul>
+     */
+    public DataSeriesResponse seriesByDataIndexId(Long dataIndexId,
+                                                  int windowMinutes,
+                                                  int maxPoints,
+                                                  String from,
+                                                  String to) {
+        DataIndex index = requireDataIndex(dataIndexId);
+        String table = quoteIdentifier(index.getDataTable());
+        int window = Math.min(Math.max(windowMinutes, 1), 60);
+        int limit = Math.min(Math.max(maxPoints, 1), 10_000);
+
+        OffsetDateTime latestAvailable = jdbcTemplate.queryForObject(
+                "select max(create_time) from " + table,
+                OffsetDateTime.class
+        );
+        OffsetDateTime earliestAvailable = jdbcTemplate.queryForObject(
+                "select min(create_time) from " + table,
+                OffsetDateTime.class
+        );
+        if (latestAvailable == null) {
+            OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+            return new DataSeriesResponse(now.minusMinutes(window), now, null, null, true, List.of());
+        }
+        if (earliestAvailable == null) {
+            earliestAvailable = latestAvailable;
+        }
+
+        boolean live = (from == null || from.isBlank()) && (to == null || to.isBlank());
+        OffsetDateTime windowEnd;
+        OffsetDateTime windowStart;
+        if (live) {
+            windowEnd = latestAvailable;
+            OffsetDateTime oneHourAgo = windowEnd.minusMinutes(window);
+            // 若最早采样距今不足 window 分钟（如任务刚开始），直接从最早采样开始显示，不向前预留无意义空白
+            if (earliestAvailable != null && oneHourAgo.isBefore(earliestAvailable)) {
+                windowStart = earliestAvailable;
+                if (!windowEnd.isAfter(windowStart.plusSeconds(5))) {
+                    windowEnd = windowStart.plusSeconds(5);
+                }
+            } else {
+                windowStart = oneHourAgo;
+            }
+        } else {
+            windowStart = parseSeriesInstant(from, "from");
+            windowEnd = parseSeriesInstant(to, "to");
+            if (!windowEnd.isAfter(windowStart)) {
+                throw new IllegalArgumentException("to 必须晚于 from");
+            }
+            long spanMinutes = java.time.Duration.between(windowStart, windowEnd).toMinutes();
+            if (spanMinutes > 60) {
+                windowStart = windowEnd.minusMinutes(60);
+            }
+        }
+        // 查询下界可夹在最早采样，但 live 响应仍返回完整 windowStart，保证前端轴宽恒定。
+        OffsetDateTime queryStart = windowStart;
+        OffsetDateTime queryEnd = windowEnd;
+        if (queryStart.isBefore(earliestAvailable)) {
+            queryStart = earliestAvailable;
+        }
+        if (queryEnd.isAfter(latestAvailable)) {
+            queryEnd = latestAvailable;
+        }
+        if (queryEnd.isBefore(queryStart)) {
+            queryEnd = queryStart;
+        }
+        if (!live) {
+            windowStart = queryStart;
+            windowEnd = queryEnd;
+        }
+
+        List<Map<String, Object>> records = jdbcTemplate.queryForList(
+                "select * from " + table + " where create_time >= ? and create_time <= ? order by create_time asc limit ?",
+                queryStart,
+                queryEnd,
+                limit
+        );
+        return new DataSeriesResponse(windowStart, windowEnd, earliestAvailable, latestAvailable, live, records);
+    }
+
+    private OffsetDateTime parseSeriesInstant(String value, String label) {
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(label + " 不能为空");
+        }
+        try {
+            String trimmed = value.trim();
+            if (trimmed.chars().allMatch(Character::isDigit)) {
+                return OffsetDateTime.ofInstant(Instant.ofEpochMilli(Long.parseLong(trimmed)), ZoneOffset.UTC);
+            }
+            return OffsetDateTime.ofInstant(Instant.parse(trimmed), ZoneOffset.UTC);
+        } catch (DateTimeParseException | NumberFormatException ex) {
+            throw new IllegalArgumentException(label + " 时间格式非法: " + value);
+        }
+    }
+
+    /**
      * 向指定数据集追加一行记录。
      */
     @Transactional(rollbackFor = Exception.class)
@@ -123,7 +226,20 @@ public class DataRecordService {
             if (row.isEmpty()) {
                 continue;
             }
-            row.put("create_time", recordTime);
+            if (record.containsKey("create_time") && record.get("create_time") != null) {
+                Object ct = record.get("create_time");
+                if (ct instanceof OffsetDateTime odt) {
+                    row.put("create_time", odt);
+                } else if (ct instanceof Instant inst) {
+                    row.put("create_time", OffsetDateTime.ofInstant(inst, ZoneOffset.UTC));
+                } else if (ct instanceof Number num) {
+                    row.put("create_time", OffsetDateTime.ofInstant(Instant.ofEpochMilli(num.longValue()), ZoneOffset.UTC));
+                } else {
+                    row.put("create_time", recordTime);
+                }
+            } else {
+                row.put("create_time", recordTime);
+            }
             insertRow(table, row);
             inserted++;
         }

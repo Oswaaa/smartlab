@@ -10,9 +10,12 @@ import com.smartlab.management.entity.resource.device.DeviceInstanceLifecycle;
 import com.smartlab.management.mapper.resource.data.DataIndexMapper;
 import com.smartlab.management.mapper.resource.data.DataTemplateDetailMapper;
 import com.smartlab.management.mapper.resource.data.DataTemplateMainMapper;
+import com.smartlab.management.entity.resource.adapter.VirtualLease;
+import com.smartlab.management.mapper.resource.adapter.VirtualLeaseMapper;
 import com.smartlab.management.mapper.resource.device.PropertyTypeMapper;
 import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
 import com.smartlab.management.service.db.common.ManagementCrudService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,6 +51,7 @@ public class DataIndexService extends ManagementCrudService<DataIndex> {
     private final PropertyTypeMapper propertyTypeMapper;
     private final JdbcTemplate jdbcTemplate;
     private final DeviceInstancesMapper deviceInstancesMapper;
+    private VirtualLeaseMapper virtualLeaseMapper;
 
     public DataIndexService(DataIndexMapper mapper,
                             DataTemplateMainMapper templateMainMapper,
@@ -62,6 +66,11 @@ public class DataIndexService extends ManagementCrudService<DataIndex> {
         this.propertyTypeMapper = propertyTypeMapper;
         this.jdbcTemplate = jdbcTemplate;
         this.deviceInstancesMapper = deviceInstancesMapper;
+    }
+
+    @Autowired(required = false)
+    public void setVirtualLeaseMapper(VirtualLeaseMapper virtualLeaseMapper) {
+        this.virtualLeaseMapper = virtualLeaseMapper;
     }
 
     public List<DataIndex> listByDeviceInstance(Long deviceInstanceId) {
@@ -204,7 +213,31 @@ public class DataIndexService extends ManagementCrudService<DataIndex> {
             throw new IllegalStateException("数据集缺少物理表名，无法删除");
         }
         jdbcTemplate.execute("drop table if exists " + quoteIdentifier(index.getDataTable()));
+        clearLeasePointers(dataIndexId);
         mapper.deleteById(dataIndexId);
+    }
+
+    /**
+     * 拆除虚拟机前解绑：只把 device_instance_id 置空，不 DROP 物理表。
+     * deviceInstanceId 为 null 时不操作，避免误伤全部归档表。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public int detachFromInstance(Long deviceInstanceId) {
+        if (deviceInstanceId == null) {
+            return 0;
+        }
+        return mapper.update(null, Wrappers.<DataIndex>lambdaUpdate()
+                .eq(DataIndex::getDeviceInstanceId, deviceInstanceId)
+                .setSql("device_instance_id = null"));
+    }
+
+    private void clearLeasePointers(Long dataIndexId) {
+        if (virtualLeaseMapper == null || dataIndexId == null) {
+            return;
+        }
+        virtualLeaseMapper.update(null, Wrappers.<VirtualLease>lambdaUpdate()
+                .eq(VirtualLease::getDataIndexId, dataIndexId)
+                .setSql("data_index_id = null"));
     }
 
     private boolean hasDataSet(Long deviceInstanceId, Long templateId) {

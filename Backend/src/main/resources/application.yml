@@ -33,14 +33,19 @@ smartlab:
     scan-interval-ms: ${SMARTLAB_CONSTRAINT_SCAN_INTERVAL_MS:200}
   workflow:
     poll-interval-ms: ${SMARTLAB_WORKFLOW_POLL_INTERVAL_MS:100}
+    simulation-timeout-seconds: ${SMARTLAB_WORKFLOW_SIMULATION_TIMEOUT_SECONDS:60}
     core-pool-size: ${SMARTLAB_WORKFLOW_CORE_POOL_SIZE:4}
     max-pool-size: ${SMARTLAB_WORKFLOW_MAX_POOL_SIZE:8}
     queue-capacity: ${SMARTLAB_WORKFLOW_QUEUE_CAPACITY:200}
+  virtual-lease:
+    grant-timeout-seconds: ${SMARTLAB_VIRTUAL_LEASE_GRANT_TIMEOUT_SECONDS:15}
+    poke-idle-timeout-seconds: ${SMARTLAB_VIRTUAL_LEASE_POKE_IDLE_TIMEOUT_SECONDS:3600}
+    poke-expire-scan-ms: ${SMARTLAB_VIRTUAL_LEASE_POKE_EXPIRE_SCAN_MS:30000}
   agent:
     enabled: true
     provider: openai-compatible
     base-url: ${SMARTLAB_AGENT_BASE_URL:https://api.deepseek.com}
-    api-key: ${SMARTLAB_AGENT_API_KEY:}
+    api-key: ${SMARTLAB_AGENT_API_KEY:sk-86cd7eeccfc2414898bf05e970150dca}
     model: ${SMARTLAB_AGENT_MODEL:deepseek-v4-pro}
     max-rounds: 12
     validate-retries: 3

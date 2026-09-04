@@ -62,6 +62,22 @@ class InterfaceConnectionCatalogTest {
     }
 
     @Test
+    void resolvesNodeToDeviceFromCompiledConnectionsWithoutSavedDefinition() {
+        WorkflowDefinitionCompiler.CompiledWorkflow compiled = new WorkflowDefinitionCompiler.CompiledWorkflow(
+                Map.of(), Map.of(), Map.of(), Map.of("heat", 2L), 1L, 3L);
+        ObjectNode outbound = JsonNodeSupport.objectNode().put("connectionType", "NODE_TO_DEVICE");
+        outbound.set("source", JsonNodeSupport.objectNode().put("nodeName", "heat").put("interfaceName", "state-out"));
+        outbound.set("target", JsonNodeSupport.objectNode().put("deviceModelId", 21L).put("interfaceName", "Interface_cmd_in"));
+
+        InterfaceConnectionCatalog.NodeToDeviceRoute route = catalog.nodeToDevice(
+                compiled, JsonNodeSupport.arrayNode().add(outbound), 2L, 21L);
+
+        assertThat(route.nodeOutputInterfaceName()).isEqualTo("state-out");
+        assertThat(route.deviceInputInterfaceName()).isEqualTo("Interface_cmd_in");
+        assertThat(route.deviceModelId()).isEqualTo(21L);
+    }
+
+    @Test
     void resolvesDeviceToNodeEdgeFromModel() {
         FlowNode node = node(3L, 2L, 21L);
         stubDeviceConnections();

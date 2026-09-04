@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.workflow.WorkflowDetailResponse;
 import com.smartlab.management.dto.workflow.WorkflowIssue;
+import com.smartlab.management.dto.workflow.WorkflowSimulationReport;
 import com.smartlab.management.dto.workflow.WorkflowPreparationResponse;
 import org.junit.jupiter.api.Test;
 
@@ -22,7 +23,7 @@ class AgentDocumentsTest {
                 """);
         IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
                 () -> AgentDocuments.requireDocument(arguments));
-        assertTrue(error.getMessage().contains("无法解析工作流模型文件"));
+        assertTrue(error.getMessage().contains("flowModelName"));
         assertTrue(error.getMessage().contains("name"));
     }
 
@@ -37,6 +38,7 @@ class AgentDocumentsTest {
         assertFalse(result.has("definition"));
         assertTrue(result.path("blocking").asBoolean());
         assertEquals("nodes[0].name: 不能为空", result.path("issues").get(0).path("message").asText());
+        assertTrue(result.path("issues").get(0).path("repair").asText().contains("name"));
     }
 
     @Test
@@ -54,6 +56,20 @@ class AgentDocumentsTest {
     }
 
     @Test
+    void simulationResultKeepsWalkSummaryWithoutDefinition() {
+        JsonNode result = AgentDocuments.simulationNode(new WorkflowSimulationReport(
+                null, 11L, null, true,
+                List.of("start", "heat", "end"),
+                List.of(List.of("start", "heat", "end")),
+                List.of()));
+        assertFalse(result.has("definition"));
+        assertTrue(result.path("walkable").asBoolean());
+        assertEquals(11L, result.path("flowModelId").asLong());
+        assertEquals("heat", result.path("pathTaken").get(1).asText());
+        assertFalse(result.path("blocking").asBoolean());
+    }
+
+    @Test
     void documentSchemaNamesAuthoringFields() {
         JsonNode schema = AgentDocuments.documentParameterSchema();
         JsonNode document = schema.path("properties").path("document").path("properties");
@@ -62,6 +78,10 @@ class AgentDocumentsTest {
         assertTrue(document.has("metadata"));
         assertEquals("flowModelName", document.path("metadata").path("required").get(0).asText());
         assertEquals("FUNC_NODE", nodeProperties.path("nodeType").path("enum").get(0).asText());
+        assertEquals("SUBFLOW_NODE", nodeProperties.path("nodeType").path("enum").get(2).asText());
+        assertEquals("BRANCH", nodeProperties.path("functionType").path("enum").get(2).asText());
+        assertTrue(nodeProperties.has("subFlowModelId"));
+        assertTrue(nodeProperties.has("interfaces"));
         assertTrue(nodeProperties.path("capability").path("properties").has("capabilityParameters"));
         assertEquals("NODE_TO_DEVICE", connectionProperties.path("connectionType").path("enum").get(1).asText());
         assertFalse(connectionProperties.has("fromNodeId"));

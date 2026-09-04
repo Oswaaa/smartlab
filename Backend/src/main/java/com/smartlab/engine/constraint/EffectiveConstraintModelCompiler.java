@@ -13,6 +13,8 @@ import com.smartlab.management.entity.constraint.ConstraintRule;
 import com.smartlab.management.entity.workflow.Task;
 import com.smartlab.management.service.db.constraint.ConstraintRuleService;
 import com.smartlab.management.service.db.constraint.TaskConstraintService;
+import com.smartlab.management.service.db.resource.adapter.VirtualLeaseService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.nio.charset.StandardCharsets;
@@ -38,6 +40,7 @@ public class EffectiveConstraintModelCompiler {
     private final ConstraintRuleService globalRules;
     private final TaskConstraintService taskRules;
     private final DeviceTwinSnapshotRegistry devices;
+    private VirtualLeaseService virtualLeases;
     private final AtomicLong revisionSequence = new AtomicLong();
     private final ConcurrentHashMap<String, RevisionState> revisions = new ConcurrentHashMap<>();
 
@@ -47,6 +50,11 @@ public class EffectiveConstraintModelCompiler {
         this.globalRules = globalRules;
         this.taskRules = taskRules;
         this.devices = devices;
+    }
+
+    @Autowired(required = false)
+    public void setVirtualLeaseService(VirtualLeaseService virtualLeases) {
+        this.virtualLeases = virtualLeases;
     }
 
     public EffectiveConstraintModel compileRuntime() {
@@ -202,6 +210,7 @@ public class EffectiveConstraintModelCompiler {
         Map<String, ObservableKey> bindings = template.runtimeBindings();
         if (source.taskId() != null) {
             appendRuntime(template, source.taskId(), firstDevice(bindings), bindings, target);
+            inheritOntoActiveVirtuals(template, source.taskId(), bindings, target);
             return;
         }
 
@@ -226,7 +235,10 @@ public class EffectiveConstraintModelCompiler {
 
         Set<Long> explicitDevices = deviceIds(bindings);
         if (!explicitDevices.isEmpty()) {
-            for (Long deviceId : explicitDevices) appendRuntime(template, null, deviceId, bindings, target);
+            for (Long deviceId : explicitDevices) {
+                appendRuntime(template, null, deviceId, bindings, target);
+            }
+            inheritOntoActiveVirtuals(template, null, bindings, target);
             return;
         }
         boolean deviceWildcard = bindings.values().stream().anyMatch(key -> isDevice(key.sourceType()));
@@ -248,7 +260,7 @@ public class EffectiveConstraintModelCompiler {
         Map<String, ObservableKey> scoped = new LinkedHashMap<>();
         bindings.forEach((name, key) -> scoped.put(name, taskId == null ? key : withTask(key, taskId)));
         RuleSource source = template.source();
-        String scope = taskId != null ? "task:" + taskId : deviceId != null ? "device:" + deviceId : "global";
+        String scope = runtimeScope(taskId, deviceId);
         RuntimeConstraintKey key = new RuntimeConstraintKey(source.origin(), source.stableKey(), scope,
                 template.ruleVersion());
         target.put(key, new RuntimeConstraint(key, source.rule(), scoped, taskId, null, deviceId,
@@ -266,8 +278,7 @@ public class EffectiveConstraintModelCompiler {
             }
             ObjectNode copy = action.deepCopy();
             String actionType = copy.path("actionType").asText();
-            if ("DEVICE_CAPABILITY".equals(actionType)
-                    && positive(copy.get("deviceInstanceId")) == null && deviceId != null) {
+            if ("DEVICE_CAPABILITY".equals(actionType) && deviceId != null) {
                 copy.put("deviceInstanceId", deviceId);
             }
             if ("SYSTEM".equals(actionType)) {
@@ -342,6 +353,40 @@ public class EffectiveConstraintModelCompiler {
                 text(source, "targetName"),
                 text(source, "variableName")
         );
+    }
+
+    private void inheritOntoActiveVirtuals(CompiledRuleTemplate template, Long taskId,
+                                              Map<String, ObservableKey> bindings,
+                                              Map<RuntimeConstraintKey, RuntimeConstraint> target) {
+        Set<Long> explicitDevices = deviceIds(bindings);
+        for (Long deviceId : explicitDevices) {
+            for (Long virtualId : inheritedVirtualInstanceIds(deviceId)) {
+                if (virtualId == null || virtualId.equals(deviceId) || explicitDevices.contains(virtualId)) {
+                    continue;
+                }
+                appendRuntime(template, taskId, virtualId, bindDevice(bindings, virtualId), target);
+            }
+        }
+    }
+
+    private String runtimeScope(Long taskId, Long deviceId) {
+        if (taskId != null && deviceId != null) {
+            return "task:" + taskId + ":device:" + deviceId;
+        }
+        if (taskId != null) {
+            return "task:" + taskId;
+        }
+        if (deviceId != null) {
+            return "device:" + deviceId;
+        }
+        return "global";
+    }
+
+    private Set<Long> inheritedVirtualInstanceIds(Long physicalInstanceId) {
+        if (virtualLeases == null || physicalInstanceId == null) {
+            return Set.of();
+        }
+        return virtualLeases.listActiveVirtualInstanceIds(physicalInstanceId);
     }
 
     private Map<String, ObservableKey> bindDevice(Map<String, ObservableKey> source, Long deviceId) {

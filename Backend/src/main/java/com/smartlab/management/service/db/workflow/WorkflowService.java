@@ -119,6 +119,10 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
         return compiled;
     }
 
+    public WorkflowDefinitionCompiler.CompiledWorkflow compileDocument(WorkflowModelDocument document) {
+        return compiler.compile(WorkflowModelDocuments.sanitizeDocument(document));
+    }
+
     public String nodeName(Long flowModelId, Long nodeIdRef) {
         if (nodeIdRef == null) return "?";
         if (flowModelId == null) return "#" + nodeIdRef;
@@ -329,8 +333,13 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
         for (JsonNode node : compiled.nodes().values()) {
             if (!"SUBFLOW_NODE".equals(node.path("nodeType").asText())) continue;
             long subFlowId = node.path("subFlowModelId").asLong();
-            if (modelMapper.selectById(subFlowId) == null)
-                throw new IllegalArgumentException("子流程模型不存在: " + subFlowId);
+            FlowModels subflow = modelMapper.selectById(subFlowId);
+            if (subflow == null) throw new IllegalArgumentException("子流程模型不存在: " + subFlowId);
+            String status = subflow.getStatus() == null ? "" : subflow.getStatus().trim();
+            if (!"ACTIVE".equalsIgnoreCase(status)) {
+                throw new IllegalArgumentException("子流程必须是ACTIVE才能被引用: " + subFlowId
+                        + " 当前为" + (status.isBlank() ? "未设置状态" : status));
+            }
             if (request.flowModelId() != null && (request.flowModelId() == subFlowId
                     || referencesFlow(subFlowId, request.flowModelId(), new HashSet<>())))
                 throw new IllegalArgumentException("子流程引用形成递归环: " + request.flowModelId() + " -> " + subFlowId);
@@ -341,12 +350,14 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
         if (request == null || request.getNodes() == null || !request.getNodes().isArray()) {
             throw new IllegalArgumentException("nodes 必须是数组");
         }
+        Map<Long, DeviceModels> modelsById = new LinkedHashMap<>();
         for (JsonNode node : request.getNodes()) {
             if (!"DEV_NODE".equals(node.path("nodeType").asText())) continue;
             String nodeName = node.path("name").asText("");
             long modelId = node.path("deviceModelId").asLong(0);
             DeviceModels model = modelId > 0 ? deviceModelService.getById(String.valueOf(modelId)) : null;
             if (model == null) throw configurationError(nodeName, "deviceModelId", "设备模型不存在: " + modelId);
+            modelsById.put(modelId, model);
 
             JsonNode capabilityNode = node.path("capability");
             String capabilityName = capabilityNode.path("capabilityName").asText("");
@@ -357,6 +368,53 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
             validateCapabilityParameters(nodeName, capabilityNode.path("capabilityParameters"), capabilityDefinition.path("parameters"));
             validateAttributeMappings(nodeName, node.path("internalVariables"), model.getAttributes());
         }
+        validateDeviceInterfaceConnections(request.getInterfaceConnections(), modelsById);
+    }
+
+    private void validateDeviceInterfaceConnections(JsonNode connections, Map<Long, DeviceModels> modelsById) {
+        if (connections == null || !connections.isArray()) return;
+        int position = 0;
+        for (JsonNode connection : connections) {
+            String path = "interfaceConnections[" + position + "]";
+            String type = connection.path("connectionType").asText("");
+            if ("NODE_TO_DEVICE".equals(type)) {
+                JsonNode target = connection.path("target");
+                long modelId = target.path("deviceModelId").asLong(0);
+                String interfaceName = target.path("interfaceName").asText("").trim();
+                JsonNode deviceInterface = requireDeviceInterface(modelsById, modelId, interfaceName,
+                        path + ".target.interfaceName");
+                if (!"IN".equals(deviceInterface.path("direction").asText())
+                        || !"WORKFLOW".equals(deviceInterface.path("interfaceType").asText())) {
+                    throw new IllegalArgumentException(path + ".target.interfaceName: NODE_TO_DEVICE目标必须是设备IN+WORKFLOW接口: "
+                            + interfaceName);
+                }
+            } else if ("DEVICE_TO_NODE".equals(type)) {
+                JsonNode source = connection.path("source");
+                long modelId = source.path("deviceModelId").asLong(0);
+                String interfaceName = source.path("interfaceName").asText("").trim();
+                JsonNode deviceInterface = requireDeviceInterface(modelsById, modelId, interfaceName,
+                        path + ".source.interfaceName");
+                if (!"OUT".equals(deviceInterface.path("direction").asText())
+                        || !"STATE".equals(deviceInterface.path("interfaceType").asText())) {
+                    throw new IllegalArgumentException(path + ".source.interfaceName: DEVICE_TO_NODE源必须是设备OUT+STATE接口: "
+                            + interfaceName);
+                }
+            }
+            position++;
+        }
+    }
+
+    private JsonNode requireDeviceInterface(Map<Long, DeviceModels> modelsById, long modelId, String interfaceName,
+                                            String path) {
+        DeviceModels model = modelsById.get(modelId);
+        if (model == null && modelId > 0) model = deviceModelService.getById(String.valueOf(modelId));
+        if (model == null) throw new IllegalArgumentException(path + ": 设备模型不存在: " + modelId);
+        JsonNode source = model.getStateMachineInterfaces();
+        JsonNode items = source != null && source.isObject() && source.has("interfaces") ? source.get("interfaces") : source;
+        for (JsonNode item : iterable(items)) {
+            if (interfaceName.equals(item.path("name").asText())) return item;
+        }
+        throw new IllegalArgumentException(path + ": 设备状态机不存在接口: " + interfaceName);
     }
 
     private void validateCapabilityParameters(String nodeName, JsonNode values, JsonNode definitions) {

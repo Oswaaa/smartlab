@@ -600,23 +600,24 @@ function deleteInterfaceItem(target: Item) {
 
 .form-row-first {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-end;
   gap: 10px;
 }
 
 .item-name {
-  flex: 1.4;
+  flex: 1 1 180px;
   min-width: 0;
 }
 
 .item-dir {
-  width: 120px;
-  flex: none;
+  width: 112px;
+  flex: 0 0 112px;
 }
 
 .item-type {
-  width: 130px;
-  flex: none;
+  width: 124px;
+  flex: 0 0 124px;
 }
 
 .form-row-second {
@@ -642,9 +643,10 @@ function deleteInterfaceItem(target: Item) {
 
 .interface-meta-bar {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px 12px;
   padding: 10px 14px;
   background: #ffffff;
   border-bottom: 1px solid var(--sl-border-subtle, #f1f5f9);
@@ -656,6 +658,7 @@ function deleteInterfaceItem(target: Item) {
   align-items: center;
   gap: 8px;
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .interface-active-title {
@@ -677,18 +680,24 @@ function deleteInterfaceItem(target: Item) {
   display: flex;
   align-items: center;
   gap: 6px;
-  flex: none;
+  flex: 1 1 220px;
+  min-width: 0;
+  justify-content: flex-end;
 }
 
 .signals-caption {
   font-size: 10.5px;
   color: var(--sl-text-secondary, #64748b);
+  flex: none;
 }
 
 .signals-tags {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
   gap: 4px;
+  min-width: 0;
 }
 
 .signal-pill {

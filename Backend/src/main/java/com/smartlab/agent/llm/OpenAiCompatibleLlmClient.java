@@ -39,7 +39,9 @@ public class OpenAiCompatibleLlmClient implements LlmClient {
         body.put("model", properties.getModel());
         body.put("temperature", 0.2);
         body.set("messages", messagesNode(messages));
-        body.set("tools", toolsNode(tools));
+        if (tools != null && !tools.isEmpty()) {
+            body.set("tools", toolsNode(tools));
+        }
         if (usesDeepSeekThinking()) {
             body.putObject("thinking").put("type", "disabled");
         }

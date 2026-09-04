@@ -20,7 +20,7 @@
       </el-form-item>
       <el-form-item label="Adapter 设备点位" required>
         <el-select :model-value="instance.boundDevicePoint" style="width: 100%" filterable :disabled="!instance.boundAdapterName" @update:model-value="patch({ boundDevicePoint: $event })">
-          <el-option v-for="point in devicePoints" :key="point.devicePoint" :label="devicePointLabel(point)" :value="point.devicePoint" />
+            <el-option v-for="point in (devicePoints || [])" :key="point.devicePoint" :label="devicePointLabel(point)" :value="point.devicePoint" />
         </el-select>
       </el-form-item>
       <el-form-item label="出厂序列号 (SN)">

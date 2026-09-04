@@ -4,6 +4,7 @@ import {
   canDragWorkflowResource,
   canPublishWorkflow,
   clearWorkflowCanvas,
+  workflowCheckFingerprint,
   formatWorkflowExpression,
   protocolSignalCandidates,
   serializeWorkflowExpression,
@@ -19,6 +20,28 @@ import {
   workflowSuccessorConflict,
   workflowVersionLabel,
 } from '../src/utils/workflowDesignerRules.js'
+
+test('check fingerprint ignores description and layout-only fields', () => {
+  const base = {
+    name: '分段加热',
+    description: '说明 A',
+    nodesDef: [{ name: 'start' }],
+    interfaceConnections: [{ connectionType: 'NODE_TO_NODE' }],
+    portConnections: [],
+  }
+  assert.equal(
+    workflowCheckFingerprint(base),
+    workflowCheckFingerprint({ ...base, description: '说明 B' }),
+  )
+  assert.notEqual(
+    workflowCheckFingerprint(base),
+    workflowCheckFingerprint({ ...base, name: '分段加热 V2' }),
+  )
+  assert.notEqual(
+    workflowCheckFingerprint(base),
+    workflowCheckFingerprint({ ...base, nodesDef: [{ name: 'start' }, { name: 'end' }] }),
+  )
+})
 
 test('drafts can be published without entering edit mode', () => {
   const draft = { id: 2, status: 'DRAFT' }

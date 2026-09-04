@@ -5,6 +5,7 @@ import com.smartlab.management.dto.workflow.WorkflowIssue;
 import com.smartlab.management.mapper.workflow.TaskMapper;
 import com.smartlab.management.mapper.workflow.TaskStepMapper;
 import com.smartlab.management.service.db.constraint.TaskConstraintService;
+import com.smartlab.management.service.db.resource.adapter.VirtualLeaseService;
 import com.smartlab.global.util.JsonNodeSupport;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
@@ -39,6 +40,7 @@ class TaskServiceTest {
         task.setTaskConstraints(JsonNodeSupport.arrayNode());
         when(taskMapper.selectById(7L)).thenReturn(task);
         when(constraints.normalizeAndValidate(task, task.getTaskConstraints())).thenReturn(JsonNodeSupport.arrayNode());
+        when(resources.expectedInstanceKind(any(), any())).thenReturn("PHYSICAL");
         TaskService service = new TaskService(taskMapper, stepMapper, logService, workflows,
                 resources, readiness, constraints, publisher);
 
@@ -47,9 +49,96 @@ class TaskServiceTest {
         assertSame(task, result);
         assertEquals("RUNNING", task.getTaskStatus());
         verify(workflows).requireExecutableDefinition(11L);
-        verify(resources).validate(11L, task.getResourceMap());
+        verify(resources).validate(11L, task.getResourceMap(), "PHYSICAL");
         verify(readiness).inspect(task.getResourceMap());
         verify(taskMapper).updateById(task);
+    }
+
+    @Test
+    void startingSimulationTaskAcquiresLeasesBeforeRunning() {
+        TaskMapper taskMapper = mock(TaskMapper.class);
+        WorkflowTaskResourceService resources = mock(WorkflowTaskResourceService.class);
+        WorkflowExecutionReadinessService readiness = mock(WorkflowExecutionReadinessService.class);
+        TaskConstraintService constraints = mock(TaskConstraintService.class);
+        VirtualLeaseService leases = mock(VirtualLeaseService.class);
+        Task task = new Task();
+        task.setId(7L);
+        task.setFlowModelId(11L);
+        task.setTaskStatus("PENDING");
+        task.setExecutionKind("SIMULATION");
+        task.setResourceMap(JsonNodeSupport.objectNode());
+        task.setTaskConstraints(JsonNodeSupport.arrayNode());
+        when(taskMapper.selectById(7L)).thenReturn(task);
+        when(constraints.normalizeAndValidate(task, task.getTaskConstraints())).thenReturn(JsonNodeSupport.arrayNode());
+        when(resources.expectedInstanceKind(any(), any())).thenReturn("PHYSICAL");
+        when(resources.boundDeviceInstanceIds(task.getResourceMap())).thenReturn(java.util.Set.of(3L));
+        TaskService service = new TaskService(taskMapper, mock(TaskStepMapper.class), mock(ExecutionLogService.class),
+                mock(WorkflowService.class), resources, readiness, constraints,
+                mock(ApplicationEventPublisher.class), leases);
+
+        Task result = service.start(7L);
+
+        assertEquals("RUNNING", result.getTaskStatus());
+        verify(leases).acquireForTask(java.util.Set.of(3L), 7L);
+        verify(taskMapper).updateById(task);
+    }
+
+    @Test
+    void startCanSwitchPendingTaskToSimulation() {
+        TaskMapper taskMapper = mock(TaskMapper.class);
+        WorkflowTaskResourceService resources = mock(WorkflowTaskResourceService.class);
+        WorkflowExecutionReadinessService readiness = mock(WorkflowExecutionReadinessService.class);
+        TaskConstraintService constraints = mock(TaskConstraintService.class);
+        VirtualLeaseService leases = mock(VirtualLeaseService.class);
+        Task task = new Task();
+        task.setId(7L);
+        task.setFlowModelId(11L);
+        task.setTaskStatus("PENDING");
+        task.setExecutionKind("PRODUCTION");
+        task.setResourceMap(JsonNodeSupport.objectNode());
+        task.setTaskConstraints(JsonNodeSupport.arrayNode());
+        when(taskMapper.selectById(7L)).thenReturn(task);
+        when(constraints.normalizeAndValidate(task, task.getTaskConstraints())).thenReturn(JsonNodeSupport.arrayNode());
+        when(resources.expectedInstanceKind(any(), any())).thenReturn("PHYSICAL");
+        when(resources.boundDeviceInstanceIds(task.getResourceMap())).thenReturn(java.util.Set.of(3L));
+        TaskService service = new TaskService(taskMapper, mock(TaskStepMapper.class), mock(ExecutionLogService.class),
+                mock(WorkflowService.class), resources, readiness, constraints,
+                mock(ApplicationEventPublisher.class), leases);
+
+        Task result = service.start(7L, true, "SIMULATION");
+
+        assertEquals("SIMULATION", result.getExecutionKind());
+        verify(leases).acquireForTask(java.util.Set.of(3L), 7L);
+    }
+
+    @Test
+    void startingSimulationTaskStaysPendingWhenLeaseFails() {
+        TaskMapper taskMapper = mock(TaskMapper.class);
+        WorkflowTaskResourceService resources = mock(WorkflowTaskResourceService.class);
+        TaskConstraintService constraints = mock(TaskConstraintService.class);
+        VirtualLeaseService leases = mock(VirtualLeaseService.class);
+        Task task = new Task();
+        task.setId(7L);
+        task.setFlowModelId(11L);
+        task.setTaskStatus("PENDING");
+        task.setExecutionKind("SIMULATION");
+        task.setResourceMap(JsonNodeSupport.objectNode());
+        task.setTaskConstraints(JsonNodeSupport.arrayNode());
+        when(taskMapper.selectById(7L)).thenReturn(task);
+        when(constraints.normalizeAndValidate(task, task.getTaskConstraints())).thenReturn(JsonNodeSupport.arrayNode());
+        when(resources.expectedInstanceKind(any(), any())).thenReturn("PHYSICAL");
+        when(resources.boundDeviceInstanceIds(task.getResourceMap())).thenReturn(java.util.Set.of(3L));
+        org.mockito.Mockito.doThrow(new IllegalStateException("虚拟点租约未授予")).when(leases)
+                .acquireForTask(any(), org.mockito.ArgumentMatchers.eq(7L));
+        TaskService service = new TaskService(taskMapper, mock(TaskStepMapper.class), mock(ExecutionLogService.class),
+                mock(WorkflowService.class), resources, mock(WorkflowExecutionReadinessService.class), constraints,
+                mock(ApplicationEventPublisher.class), leases);
+
+        IllegalStateException error = assertThrows(IllegalStateException.class, () -> service.start(7L));
+
+        assertEquals("虚拟点租约未授予", error.getMessage());
+        assertEquals("PENDING", task.getTaskStatus());
+        verify(taskMapper, never()).updateById(any(Task.class));
     }
 
     @Test
@@ -63,10 +152,12 @@ class TaskServiceTest {
         task.setTaskConstraints(JsonNodeSupport.arrayNode());
         when(taskMapper.selectById(7L)).thenReturn(task);
         WorkflowExecutionReadinessService readiness = mock(WorkflowExecutionReadinessService.class);
+        WorkflowTaskResourceService resources = mock(WorkflowTaskResourceService.class);
+        when(resources.expectedInstanceKind(any(), any())).thenReturn("PHYSICAL");
         when(readiness.inspect(task.getResourceMap())).thenReturn(java.util.List.of(new WorkflowIssue(
                 "DEVICE_OFFLINE", "READINESS", "resourceMap", "deviceInstance", "7", true, "设备离线", "等待设备上线")));
         TaskService service = new TaskService(taskMapper, mock(TaskStepMapper.class), mock(ExecutionLogService.class),
-                mock(WorkflowService.class), mock(WorkflowTaskResourceService.class), readiness,
+                mock(WorkflowService.class), resources, readiness,
                 mock(TaskConstraintService.class), mock(ApplicationEventPublisher.class));
 
         IllegalStateException error = assertThrows(IllegalStateException.class, () -> service.start(7L));
@@ -101,7 +192,7 @@ class TaskServiceTest {
         TaskMapper mapper = mock(TaskMapper.class);
         WorkflowTaskResourceService resources = mock(WorkflowTaskResourceService.class);
         var map = JsonNodeSupport.objectNode();
-        when(resources.prepare(11L, java.util.List.of())).thenReturn(new WorkflowTaskResourceService.PreparedTaskResources(map, java.util.List.of()));
+        when(resources.prepare(org.mockito.ArgumentMatchers.eq(11L), any(), any())).thenReturn(new WorkflowTaskResourceService.PreparedTaskResources(map, java.util.List.of()));
         TaskConstraintService constraints = mock(TaskConstraintService.class);
         when(constraints.inspect(org.mockito.ArgumentMatchers.eq(11L), any(), org.mockito.ArgumentMatchers.eq(map), any())).thenReturn(java.util.List.of(
                 new WorkflowIssue("TASK_CONSTRAINT_INVALID", "CONSTRAINT", "taskConstraints[0]", "taskConstraint", "", true, "非法规则", "修正")));

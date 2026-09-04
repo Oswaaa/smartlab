@@ -1,5 +1,6 @@
 package com.smartlab.management.service.db.workflow;
 
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.engine.workflow.WorkflowDefinitionCompiler;
 import com.smartlab.management.dto.workflow.WorkflowIssue;
@@ -306,6 +307,23 @@ class WorkflowServiceTest {
     }
 
     @Test
+    void validateDraftSubflowIsBlocking() throws Exception {
+        DraftLifecycleFixture fixture = draftLifecycleFixture();
+        FlowModels child = new FlowModels();
+        child.setId(2L);
+        child.setFlowName("child");
+        child.setStatus("DRAFT");
+        fixture.models().put(2L, child);
+
+        WorkflowPreparationResponse result = fixture.service().validate(validSubflowWorkflow());
+
+        assertFalse(result.executable());
+        assertTrue(result.issues().stream().anyMatch(issue -> issue.blocking()
+                && issue.message().contains("子流程必须是ACTIVE才能被引用")));
+        assertEquals(null, fixture.savedModel().get());
+    }
+
+    @Test
     void validateExecutableActiveModelDoesNotForkOrPersist() throws Exception {
         DraftLifecycleFixture fixture = draftLifecycleFixture();
         FlowModels active = new FlowModels();
@@ -441,6 +459,39 @@ class WorkflowServiceTest {
     }
 
     @Test
+    void rejectsUnknownDeviceConnectionInterface() throws Exception {
+        ServiceFixture fixture = semanticFixture();
+        WorkflowModelDocument request = validDeviceWorkflow();
+        request.setInterfaceConnections(devicePairConnections("missing_in", "Interface_state_out"));
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> fixture.service().validateDeviceConfiguration(request));
+        assertTrue(error.getMessage().contains("设备状态机不存在接口"));
+        assertTrue(error.getMessage().contains("missing_in"));
+    }
+
+    @Test
+    void rejectsDeviceConnectionInterfaceWithWrongDirection() throws Exception {
+        ServiceFixture fixture = semanticFixture();
+        WorkflowModelDocument request = validDeviceWorkflow();
+        request.setInterfaceConnections(devicePairConnections("Interface_state_out", "Interface_state_out"));
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> fixture.service().validateDeviceConfiguration(request));
+        assertTrue(error.getMessage().contains("NODE_TO_DEVICE目标必须是设备IN+WORKFLOW接口"));
+        assertTrue(error.getMessage().contains("Interface_state_out"));
+    }
+
+    @Test
+    void acceptsDeviceConnectionInterfacesDeclaredOnTheModel() throws Exception {
+        ServiceFixture fixture = semanticFixture();
+        WorkflowModelDocument request = validDeviceWorkflow();
+        request.setInterfaceConnections(devicePairConnections("Interface_workflow_in", "Interface_state_out"));
+
+        assertDoesNotThrow(() -> fixture.service().validateDeviceConfiguration(request));
+    }
+
+    @Test
     void roundTripsSubFlowModelDescriptionThroughCapabilityJson() throws Exception {
         FlowModelsMapper models = mock(FlowModelsMapper.class);
         FlowNodeMapper nodes = mock(FlowNodeMapper.class);
@@ -451,6 +502,7 @@ class WorkflowServiceTest {
         FlowModels referenced = new FlowModels();
         referenced.setId(2L);
         referenced.setFlowName("test");
+        referenced.setStatus("ACTIVE");
         when(models.selectById(any())).thenAnswer(invocation -> {
             long id = ((Number) invocation.getArgument(0)).longValue();
             return id == 2L ? referenced : savedModel.get();
@@ -500,6 +552,10 @@ class WorkflowServiceTest {
         DeviceModels model = new DeviceModels();
         model.setCapabilities(JsonNodeSupport.MAPPER.readTree("[{\"capabilityName\":\"heat\",\"parameters\":[{\"name\":\"target\",\"dataType\":\"DOUBLE\"}]}]"));
         model.setAttributes(JsonNodeSupport.MAPPER.readTree("[{\"attributeName\":\"temperature\",\"dataType\":\"DOUBLE\"}]"));
+        model.setStateMachineInterfaces(JsonNodeSupport.MAPPER.readTree("""
+                [{"name":"Interface_workflow_in","direction":"IN","interfaceType":"WORKFLOW"},
+                 {"name":"Interface_state_out","direction":"OUT","interfaceType":"STATE"}]
+                """));
         return model;
     }
 
@@ -510,6 +566,19 @@ class WorkflowServiceTest {
         request.setInterfaceConnections(JsonNodeSupport.arrayNode());
         request.setPortConnections(JsonNodeSupport.arrayNode());
         return request;
+    }
+
+    private ArrayNode devicePairConnections(String toDeviceInterface, String fromDeviceInterface) {
+        ArrayNode connections = JsonNodeSupport.arrayNode();
+        ObjectNode outbound = connections.addObject();
+        outbound.put("connectionType", "NODE_TO_DEVICE");
+        outbound.putObject("source").put("nodeName", "heater").put("interfaceName", "Interface_state_out");
+        outbound.putObject("target").put("deviceModelId", 1).put("interfaceName", toDeviceInterface);
+        ObjectNode inbound = connections.addObject();
+        inbound.put("connectionType", "DEVICE_TO_NODE");
+        inbound.putObject("source").put("deviceModelId", 1).put("interfaceName", fromDeviceInterface);
+        inbound.putObject("target").put("nodeName", "heater").put("interfaceName", "Interface_state_in");
+        return connections;
     }
 
     private WorkflowModelDocument startEndWorkflow() throws Exception {

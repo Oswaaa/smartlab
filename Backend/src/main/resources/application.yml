@@ -44,9 +44,9 @@ smartlab:
   agent:
     enabled: true
     provider: openai-compatible
-    base-url: ${SMARTLAB_AGENT_BASE_URL:https://api.deepseek.com}
-    api-key: ${SMARTLAB_AGENT_API_KEY:sk-86cd7eeccfc2414898bf05e970150dca}
-    model: ${SMARTLAB_AGENT_MODEL:deepseek-v4-pro}
+    base-url: ${SMARTLAB_AGENT_BASE_URL:http://quantum.sxicc.ac.cn:8000/v1}
+    api-key: ${SMARTLAB_AGENT_API_KEY:1}
+    model: ${SMARTLAB_AGENT_MODEL:Qwen3.8-27B}
     max-rounds: 12
     validate-retries: 3
   auth:

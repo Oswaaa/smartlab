@@ -224,7 +224,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAgentConversationStore } from '../../../stores/agentConversationStore'
@@ -257,7 +257,7 @@ const KIND_LABELS: Record<string, string> = {
 const router = useRouter()
 const store = useAgentConversationStore()
 const draft = ref('')
-const generating = ref(false)
+const generating = computed(() => store.generating)
 const messageList = ref<HTMLElement | null>(null)
 const openPayloads = ref<Record<string, boolean>>({})
 const isThinkingCollapsed = ref(true)
@@ -521,70 +521,29 @@ async function sendPrompt() {
   const prompt = draft.value.trim()
   if (!prompt || generating.value) return
 
-  store.appendMessage({ role: 'user', text: prompt })
   draft.value = ''
-  generating.value = true
-  store.beginRun()
   openPayloads.value = {}
   isThinkingCollapsed.value = false // 发送时自动展开思考过程
   await scrollPanes()
 
-  try {
-    const terminal = await workflowApi.generateStream(prompt, appendLog)
-    const payload = terminal?.data?.data || terminal?.data || {}
-    if (!logs.value.length) store.replaceLogs(Array.isArray(payload?.logs) ? payload.logs : [])
-
-    const answerText = payload.summary || latestAnswerText.value
-    const rawDraftId = generatedDraftId(payload)
-    const flowModelId = rawDraftId ? Number(rawDraftId) : draftIdFromLogs()
-
-    if (flowModelId && Number.isInteger(flowModelId) && flowModelId > 0) {
-      const name = generatedDraftName(payload)
-      const status = payload.status || 'DRAFT'
-      store.setResultState('success')
-      isThinkingCollapsed.value = true
-      store.appendMessage({
-        role: 'assistant',
-        text: answerText || `已根据您的实验需求完成工作流模型推演「${name}」#${flowModelId}（状态：${status}）。`,
-        flowModelId,
-      })
-    } else if (answerText) {
-      store.setResultState('replied')
-      isThinkingCollapsed.value = true
-      store.appendMessage({ role: 'assistant', text: answerText })
-    } else {
-      const lastReplyLog = [...logs.value].reverse().find(l => l.kind === 'llm_reply' || l.kind === 'nudge' || l.kind === 'start')
-      const textContent = lastReplyLog ? extractTextContent(lastReplyLog) : null
-      const replyText = textContent || terminal?.data?.message || payload?.message || 'Agent 已完成分析。请查看上方思考过程，或继续输入指令。'
-      store.setResultState('replied')
-      isThinkingCollapsed.value = true
-      store.appendMessage({
-        role: 'assistant',
-        text: replyText,
-      })
-    }
-    await scrollPanes()
-  } catch (error: any) {
-    if (!error?.alreadyLogged) {
-      const fallback = payloadFromError(error)
-      if (Array.isArray(fallback?.logs)) store.replaceLogs(fallback.logs)
-    }
-    store.setResultState('failure')
-    isThinkingCollapsed.value = true
-    const message = error?.response?.data?.message || error?.message || '生成未完成'
-    
-    // 尝试提取大模型最后的具体说明
-    const lastReplyLog = [...logs.value].reverse().find(l => l.kind === 'llm_reply')
-    const textContent = lastReplyLog ? extractTextContent(lastReplyLog) : null
-    const replyText = textContent || message
-    
-    store.appendMessage({ role: 'assistant', text: replyText })
-    await scrollPanes()
-  } finally {
-    generating.value = false
-    await scrollPanes()
-  }
+  await store.sendPrompt(prompt)
+  await scrollPanes()
 }
+
+watch(() => logs.value.length, () => {
+  void scrollPanes()
+})
+
+watch(() => messages.value.length, () => {
+  void scrollPanes()
+})
+
+onMounted(() => {
+  if (generating.value) {
+    isThinkingCollapsed.value = false
+  }
+  void scrollPanes()
+})
 </script>
 
 <style scoped>

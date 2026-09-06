@@ -41,6 +41,15 @@
     </nav>
 
     <div class="navbar-right">
+      <div
+        v-if="agentStore.generating"
+        class="ai-generating-badge"
+        @click="goToAiChat"
+        title="点击回到首页并打开 AI 对话"
+      >
+        <span class="pulse-dot"></span>
+        <span>AI 正在推演流程...</span>
+      </div>
       <div class="info-chip">
         <el-icon><OfficeBuilding /></el-icon>
         <span>{{ authStore.lab || 'SmartLab' }}</span>
@@ -77,6 +86,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useAuthStore } from '../../stores/authStore'
 import { useConsoleStore } from '../../stores/consoleStore'
+import { useAgentConversationStore } from '../../stores/agentConversationStore'
 import {
   ArrowDown,
   Clock,
@@ -98,11 +108,19 @@ import { ElMessageBox } from 'element-plus'
 
 const authStore = useAuthStore()
 const consoleStore = useConsoleStore()
+const agentStore = useAgentConversationStore()
 const route = useRoute()
 const router = useRouter()
 const activePath = computed(() => route.path)
 const currentTime = ref('')
 let timerId = null
+
+const goToAiChat = () => {
+  agentStore.openChat()
+  if (route.path !== '/home' && route.path !== '/') {
+    router.push('/home')
+  }
+}
 
 const updateTime = () => {
   currentTime.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
@@ -201,5 +219,48 @@ const handleDropdown = (command) => {
 .user-name { font-size: 13px; font-weight: 600; color: #ffffff; white-space: nowrap; }
 .user-role { font-size: 11px; color: rgba(255,255,255,0.48); white-space: nowrap; }
 .chevron-icon { color: rgba(255,255,255,0.40); font-size: 11px; }
+
+.ai-generating-badge {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  background: rgba(37, 99, 235, 0.2);
+  border: 1px solid rgba(59, 130, 246, 0.5);
+  border-radius: 14px;
+  color: #93c5fd;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+  animation: pulse-border 2s infinite;
+}
+
+.ai-generating-badge:hover {
+  background: rgba(37, 99, 235, 0.35);
+  border-color: #60a5fa;
+  color: #ffffff;
+}
+
+.ai-generating-badge .pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #38bdf8;
+  box-shadow: 0 0 6px #38bdf8;
+  animation: pulse-dot-glow 1.4s ease-in-out infinite alternate;
+}
+
+@keyframes pulse-dot-glow {
+  from { opacity: 0.4; transform: scale(0.85); }
+  to { opacity: 1; transform: scale(1.2); }
+}
+
+@keyframes pulse-border {
+  0% { border-color: rgba(59, 130, 246, 0.4); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0.4); }
+  70% { border-color: rgba(59, 130, 246, 0.8); box-shadow: 0 0 0 4px rgba(59, 130, 246, 0); }
+  100% { border-color: rgba(59, 130, 246, 0.4); box-shadow: 0 0 0 0 rgba(59, 130, 246, 0); }
+}
 </style>
 

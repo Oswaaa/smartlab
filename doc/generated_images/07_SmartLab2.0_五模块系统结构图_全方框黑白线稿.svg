@@ -1,0 +1,145 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="2400" height="1500" viewBox="0 0 2400 1500">
+<defs><style>
+  .title{font:700 31px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#000}
+  .subtitle{font:14px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#000}
+  .module-title{font:700 20px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#000}
+  .module-subtitle{font:13px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#000}
+  .item-title{font:700 16px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#000}
+  .label{font:15px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#000}
+  .small{font:13px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#000}
+  .tiny{font:11.5px "Microsoft YaHei","Noto Sans CJK SC",sans-serif;fill:#000}
+  .background{fill:#fff;stroke:none}
+  .outer{fill:#fff;stroke:#000;stroke-width:2}
+  .module{fill:#fff;stroke:#000;stroke-width:2.2}
+  .module-header{fill:#fff;stroke:#000;stroke-width:1.5}
+  .item{fill:#fff;stroke:#000;stroke-width:1.4}
+  .primary-item{fill:#fff;stroke:#000;stroke-width:1.8}
+  .minor-item{fill:#fff;stroke:#000;stroke-width:1.1}
+</style></defs>
+<rect x="0" y="0" width="2400" height="1500" class="background"/>
+<rect x="24" y="26" width="2352" height="1448" class="outer"/>
+<text x="1200" y="72" text-anchor="middle" class="title">SmartLab 2.0 智能实验室系统结构图</text>
+<text x="1200" y="101" text-anchor="middle" class="subtitle">由 Agent、实验执行、数据管理、设备接入和用户界面五个功能模块组成</text>
+<rect x="90" y="135" width="2220" height="248" class="module"/>
+<rect x="90" y="135" width="2220" height="54" class="module-header"/>
+<text x="112" y="170" text-anchor="start" class="module-title">用户界面</text>
+<text x="2288" y="169" text-anchor="end" class="module-subtitle">User Interface</text>
+<rect x="120" y="214" width="405" height="132" class="item"/>
+<text x="322.5" y="245" text-anchor="middle" class="item-title">科研人员工作台</text>
+<text x="322.5" y="285.5" text-anchor="middle" class="small">实验需求输入</text>
+<text x="322.5" y="306.5" text-anchor="middle" class="small">流程设计与仿真发起</text>
+<rect x="555" y="214" width="405" height="132" class="item"/>
+<text x="757.5" y="245" text-anchor="middle" class="item-title">可视化流程设计</text>
+<text x="757.5" y="285.5" text-anchor="middle" class="small">节点、接口与连接编辑</text>
+<text x="757.5" y="306.5" text-anchor="middle" class="small">流程校验及版本管理</text>
+<rect x="990" y="214" width="405" height="132" class="item"/>
+<text x="1192.5" y="245" text-anchor="middle" class="item-title">任务控制与监控</text>
+<text x="1192.5" y="285.5" text-anchor="middle" class="small">启动、暂停、终止</text>
+<text x="1192.5" y="306.5" text-anchor="middle" class="small">步骤状态与异常查看</text>
+<rect x="1425" y="214" width="405" height="132" class="item"/>
+<text x="1627.5" y="245" text-anchor="middle" class="item-title">数据查询与展示</text>
+<text x="1627.5" y="285.5" text-anchor="middle" class="small">实验数据检索</text>
+<text x="1627.5" y="306.5" text-anchor="middle" class="small">实时曲线与历史回放</text>
+<rect x="1860" y="214" width="420" height="132" class="item"/>
+<text x="2070" y="245" text-anchor="middle" class="item-title">系统管理</text>
+<text x="2070" y="285.5" text-anchor="middle" class="small">用户权限与菜单</text>
+<text x="2070" y="306.5" text-anchor="middle" class="small">资源、设备与接入配置</text>
+<rect x="90" y="430" width="665" height="525" class="module"/>
+<rect x="90" y="430" width="665" height="54" class="module-header"/>
+<text x="112" y="465" text-anchor="start" class="module-title">Agent</text>
+<text x="733" y="464" text-anchor="end" class="module-subtitle">Intelligent Workflow Agent</text>
+<rect x="120" y="509" width="290" height="126" class="item"/>
+<text x="265" y="540" text-anchor="middle" class="item-title">需求理解</text>
+<text x="265" y="577.5" text-anchor="middle" class="small">自然语言实验需求</text>
+<text x="265" y="598.5" text-anchor="middle" class="small">目标、条件与约束提取</text>
+<rect x="435" y="509" width="290" height="126" class="item"/>
+<text x="580" y="540" text-anchor="middle" class="item-title">资源与能力检索</text>
+<text x="580" y="577.5" text-anchor="middle" class="small">设备模型与能力目录</text>
+<text x="580" y="598.5" text-anchor="middle" class="small">已有流程及约束规则</text>
+<rect x="120" y="661" width="605" height="120" class="primary-item"/>
+<text x="422.5" y="692" text-anchor="middle" class="item-title">实验流程规划与生成</text>
+<text x="422.5" y="737" text-anchor="middle" class="small">生成流程节点、连接关系、参数及执行条件</text>
+<rect x="120" y="807" width="290" height="118" class="item"/>
+<text x="265" y="838" text-anchor="middle" class="item-title">结构校验与修复</text>
+<text x="265" y="871.5" text-anchor="middle" class="small">Schema 校验</text>
+<text x="265" y="892.5" text-anchor="middle" class="small">错误定位与自动修复</text>
+<rect x="435" y="807" width="290" height="118" class="item"/>
+<text x="580" y="838" text-anchor="middle" class="item-title">仿真反馈优化</text>
+<text x="580" y="871.5" text-anchor="middle" class="small">调用仿真执行</text>
+<text x="580" y="892.5" text-anchor="middle" class="small">依据结果迭代流程</text>
+<rect x="795" y="430" width="1515" height="525" class="module"/>
+<rect x="795" y="430" width="1515" height="54" class="module-header"/>
+<text x="817" y="465" text-anchor="start" class="module-title">实验执行</text>
+<text x="2288" y="464" text-anchor="end" class="module-subtitle">Production / Simulation</text>
+<rect x="825" y="509" width="705" height="416" class="primary-item"/>
+<text x="1177.5" y="540" text-anchor="middle" class="item-title">生产执行</text>
+<text x="1177.5" y="688" text-anchor="middle" class="small">任务实例化与步骤调度</text>
+<text x="1177.5" y="706" text-anchor="middle" class="small">工作流引擎：冻结快照、上升沿求值</text>
+<text x="1177.5" y="724" text-anchor="middle" class="small">连接通道：接口信号转发、端口数据拉取</text>
+<text x="1177.5" y="742" text-anchor="middle" class="small">设备状态机：CMD / OP 双状态空间</text>
+<text x="1177.5" y="760" text-anchor="middle" class="small">约束控制：终止、暂停、告警与设备保护</text>
+<text x="1177.5" y="778" text-anchor="middle" class="small">执行状态、步骤结果与日志记录</text>
+<rect x="1570" y="509" width="710" height="416" class="primary-item"/>
+<text x="1925" y="540" text-anchor="middle" class="item-title">仿真执行</text>
+<text x="1925" y="688" text-anchor="middle" class="small">仿真任务与虚拟时钟</text>
+<text x="1925" y="706" text-anchor="middle" class="small">虚拟设备及数字孪生状态演化</text>
+<text x="1925" y="724" text-anchor="middle" class="small">工作流逻辑与连接关系求值</text>
+<text x="1925" y="742" text-anchor="middle" class="small">约束规则和异常场景验证</text>
+<text x="1925" y="760" text-anchor="middle" class="small">运行快照、仿真数据与结果对比</text>
+<text x="1925" y="778" text-anchor="middle" class="small">向 Agent 返回校验与优化依据</text>
+<rect x="90" y="1005" width="1365" height="405" class="module"/>
+<rect x="90" y="1005" width="1365" height="54" class="module-header"/>
+<text x="112" y="1040" text-anchor="start" class="module-title">数据管理</text>
+<text x="1433" y="1039" text-anchor="end" class="module-subtitle">Data Management</text>
+<rect x="120" y="1084" width="245" height="286" class="item"/>
+<text x="242.5" y="1115" text-anchor="middle" class="item-title">元数据</text>
+<text x="242.5" y="1222" text-anchor="middle" class="small">用户与权限</text>
+<text x="242.5" y="1243" text-anchor="middle" class="small">属性类型</text>
+<text x="242.5" y="1264" text-anchor="middle" class="small">场景与资源结构</text>
+<rect x="385" y="1084" width="245" height="286" class="item"/>
+<text x="507.5" y="1115" text-anchor="middle" class="item-title">实验数据</text>
+<text x="507.5" y="1222" text-anchor="middle" class="small">数据模板</text>
+<text x="507.5" y="1243" text-anchor="middle" class="small">数据索引</text>
+<text x="507.5" y="1264" text-anchor="middle" class="small">动态实验记录</text>
+<rect x="650" y="1084" width="245" height="286" class="item"/>
+<text x="772.5" y="1115" text-anchor="middle" class="item-title">设备与孪生</text>
+<text x="772.5" y="1222" text-anchor="middle" class="small">设备模型与实例</text>
+<text x="772.5" y="1243" text-anchor="middle" class="small">设备组件</text>
+<text x="772.5" y="1264" text-anchor="middle" class="small">孪生状态</text>
+<rect x="915" y="1084" width="245" height="286" class="item"/>
+<text x="1037.5" y="1115" text-anchor="middle" class="item-title">流程与任务</text>
+<text x="1037.5" y="1222" text-anchor="middle" class="small">流程模型与节点</text>
+<text x="1037.5" y="1243" text-anchor="middle" class="small">任务与步骤</text>
+<text x="1037.5" y="1264" text-anchor="middle" class="small">执行日志</text>
+<rect x="1180" y="1084" width="245" height="286" class="item"/>
+<text x="1302.5" y="1115" text-anchor="middle" class="item-title">约束与审计</text>
+<text x="1302.5" y="1222" text-anchor="middle" class="small">约束规则</text>
+<text x="1302.5" y="1243" text-anchor="middle" class="small">违规记录</text>
+<text x="1302.5" y="1264" text-anchor="middle" class="small">现场快照</text>
+<rect x="1495" y="1005" width="815" height="405" class="module"/>
+<rect x="1495" y="1005" width="815" height="54" class="module-header"/>
+<text x="1517" y="1040" text-anchor="start" class="module-title">设备接入</text>
+<text x="2288" y="1039" text-anchor="end" class="module-subtitle">Device Access</text>
+<rect x="1525" y="1084" width="240" height="125" class="item"/>
+<text x="1645" y="1115" text-anchor="middle" class="item-title">消息接入</text>
+<text x="1645" y="1152" text-anchor="middle" class="small">MQTT Broker</text>
+<text x="1645" y="1173" text-anchor="middle" class="small">命令、遥测、事件、心跳</text>
+<rect x="1785" y="1084" width="240" height="125" class="item"/>
+<text x="1905" y="1115" text-anchor="middle" class="item-title">Adapter Runtime</text>
+<text x="1905" y="1152" text-anchor="middle" class="small">注册、配置与租约</text>
+<text x="1905" y="1173" text-anchor="middle" class="small">生命周期及看门狗</text>
+<rect x="2045" y="1084" width="235" height="125" class="item"/>
+<text x="2162.5" y="1115" text-anchor="middle" class="item-title">协议连接器</text>
+<text x="2162.5" y="1152" text-anchor="middle" class="small">Modbus、串口、TCP</text>
+<text x="2162.5" y="1173" text-anchor="middle" class="small">HTTP、SDK</text>
+<rect x="1525" y="1235" width="365" height="135" class="primary-item"/>
+<text x="1707.5" y="1266" text-anchor="middle" class="item-title">物理设备</text>
+<text x="1707.5" y="1308" text-anchor="middle" class="small">反应釜、泵阀、机械臂、PLC</text>
+<text x="1707.5" y="1329" text-anchor="middle" class="small">传感器与分析仪器</text>
+<rect x="1915" y="1235" width="365" height="135" class="primary-item"/>
+<text x="2097.5" y="1266" text-anchor="middle" class="item-title">虚拟设备</text>
+<text x="2097.5" y="1308" text-anchor="middle" class="small">仿真实例与虚拟租约</text>
+<text x="2097.5" y="1329" text-anchor="middle" class="small">统一设备能力及状态接口</text>
+<text x="1200" y="1448" text-anchor="middle" class="subtitle">本图仅表示系统功能组成与包含关系，不表示分层结构或固定调用顺序。</text>
+</svg>

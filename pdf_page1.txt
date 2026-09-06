@@ -1,0 +1,38 @@
+Available online at www.sciencedirect.com
+Procedia Computer Science 00 (2025) 000–000
+www.elsevier.com/locate/procedia
+12th. Federation of European Simulation Societies Conference, (Eurosim 2026)
+A Task-Oriented Executable Modeling Framework for Smart
+Chemical Laboratory
+Tao Yua, Chun Zhaoa,∗
+aBeijing Information Science&Technology University, Qinghe Xiaoying East Road 12, Haidian District, Beijing 100192, China
+Abstract
+Smart chemical laboratory automation increasingly demands an explicit representation of experimental task execution that goes
+beyond device command orchestration. Existing approaches—script-driven automation, workflow orchestration, and model-based
+system description—treat device invocation, process organization, and asset-level representation as separate concerns, and none
+provides a unified task-level model in which device capabilities, runtime states, data dependencies, and execution constraints are
+organized as coordinated elements of a task-specific system representation. This paper proposes an executable modeling framework
+in which a workflow is defined as a task-specific execution slice of the laboratory system. Within this slice, each workflow node is
+formalized as a process-level mapping of a device capability, carrying explicit state, data, and signal semantics rather than serving
+as a simple command wrapper. The framework is organized across three coordinated layers: a static resource layer that encapsulates
+physical devices as executable object models with capability definitions and state machines; a dynamic workflow layer that orga-
+nizes device capabilities and their temporal, control, and data relationships; and a constraint layer that monitors laboratory-wide
+and task-specific boundaries during execution. The framework is instantiated in a prototype system and demonstrated through a
+reactor-heating task. The case study shows that device abstraction, workflow execution, and constraint supervision can be inte-
+grated within a single executable model, making the dynamic evolution of the laboratory system explicit and inspectable at the
+model level.
+©2025 The Authors. Check in the contract: Published by Elsevier B.V .
+This is an open access article under the CC BY-NC-ND license (http://creativecommons.org/licenses/by-nc-nd/4.0/)
+Peer-review under responsibility of the scientific committee of the 22nd International Multidisciplinary Modeling & Simulation
+Multiconference.
+Keywords:Experimental task execution; Execution semantics; Workflow modeling; Workflow-based execution; Smart laboratory; Laboratory
+automation
+1. Introduction
+The development of smart chemical laboratories is driving laboratory automation toward integrated task execution
+in which devices, processes, and constraints are coordinated within a unified operational context [1]. Representing
+such execution requires more than ordering device operations: it must also capture the organization of task-relevant
+∗ Corresponding author. Tel.:+86-13311296283.
+E-mail address:zhaochun@bistu.edu.cn (Chun Zhao).
+1877-0509©2025 The Authors. Check in the contract: Published by Elsevier B.V .
+This is an open access article under the CC BY-NC-ND license (http://creativecommons.org/licenses/by-nc-nd/4.0/)
+Peer-review under responsibility of the scientific committee of the 22nd International Multidisciplinary Modeling & Simulation Multiconference.

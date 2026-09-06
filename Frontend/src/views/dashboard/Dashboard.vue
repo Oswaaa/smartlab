@@ -1,6 +1,6 @@
 <template>
   <div class="dashboard-master-canvas">
-    <template v-if="!isAiChatOpen">
+    <template v-if="!agentStore.isChatOpen">
       <header class="dashboard-top-bar">
         <div class="header-left-meta">
           <h1 class="page-title">首页</h1>
@@ -22,11 +22,12 @@
         </div>
 
         <div class="header-actions">
-          <button class="btn-aliyun-cta btn-ai-entry" type="button" @click="isAiChatOpen = true">
+          <button class="btn-aliyun-cta btn-ai-entry" type="button" @click="agentStore.openChat()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
             </svg>
-            <span>AI 对话助手</span>
+            <span v-if="agentStore.generating" class="ai-running-pulse"></span>
+            <span>{{ agentStore.generating ? 'AI 正在推演中...' : 'AI 对话助手' }}</span>
           </button>
           <button class="btn-aliyun" type="button" @click="goToTaskList">任务列表</button>
           <button class="btn-aliyun" type="button" @click="goToTaskDesigner">流程设计</button>
@@ -144,7 +145,7 @@
 
     <WorkflowAgentChat
       v-else
-      @close="isAiChatOpen = false"
+      @close="agentStore.closeChat()"
     />
   </div>
 </template>
@@ -155,9 +156,10 @@ import { useRouter } from 'vue-router'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import WorkflowAgentChat from './components/WorkflowAgentChat.vue'
+import { useAgentConversationStore } from '../../stores/agentConversationStore'
 
 const router = useRouter()
-const isAiChatOpen = ref(false)
+const agentStore = useAgentConversationStore()
 
 const currentTime = ref('')
 let timer: number | undefined
@@ -510,6 +512,31 @@ onUnmounted(() => {
   height: 6px;
   border-radius: 50%;
   background: currentColor;
+}
+
+.ai-running-pulse {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #2563eb;
+  box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7);
+  animation: pulse-ring 1.2s infinite;
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(37, 99, 235, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(37, 99, 235, 0);
+  }
 }
 
 /* ==========================================================================

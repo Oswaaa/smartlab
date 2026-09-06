@@ -18,6 +18,7 @@ __pycache__/
 .idea/
 .vscode/
 .vs/
+.zcode/
 *.suo
 *.user
 
@@ -48,6 +49,8 @@ vcpkg_installed/
 .cache/
 .temp/
 tmp/
+_tmp/
+doc/_tmp/
 Thumbs.db
 Desktop.ini
 ~$*

@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EUROSIM 2026 汇报 3 张正式图高清预览</title>
+  <style>
+    :root {
+      --bg: #0F172A;
+      --card-bg: #1E293B;
+      --text: #F8FAFC;
+      --muted: #94A3B8;
+      --accent: #38BDF8;
+      --border: #334155;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+      padding: 2rem;
+      line-height: 1.6;
+    }
+    header {
+      max-width: 1200px;
+      margin: 0 auto 2.5rem;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 1.5rem;
+    }
+    h1 {
+      font-size: 1.8rem;
+      color: var(--accent);
+      margin-bottom: 0.5rem;
+    }
+    p.lead {
+      color: var(--muted);
+      font-size: 1rem;
+    }
+    .grid {
+      max-width: 1200px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 3rem;
+    }
+    .figure-card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4);
+    }
+    .card-header {
+      padding: 1.2rem 1.5rem;
+      background: rgba(15, 23, 42, 0.6);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .card-title {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: #FFFFFF;
+    }
+    .badge {
+      background: #0284C7;
+      color: #FFFFFF;
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 0.25rem 0.65rem;
+      border-radius: 9999px;
+    }
+    .img-container {
+      padding: 1.5rem;
+      background: #FFFFFF;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
+    .img-container img {
+      width: 100%;
+      max-width: 1100px;
+      height: auto;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+      display: block;
+    }
+    .card-desc {
+      padding: 1.2rem 1.5rem;
+      background: var(--card-bg);
+      font-size: 0.95rem;
+      color: var(--muted);
+    }
+    .card-desc strong {
+      color: #38BDF8;
+    }
+    .card-desc ul {
+      margin-left: 1.5rem;
+      margin-top: 0.5rem;
+    }
+    .card-desc li {
+      margin-bottom: 0.25rem;
+    }
+    .actions {
+      display: flex;
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+    .btn {
+      background: #2563EB;
+      color: #FFFFFF;
+      text-decoration: none;
+      font-size: 0.85rem;
+      font-weight: 600;
+      padding: 0.45rem 1rem;
+      border-radius: 6px;
+      display: inline-block;
+      transition: background 0.2s;
+    }
+    .btn:hover { background: #1D4ED8; }
+    .btn-secondary {
+      background: #334155;
+    }
+    .btn-secondary:hover { background: #475569; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>EUROSIM 2026 汇报 3 张正式图预览</h1>
+    <p class="lead">已按正式说明书规范绘制并直接替换至 PPT 第 8、9、10 页左侧占位框（735 × 390 px，1.88:1 宽屏构图，300 DPI 超清印刷级矢量渲染）。</p>
+  </header>
+
+  <div class="grid">
+
+    <!-- Figure 1 -->
+    <div class="figure-card">
+      <div class="card-header">
+        <div class="card-title">正式图 1：统一执行链路结构</div>
+        <span class="badge">对应 PPT 第 8 页</span>
+      </div>
+      <div class="img-container">
+        <img src="figure_1_unified_execution.png" alt="正式图 1：统一执行链路结构">
+      </div>
+      <div class="card-desc">
+        <p><strong>核心结论：</strong>流程、人或大模型的意图，都进入同一套设备模型与状态机；状态机通过 Adapter 控制物理设备并接收反馈。约束观察整条链路并触发处理动作，不能形成一条绕过模型的旁路。</p>
+        <ul>
+          <li><strong>意图来源收敛：</strong>人工、流程、大模型汇入“共同执行入口”，避免“人工也需变为工作流节点”的误解。</li>
+          <li><strong>纵向主链路：</strong>工作流节点 ↓ 控制请求 → 设备模型（能力 + 状态机独占发令） → Adapter → 物理设备；反馈原路逐级收敛 ↑。</li>
+          <li><strong>约束闭环处置：</strong>多级动作（警告/报警/停止/中止）回注统一执行机制与状态机，严禁直连物理层形成控制旁路。</li>
+        </ul>
+        <div class="actions">
+          <a class="btn" href="figure_1_unified_execution.png" download>下载 PNG 高清图 (300 DPI)</a>
+          <a class="btn btn-secondary" href="figure_1_unified_execution.svg" download>下载 SVG 矢量图</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Figure 2 -->
+    <div class="figure-card">
+      <div class="card-header">
+        <div class="card-title">正式图 2：加热任务执行时序</div>
+        <span class="badge">对应 PPT 第 9 页</span>
+      </div>
+      <div class="img-container">
+        <img src="figure_2_heating_sequence.png" alt="正式图 2：加热任务执行时序">
+      </div>
+      <div class="card-desc">
+        <p><strong>核心结论：</strong>加热节点提出请求后，设备状态机经 Adapter 发令；物理设备产生温度和运行状态反馈，状态机根据完成条件推进节点。反馈到达不等于任务自动完成，节点要依据条件判断。</p>
+        <ul>
+          <li><strong>4 条生命线：</strong>加热节点 | 设备状态机 | Adapter | 反应釜。</li>
+          <li><strong>6 步编号交互：</strong>①请求加热(WF_START) → ②下发加热命令(CMD_START) → ③执行加热(物理控制帧) → ④温度/状态遥测(非任务完成) → ⑤反馈更新 → ⑥执行状态。</li>
+          <li><strong>条件推进与约束介入：</strong>只有满足保持条件节点才推进后续步骤；若温度越界或异常，约束动作回注状态机执行优雅中止。</li>
+        </ul>
+        <div class="actions">
+          <a class="btn" href="figure_2_heating_sequence.png" download>下载 PNG 高清图 (300 DPI)</a>
+          <a class="btn btn-secondary" href="figure_2_heating_sequence.svg" download>下载 SVG 矢量图</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Figure 3 -->
+    <div class="figure-card">
+      <div class="card-header">
+        <div class="card-title">正式图 3：仿真反馈闭环</div>
+        <span class="badge">对应 PPT 第 10 页</span>
+      </div>
+      <div class="img-container">
+        <img src="figure_3_simulation_closed_loop.png" alt="正式图 3：仿真反馈闭环">
+      </div>
+      <div class="card-desc">
+        <p><strong>核心结论：</strong>仿真和实机只在 Adapter 层区分，上层继续使用同一套工作流、设备状态机和约束。大模型根据仿真反馈调整方案，满足预设条件后才进入实机执行。</p>
+        <ul>
+          <li><strong>共同模型区：</strong>工作流 + 设备能力/状态机 + 安全约束规则，仿真与实机共用上层模型与规则。</li>
+          <li><strong>仿真调整主闭环：</strong>大模型决策 → 共同模型区 → 仿真 Adapter/虚拟环境 → 模拟反馈（状态、数据、约束结果）→ 大模型动态优化。</li>
+          <li><strong>平滑上机网关：</strong>仿真评估通过作为依据指向网关；通过后经由实机 Adapter 驱动真实物理仪器，实机反馈回传保持模型一致。</li>
+        </ul>
+        <div class="actions">
+          <a class="btn" href="figure_3_simulation_closed_loop.png" download>下载 PNG 高清图 (300 DPI)</a>
+          <a class="btn btn-secondary" href="figure_3_simulation_closed_loop.svg" download>下载 SVG 矢量图</a>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</body>
+</html>

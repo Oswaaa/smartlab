@@ -5,8 +5,10 @@ import com.smartlab.management.dto.common.PageResult;
 import com.smartlab.management.dto.resource.data.DataSeriesResponse;
 import com.smartlab.management.entity.resource.data.DataIndex;
 import com.smartlab.management.entity.resource.data.DataTemplateDetail;
+import com.smartlab.management.entity.workflow.Task;
 import com.smartlab.management.mapper.resource.data.DataIndexMapper;
 import com.smartlab.management.mapper.resource.data.DataTemplateDetailMapper;
+import com.smartlab.management.mapper.workflow.TaskMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -39,16 +41,19 @@ public class DataRecordService {
     private final DataIndexMapper dataIndexMapper;
     private final DataTemplateDetailMapper detailMapper;
     private final JdbcTemplate jdbcTemplate;
+    private final TaskMapper taskMapper;
 
     /**
-     * 注入数据索引、模板字段和 JDBC 访问能力。
+     * 注入数据索引、模板字段、JDBC 访问能力与任务映射。
      */
     public DataRecordService(DataIndexMapper dataIndexMapper,
                              DataTemplateDetailMapper detailMapper,
-                             JdbcTemplate jdbcTemplate) {
+                             JdbcTemplate jdbcTemplate,
+                             TaskMapper taskMapper) {
         this.dataIndexMapper = dataIndexMapper;
         this.detailMapper = detailMapper;
         this.jdbcTemplate = jdbcTemplate;
+        this.taskMapper = taskMapper;
     }
 
     /**
@@ -71,47 +76,114 @@ public class DataRecordService {
         if (index == null) {
             return new PageResult<>(0, pageNo, pageSize, List.of());
         }
-        return pageByDataIndex(index, pageNo, pageSize);
+        return pageByDataIndex(index, pageNo, pageSize, null);
     }
 
     /**
      * 按 DATA_INDEX.ID 查询指定数据集的记录页。
      */
     public PageResult<Map<String, Object>> pageByDataIndexId(Long dataIndexId, long pageNo, long pageSize) {
+        return pageByDataIndexId(dataIndexId, pageNo, pageSize, null);
+    }
+
+    /**
+     * 按 DATA_INDEX.ID 查询指定数据集的记录页。可选传入 taskId 过滤在任务起止时段内。
+     */
+    public PageResult<Map<String, Object>> pageByDataIndexId(Long dataIndexId, long pageNo, long pageSize, Long taskId) {
         DataIndex index = dataIndexMapper.selectById(dataIndexId);
         if (index == null) {
             return new PageResult<>(0, pageNo, pageSize, List.of());
         }
-        return pageByDataIndex(index, pageNo, pageSize);
+        return pageByDataIndex(index, pageNo, pageSize, taskId);
     }
 
     /**
      * 查询遥测走势图时序窗口。
-     * <ul>
-     *   <li>未传 from/to（live）：对齐 Grafana「Last 1h」——轴宽固定 windowMinutes，右边界贴最新采样；
-     *       数据不足 1 小时时左侧留空，不缩短轴宽。</li>
-     *   <li>传入 from/to：按绝对时间窗查询，跨度不超过 60 分钟。</li>
-     * </ul>
      */
     public DataSeriesResponse seriesByDataIndexId(Long dataIndexId,
                                                   int windowMinutes,
                                                   int maxPoints,
                                                   String from,
                                                   String to) {
+        return seriesByDataIndexId(dataIndexId, windowMinutes, maxPoints, from, to, null);
+    }
+
+    /**
+     * 查询遥测走势图时序窗口。
+     * <ul>
+     *   <li>传入 taskId 时：严格限定在该任务的执行时段（startTime ~ endTime）内。
+     *       已结束任务自动全时段撑满展示；运行中任务随采集延伸并跟随最新。</li>
+     *   <li>未传 taskId 时：
+     *       未传 from/to（live）：对齐最新采样（最长 windowMinutes）；
+     *       传入 from/to：按绝对时间窗查询。</li>
+     * </ul>
+     */
+    public DataSeriesResponse seriesByDataIndexId(Long dataIndexId,
+                                                  int windowMinutes,
+                                                  int maxPoints,
+                                                  String from,
+                                                  String to,
+                                                  Long taskId) {
         DataIndex index = requireDataIndex(dataIndexId);
         String table = quoteIdentifier(index.getDataTable());
         int window = Math.min(Math.max(windowMinutes, 1), 60);
         int limit = Math.min(Math.max(maxPoints, 1), 10_000);
 
-        OffsetDateTime latestAvailable = jdbcTemplate.queryForObject(
-                "select max(create_time) from " + table,
-                OffsetDateTime.class
-        );
-        OffsetDateTime earliestAvailable = jdbcTemplate.queryForObject(
-                "select min(create_time) from " + table,
-                OffsetDateTime.class
-        );
+        OffsetDateTime taskStart = null;
+        OffsetDateTime taskEnd = null;
+        boolean taskFinished = false;
+
+        if (taskId != null) {
+            Task task = taskMapper.selectById(taskId);
+            if (task == null || task.getStartTime() == null) {
+                return new DataSeriesResponse(null, null, null, null, false, List.of());
+            }
+            taskStart = task.getStartTime();
+            taskEnd = task.getEndTime();
+            taskFinished = taskEnd != null || isTerminalStatus(task.getTaskStatus());
+        }
+
+        OffsetDateTime latestAvailable;
+        OffsetDateTime earliestAvailable;
+        if (taskStart != null) {
+            if (taskEnd != null) {
+                latestAvailable = jdbcTemplate.queryForObject(
+                        "select max(create_time) from " + table + " where create_time >= ? and create_time <= ?",
+                        OffsetDateTime.class, taskStart, taskEnd
+                );
+                earliestAvailable = jdbcTemplate.queryForObject(
+                        "select min(create_time) from " + table + " where create_time >= ? and create_time <= ?",
+                        OffsetDateTime.class, taskStart, taskEnd
+                );
+            } else {
+                latestAvailable = jdbcTemplate.queryForObject(
+                        "select max(create_time) from " + table + " where create_time >= ?",
+                        OffsetDateTime.class, taskStart
+                );
+                earliestAvailable = jdbcTemplate.queryForObject(
+                        "select min(create_time) from " + table + " where create_time >= ?",
+                        OffsetDateTime.class, taskStart
+                );
+            }
+        } else {
+            latestAvailable = jdbcTemplate.queryForObject(
+                    "select max(create_time) from " + table,
+                    OffsetDateTime.class
+            );
+            earliestAvailable = jdbcTemplate.queryForObject(
+                    "select min(create_time) from " + table,
+                    OffsetDateTime.class
+            );
+        }
+
         if (latestAvailable == null) {
+            if (taskStart != null) {
+                OffsetDateTime end = taskEnd != null ? taskEnd : OffsetDateTime.now(ZoneOffset.UTC);
+                if (!end.isAfter(taskStart.plusSeconds(5))) {
+                    end = taskStart.plusSeconds(5);
+                }
+                return new DataSeriesResponse(taskStart, end, null, null, !taskFinished, List.of());
+            }
             OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
             return new DataSeriesResponse(now.minusMinutes(window), now, null, null, true, List.of());
         }
@@ -119,33 +191,74 @@ public class DataRecordService {
             earliestAvailable = latestAvailable;
         }
 
-        boolean live = (from == null || from.isBlank()) && (to == null || to.isBlank());
+        boolean explicitRange = from != null && !from.isBlank() && to != null && !to.isBlank();
+        boolean live;
         OffsetDateTime windowEnd;
         OffsetDateTime windowStart;
-        if (live) {
-            windowEnd = latestAvailable;
-            OffsetDateTime oneHourAgo = windowEnd.minusMinutes(window);
-            // 若最早采样距今不足 window 分钟（如任务刚开始），直接从最早采样开始显示，不向前预留无意义空白
-            if (earliestAvailable != null && oneHourAgo.isBefore(earliestAvailable)) {
-                windowStart = earliestAvailable;
+
+        if (taskStart != null) {
+            if (explicitRange) {
+                windowStart = parseSeriesInstant(from, "from");
+                windowEnd = parseSeriesInstant(to, "to");
+                if (!windowEnd.isAfter(windowStart)) {
+                    throw new IllegalArgumentException("to 必须晚于 from");
+                }
+                if (windowStart.isBefore(taskStart)) {
+                    windowStart = taskStart;
+                }
+                if (taskEnd != null && windowEnd.isAfter(taskEnd)) {
+                    windowEnd = taskEnd;
+                }
+                if (!windowEnd.isAfter(windowStart)) {
+                    windowEnd = windowStart.plusSeconds(5);
+                }
+                live = false;
+            } else if (taskFinished) {
+                windowStart = taskStart;
+                windowEnd = taskEnd != null ? taskEnd : latestAvailable;
                 if (!windowEnd.isAfter(windowStart.plusSeconds(5))) {
                     windowEnd = windowStart.plusSeconds(5);
                 }
+                live = false;
             } else {
-                windowStart = oneHourAgo;
+                live = true;
+                windowEnd = latestAvailable;
+                OffsetDateTime oneHourAgo = windowEnd.minusMinutes(window);
+                if (oneHourAgo.isAfter(taskStart)) {
+                    windowStart = oneHourAgo;
+                } else {
+                    windowStart = taskStart;
+                }
+                if (!windowEnd.isAfter(windowStart.plusSeconds(5))) {
+                    windowEnd = windowStart.plusSeconds(5);
+                }
             }
         } else {
-            windowStart = parseSeriesInstant(from, "from");
-            windowEnd = parseSeriesInstant(to, "to");
-            if (!windowEnd.isAfter(windowStart)) {
-                throw new IllegalArgumentException("to 必须晚于 from");
-            }
-            long spanMinutes = java.time.Duration.between(windowStart, windowEnd).toMinutes();
-            if (spanMinutes > 60) {
-                windowStart = windowEnd.minusMinutes(60);
+            live = !explicitRange;
+            if (live) {
+                windowEnd = latestAvailable;
+                OffsetDateTime oneHourAgo = windowEnd.minusMinutes(window);
+                if (earliestAvailable != null && oneHourAgo.isBefore(earliestAvailable)) {
+                    windowStart = earliestAvailable;
+                    if (!windowEnd.isAfter(windowStart.plusSeconds(5))) {
+                        windowEnd = windowStart.plusSeconds(5);
+                    }
+                } else {
+                    windowStart = oneHourAgo;
+                }
+            } else {
+                windowStart = parseSeriesInstant(from, "from");
+                windowEnd = parseSeriesInstant(to, "to");
+                if (!windowEnd.isAfter(windowStart)) {
+                    throw new IllegalArgumentException("to 必须晚于 from");
+                }
+                long spanMinutes = java.time.Duration.between(windowStart, windowEnd).toMinutes();
+                if (spanMinutes > 60) {
+                    windowStart = windowEnd.minusMinutes(60);
+                }
             }
         }
-        // 查询下界可夹在最早采样，但 live 响应仍返回完整 windowStart，保证前端轴宽恒定。
+
         OffsetDateTime queryStart = windowStart;
         OffsetDateTime queryEnd = windowEnd;
         if (queryStart.isBefore(earliestAvailable)) {
@@ -157,7 +270,7 @@ public class DataRecordService {
         if (queryEnd.isBefore(queryStart)) {
             queryEnd = queryStart;
         }
-        if (!live) {
+        if (!live && taskId == null) {
             windowStart = queryStart;
             windowEnd = queryEnd;
         }
@@ -169,6 +282,12 @@ public class DataRecordService {
                 limit
         );
         return new DataSeriesResponse(windowStart, windowEnd, earliestAvailable, latestAvailable, live, records);
+    }
+
+    private boolean isTerminalStatus(String status) {
+        if (status == null) return false;
+        String s = status.trim().toUpperCase();
+        return "SUCCEEDED".equals(s) || "FAILED".equals(s) || "TERMINATED".equals(s) || "COMPLETED".equals(s) || "CANCELLED".equals(s);
     }
 
     private OffsetDateTime parseSeriesInstant(String value, String label) {
@@ -247,18 +366,47 @@ public class DataRecordService {
     }
 
     /**
-     * 根据数据集索引分页读取真实物理表。
+     * 根据数据集索引分页读取真实物理表。可选按 taskId 过滤在任务执行时段内。
      */
-    private PageResult<Map<String, Object>> pageByDataIndex(DataIndex index, long pageNo, long pageSize) {
+    private PageResult<Map<String, Object>> pageByDataIndex(DataIndex index, long pageNo, long pageSize, Long taskId) {
         String table = quoteIdentifier(index.getDataTable());
         long current = Math.max(1, pageNo);
         long size = Math.max(1, pageSize);
         long offset = (current - 1) * size;
-        Long total = jdbcTemplate.queryForObject("select count(*) from " + table, Long.class);
+
+        OffsetDateTime startTime = null;
+        OffsetDateTime endTime = null;
+        if (taskId != null) {
+            Task task = taskMapper.selectById(taskId);
+            if (task == null || task.getStartTime() == null) {
+                return new PageResult<>(0, current, size, List.of());
+            }
+            startTime = task.getStartTime();
+            endTime = task.getEndTime();
+        }
+
+        StringBuilder whereSql = new StringBuilder();
+        List<Object> countParams = new ArrayList<>();
+        List<Object> queryParams = new ArrayList<>();
+        if (startTime != null) {
+            whereSql.append(" where create_time >= ?");
+            countParams.add(startTime);
+            queryParams.add(startTime);
+            if (endTime != null) {
+                whereSql.append(" and create_time <= ?");
+                countParams.add(endTime);
+                queryParams.add(endTime);
+            }
+        }
+
+        Long total = countParams.isEmpty()
+                ? jdbcTemplate.queryForObject("select count(*) from " + table, Long.class)
+                : jdbcTemplate.queryForObject("select count(*) from " + table + whereSql, Long.class, countParams.toArray());
+        queryParams.add(size);
+        queryParams.add(offset);
         List<Map<String, Object>> records = jdbcTemplate.queryForList(
-                "select * from " + table + " order by create_time desc limit ? offset ?",
-                size,
-                offset
+                "select * from " + table + whereSql + " order by create_time desc limit ? offset ?",
+                queryParams.toArray()
         );
         return new PageResult<>(total == null ? 0 : total, current, size, records);
     }
@@ -371,12 +519,33 @@ public class DataRecordService {
      * 导出数据集记录为 CSV。
      */
     public void exportCsv(Long dataIndexId, jakarta.servlet.http.HttpServletResponse response) throws Exception {
+        exportCsv(dataIndexId, null, response);
+    }
+
+    /**
+     * 导出数据集记录为 CSV。可选传入 taskId，仅导出该任务时间范围内的数据。
+     */
+    public void exportCsv(Long dataIndexId, Long taskId, jakarta.servlet.http.HttpServletResponse response) throws Exception {
         DataIndex index = requireDataIndex(dataIndexId);
         String table = quoteIdentifier(index.getDataTable());
-        
+
+        OffsetDateTime startTime = null;
+        OffsetDateTime endTime = null;
+        String filename = index.getDataTable() + (taskId != null ? "_task_" + taskId : "") + ".csv";
+
+        if (taskId != null) {
+            Task task = taskMapper.selectById(taskId);
+            if (task == null || task.getStartTime() == null) {
+                writeCsvHeadersOnly(index, filename, response);
+                return;
+            }
+            startTime = task.getStartTime();
+            endTime = task.getEndTime();
+        }
+
         response.setContentType("text/csv; charset=UTF-8");
-        response.setHeader("Content-Disposition", "attachment; filename=\"" + index.getDataTable() + ".csv\"");
-        
+        response.setHeader("Content-Disposition", "attachment; filename=\"" + filename + "\"");
+
         try (java.io.PrintWriter writer = new java.io.PrintWriter(new java.io.OutputStreamWriter(response.getOutputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
             writer.write('\ufeff'); // BOM for Excel
             List<DataTemplateDetail> templateFields = loadTemplateFields(index.getDataTemplateId());
@@ -386,10 +555,26 @@ public class DataRecordService {
             columns.addAll(templateFields.stream()
                     .map(detail -> normalizeIdentifier(detail.getColumnName(), "数据字段名"))
                     .toList());
-            
+
             writer.println(String.join(",", columns));
-            
-            jdbcTemplate.query("select * from " + table + " order by create_time desc", rs -> {
+
+            StringBuilder sql = new StringBuilder("select * from " + table);
+            List<Object> params = new ArrayList<>();
+            if (startTime != null) {
+                sql.append(" where create_time >= ?");
+                params.add(startTime);
+                if (endTime != null) {
+                    sql.append(" and create_time <= ?");
+                    params.add(endTime);
+                }
+            }
+            sql.append(" order by create_time desc");
+
+            jdbcTemplate.query(sql.toString(), ps -> {
+                for (int i = 0; i < params.size(); i++) {
+                    ps.setObject(i + 1, params.get(i));
+                }
+            }, rs -> {
                 List<String> row = new ArrayList<>();
                 for (String col : columns) {
                     Object val = rs.getObject(col);
@@ -398,6 +583,22 @@ public class DataRecordService {
                 }
                 writer.println(String.join(",", row));
             });
+        }
+    }
+
+    private void writeCsvHeadersOnly(DataIndex index, String filename, jakarta.servlet.http.HttpServletResponse response) throws Exception {
+        response.setContentType("text/csv; charset=UTF-8");
+        response.setHeader("Content-Disposition", "attachment; filename=\"" + filename + "\"");
+        try (java.io.PrintWriter writer = new java.io.PrintWriter(new java.io.OutputStreamWriter(response.getOutputStream(), java.nio.charset.StandardCharsets.UTF_8))) {
+            writer.write('\ufeff');
+            List<DataTemplateDetail> templateFields = loadTemplateFields(index.getDataTemplateId());
+            List<String> columns = new ArrayList<>();
+            columns.add("create_time");
+            columns.add("ingest_time");
+            columns.addAll(templateFields.stream()
+                    .map(detail -> normalizeIdentifier(detail.getColumnName(), "数据字段名"))
+                    .toList());
+            writer.println(String.join(",", columns));
         }
     }
 }

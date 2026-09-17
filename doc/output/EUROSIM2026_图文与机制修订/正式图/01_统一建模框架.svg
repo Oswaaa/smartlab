@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="472" viewBox="0 0 1160 472"><rect width="100%" height="100%" fill="white"/><rect x="0" y="0" width="1160" height="32" fill="#F8F9FA" stroke="#6F7B83" stroke-width="1"/>
+<text x="580" y="21.099999999999998" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="18" font-weight="700" fill="#152C40">跨层协议 Π：统一约定控制信号、数据类型、端口关系与执行反馈</text>
+<g transform="translate(0 48) scale(1)"><rect x="0" y="0" width="445" height="250" fill="#FAF8FC" stroke="#9A83BB" stroke-width="1"/></g>
+<g transform="translate(0 48) scale(1)"><rect x="0" y="0" width="445" height="32" fill="#EEE9F2" stroke="#9A83BB" stroke-width="1"/></g>
+<g transform="translate(0 48) scale(1)"><text x="8" y="22" text-anchor="start" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="20" font-weight="700" fill="#111111">工作流层</text></g>
+<g transform="translate(0 48) scale(1)"><rect x="20" y="50" width="103" height="32" fill="#FFFFFF" stroke="#9A83BB" stroke-width="1"/></g>
+<g transform="translate(0 48) scale(1)"><text x="71.5" y="70.2" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#111111">前序节点</text></g>
+<g transform="translate(0 48) scale(1)"><rect x="171" y="50" width="103" height="32" fill="#FFFFFF" stroke="#9A83BB" stroke-width="1"/></g>
+<g transform="translate(0 48) scale(1)"><text x="222.5" y="70.2" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="700" fill="#111111">执行节点</text></g>
+<g transform="translate(0 48) scale(1)"><rect x="322" y="50" width="103" height="32" fill="#FFFFFF" stroke="#9A83BB" stroke-width="1"/></g>
+<g transform="translate(0 48) scale(1)"><text x="373.5" y="70.2" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#111111">后续节点</text></g>
+<g transform="translate(0 48) scale(1)"><path d="M123 66 L171 66" fill="none" stroke="#9A83BB" stroke-width="1.5"/></g>
+<g transform="translate(0 48) scale(1)"><polygon points="171,66 164,62.9 164,69.1" fill="#9A83BB" stroke="#9A83BB" stroke-width="0.1"/></g>
+<g transform="translate(0 48) scale(1)"><path d="M274 66 L322 66" fill="none" stroke="#9A83BB" stroke-width="1.5"/></g>
+<g transform="translate(0 48) scale(1)"><polygon points="322,66 315,62.9 315,69.1" fill="#9A83BB" stroke="#9A83BB" stroke-width="0.1"/></g>
+<g transform="translate(0 48) scale(1)"><path d="M222 82 L222 104" fill="none" stroke="#9A83BB" stroke-width="1" stroke-dasharray="7 5"/></g>
+<g transform="translate(0 48) scale(1)"><rect x="20" y="104" width="405" height="128" fill="#FFFFFF" stroke="#9A83BB" stroke-width="1"/></g>
+<g transform="translate(0 48) scale(1)"><text x="222.5" y="124.1" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="18" font-weight="700" fill="#111111">工作流节点</text></g>
+<g transform="translate(0 48) scale(1)"><rect x="30" y="135" width="187" height="40" fill="#FAF8FC" stroke="#C7BBD8" stroke-width="1"/></g>
+<g transform="translate(0 48) scale(1)"><text x="123.5" y="153.2" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="700" fill="#111111">变量空间</text></g>
+<g transform="translate(0 48) scale(1)"><text x="123.5" y="167.825" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="13.5" font-weight="400" fill="#111111">任务变量 / 设备属性映射</text></g>
+<g transform="translate(0 48) scale(1)"><rect x="228" y="135" width="187" height="40" fill="#FAF8FC" stroke="#C7BBD8" stroke-width="1"/></g>
+<g transform="translate(0 48) scale(1)"><text x="321.5" y="153.2" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="700" fill="#111111">节点生命周期</text></g>
+<g transform="translate(0 48) scale(1)"><text x="321.5" y="167.825" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="13.5" font-weight="400" fill="#111111">执行阶段与结果</text></g>
+<g transform="translate(0 48) scale(1)"><rect x="30" y="183" width="187" height="40" fill="#FAF8FC" stroke="#C7BBD8" stroke-width="1"/></g>
+<g transform="translate(0 48) scale(1)"><text x="123.5" y="201.2" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="700" fill="#111111">控制接口 / 数据端口</text></g>
+<g transform="translate(0 48) scale(1)"><text x="123.5" y="215.825" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="13.5" font-weight="400" fill="#111111">执行信号 / 输入输出数据</text></g>
+<g transform="translate(0 48) scale(1)"><rect x="228" y="183" width="187" height="40" fill="#FAF8FC" stroke="#C7BBD8" stroke-width="1"/></g>
+<g transform="translate(0 48) scale(1)"><text x="321.5" y="201.2" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="700" fill="#111111">触发器：条件 → 动作</text></g>
+<g transform="translate(0 48) scale(1)"><text x="321.5" y="215.825" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="13.5" font-weight="400" fill="#111111">更新变量与状态 / 发送信号</text></g>
+<g transform="translate(715 48) scale(1)"><rect x="0" y="0" width="445" height="250" fill="#F6F9EF" stroke="#95AE62" stroke-width="1"/></g>
+<g transform="translate(715 48) scale(1)"><rect x="0" y="0" width="445" height="32" fill="#E9F0DB" stroke="#95AE62" stroke-width="1"/></g>
+<g transform="translate(715 48) scale(1)"><text x="8" y="22" text-anchor="start" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="20" font-weight="700" fill="#111111">资源层</text></g>
+<g transform="translate(715 48) scale(1)"><rect x="38" y="45" width="385" height="171" fill="#FFFFFF" stroke="#95AE62" stroke-width="1"/></g>
+<g transform="translate(715 48) scale(1)"><rect x="30" y="53" width="385" height="171" fill="#FFFFFF" stroke="#95AE62" stroke-width="1"/></g>
+<g transform="translate(715 48) scale(1)"><rect x="22" y="61" width="385" height="171" fill="#FFFFFF" stroke="#95AE62" stroke-width="1"/></g>
+<g transform="translate(715 48) scale(1)"><text x="214" y="82.1" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="18" font-weight="700" fill="#111111">设备对象模型</text></g>
+<g transform="translate(715 48) scale(1)"><rect x="40" y="96" width="168" height="117" fill="#F6F9EF" stroke="#C3D39E" stroke-width="1"/></g>
+<g transform="translate(715 48) scale(1)"><text x="124" y="115.15" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="17" font-weight="700" fill="#111111">能力模型</text></g>
+<g transform="translate(715 48) scale(1)"><text x="124" y="136.3" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="14" font-weight="400" fill="#111111">设备属性、能力与参数</text></g>
+<g transform="translate(715 48) scale(1)"><text x="124" y="152.68" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="14" font-weight="400" fill="#111111">接口与 Adapter 映射契约</text></g>
+<g transform="translate(715 48) scale(1)"><text x="124" y="169.06" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="14" font-weight="400" fill="#111111">内禀约束</text></g>
+<g transform="translate(715 48) scale(1)"><rect x="226" y="96" width="168" height="117" fill="#F6F9EF" stroke="#C3D39E" stroke-width="1"/></g>
+<g transform="translate(715 48) scale(1)"><text x="310" y="115.15" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="17" font-weight="700" fill="#111111">状态机</text></g>
+<g transform="translate(715 48) scale(1)"><text x="310" y="136.3" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="14" font-weight="400" fill="#111111">处理请求与状态判断</text></g>
+<g transform="translate(715 48) scale(1)"><text x="310" y="152.68" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="14" font-weight="400" fill="#111111">状态转移与指令输出</text></g>
+<g transform="translate(715 48) scale(1)"><text x="310" y="169.06" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="14" font-weight="400" fill="#111111">依据反馈更新状态</text></g>
+<path d="M445 147 L715 147" fill="none" stroke="#939CA3" stroke-width="1.5" stroke-dasharray="7 5"/>
+<text x="580" y="141.1" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="18" font-weight="400" fill="#939CA3">能力绑定</text>
+<path d="M445 205 L715 205" fill="none" stroke="#28849C" stroke-width="1.5"/>
+<polygon points="715,205 708,201.9 708,208.1" fill="#28849C" stroke="#28849C" stroke-width="0.1"/>
+<text x="580" y="198.1" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="18" font-weight="400" fill="#28849C">执行请求 / 控制信号</text>
+<path d="M715 260 L445 260" fill="none" stroke="#799A39" stroke-width="1.5"/>
+<polygon points="445,260 452,263.1 452,256.9" fill="#799A39" stroke="#799A39" stroke-width="0.1"/>
+<text x="580" y="282.1" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="18" font-weight="400" fill="#799A39">状态 / 数据反馈</text>
+<rect x="0" y="374" width="1160" height="98" fill="#FEF5EE" stroke="#6F7B83" stroke-width="1"/>
+<rect x="0" y="374" width="1160" height="32" fill="#FBEADB" stroke="#6F7B83" stroke-width="1"/>
+<text x="8" y="396" text-anchor="start" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="20" font-weight="700" fill="#111111">约束层</text>
+<rect x="22" y="417" width="328" height="45" fill="#FFFFFF" stroke="#6F7B83" stroke-width="1"/>
+<text x="186" y="436.15" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="17" font-weight="700" fill="#111111">观察空间</text>
+<text x="186" y="452.25" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="15" font-weight="400" fill="#111111">设备状态、属性 / 工作流上下文</text>
+<rect x="416" y="417" width="328" height="45" fill="#FFFFFF" stroke="#6F7B83" stroke-width="1"/>
+<text x="580" y="436.15" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="17" font-weight="700" fill="#111111">约束规则</text>
+<text x="580" y="452.25" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="15" font-weight="400" fill="#111111">实验室基线约束 / 任务约束</text>
+<rect x="810" y="417" width="328" height="45" fill="#FFFFFF" stroke="#6F7B83" stroke-width="1"/>
+<text x="974" y="436.15" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="17" font-weight="700" fill="#111111">处理动作</text>
+<text x="974" y="452.25" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="15" font-weight="400" fill="#111111">设备动作 / 警告、报警 / 中止</text>
+<path d="M350 439 L416 439" fill="none" stroke="#B15F20" stroke-width="1.5"/>
+<polygon points="416,439 409,435.9 409,442.1" fill="#B15F20" stroke="#B15F20" stroke-width="0.1"/>
+<path d="M744 439 L810 439" fill="none" stroke="#B15F20" stroke-width="1.5"/>
+<polygon points="810,439 803,435.9 803,442.1" fill="#B15F20" stroke="#B15F20" stroke-width="0.1"/>
+<path d="M140 298 L140 374" fill="none" stroke="#9A83BB" stroke-width="1.5" stroke-dasharray="7 5"/>
+<polygon points="140,374 143.1,367 136.9,367" fill="#9A83BB" stroke="#9A83BB" stroke-width="0.1"/>
+<text x="71" y="329.2" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#9A83BB">节点变量</text>
+<text x="71" y="347.91999999999996" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#9A83BB">执行上下文</text>
+<path d="M865 298 L865 322 L380 322 L380 374" fill="none" stroke="#799A39" stroke-width="1.5" stroke-dasharray="7 5"/>
+<polygon points="380,374 383.1,367 376.9,367" fill="#799A39" stroke="#799A39" stroke-width="0.1"/>
+<text x="711" y="312.2" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#799A39">设备状态 / 测量属性</text>
+<path d="M1060 374 L1060 347 L340 347 L340 298" fill="none" stroke="#B15F20" stroke-width="1.5" stroke-dasharray="7 5"/>
+<polygon points="340,298 336.9,305 343.1,305" fill="#B15F20" stroke="#B15F20" stroke-width="0.1"/>
+<path d="M1060 347 L1120 347 L1120 298" fill="none" stroke="#B15F20" stroke-width="1.5" stroke-dasharray="7 5"/>
+<polygon points="1120,298 1116.9,305 1123.1,305" fill="#B15F20" stroke="#B15F20" stroke-width="0.1"/>
+<text x="820.5" y="364.2" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#B15F20">处理动作经接口返回节点 / 状态机</text></svg>

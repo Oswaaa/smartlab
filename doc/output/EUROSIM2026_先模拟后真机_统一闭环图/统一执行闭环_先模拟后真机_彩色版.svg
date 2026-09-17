@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="870" viewBox="0 0 2000 870"><title>同一执行闭环：上位机安排先模拟后真机</title><desc>两行表示同一条链路的两次运行。大模型经统一执行机制与设备状态机调用 Adapter，设备状态和数据沿原链路返回。执行模式由上位机指定，先模拟并处理反馈，确认无问题后再发起真机执行。Adapter 不承担模拟检查或阶段决策。</desc><defs><marker id="blue" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#235F9A"/></marker><marker id="green" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#168270"/></marker><marker id="orange" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#B86626"/></marker></defs><style>text{font-family:'Microsoft YaHei','微软雅黑',sans-serif}</style><rect width="2000" height="870" fill="#FFFFFF"/><text x="60" y="48" text-anchor="start" font-size="36" font-weight="700" fill="#193B58">第一次运行：模拟执行</text>
+<rect x="140" y="95" width="360" height="155" fill="#EFF4FA" stroke="#586D7D" stroke-width="1.8"/>
+<rect x="140" y="95" width="360" height="48" fill="#CCDEEF" stroke="#586D7D" stroke-width="1.8"/>
+<text x="162" y="129" text-anchor="start" font-size="32" font-weight="700" fill="#193B58">大模型</text>
+<text x="320" y="197" text-anchor="middle" font-size="32" font-weight="700" fill="#193B58">决策与调整</text>
+<text x="320" y="231" text-anchor="middle" font-size="26" font-weight="400" fill="#193B58">根据执行反馈调整</text>
+<rect x="720" y="95" width="560" height="155" fill="#F1F6EB" stroke="#586D7D" stroke-width="1.8"/>
+<rect x="720" y="95" width="560" height="48" fill="#CCDEEF" stroke="#586D7D" stroke-width="1.8"/>
+<text x="742" y="129" text-anchor="start" font-size="32" font-weight="700" fill="#193B58">统一执行机制</text>
+<text x="1000" y="196" text-anchor="middle" font-size="32" font-weight="700" fill="#193B58">设备模型 / 状态机</text>
+<text x="1000" y="231" text-anchor="middle" font-size="26" font-weight="400" fill="#193B58">工作流按需参与，约束照常生效</text>
+<rect x="1520" y="95" width="360" height="155" fill="#FFF8E5" stroke="#586D7D" stroke-width="1.8"/>
+<rect x="1520" y="95" width="360" height="48" fill="#F5E4B0" stroke="#586D7D" stroke-width="1.8"/>
+<text x="1542" y="129" text-anchor="start" font-size="32" font-weight="700" fill="#193B58">Adapter</text>
+<text x="1700" y="196" text-anchor="middle" font-size="32" font-weight="700" fill="#193B58">模拟模式</text>
+<text x="1700" y="231" text-anchor="middle" font-size="25" font-weight="400" fill="#193B58">返回模拟的设备状态与数据</text>
+<path d="M 500 157 L 720 157" fill="none" stroke="#235F9A" stroke-width="2.8" stroke-linejoin="round" marker-end="url(#blue)"/>
+<text x="610" y="139" text-anchor="middle" font-size="27" font-weight="400" fill="#235F9A">控制请求</text>
+<path d="M 1280 157 L 1520 157" fill="none" stroke="#235F9A" stroke-width="2.8" stroke-linejoin="round" marker-end="url(#blue)"/>
+<text x="1400" y="139" text-anchor="middle" font-size="27" font-weight="400" fill="#235F9A">状态机发令</text>
+<path d="M 1520 212 L 1280 212" fill="none" stroke="#168270" stroke-width="2.8" stroke-linejoin="round" marker-end="url(#green)"/>
+<text x="1400" y="243" text-anchor="middle" font-size="25" font-weight="400" fill="#168270">设备状态 / 数据</text>
+<path d="M 720 212 L 500 212" fill="none" stroke="#168270" stroke-width="2.8" stroke-linejoin="round" marker-end="url(#green)"/>
+<text x="610" y="243" text-anchor="middle" font-size="27" font-weight="400" fill="#168270">执行反馈</text>
+<text x="1000" y="300" text-anchor="middle" font-size="29" font-weight="400" fill="#193B58">上位机按设备数据处理模拟反馈，照常推进状态机、工作流与约束判断。</text>
+<rect x="140" y="345" width="1740" height="70" fill="#FFF3E9" stroke="#B86626" stroke-width="1.8"/>
+<text x="1010" y="390" text-anchor="middle" font-size="32" font-weight="700" fill="#B86626">上位机确认模拟执行无问题后，安排下一次真机执行</text>
+<path d="M 75 288 L 75 418" fill="none" stroke="#B86626" stroke-width="2.8" stroke-linejoin="round" stroke-dasharray="9 6" marker-end="url(#orange)"/>
+<text x="60" y="468" text-anchor="start" font-size="36" font-weight="700" fill="#193B58">第二次运行：真机执行</text>
+<rect x="140" y="515" width="360" height="155" fill="#EFF4FA" stroke="#586D7D" stroke-width="1.8"/>
+<rect x="140" y="515" width="360" height="48" fill="#CCDEEF" stroke="#586D7D" stroke-width="1.8"/>
+<text x="162" y="549" text-anchor="start" font-size="32" font-weight="700" fill="#193B58">大模型</text>
+<text x="320" y="617" text-anchor="middle" font-size="32" font-weight="700" fill="#193B58">决策与调整</text>
+<text x="320" y="651" text-anchor="middle" font-size="26" font-weight="400" fill="#193B58">根据执行反馈调整</text>
+<rect x="720" y="515" width="560" height="155" fill="#F1F6EB" stroke="#586D7D" stroke-width="1.8"/>
+<rect x="720" y="515" width="560" height="48" fill="#CCDEEF" stroke="#586D7D" stroke-width="1.8"/>
+<text x="742" y="549" text-anchor="start" font-size="32" font-weight="700" fill="#193B58">统一执行机制</text>
+<text x="1000" y="616" text-anchor="middle" font-size="32" font-weight="700" fill="#193B58">设备模型 / 状态机</text>
+<text x="1000" y="651" text-anchor="middle" font-size="26" font-weight="400" fill="#193B58">工作流按需参与，约束照常生效</text>
+<rect x="1520" y="515" width="360" height="155" fill="#FFF8E5" stroke="#586D7D" stroke-width="1.8"/>
+<rect x="1520" y="515" width="360" height="48" fill="#F5E4B0" stroke="#586D7D" stroke-width="1.8"/>
+<text x="1542" y="549" text-anchor="start" font-size="32" font-weight="700" fill="#193B58">Adapter</text>
+<text x="1700" y="616" text-anchor="middle" font-size="32" font-weight="700" fill="#193B58">真机模式</text>
+<text x="1700" y="651" text-anchor="middle" font-size="25" font-weight="400" fill="#193B58">收发真实设备指令与数据</text>
+<path d="M 500 577 L 720 577" fill="none" stroke="#235F9A" stroke-width="2.8" stroke-linejoin="round" marker-end="url(#blue)"/>
+<text x="610" y="559" text-anchor="middle" font-size="27" font-weight="400" fill="#235F9A">控制请求</text>
+<path d="M 1280 577 L 1520 577" fill="none" stroke="#235F9A" stroke-width="2.8" stroke-linejoin="round" marker-end="url(#blue)"/>
+<text x="1400" y="559" text-anchor="middle" font-size="27" font-weight="400" fill="#235F9A">状态机发令</text>
+<path d="M 1520 632 L 1280 632" fill="none" stroke="#168270" stroke-width="2.8" stroke-linejoin="round" marker-end="url(#green)"/>
+<text x="1400" y="663" text-anchor="middle" font-size="25" font-weight="400" fill="#168270">设备状态 / 数据</text>
+<path d="M 720 632 L 500 632" fill="none" stroke="#168270" stroke-width="2.8" stroke-linejoin="round" marker-end="url(#green)"/>
+<text x="610" y="663" text-anchor="middle" font-size="27" font-weight="400" fill="#168270">执行反馈</text>
+<text x="745" y="742" text-anchor="middle" font-size="30" font-weight="700" fill="#193B58">同一执行链路、同一数据接口、同一套状态与约束规则</text>
+<rect x="1520" y="758" width="360" height="90" fill="#F5F7F8" stroke="#586D7D" stroke-width="1.8"/>
+<text x="1700" y="795" text-anchor="middle" font-size="32" font-weight="700" fill="#193B58">物理设备</text>
+<text x="1700" y="832" text-anchor="middle" font-size="25" font-weight="400" fill="#193B58">执行操作并返回实际数据</text>
+<path d="M 1610 670 L 1610 758" fill="none" stroke="#235F9A" stroke-width="2.8" stroke-linejoin="round" marker-end="url(#blue)"/>
+<text x="1550" y="723" text-anchor="middle" font-size="25" font-weight="400" fill="#235F9A">指令</text>
+<path d="M 1790 758 L 1790 670" fill="none" stroke="#168270" stroke-width="2.8" stroke-linejoin="round" marker-end="url(#green)"/>
+<text x="1850" y="723" text-anchor="middle" font-size="25" font-weight="400" fill="#168270">反馈</text></svg>

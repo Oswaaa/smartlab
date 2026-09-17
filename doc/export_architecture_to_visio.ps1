@@ -33,7 +33,7 @@ function Set-No-Fill($shape) {
 function Set-Line-Style($shape, [string]$className) {
     $shape.CellsU('LineColor').FormulaU = 'RGB(25,25,25)'
     $shape.CellsU('LineWeight').FormulaU = '0.010 in'
-    if ($className -in @('dashed', 'data', 'data-flow', 'persist-flow', 'db-zone', 'external', 'mechanism-zone', 'landing-zone', 'mechanism-flow', 'landing-flow', 'feedback-flow')) {
+    if ($className -in @('dashed', 'data', 'data-flow', 'observe-flow', 'runtime-flow', 'persist-flow', 'db-zone', 'mechanism-zone', 'landing-zone', 'mechanism-flow', 'landing-flow')) {
         $shape.CellsU('LinePattern').FormulaU = '2'
     }
     else {
@@ -56,16 +56,23 @@ function Set-Rect-Style($shape, [string]$className) {
         return
     }
 
+    if ($className -eq 'line-sample') {
+        Set-No-Line $shape
+        $shape.CellsU('FillPattern').FormulaU = '1'
+        $shape.CellsU('FillForegnd').FormulaU = 'RGB(25,25,25)'
+        return
+    }
+
     Set-Line-Style $shape $className
     $shape.CellsU('FillPattern').FormulaU = '1'
-    if ($className -in @('soft', 'smart-pool', 'runtime-pool', 'service-item', 'role', 'cylinder-cap', 'external')) {
+    if ($className -in @('soft', 'smart-pool', 'runtime-pool', 'service-item', 'role', 'cylinder-cap', 'external', 'node-header', 'chip')) {
         $shape.CellsU('FillForegnd').FormulaU = 'RGB(247,247,247)'
     }
     else {
         $shape.CellsU('FillForegnd').FormulaU = 'RGB(255,255,255)'
     }
 
-    if ($className -in @('outer', 'runtime-pool')) {
+    if ($className -in @('outer', 'runtime-pool', 'node-outer')) {
         $shape.CellsU('LineWeight').FormulaU = '0.014 in'
     }
 }
@@ -242,8 +249,10 @@ function Add-Polyline-Shapes($page, $node) {
         $segments.Add($line)
     }
 
-    $segments[$segments.Count - 1].CellsU('EndArrow').FormulaU = '13'
-    $segments[$segments.Count - 1].CellsU('EndArrowSize').FormulaU = '2'
+    if ($node.GetAttribute('marker-end')) {
+        $segments[$segments.Count - 1].CellsU('EndArrow').FormulaU = '13'
+        $segments[$segments.Count - 1].CellsU('EndArrowSize').FormulaU = '2'
+    }
     if ($node.GetAttribute('marker-start')) {
         $segments[0].CellsU('BeginArrow').FormulaU = '13'
         $segments[0].CellsU('BeginArrowSize').FormulaU = '2'
@@ -260,10 +269,15 @@ try {
     $document = $visio.Documents.Add('')
     $page = $visio.ActivePage
     try {
-        $script:visioFontId = $document.Fonts.Item('Microsoft YaHei').ID
+        $script:visioFontId = $document.Fonts.ItemU('Microsoft YaHei').ID
     }
     catch {
-        $script:visioFontId = $null
+        try {
+            $script:visioFontId = $document.Fonts.ItemU('微软雅黑').ID
+        }
+        catch {
+            $script:visioFontId = $null
+        }
     }
     $page.Name = 'SmartLab 2.0 系统结构图'
     $page.PageSheet.CellsU('PageWidth').FormulaU = ('{0} in' -f ($canvasWidth / $pixelsPerInch))

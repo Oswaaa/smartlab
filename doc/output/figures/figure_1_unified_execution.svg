@@ -1,0 +1,242 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 735 390" width="735" height="390" style="background:#FFFFFF; font-family:'Microsoft YaHei', 'PingFang SC', sans-serif;">
+  
+  <defs>
+    <!-- Arrow Markers -->
+    <!-- Blue solid arrow for control request -->
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 8 5 L 1 8.5 z" fill="#2563EB" />
+    </marker>
+    <!-- Dark Blue arrow -->
+    <marker id="arrow-darkblue" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 8 5 L 1 8.5 z" fill="#1E3A8A" />
+    </marker>
+    <!-- Green solid arrow for status/data feedback -->
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 8 5 L 1 8.5 z" fill="#16A34A" />
+    </marker>
+    <!-- Orange dashed arrow for constraints -->
+    <marker id="arrow-orange" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 8 5 L 1 8.5 z" fill="#EA580C" />
+    </marker>
+    <!-- Subtle drop shadows for key cards -->
+    <filter id="card-shadow" x="-4%" y="-4%" width="108%" height="108%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0F172A" flood-opacity="0.06"/>
+    </filter>
+    <filter id="badge-shadow" x="-6%" y="-6%" width="112%" height="112%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#0F172A" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+
+  <!-- Canvas Outer Background & Subtle Border -->
+  <rect x="0" y="0" width="735" height="390" fill="#FFFFFF" rx="8" stroke="#E2E8F0" stroke-width="1.5"/>
+
+  <!-- Diagram Title Header Bar -->
+  <g transform="translate(18, 14)">
+    <rect x="0" y="0" width="4" height="18" fill="#1E3A8A" rx="2"/>
+    <text x="12" y="15" font-size="16" font-weight="bold" fill="#0F172A" letter-spacing="0.5">正式图 1：统一执行链路结构</text>
+    <text x="216" y="14.5" font-size="12" fill="#64748B">（多源意图收敛 · 状态机独占发令 · 约束全局观察无旁路）</text>
+  </g>
+
+  <!-- ==================== LEFT: INTENT SOURCES (3 来源) ==================== -->
+  <g id="intent-sources">
+    <!-- Outer Group Box -->
+    <rect x="18" y="44" width="138" height="106" rx="6" fill="#F8FAFC" stroke="#CBD5E1" stroke-width="1.2" stroke-dasharray="3 3"/>
+    <text x="87" y="60" text-anchor="middle" font-size="11" font-weight="bold" fill="#475569">意图来源</text>
+
+    <!-- Source 1: 人工 -->
+    <rect x="26" y="67" width="122" height="22" rx="4" fill="#FFFFFF" stroke="#94A3B8" stroke-width="1" filter="url(#badge-shadow)"/>
+    <circle cx="37" cy="78" r="4" fill="#64748B"/>
+    <text x="47" y="82" font-size="11" font-weight="bold" fill="#1E293B">人工交互意图</text>
+
+    <!-- Source 2: 流程 -->
+    <rect x="26" y="93" width="122" height="22" rx="4" fill="#FFFFFF" stroke="#2563EB" stroke-width="1" filter="url(#badge-shadow)"/>
+    <circle cx="37" cy="104" r="4" fill="#2563EB"/>
+    <text x="47" y="108" font-size="11" font-weight="bold" fill="#1D4ED8">自动化流程任务</text>
+
+    <!-- Source 3: 大模型 -->
+    <rect x="26" y="119" width="122" height="22" rx="4" fill="#FFFFFF" stroke="#7C3AED" stroke-width="1" filter="url(#badge-shadow)"/>
+    <circle cx="37" cy="130" r="4" fill="#7C3AED"/>
+    <text x="47" y="134" font-size="11" font-weight="bold" fill="#6D28D9">大模型智能体</text>
+  </g>
+
+  <!-- Intent Convergence Arrows into Unified Entrance -->
+  <!-- Convergence Connector Node -->
+  <path d="M 148 78 C 172 78, 172 104, 184 104" fill="none" stroke="#2563EB" stroke-width="1.6"/>
+  <path d="M 148 104 L 184 104" fill="none" stroke="#2563EB" stroke-width="1.6"/>
+  <path d="M 148 130 C 172 130, 172 104, 184 104" fill="none" stroke="#2563EB" stroke-width="1.6"/>
+
+  <!-- Convergence Badge -->
+  <g transform="translate(178, 93)">
+    <rect x="0" y="0" width="112" height="22" rx="11" fill="#EFF6FF" stroke="#3B82F6" stroke-width="1.2" filter="url(#badge-shadow)"/>
+    <text x="56" y="15" text-anchor="middle" font-size="10.5" font-weight="bold" fill="#1E40AF">共同执行入口</text>
+  </g>
+
+  <!-- Convergence Arrow into Device Model -->
+  <path d="M 234 115 L 234 148" fill="none" stroke="#2563EB" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <text x="238" y="136" font-size="10" font-weight="bold" fill="#2563EB">统一意图接入</text>
+
+
+  <!-- ==================== MAIN EXECUTION CHAIN (纵向执行主链) ==================== -->
+  <!-- Column Anchor: X=180, Width=290 -->
+
+  <!-- LAYER 1: 工作流节点 (Workflow Node) -->
+  <g id="layer-workflow" transform="translate(180, 44)">
+    <rect x="0" y="0" width="280" height="42" rx="6" fill="#F0F7FF" stroke="#2563EB" stroke-width="1.8" filter="url(#card-shadow)"/>
+    <!-- Node Icon & Title -->
+    <rect x="10" y="9" width="24" height="24" rx="4" fill="#2563EB"/>
+    <text x="22" y="25" text-anchor="middle" font-size="12" font-weight="bold" fill="#FFFFFF">WF</text>
+    <text x="42" y="20" font-size="13" font-weight="bold" fill="#1E3A8A">工作流节点 (Workflow Node)</text>
+    <text x="42" y="34" font-size="10.5" fill="#475569">作用：接口传递信号 · 数据端口交互 · 步骤生命周期</text>
+  </g>
+
+  <!-- Connection: Workflow to Device Model -->
+  <!-- Downward Control Request -->
+  <path d="M 270 86 L 270 148" fill="none" stroke="#2563EB" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <rect x="250" y="110" width="40" height="16" rx="3" fill="#FFFFFF" stroke="#BFDBFE" stroke-width="0.8"/>
+  <text x="270" y="122" text-anchor="middle" font-size="9.5" font-weight="bold" fill="#1D4ED8">控制请求</text>
+
+  <!-- Upward State Feedback -->
+  <path d="M 370 148 L 370 86" fill="none" stroke="#16A34A" stroke-width="2" marker-end="url(#arrow-green)"/>
+  <rect x="350" y="110" width="40" height="16" rx="3" fill="#FFFFFF" stroke="#BBF7D0" stroke-width="0.8"/>
+  <text x="370" y="122" text-anchor="middle" font-size="9.5" font-weight="bold" fill="#15803D">状态反馈</text>
+
+
+  <!-- LAYER 2: 设备模型 (Device Model: Capability + State Machine) -->
+  <g id="layer-model" transform="translate(180, 150)">
+    <!-- Container Box -->
+    <rect x="0" y="0" width="280" height="96" rx="6" fill="#F8FAFC" stroke="#1E3A8A" stroke-width="2" filter="url(#card-shadow)"/>
+    <rect x="0" y="0" width="280" height="22" rx="6" fill="#1E3A8A"/>
+    <text x="140" y="15" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#FFFFFF">设备模型 (Device Model) · 执行控制核心</text>
+
+    <!-- Sub-block 1: 能力模型 (Capability Model) -->
+    <g transform="translate(8, 28)">
+      <rect x="0" y="0" width="126" height="60" rx="4" fill="#FFFFFF" stroke="#93C5FD" stroke-width="1.2"/>
+      <text x="63" y="16" text-anchor="middle" font-size="11" font-weight="bold" fill="#1D4ED8">能力模型</text>
+      <text x="63" y="32" text-anchor="middle" font-size="9.5" fill="#475569">提供设备属性定义</text>
+      <text x="63" y="46" text-anchor="middle" font-size="9.5" fill="#475569">动作语义说明与契约</text>
+    </g>
+
+    <!-- Internal Link between Capability and State Machine -->
+    <path d="M 134 58 L 146 58" stroke="#94A3B8" stroke-width="1.5" stroke-dasharray="2 2"/>
+
+    <!-- Sub-block 2: 状态机 (State Machine) -->
+    <g transform="translate(146, 28)">
+      <rect x="0" y="0" width="126" height="60" rx="4" fill="#EFF6FF" stroke="#2563EB" stroke-width="1.5"/>
+      <text x="63" y="16" text-anchor="middle" font-size="11" font-weight="bold" fill="#1E40AF">★ 状态机 (Core)</text>
+      <text x="63" y="32" text-anchor="middle" font-size="9.5" font-weight="bold" fill="#2563EB">发令独占控制实体</text>
+      <text x="63" y="46" text-anchor="middle" font-size="9" fill="#475569">状态转移 / 异常锁存</text>
+    </g>
+  </g>
+
+  <!-- Connection: State Machine to Adapter -->
+  <!-- Downward Command Dispatch -->
+  <path d="M 270 246 L 270 278" fill="none" stroke="#2563EB" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <rect x="250" y="254" width="40" height="15" rx="3" fill="#FFFFFF" stroke="#BFDBFE" stroke-width="0.8"/>
+  <text x="270" y="265" text-anchor="middle" font-size="9" font-weight="bold" fill="#1D4ED8">下发命令</text>
+
+  <!-- Upward Event Update -->
+  <path d="M 370 278 L 370 246" fill="none" stroke="#16A34A" stroke-width="2" marker-end="url(#arrow-green)"/>
+  <rect x="350" y="254" width="40" height="15" rx="3" fill="#FFFFFF" stroke="#BBF7D0" stroke-width="0.8"/>
+  <text x="370" y="265" text-anchor="middle" font-size="9" font-weight="bold" fill="#15803D">反馈转换</text>
+
+
+  <!-- LAYER 3: 适配器 (Adapter) -->
+  <g id="layer-adapter" transform="translate(180, 280)">
+    <rect x="0" y="0" width="280" height="38" rx="6" fill="#F0FDF4" stroke="#059669" stroke-width="1.6" filter="url(#card-shadow)"/>
+    <rect x="10" y="8" width="22" height="22" rx="4" fill="#059669"/>
+    <text x="21" y="23" text-anchor="middle" font-size="11" font-weight="bold" fill="#FFFFFF">AD</text>
+    <text x="38" y="17" font-size="12" font-weight="bold" fill="#065F46">Adapter (边缘适配层)</text>
+    <text x="38" y="30" font-size="10" fill="#047857">作用：协议映射 · 硬件命令下发 · 原始数据/状态反馈转换</text>
+  </g>
+
+  <!-- Connection: Adapter to Physical Device -->
+  <path d="M 270 318 L 270 340" fill="none" stroke="#2563EB" stroke-width="2" marker-end="url(#arrow-blue)"/>
+  <path d="M 370 340 L 370 318" fill="none" stroke="#16A34A" stroke-width="2" marker-end="url(#arrow-green)"/>
+
+
+  <!-- LAYER 4: 物理设备 (Physical Device) -->
+  <g id="layer-physical" transform="translate(180, 342)">
+    <rect x="0" y="0" width="280" height="36" rx="6" fill="#1E293B" stroke="#0F172A" stroke-width="1.5" filter="url(#card-shadow)"/>
+    <text x="140" y="16" text-anchor="middle" font-size="12" font-weight="bold" fill="#F8FAFC">物理设备 (Physical Equipment / PLC)</text>
+    <text x="140" y="29" text-anchor="middle" font-size="9.5" fill="#94A3B8">作用：执行物理动作 · 产生传感器测量与真实硬件运行状态</text>
+  </g>
+
+
+  <!-- ==================== RIGHT: CONSTRAINT OBSERVATION & HANDLING ==================== -->
+  <!-- Constraint Engine Box -->
+  <g id="constraint-system" transform="translate(490, 44)">
+    <!-- Main Constraint Box -->
+    <rect x="0" y="0" width="228" height="232" rx="6" fill="#FFF7ED" stroke="#EA580C" stroke-width="1.8" filter="url(#card-shadow)"/>
+    
+    <!-- Header -->
+    <rect x="0" y="0" width="228" height="24" rx="6" fill="#EA580C"/>
+    <text x="114" y="16" text-anchor="middle" font-size="11.5" font-weight="bold" fill="#FFFFFF">约束观察与处置机制 (Constraints)</text>
+
+    <!-- Observation Scope Card -->
+    <g transform="translate(10, 32)">
+      <rect x="0" y="0" width="208" height="66" rx="4" fill="#FFFFFF" stroke="#FDBA74" stroke-width="1"/>
+      <text x="10" y="16" font-size="10.5" font-weight="bold" fill="#C2410C">全链路实时约束观察</text>
+      <text x="10" y="33" font-size="9.5" fill="#7C2D12">• 观察工作流上下文与节点时序</text>
+      <text x="10" y="47" font-size="9.5" fill="#7C2D12">• 观察资源属性、状态与遥测历史</text>
+      <text x="10" y="59" font-size="9" fill="#9A3412" font-weight="bold">【严禁绕过模型与状态机直连硬件】</text>
+    </g>
+
+    <!-- Trigger Action Card -->
+    <g transform="translate(10, 106)">
+      <rect x="0" y="0" width="208" height="64" rx="4" fill="#FFFFFF" stroke="#FB923C" stroke-width="1"/>
+      <text x="10" y="16" font-size="10.5" font-weight="bold" fill="#C2410C">多级保护处理动作</text>
+      <!-- Action Badges -->
+      <g transform="translate(10, 25)">
+        <rect x="0" y="0" width="38" height="18" rx="3" fill="#FEF3C7" stroke="#D97706" stroke-width="0.8"/>
+        <text x="19" y="12.5" text-anchor="middle" font-size="9.5" font-weight="bold" fill="#B45309">警告</text>
+
+        <rect x="46" y="0" width="38" height="18" rx="3" fill="#FFEDD5" stroke="#EA580C" stroke-width="0.8"/>
+        <text x="65" y="12.5" text-anchor="middle" font-size="9.5" font-weight="bold" fill="#C2410C">报警</text>
+
+        <rect x="92" y="0" width="38" height="18" rx="3" fill="#FEE2E2" stroke="#DC2626" stroke-width="0.8"/>
+        <text x="111" y="12.5" text-anchor="middle" font-size="9.5" font-weight="bold" fill="#B91C1C">停止</text>
+
+        <rect x="138" y="0" width="46" height="18" rx="3" fill="#450A0A" stroke="#7F1D1D" stroke-width="0.8"/>
+        <text x="161" y="12.5" text-anchor="middle" font-size="9.5" font-weight="bold" fill="#FEF2F2">中止</text>
+      </g>
+      <text x="10" y="56" font-size="9.5" fill="#64748B">依规则触发优雅降级或强制联锁</text>
+    </g>
+
+    <!-- Feedback Back to Unified Execution Mechanism -->
+    <g transform="translate(10, 178)">
+      <rect x="0" y="0" width="208" height="44" rx="4" fill="#FFFBEB" stroke="#F59E0B" stroke-width="1"/>
+      <text x="104" y="16" text-anchor="middle" font-size="10" font-weight="bold" fill="#B45309">处置动作回注统一执行机制</text>
+      <text x="104" y="32" text-anchor="middle" font-size="9" fill="#92400E">驱动状态机异常锁存 / 节点生命周期流转</text>
+    </g>
+  </g>
+
+  <!-- Observation Scope Connector Lines (Orange Dashed) -->
+  <!-- Observing Workflow Node -->
+  <path d="M 460 65 L 490 65" fill="none" stroke="#F97316" stroke-width="1.5" stroke-dasharray="3 3"/>
+  <circle cx="460" cy="65" r="3" fill="#F97316"/>
+
+  <!-- Observing Device Model -->
+  <path d="M 460 198 L 490 198" fill="none" stroke="#F97316" stroke-width="1.5" stroke-dasharray="3 3"/>
+  <circle cx="460" cy="198" r="3" fill="#F97316"/>
+
+  <!-- Observing Adapter Feedback -->
+  <path d="M 460 299 L 476 299 C 484 299, 490 270, 490 240" fill="none" stroke="#F97316" stroke-width="1.5" stroke-dasharray="3 3"/>
+  <circle cx="460" cy="299" r="3" fill="#F97316"/>
+
+  <!-- Action Injection Back to State Machine (Solid Orange Arrow returning left) -->
+  <path d="M 490 230 C 472 230, 460 220, 396 220" fill="none" stroke="#EA580C" stroke-width="2" stroke-dasharray="4 2" marker-end="url(#arrow-orange)"/>
+  <rect x="408" y="210" width="76" height="15" rx="3" fill="#FFFFFF" stroke="#FDBA74" stroke-width="0.8"/>
+  <text x="446" y="221" text-anchor="middle" font-size="9" font-weight="bold" fill="#EA580C">约束动作回注</text>
+
+  <!-- Bottom Clarification Card on Right -->
+  <g transform="translate(490, 288)">
+    <rect x="0" y="0" width="228" height="90" rx="6" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1.2"/>
+    <text x="12" y="18" font-size="10.5" font-weight="bold" fill="#1E293B">核心架构原则 (Architecture Invariant)</text>
+    <text x="12" y="36" font-size="9.5" fill="#475569">1. 状态机必须在发令路径上，严禁旁路</text>
+    <text x="12" y="52" font-size="9.5" fill="#475569">2. 约束作为独立观察者，不可兼任控制旁路</text>
+    <text x="12" y="68" font-size="9.5" fill="#475569">3. 所有反馈沿原路严格收敛闭环</text>
+    <text x="12" y="82" font-size="9" font-weight="bold" fill="#0D9488">统一控制模型 · 状态强一致性保证</text>
+  </g>
+
+</svg>

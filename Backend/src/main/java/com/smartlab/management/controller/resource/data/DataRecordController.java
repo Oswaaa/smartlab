@@ -53,13 +53,15 @@ public class DataRecordController {
 
     /**
      * 按 DATA_INDEX.ID 查询指定数据集记录。
+     * 可选传入 taskId，限定在该任务的执行时间范围内。
      */
     @GetMapping("/dataset/{dataIndexId}")
     public ApiResponse<PageResult<Map<String, Object>>> pageByDataIndex(@PathVariable Long dataIndexId,
                                                                         @RequestParam(defaultValue = "1") long pageNo,
-                                                                        @RequestParam(defaultValue = "50") long pageSize) {
+                                                                        @RequestParam(defaultValue = "50") long pageSize,
+                                                                        @RequestParam(required = false) Long taskId) {
         try {
-            return ApiResponse.ok(dataRecordService.pageByDataIndexId(dataIndexId, pageNo, pageSize));
+            return ApiResponse.ok(dataRecordService.pageByDataIndexId(dataIndexId, pageNo, pageSize, taskId));
         } catch (Exception e) {
             return ApiResponse.fail(e.getMessage());
         }
@@ -67,17 +69,19 @@ public class DataRecordController {
 
     /**
      * 按 DATA_INDEX.ID 查询遥测走势图时序窗口（与表格分页解耦）。
-     * 不传 from/to 时跟随最新采样（live）；传入 from/to 时按绝对窗口查询（最长 60 分钟）。
+     * 不传 from/to 时跟随最新采样（live）；传入 from/to 时按绝对窗口查询。
+     * 可选传入 taskId，限定在该任务的执行时间范围内。
      */
     @GetMapping("/dataset/{dataIndexId}/series")
     public ApiResponse<DataSeriesResponse> seriesByDataIndex(@PathVariable Long dataIndexId,
                                                              @RequestParam(defaultValue = "60") int windowMinutes,
                                                              @RequestParam(defaultValue = "4000") int maxPoints,
                                                              @RequestParam(required = false) String from,
-                                                             @RequestParam(required = false) String to) {
+                                                             @RequestParam(required = false) String to,
+                                                             @RequestParam(required = false) Long taskId) {
         try {
             return ApiResponse.ok(dataRecordService.seriesByDataIndexId(
-                    dataIndexId, windowMinutes, maxPoints, from, to));
+                    dataIndexId, windowMinutes, maxPoints, from, to, taskId));
         } catch (Exception e) {
             return ApiResponse.fail(e.getMessage());
         }
@@ -85,11 +89,14 @@ public class DataRecordController {
 
     /**
      * 导出数据集记录为 CSV 文件。
+     * 可选传入 taskId，仅导出该任务时间范围内的数据。
      */
     @GetMapping("/export/{dataIndexId}")
-    public void exportCsv(@PathVariable Long dataIndexId, HttpServletResponse response) {
+    public void exportCsv(@PathVariable Long dataIndexId,
+                          @RequestParam(required = false) Long taskId,
+                          HttpServletResponse response) {
         try {
-            dataRecordService.exportCsv(dataIndexId, response);
+            dataRecordService.exportCsv(dataIndexId, taskId, response);
         } catch (Exception e) {
             response.setStatus(500);
         }

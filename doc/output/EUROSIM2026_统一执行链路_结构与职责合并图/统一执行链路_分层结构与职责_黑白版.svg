@@ -1,0 +1,136 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1800" height="955" viewBox="0 0 1800 955" role="img"><title>统一执行链路：分层结构与层级职责</title><desc>左侧保留三列设备关联、四层透视结构、横向工作流连接以及纵向控制和反馈；右侧按照四层对齐说明职责。设备模型显式包括能力模型和状态机。</desc><defs><marker id="control" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="13" markerHeight="13" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#000000"/></marker></defs><style>text{font-family:'Microsoft YaHei','微软雅黑',sans-serif}</style><rect width="1800" height="955" fill="#FFFFFF"/><polygon points="20,180 810,180 965,60 175,60" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<polygon points="20,180 810,180 810,193 20,193" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<polygon points="810,180 965,60 965,73 810,193" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<text x="580" y="97" text-anchor="middle" font-size="41" font-weight="400" fill="#000000">工作流层</text>
+<polygon points="20,416 810,416 965,296 175,296" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<polygon points="20,416 810,416 810,429 20,429" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<polygon points="810,416 965,296 965,309 810,429" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<text x="580" y="333" text-anchor="middle" font-size="41" font-weight="400" fill="#000000">设备模型层</text>
+<polygon points="20,652 810,652 965,532 175,532" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<polygon points="20,652 810,652 810,665 20,665" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<polygon points="810,652 965,532 965,545 810,665" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<text x="580" y="569" text-anchor="middle" font-size="41" font-weight="400" fill="#000000">Adapter 层</text>
+<polygon points="20,888 810,888 965,768 175,768" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<polygon points="20,888 810,888 810,901 20,901" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<polygon points="810,888 965,768 965,781 810,901" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<text x="580" y="805" text-anchor="middle" font-size="41" font-weight="400" fill="#000000">物理设备</text>
+<path d="M 80 166 L 80 286" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 80 350 L 80 388" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 254 166 L 254 286" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 254 350 L 254 388" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 80 402 L 80 522" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 80 586 L 80 624" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 254 402 L 254 522" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 254 586 L 254 624" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 80 638 L 80 758" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 80 822 L 80 860" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 254 638 L 254 758" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 254 822 L 254 860" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 340 166 L 340 286" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 340 350 L 340 388" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 514 166 L 514 286" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 514 350 L 514 388" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 340 402 L 340 522" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 340 586 L 340 624" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 514 402 L 514 522" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 514 586 L 514 624" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 340 638 L 340 758" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 340 822 L 340 860" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 514 638 L 514 758" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 514 822 L 514 860" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 600 166 L 600 286" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 600 350 L 600 388" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 774 166 L 774 286" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 774 350 L 774 388" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 600 402 L 600 522" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 600 586 L 600 624" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 774 402 L 774 522" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 774 586 L 774 624" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 600 638 L 600 758" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 600 822 L 600 860" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 774 638 L 774 758" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<path d="M 774 822 L 774 860" fill="none" stroke="#000000" stroke-width="1.6" stroke-dasharray="9 8"/>
+<polygon points="80,152 254,152 308,108 134,108" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<polygon points="80,152 254,152 254,166 80,166" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<text x="194" y="138" text-anchor="middle" font-size="26" font-weight="400" fill="#000000">设备能力节点</text>
+<polygon points="340,152 514,152 568,108 394,108" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<polygon points="340,152 514,152 514,166 340,166" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<text x="454" y="138" text-anchor="middle" font-size="26" font-weight="400" fill="#000000">设备能力节点</text>
+<polygon points="600,152 774,152 828,108 654,108" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<polygon points="600,152 774,152 774,166 600,166" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<text x="714" y="138" text-anchor="middle" font-size="26" font-weight="400" fill="#000000">设备能力节点</text>
+<polygon points="80,388 254,388 308,344 134,344" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<polygon points="80,388 254,388 254,402 80,402" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<text x="194" y="374" text-anchor="middle" font-size="29" font-weight="400" fill="#000000">设备模型</text>
+<polygon points="340,388 514,388 568,344 394,344" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<polygon points="340,388 514,388 514,402 340,402" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<text x="454" y="374" text-anchor="middle" font-size="29" font-weight="400" fill="#000000">设备模型</text>
+<polygon points="600,388 774,388 828,344 654,344" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<polygon points="600,388 774,388 774,402 600,402" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<text x="714" y="374" text-anchor="middle" font-size="29" font-weight="400" fill="#000000">设备模型</text>
+<polygon points="80,624 254,624 308,580 134,580" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<polygon points="80,624 254,624 254,638 80,638" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<text x="194" y="610" text-anchor="middle" font-size="29" font-weight="400" fill="#000000">Adapter</text>
+<polygon points="340,624 514,624 568,580 394,580" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<polygon points="340,624 514,624 514,638 340,638" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<text x="454" y="610" text-anchor="middle" font-size="29" font-weight="400" fill="#000000">Adapter</text>
+<polygon points="600,624 774,624 828,580 654,580" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<polygon points="600,624 774,624 774,638 600,638" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<text x="714" y="610" text-anchor="middle" font-size="29" font-weight="400" fill="#000000">Adapter</text>
+<polygon points="80,860 254,860 308,816 134,816" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<polygon points="80,860 254,860 254,874 80,874" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<text x="194" y="846" text-anchor="middle" font-size="29" font-weight="400" fill="#000000">物理设备</text>
+<polygon points="340,860 514,860 568,816 394,816" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<polygon points="340,860 514,860 514,874 340,874" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<text x="454" y="846" text-anchor="middle" font-size="29" font-weight="400" fill="#000000">物理设备</text>
+<polygon points="600,860 774,860 828,816 654,816" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<polygon points="600,860 774,860 774,874 600,874" fill="#FFFFFF" stroke="#000000" stroke-width="1.7" stroke-linejoin="round"/>
+<text x="714" y="846" text-anchor="middle" font-size="29" font-weight="400" fill="#000000">物理设备</text>
+<path d="M 282 129 L 367 129" fill="none" stroke="#000000" stroke-width="2.8" marker-end="url(#control)"/>
+<path d="M 542 129 L 627 129" fill="none" stroke="#000000" stroke-width="2.8" marker-end="url(#control)"/>
+<polygon points="96,201 127,214 158,201 158,296 127,313 96,296" fill="#FFFFFF" stroke="#000000" stroke-width="1.9" stroke-linejoin="round"/>
+<text x="127" y="247" text-anchor="middle" font-size="26" font-weight="400" fill="#000000">执行</text>
+<text x="127" y="279" text-anchor="middle" font-size="26" font-weight="400" fill="#000000">信号</text>
+<polygon points="215,201 246,218 246,313 215,300 184,313 184,218" fill="#FFFFFF" stroke="#000000" stroke-width="1.9" stroke-linejoin="round"/>
+<text x="215" y="247" text-anchor="middle" font-size="26" font-weight="400" fill="#000000">状态</text>
+<text x="215" y="279" text-anchor="middle" font-size="26" font-weight="400" fill="#000000">反馈</text>
+<polygon points="96,437 127,450 158,437 158,532 127,549 96,532" fill="#FFFFFF" stroke="#000000" stroke-width="1.9" stroke-linejoin="round"/>
+<text x="127" y="483" text-anchor="middle" font-size="26" font-weight="400" fill="#000000">控制</text>
+<text x="127" y="515" text-anchor="middle" font-size="26" font-weight="400" fill="#000000">命令</text>
+<polygon points="215,437 246,454 246,549 215,536 184,549 184,454" fill="#FFFFFF" stroke="#000000" stroke-width="1.9" stroke-linejoin="round"/>
+<text x="215" y="483" text-anchor="middle" font-size="26" font-weight="400" fill="#000000">数据</text>
+<text x="215" y="515" text-anchor="middle" font-size="26" font-weight="400" fill="#000000">反馈</text>
+<polygon points="96,673 127,686 158,673 158,768 127,785 96,768" fill="#FFFFFF" stroke="#000000" stroke-width="1.9" stroke-linejoin="round"/>
+<text x="127" y="719" text-anchor="middle" font-size="26" font-weight="400" fill="#000000">驱动</text>
+<text x="127" y="751" text-anchor="middle" font-size="26" font-weight="400" fill="#000000">指令</text>
+<polygon points="215,673 246,690 246,785 215,772 184,785 184,690" fill="#FFFFFF" stroke="#000000" stroke-width="1.9" stroke-linejoin="round"/>
+<text x="215" y="719" text-anchor="middle" font-size="26" font-weight="400" fill="#000000">遥测</text>
+<text x="215" y="751" text-anchor="middle" font-size="26" font-weight="400" fill="#000000">反馈</text>
+<path d="M 890 118 L 1010 118 L 1070 147" fill="none" stroke="#000000" stroke-width="1.4"/>
+<rect x="1070" y="40" width="700" height="192" fill="#FFFFFF" stroke="#000000" stroke-width="1.8"/>
+<rect x="1070" y="40" width="700" height="56" fill="#FFFFFF" stroke="#000000" stroke-width="1.8"/>
+<text x="1420" y="79" text-anchor="middle" font-size="34" font-weight="600" fill="#000000">工作流节点</text>
+<text x="1420" y="134" text-anchor="middle" font-size="29" font-weight="400" fill="#000000">组织实验任务步骤，绑定目标设备能力</text>
+<text x="1420" y="174" text-anchor="middle" font-size="29" font-weight="400" fill="#000000">通过接口向状态机发出执行信号（WF_START）</text>
+<text x="1420" y="214" text-anchor="middle" font-size="29" font-weight="400" fill="#000000">监听终态反馈，驱动下游节点推进</text>
+<path d="M 890 354 L 1010 354 L 1070 383" fill="none" stroke="#000000" stroke-width="1.4"/>
+<rect x="1070" y="276" width="700" height="192" fill="#FFFFFF" stroke="#000000" stroke-width="1.8"/>
+<rect x="1070" y="276" width="700" height="56" fill="#FFFFFF" stroke="#000000" stroke-width="1.8"/>
+<text x="1420" y="315" text-anchor="middle" font-size="34" font-weight="600" fill="#000000">设备模型：能力模型＋状态机</text>
+<text x="1420" y="370" text-anchor="middle" font-size="29" font-weight="400" fill="#000000">能力模型定义设备属性、参数与可用操作</text>
+<text x="1420" y="410" text-anchor="middle" font-size="29" font-weight="400" fill="#000000">状态机处理请求、发令并推进状态转移</text>
+<text x="1420" y="450" text-anchor="middle" font-size="29" font-weight="400" fill="#000000">维护运行与异常状态，接收执行反馈</text>
+<path d="M 890 590 L 1010 590 L 1070 619" fill="none" stroke="#000000" stroke-width="1.4"/>
+<rect x="1070" y="512" width="700" height="192" fill="#FFFFFF" stroke="#000000" stroke-width="1.8"/>
+<rect x="1070" y="512" width="700" height="56" fill="#FFFFFF" stroke="#000000" stroke-width="1.8"/>
+<text x="1420" y="551" text-anchor="middle" font-size="34" font-weight="600" fill="#000000">边缘适配器 Adapter</text>
+<text x="1420" y="606" text-anchor="middle" font-size="29" font-weight="400" fill="#000000">将标准命令转换为 Modbus / 串口物理报文</text>
+<text x="1420" y="646" text-anchor="middle" font-size="29" font-weight="400" fill="#000000">将工艺设定值映射到底层设备寄存器</text>
+<text x="1420" y="686" text-anchor="middle" font-size="29" font-weight="400" fill="#000000">以 messageId 关联指令，分流事件与遥测</text>
+<path d="M 890 826 L 1010 826 L 1070 855" fill="none" stroke="#000000" stroke-width="1.4"/>
+<rect x="1070" y="748" width="700" height="192" fill="#FFFFFF" stroke="#000000" stroke-width="1.8"/>
+<rect x="1070" y="748" width="700" height="56" fill="#FFFFFF" stroke="#000000" stroke-width="1.8"/>
+<text x="1420" y="787" text-anchor="middle" font-size="34" font-weight="600" fill="#000000">物理设备</text>
+<text x="1420" y="842" text-anchor="middle" font-size="29" font-weight="400" fill="#000000">执行加热、搅拌、加样、泵阀启闭等动作</text>
+<text x="1420" y="882" text-anchor="middle" font-size="29" font-weight="400" fill="#000000">采集温度、压力、液位、转速等实时数据</text>
+<text x="1420" y="922" text-anchor="middle" font-size="29" font-weight="400" fill="#000000">通过 RS-485 / Modbus / PLC 回传设备数据</text></svg>

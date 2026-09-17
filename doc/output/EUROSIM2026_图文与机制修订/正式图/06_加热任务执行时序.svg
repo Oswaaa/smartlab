@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="474" viewBox="0 0 1160 474"><rect width="100%" height="100%" fill="white"/><rect x="9" y="0" width="166" height="33" fill="#EEE9F2" stroke="#6F7B83" stroke-width="1"/>
+<text x="92" y="23" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="20" font-weight="700" fill="#152C40">加热节点</text>
+<path d="M92 33 L92 474" fill="none" stroke="#939CA3" stroke-width="0.9" stroke-dasharray="7 5"/>
+<rect x="251" y="0" width="166" height="33" fill="#E9F0DB" stroke="#6F7B83" stroke-width="1"/>
+<text x="334" y="23" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="20" font-weight="700" fill="#152C40">设备状态机</text>
+<path d="M334 33 L334 474" fill="none" stroke="#939CA3" stroke-width="0.9" stroke-dasharray="7 5"/>
+<rect x="492" y="0" width="166" height="33" fill="#F8E8B0" stroke="#6F7B83" stroke-width="1"/>
+<text x="575" y="23" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="20" font-weight="700" fill="#152C40">Adapter</text>
+<path d="M575 33 L575 474" fill="none" stroke="#939CA3" stroke-width="0.9" stroke-dasharray="7 5"/>
+<rect x="733" y="0" width="166" height="33" fill="#F8E8B0" stroke="#6F7B83" stroke-width="1"/>
+<text x="816" y="23" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="20" font-weight="700" fill="#152C40">反应釜</text>
+<path d="M816 33 L816 474" fill="none" stroke="#939CA3" stroke-width="0.9" stroke-dasharray="7 5"/>
+<rect x="982" y="0" width="166" height="33" fill="#FBEADB" stroke="#6F7B83" stroke-width="1"/>
+<text x="1065" y="23" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="20" font-weight="700" fill="#152C40">约束层</text>
+<path d="M1065 33 L1065 474" fill="none" stroke="#939CA3" stroke-width="0.9" stroke-dasharray="7 5"/>
+<path d="M92 64 L334 64" fill="none" stroke="#28849C" stroke-width="1.5"/>
+<polygon points="334,64 327,60.9 327,67.1" fill="#28849C" stroke="#28849C" stroke-width="0.1"/>
+<text x="213" y="59.099999999999994" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="18" font-weight="400" fill="#28849C">① 加热请求（参数）</text>
+<path d="M334 84 L388 84 L388 109 L334 109" fill="none" stroke="#28849C" stroke-width="1.5"/>
+<polygon points="334,109 341,112.1 341,105.9" fill="#28849C" stroke="#28849C" stroke-width="0.1"/>
+<text x="398" y="101.15" text-anchor="start" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="17" font-weight="400" fill="#152C40">状态检查与请求处理</text>
+<path d="M334 133 L575 133" fill="none" stroke="#28849C" stroke-width="1.5"/>
+<polygon points="575,133 568,129.9 568,136.1" fill="#28849C" stroke="#28849C" stroke-width="0.1"/>
+<text x="454.5" y="128.1" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="18" font-weight="400" fill="#28849C">② 标准加热命令</text>
+<path d="M575 166 L816 166" fill="none" stroke="#28849C" stroke-width="1.5"/>
+<polygon points="816,166 809,162.9 809,169.1" fill="#28849C" stroke="#28849C" stroke-width="0.1"/>
+<text x="695.5" y="161.1" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="18" font-weight="400" fill="#28849C">③ 加热指令</text>
+<rect x="0" y="189" width="1160" height="152" fill="none" stroke="#ADB7BF" stroke-width="1"/>
+<rect x="0" y="189" width="47" height="24" fill="#F7F8F9" stroke="#ADB7BF" stroke-width="1"/>
+<text x="23.5" y="205.2" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="700" fill="#152C40">loop</text>
+<text x="62" y="207.15" text-anchor="start" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="17" font-weight="400" fill="#152C40">执行期间：持续返回数据并观察约束</text>
+<path d="M816 239 L575 239" fill="none" stroke="#799A39" stroke-width="1.5"/>
+<polygon points="575,239 582,242.1 582,235.9" fill="#799A39" stroke="#799A39" stroke-width="0.1"/>
+<text x="695.5" y="234.1" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="18" font-weight="400" fill="#799A39">④ 温度 / 运行状态</text>
+<path d="M575 270 L334 270" fill="none" stroke="#799A39" stroke-width="1.5"/>
+<polygon points="334,270 341,273.1 341,266.9" fill="#799A39" stroke="#799A39" stroke-width="0.1"/>
+<text x="454.5" y="265.1" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="18" font-weight="400" fill="#799A39">⑤ 更新遥测 / 状态</text>
+<path d="M334 301 L92 301" fill="none" stroke="#799A39" stroke-width="1.5"/>
+<polygon points="92,301 99,304.1 99,297.9" fill="#799A39" stroke="#799A39" stroke-width="0.1"/>
+<text x="213" y="296.1" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="18" font-weight="400" fill="#799A39">⑥ 执行状态 / 数据</text>
+<path d="M334 318 L1065 318" fill="none" stroke="#799A39" stroke-width="1.5"/>
+<polygon points="1065,318 1058,314.9 1058,321.1" fill="#799A39" stroke="#799A39" stroke-width="0.1"/>
+<text x="767.5" y="313.2" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#799A39">设备状态与测量属性</text>
+<path d="M92 336 L1065 336" fill="none" stroke="#9A83BB" stroke-width="1.5"/>
+<polygon points="1065,336 1058,332.9 1058,339.1" fill="#9A83BB" stroke="#9A83BB" stroke-width="0.1"/>
+<text x="859.5" y="330.2" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#9A83BB">节点执行上下文</text>
+<rect x="0" y="351" width="1160" height="123" fill="none" stroke="#ADB7BF" stroke-width="1"/>
+<rect x="0" y="351" width="47" height="24" fill="#F7F8F9" stroke="#ADB7BF" stroke-width="1"/>
+<text x="23.5" y="367.2" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="700" fill="#152C40">alt</text>
+<text x="63" y="368.15" text-anchor="start" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="17" font-weight="400" fill="#152C40">[正常推进] 完成条件满足，且允许继续执行</text>
+<path d="M92 379 L180 379 L180 401 L92 401" fill="none" stroke="#28849C" stroke-width="1.5"/>
+<polygon points="92,401 99,404.1 99,397.9" fill="#28849C" stroke="#28849C" stroke-width="0.1"/>
+<text x="201" y="397.1" text-anchor="start" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="18" font-weight="400" fill="#152C40">节点完成 → 发送激活信号 → 后续步骤</text>
+<path d="M0 413 L1160 413" fill="none" stroke="#ADB7BF" stroke-width="1" stroke-dasharray="7 5"/>
+<text x="63" y="432.15" text-anchor="start" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="17" font-weight="400" fill="#B15F20">[异常处理示例] 触发停止 / 中止类规则</text>
+<path d="M1065 448 L334 448" fill="none" stroke="#B15F20" stroke-width="1.5"/>
+<polygon points="334,448 341,451.1 341,444.9" fill="#B15F20" stroke="#B15F20" stroke-width="0.1"/>
+<text x="725.5" y="444.2" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#B15F20">设备处理：向状态机发送停止 / 中止请求</text>
+<path d="M1065 471 L92 471" fill="none" stroke="#B15F20" stroke-width="1.5"/>
+<polygon points="92,471 99,474.1 99,467.9" fill="#B15F20" stroke="#B15F20" stroke-width="0.1"/>
+<text x="616" y="467.2" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#B15F20">任务处理：经节点接口中止任务执行</text></svg>

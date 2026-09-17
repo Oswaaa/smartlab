@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1120" viewBox="0 0 2000 1120" role="img"><title>扩展：仿真反馈闭环</title><desc>大模型经共同模型与执行机制进行仿真，反馈由共同机制返回以调整方案。仿真评估参与上机判断；满足预设条件后使用实机 Adapter。仿真后端不向实机 Adapter 直接发令。</desc><defs><marker id="control" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#111111"/></marker><marker id="feedback" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#111111"/></marker><marker id="constraint" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#111111"/></marker><marker id="guide" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#686868"/></marker></defs><style>text{font-family:'Microsoft YaHei','微软雅黑',sans-serif}</style><rect width="2000" height="1120" fill="#FFFFFF"/><text x="1000" y="53" text-anchor="middle" fill="#111111" font-size="40" font-weight="600">扩展：仿真反馈闭环</text>
+<rect x="50" y="259" width="390" height="266" rx="0" fill="#FFFFFF" stroke="#111111" stroke-width="1.8"/>
+<rect x="50" y="259" width="390" height="50" rx="0" fill="#FFFFFF" stroke="#111111" stroke-width="1.6"/>
+<text x="74" y="295" text-anchor="start" fill="#111111" font-size="31" font-weight="600">大模型</text>
+<text x="245" y="354" text-anchor="middle" fill="#111111" font-size="33" font-weight="600">决策与调整</text>
+<text x="245" y="407" text-anchor="middle" fill="#111111" font-size="27" font-weight="400">提出方案与控制请求</text>
+<text x="245" y="454" text-anchor="middle" fill="#111111" font-size="27" font-weight="400">依据反馈调整方案</text>
+<rect x="615" y="185" width="760" height="300" rx="0" fill="#FFFFFF" stroke="#111111" stroke-width="1.8"/>
+<rect x="615" y="185" width="760" height="50" rx="0" fill="#FFFFFF" stroke="#111111" stroke-width="1.6"/>
+<text x="639" y="221" text-anchor="start" fill="#111111" font-size="31" font-weight="600">共同模型与执行机制</text>
+<rect x="643" y="260" width="212" height="142" rx="0" fill="#FFFFFF" stroke="#111111" stroke-width="1.4"/>
+<text x="749" y="296" text-anchor="middle" fill="#111111" font-size="29" font-weight="600">工作流</text>
+<text x="749" y="342" text-anchor="middle" fill="#111111" font-size="26" font-weight="400">任务步骤</text>
+<text x="749" y="381" text-anchor="middle" fill="#111111" font-size="26" font-weight="400">节点交互</text>
+<rect x="875" y="260" width="236" height="142" rx="0" fill="#FFFFFF" stroke="#111111" stroke-width="1.4"/>
+<text x="993" y="296" text-anchor="middle" fill="#111111" font-size="29" font-weight="600">设备模型</text>
+<text x="993" y="342" text-anchor="middle" fill="#111111" font-size="26" font-weight="400">能力模型</text>
+<text x="993" y="381" text-anchor="middle" fill="#111111" font-size="26" font-weight="400">状态机</text>
+<rect x="1131" y="260" width="215" height="142" rx="0" fill="#FFFFFF" stroke="#111111" stroke-width="1.4"/>
+<text x="1238.5" y="296" text-anchor="middle" fill="#111111" font-size="29" font-weight="600">约束</text>
+<text x="1238.5" y="342" text-anchor="middle" fill="#111111" font-size="26" font-weight="400">运行规则</text>
+<text x="1238.5" y="381" text-anchor="middle" fill="#111111" font-size="26" font-weight="400">异常处理</text>
+<rect x="643" y="424" width="703" height="39" rx="0" fill="#FFFFFF" stroke="#686868" stroke-width="1.2"/>
+<text x="994" y="452" text-anchor="middle" fill="#111111" font-size="26" font-weight="400">Π  控制 / 数据 / 反馈协议</text>
+<path d="M 440 370 L 615 370" fill="none" stroke="#111111" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control)"/>
+<text x="528" y="352" text-anchor="middle" fill="#111111" font-size="25" font-weight="400">控制请求</text>
+<rect x="615" y="650" width="760" height="220" rx="0" fill="#FFFFFF" stroke="#111111" stroke-width="1.8"/>
+<rect x="615" y="650" width="760" height="50" rx="0" fill="#FFFFFF" stroke="#111111" stroke-width="1.6"/>
+<text x="639" y="686" text-anchor="start" fill="#111111" font-size="31" font-weight="600">仿真执行后端</text>
+<rect x="642" y="720" width="284" height="112" rx="0" fill="#FFFFFF" stroke="#111111" stroke-width="1.5"/>
+<text x="784" y="762" text-anchor="middle" fill="#111111" font-size="30" font-weight="600">仿真 Adapter</text>
+<text x="784" y="809" text-anchor="middle" fill="#111111" font-size="25" font-weight="400">指令与反馈映射</text>
+<rect x="1030" y="720" width="320" height="112" rx="0" fill="#FFFFFF" stroke="#111111" stroke-width="1.5"/>
+<text x="1190" y="762" text-anchor="middle" fill="#111111" font-size="29" font-weight="600">模拟设备 / 环境</text>
+<text x="1190" y="809" text-anchor="middle" fill="#111111" font-size="25" font-weight="400">模拟状态与实验数据</text>
+<path d="M 926 749 L 1030 749" fill="none" stroke="#111111" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control)"/>
+<path d="M 1030 802 L 926 802" fill="none" stroke="#111111" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="10 6" marker-end="url(#feedback)"/>
+<path d="M 835 485 L 835 650" fill="none" stroke="#111111" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control)"/>
+<text x="855" y="570" text-anchor="start" fill="#111111" font-size="26" font-weight="400">仿真执行</text>
+<path d="M 1225 650 L 1225 485" fill="none" stroke="#111111" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="10 6" marker-end="url(#feedback)"/>
+<text x="1205" y="570" text-anchor="end" fill="#111111" font-size="26" font-weight="400">模拟反馈</text>
+<path d="M 615 451 L 530 451 L 530 920 L 245 920 L 245 525" fill="none" stroke="#111111" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="10 6" marker-end="url(#feedback)"/>
+<text x="426" y="970" text-anchor="middle" fill="#111111" font-size="29" font-weight="400">状态 · 数据 · 约束结果</text>
+<text x="275" y="806" text-anchor="start" fill="#111111" font-size="27" font-weight="400">反馈驱动方案调整</text>
+<path d="M 1375 345 L 1530 345" fill="none" stroke="#111111" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control)"/>
+<text x="1453" y="326" text-anchor="middle" fill="#111111" font-size="24" font-weight="400">实机分支</text>
+<polygon points="1730,260 1930,345 1730,430 1530,345" fill="#FFFFFF" stroke="#111111" stroke-width="2"/>
+<text x="1730" y="332" text-anchor="middle" fill="#111111" font-size="30" font-weight="600">满足预设</text>
+<text x="1730" y="372" text-anchor="middle" fill="#111111" font-size="30" font-weight="600">上机条件？</text>
+<path d="M 1730 430 L 1730 667" fill="none" stroke="#111111" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control)"/>
+<text x="1753" y="552" text-anchor="start" fill="#111111" font-size="27" font-weight="400">满足</text>
+<text x="1780" y="474" text-anchor="start" fill="#111111" font-size="24" font-weight="400">未满足时</text>
+<text x="1780" y="508" text-anchor="start" fill="#111111" font-size="24" font-weight="400">继续仿真评估</text>
+<path d="M 1375 804 L 1470 804 L 1470 466 L 1580 466 L 1630 388" fill="none" stroke="#111111" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback)"/>
+<text x="1490" y="614" text-anchor="start" fill="#111111" font-size="24" font-weight="400">仿真评估结果</text>
+<rect x="1530" y="667" width="400" height="127" rx="0" fill="#FFFFFF" stroke="#111111" stroke-width="1.8"/>
+<rect x="1530" y="667" width="400" height="50" rx="0" fill="#FFFFFF" stroke="#111111" stroke-width="1.6"/>
+<text x="1554" y="703" text-anchor="start" fill="#111111" font-size="31" font-weight="600">实机 Adapter</text>
+<text x="1730" y="760" text-anchor="middle" fill="#111111" font-size="26" font-weight="400">协议映射与设备通信</text>
+<rect x="1530" y="922" width="400" height="111" rx="0" fill="#FFFFFF" stroke="#111111" stroke-width="1.7"/>
+<text x="1730" y="969" text-anchor="middle" fill="#111111" font-size="31" font-weight="600">物理设备</text>
+<text x="1730" y="1010" text-anchor="middle" fill="#111111" font-size="26" font-weight="400">实际执行与测量</text>
+<path d="M 1690 794 L 1690 922" fill="none" stroke="#111111" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control)"/>
+<text x="1668" y="862" text-anchor="end" fill="#111111" font-size="25" font-weight="400">执行</text>
+<path d="M 1815 922 L 1815 794" fill="none" stroke="#111111" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="10 6" marker-end="url(#feedback)"/>
+<text x="1837" y="862" text-anchor="start" fill="#111111" font-size="25" font-weight="400">反馈</text>
+<path d="M 1930 763 L 1970 763 L 1970 133 L 1240 133 L 1240 185" fill="none" stroke="#111111" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="10 6" marker-end="url(#feedback)"/>
+<text x="1610" y="119" text-anchor="middle" fill="#111111" font-size="25" font-weight="400">实机反馈返回共同模型</text>
+<text x="1000" y="1090" text-anchor="middle" fill="#111111" font-size="31" font-weight="600">仿真与实机共用上层模型与规则；执行后端在 Adapter 处区分。</text></svg>

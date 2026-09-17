@@ -1,0 +1,104 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2320" height="1320" viewBox="0 0 2320 1320"><title>仿真反馈闭环：Adapter 内的虚拟机实例</title><desc>大模型生成可选流程模型或直接提出设备请求，两种方式都经过设备模型与状态机。Adapter 在模拟开始时创建对应物理设备的虚拟机实例，本次模拟的所有指令都作用于该实例，更新其虚拟状态并返回设备状态和数据。反馈经过设备模型返回大模型，形成方案调整闭环。只有真机模式连接物理设备，模拟无问题后再经相同链路执行真机。</desc><rect x="0" y="0" width="2320" height="1320" fill="#FFF" stroke="none" stroke-width="0"/>
+<rect x="100" y="310" width="380" height="390" fill="#F1F6FA" stroke="#8295A4" stroke-width="1.8"/>
+<rect x="100" y="310" width="380" height="56" fill="#CCDEED" stroke="#8295A4" stroke-width="1.8"/>
+<text x="122" y="348" text-anchor="start" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="32" font-weight="700" fill="#193B58">大模型</text>
+<rect x="128" y="401" width="324" height="111" fill="#FFF" stroke="#8295A4" stroke-width="1.8"/>
+<text x="290" y="441" text-anchor="middle" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="29" font-weight="700" fill="#193B58">生成或调整实验方案</text>
+<text x="290" y="480" text-anchor="middle" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="25" font-weight="400" fill="#193B58">流程模型 / 设备控制请求</text>
+<rect x="128" y="555" width="324" height="103" fill="#F3F7ED" stroke="#8295A4" stroke-width="1.8"/>
+<text x="290" y="595" text-anchor="middle" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="29" font-weight="700" fill="#193B58">分析模拟反馈</text>
+<text x="290" y="634" text-anchor="middle" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="25" font-weight="400" fill="#193B58">改进实验步骤与参数</text>
+<rect x="670" y="102" width="390" height="174" fill="#F1F6FA" stroke="#8295A4" stroke-width="1.8"/>
+<rect x="670" y="102" width="390" height="56" fill="#CCDEED" stroke="#8295A4" stroke-width="1.8"/>
+<text x="692" y="140" text-anchor="start" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="32" font-weight="700" fill="#193B58">流程模型（可选）</text>
+<text x="865" y="207" text-anchor="middle" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="28" font-weight="400" fill="#193B58">组织步骤与数据依赖</text>
+<text x="865" y="246" text-anchor="middle" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="25" font-weight="400" fill="#193B58">执行模型并调用设备能力</text>
+<rect x="1130" y="310" width="440" height="390" fill="#F3F7ED" stroke="#8295A4" stroke-width="1.8"/>
+<rect x="1130" y="310" width="440" height="56" fill="#DFE9CE" stroke="#8295A4" stroke-width="1.8"/>
+<text x="1152" y="348" text-anchor="start" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="32" font-weight="700" fill="#193B58">设备模型</text>
+<text x="1350" y="410" text-anchor="middle" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="31" font-weight="700" fill="#193B58">能力模型 + 状态机</text>
+<rect x="1160" y="441" width="380" height="70" fill="#FFF" stroke="#8295A4" stroke-width="1.8"/>
+<text x="1350" y="484" text-anchor="middle" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="26" font-weight="400" fill="#193B58">请求检查 / 状态转移 / 发令</text>
+<rect x="1160" y="548" width="380" height="104" fill="#FFF" stroke="#8295A4" stroke-width="1.8"/>
+<text x="1350" y="590" text-anchor="middle" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="26" font-weight="400" fill="#193B58">接收设备事件与测量数据</text>
+<text x="1350" y="628" text-anchor="middle" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="25" font-weight="400" fill="#193B58">更新状态、属性与执行结果</text>
+<text x="1350" y="681" text-anchor="middle" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="24" font-weight="700" fill="#193B58">设备请求均经过模型处理</text>
+<rect x="1710" y="310" width="510" height="728" fill="#FFF9EB" stroke="#8295A4" stroke-width="1.8"/>
+<rect x="1710" y="310" width="510" height="56" fill="#F3E4B3" stroke="#8295A4" stroke-width="1.8"/>
+<text x="1732" y="348" text-anchor="start" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="32" font-weight="700" fill="#193B58">Adapter</text>
+<text x="2198" y="349" text-anchor="end" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="22" font-weight="400" fill="#193B58">同一控制与反馈接口</text>
+<rect x="1780" y="390" width="405" height="378" fill="#FFF" stroke="#8295A4" stroke-width="1.8"/>
+<rect x="1780" y="390" width="405" height="56" fill="#F3E4B3" stroke="#8295A4" stroke-width="1.8"/>
+<text x="1802" y="428" text-anchor="start" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="32" font-weight="700" fill="#193B58">模拟模式</text>
+<text x="1982" y="482" text-anchor="middle" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="23" font-weight="400" fill="#193B58">模拟开始时创建对应物理设备的</text>
+<path d="M1982,494 L1982,519" fill="none" stroke="#8295A4" stroke-width="2" stroke-linejoin="miter"/>
+<polygon points="1982,519 1987.5,506 1976.5,506" fill="#8295A4"/>
+<rect x="1810" y="520" width="345" height="193" fill="#F3F7ED" stroke="#8295A4" stroke-width="1.8"/>
+<rect x="1810" y="520" width="345" height="56" fill="#DFE9CE" stroke="#8295A4" stroke-width="1.8"/>
+<text x="1832" y="558" text-anchor="start" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="32" font-weight="700" fill="#193B58">虚拟机实例</text>
+<text x="1982" y="613" text-anchor="middle" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="24" font-weight="400" fill="#193B58">接收指令，演化虚拟状态</text>
+<text x="1982" y="653" text-anchor="middle" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="24" font-weight="400" fill="#148779">产生测量数据与运行状态</text>
+<text x="1982" y="693" text-anchor="middle" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="23" font-weight="700" fill="#193B58">本次模拟全程使用该实例</text>
+<text x="1982" y="744" text-anchor="middle" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="23" font-weight="400" fill="#148779">设备状态 / 数据沿统一接口返回</text>
+<rect x="1780" y="847" width="405" height="138" fill="#FFF" stroke="#8295A4" stroke-width="1.8"/>
+<rect x="1780" y="847" width="405" height="56" fill="#F1D5C1" stroke="#8295A4" stroke-width="1.8"/>
+<text x="1802" y="885" text-anchor="start" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="32" font-weight="700" fill="#193B58">真机模式</text>
+<text x="1982" y="945" text-anchor="middle" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="26" font-weight="400" fill="#193B58">指令映射 / 真实反馈转换</text>
+<text x="1982" y="810" text-anchor="middle" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="25" font-weight="400" fill="#193B58">执行模式由上位机指定</text>
+<path d="M452,459 L540,459" fill="none" stroke="#2869A1" stroke-width="3" stroke-linejoin="miter"/>
+<circle cx="540" cy="459" r="4" fill="#2869A1"/>
+<path d="M540,459 L540,216 L670,216" fill="none" stroke="#2869A1" stroke-width="3" stroke-linejoin="miter"/>
+<polygon points="670,216 657,210.5 657,221.5" fill="#2869A1"/>
+<text x="650" y="181" text-anchor="end" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="27" font-weight="400" fill="#2869A1">生成流程模型</text>
+<path d="M540,459 L1130,459" fill="none" stroke="#2869A1" stroke-width="3" stroke-linejoin="miter"/>
+<polygon points="1130,459 1117,453.5 1117,464.5" fill="#2869A1"/>
+<text x="801" y="436" text-anchor="middle" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="28" font-weight="400" fill="#2869A1">直接提出设备控制请求</text>
+<path d="M1060,218 L1280,218 L1280,310" fill="none" stroke="#2869A1" stroke-width="3" stroke-linejoin="miter"/>
+<polygon points="1280,310 1285.5,297 1274.5,297" fill="#2869A1"/>
+<text x="1204" y="193" text-anchor="middle" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="26" font-weight="400" fill="#2869A1">设备能力调用</text>
+<path d="M1445,310 L1445,68 L1025,68 L1025,102" fill="none" stroke="#148779" stroke-width="3" stroke-linejoin="miter" stroke-dasharray="9 7"/>
+<polygon points="1025,102 1030.5,89 1019.5,89" fill="#148779"/>
+<text x="1254" y="48" text-anchor="middle" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="25" font-weight="400" fill="#148779">流程状态 / 数据反馈</text>
+<path d="M1570,476 L1710,476" fill="none" stroke="#2869A1" stroke-width="3" stroke-linejoin="miter"/>
+<polygon points="1710,476 1697,470.5 1697,481.5" fill="#2869A1"/>
+<text x="1640" y="449" text-anchor="middle" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="26" font-weight="400" fill="#2869A1">控制指令</text>
+<path d="M1710,600 L1570,600" fill="none" stroke="#148779" stroke-width="3" stroke-linejoin="miter"/>
+<polygon points="1570,600 1583,605.5 1583,594.5" fill="#148779"/>
+<text x="1640" y="632" text-anchor="middle" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="24" font-weight="400" fill="#148779">设备状态</text>
+<text x="1640" y="663" text-anchor="middle" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="24" font-weight="400" fill="#148779">数据反馈</text>
+<path d="M1710,476 L1740,476" fill="none" stroke="#2869A1" stroke-width="3" stroke-linejoin="miter"/>
+<path d="M1740,476 L1740,590" fill="none" stroke="#2869A1" stroke-width="3" stroke-linejoin="miter"/>
+<circle cx="1740" cy="590" r="4" fill="#2869A1"/>
+<path d="M1740,590 L1810,590" fill="none" stroke="#2869A1" stroke-width="3" stroke-linejoin="miter"/>
+<polygon points="1810,590 1797,584.5 1797,595.5" fill="#2869A1"/>
+<path d="M1740,590 L1740,924 L1780,924" fill="none" stroke="#2869A1" stroke-width="3" stroke-linejoin="miter"/>
+<polygon points="1780,924 1767,918.5 1767,929.5" fill="#2869A1"/>
+<path d="M1810,666 L1760,666 L1760,600" fill="none" stroke="#148779" stroke-width="3" stroke-linejoin="miter"/>
+<path d="M1780,965 L1760,965 L1760,600" fill="none" stroke="#148779" stroke-width="3" stroke-linejoin="miter"/>
+<circle cx="1760" cy="600" r="4" fill="#148779"/>
+<path d="M1751,600 L1729,600" stroke="#FFF9EB" stroke-width="12" fill="none"/>
+<path d="M1760,600 L1710,600" fill="none" stroke="#148779" stroke-width="3" stroke-linejoin="miter"/>
+<path d="M1750,924 L1771,924" stroke="#FFF9EB" stroke-width="11" fill="none"/>
+<path d="M1740,924 L1780,924" fill="none" stroke="#2869A1" stroke-width="3" stroke-linejoin="miter"/>
+<polygon points="1780,924 1767,918.5 1767,929.5" fill="#2869A1"/>
+<path d="M1130,600 L1020,600 L1020,794 L480,794 L480,606 L452,606" fill="none" stroke="#148779" stroke-width="3" stroke-linejoin="miter"/>
+<polygon points="452,606 465,611.5 465,600.5" fill="#148779"/>
+<text x="758" y="777" text-anchor="middle" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="29" font-weight="400" fill="#148779">模拟执行反馈</text>
+<text x="770" y="829" text-anchor="middle" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="25" font-weight="400" fill="#148779">状态、数据与约束结果</text>
+<path d="M128,607 L48,607 L48,456 L128,456" fill="none" stroke="#148779" stroke-width="3" stroke-linejoin="miter"/>
+<polygon points="128,456 115,450.5 115,461.5" fill="#148779"/>
+<text x="58" y="731" text-anchor="start" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="25" font-weight="400" fill="#148779">调整后再次请求</text>
+<rect x="1850" y="1116" width="340" height="105" fill="#FFF7F0" stroke="#8295A4" stroke-width="1.8"/>
+<rect x="1850" y="1116" width="340" height="56" fill="#F1D5C1" stroke="#8295A4" stroke-width="1.8"/>
+<text x="1872" y="1154" text-anchor="start" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="32" font-weight="700" fill="#193B58">物理设备</text>
+<text x="2020" y="1195" text-anchor="middle" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="24" font-weight="400" fill="#193B58">执行操作并返回真实数据</text>
+<path d="M1875,985 L1875,1116" fill="none" stroke="#2869A1" stroke-width="3" stroke-linejoin="miter"/>
+<polygon points="1875,1116 1880.5,1103 1869.5,1103" fill="#2869A1"/>
+<text x="1854" y="1088" text-anchor="end" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="24" font-weight="400" fill="#2869A1">驱动指令</text>
+<path d="M2135,1116 L2135,985" fill="none" stroke="#148779" stroke-width="3" stroke-linejoin="miter"/>
+<polygon points="2135,985 2129.5,998 2140.5,998" fill="#148779"/>
+<text x="2152" y="1088" text-anchor="start" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="24" font-weight="400" fill="#148779">测量 / 状态</text>
+<text x="125" y="954" text-anchor="start" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="32" font-weight="700" fill="#148779">虚拟机执行 → 反馈分析 → 调整方案 → 再次执行</text>
+<text x="125" y="1022" text-anchor="start" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="27" font-weight="400" fill="#193B58">Adapter 在内部创建虚拟机实例，本次模拟的全部指令均作用于该实例。</text>
+<text x="125" y="1080" text-anchor="start" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="27" font-weight="400" fill="#193B58">模拟执行无问题后，再经同一链路进行真机执行。</text>
+<text x="125" y="1138" text-anchor="start" font-family="Microsoft YaHei, 微软雅黑, sans-serif" font-size="25" font-weight="400" fill="#193B58">上层沿用相同的控制接口、模型更新、流程推进与约束处理规则。</text></svg>

@@ -44,9 +44,9 @@ smartlab:
   agent:
     enabled: true
     provider: openai-compatible
-    base-url: ${SMARTLAB_AGENT_BASE_URL:http://quantum.sxicc.ac.cn:8000/v1}
+    base-url: ${SMARTLAB_AGENT_BASE_URL:http://192.168.31.126:8000/v1/}
     api-key: ${SMARTLAB_AGENT_API_KEY:1}
-    model: ${SMARTLAB_AGENT_MODEL:Qwen3.8-27B}
+    model: ${SMARTLAB_AGENT_MODEL:qwen3.8-27b}
     max-rounds: 12
     validate-retries: 3
   auth:

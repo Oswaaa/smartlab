@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1180" viewBox="0 0 2000 1180" role="img"><title>实现案例：反应釜加热任务时序</title><desc>简化时序图保留加热节点、设备状态机、Adapter、反应釜、约束层五条生命线。反馈持续更新，正常完成和异常处理明确分支，物理反馈不直接等于节点完成。</desc><defs><marker id="control" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#235F9A"/></marker><marker id="feedback" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#168270"/></marker><marker id="constraint" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#B86626"/></marker><marker id="guide" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#8D9BA5"/></marker></defs><style>text{font-family:'Microsoft YaHei','微软雅黑',sans-serif}</style><rect width="2000" height="1180" fill="#FFFFFF"/><text x="1000" y="53" text-anchor="middle" fill="#193B58" font-size="40" font-weight="600">实现案例：反应釜加热任务时序</text>
+<text x="1000" y="100" text-anchor="middle" fill="#193B58" font-size="27" font-weight="400">加热能力、任务参数与节点完成条件已在模型中定义</text>
+<rect x="95" y="137" width="270" height="64" rx="0" fill="#CCDEEF" stroke="#586D7D" stroke-width="1.7"/>
+<text x="230" y="178" text-anchor="middle" fill="#193B58" font-size="30" font-weight="600">加热节点</text>
+<path d="M 230 201 L 230 1090" fill="none" stroke="#8D9BA5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="9 7"/>
+<rect x="495" y="137" width="270" height="64" rx="0" fill="#DCE8CA" stroke="#586D7D" stroke-width="1.7"/>
+<text x="630" y="178" text-anchor="middle" fill="#193B58" font-size="30" font-weight="600">设备状态机</text>
+<path d="M 630 201 L 630 1090" fill="none" stroke="#8D9BA5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="9 7"/>
+<rect x="865" y="137" width="270" height="64" rx="0" fill="#F5E4B0" stroke="#586D7D" stroke-width="1.7"/>
+<text x="1000" y="178" text-anchor="middle" fill="#193B58" font-size="30" font-weight="600">Adapter</text>
+<path d="M 1000 201 L 1000 1090" fill="none" stroke="#8D9BA5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="9 7"/>
+<rect x="1255" y="137" width="270" height="64" rx="0" fill="#F5E4B0" stroke="#586D7D" stroke-width="1.7"/>
+<text x="1390" y="178" text-anchor="middle" fill="#193B58" font-size="30" font-weight="600">反应釜</text>
+<path d="M 1390 201 L 1390 1090" fill="none" stroke="#8D9BA5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="9 7"/>
+<rect x="1665" y="137" width="270" height="64" rx="0" fill="#F4D6BE" stroke="#586D7D" stroke-width="1.7"/>
+<text x="1800" y="178" text-anchor="middle" fill="#193B58" font-size="30" font-weight="600">约束层</text>
+<path d="M 1800 201 L 1800 1090" fill="none" stroke="#8D9BA5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="9 7"/>
+<path d="M 230 266 L 630 266" fill="none" stroke="#235F9A" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control)"/>
+<text x="430" y="251" text-anchor="middle" fill="#235F9A" font-size="27" font-weight="400">① 加热请求（参数）</text>
+<path d="M 630 307 L 742 307 L 742 344 L 630 344" fill="none" stroke="#235F9A" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control)"/>
+<text x="760" y="332" text-anchor="start" fill="#193B58" font-size="24" font-weight="400">状态检查与请求处理</text>
+<path d="M 630 391 L 1000 391" fill="none" stroke="#235F9A" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control)"/>
+<text x="815" y="376" text-anchor="middle" fill="#235F9A" font-size="27" font-weight="400">② 标准加热命令</text>
+<path d="M 1000 455 L 1390 455" fill="none" stroke="#235F9A" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control)"/>
+<text x="1195" y="440" text-anchor="middle" fill="#235F9A" font-size="25" font-weight="400">③ 协议转换后执行加热</text>
+<rect x="75" y="490" width="1850" height="296" rx="0" fill="none" stroke="#8D9BA5" stroke-width="1.5"/>
+<rect x="75" y="490" width="92" height="36" rx="0" fill="#F5F7F8" stroke="#8D9BA5" stroke-width="1.4"/>
+<text x="121" y="516" text-anchor="middle" fill="#193B58" font-size="24" font-weight="600">loop</text>
+<text x="188" y="516" text-anchor="start" fill="#193B58" font-size="25" font-weight="400">执行期间持续反馈与观察</text>
+<path d="M 1390 553 L 1000 553" fill="none" stroke="#168270" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#feedback)"/>
+<text x="1195" y="538" text-anchor="middle" fill="#168270" font-size="27" font-weight="400">④ 温度 / 运行状态</text>
+<path d="M 1000 612 L 630 612" fill="none" stroke="#168270" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#feedback)"/>
+<text x="815" y="597" text-anchor="middle" fill="#168270" font-size="27" font-weight="400">⑤ 反馈更新</text>
+<path d="M 630 671 L 230 671" fill="none" stroke="#168270" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#feedback)"/>
+<text x="430" y="656" text-anchor="middle" fill="#168270" font-size="27" font-weight="400">⑥ 执行状态 / 数据</text>
+<path d="M 630 724 L 1800 724" fill="none" stroke="#168270" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#feedback)"/>
+<text x="1215" y="709" text-anchor="middle" fill="#168270" font-size="25" font-weight="400">资源状态与温度</text>
+<path d="M 230 773 L 1800 773" fill="none" stroke="#168270" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#feedback)"/>
+<text x="1015" y="758" text-anchor="middle" fill="#168270" font-size="25" font-weight="400">节点执行上下文</text>
+<rect x="75" y="807" width="1850" height="283" rx="0" fill="none" stroke="#8D9BA5" stroke-width="1.6"/>
+<rect x="75" y="807" width="73" height="36" rx="0" fill="#F5F7F8" stroke="#8D9BA5" stroke-width="1.4"/>
+<text x="111" y="833" text-anchor="middle" fill="#193B58" font-size="25" font-weight="600">alt</text>
+<text x="176" y="834" text-anchor="start" fill="#193B58" font-size="25" font-weight="400">[正常推进：节点完成条件满足，且允许继续执行]</text>
+<path d="M 230 863 L 420 863 L 420 903 L 230 903" fill="none" stroke="#235F9A" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control)"/>
+<text x="457" y="891" text-anchor="start" fill="#193B58" font-size="29" font-weight="400">节点完成 → 激活后续步骤</text>
+<path d="M 75 941 L 1925 941" fill="none" stroke="#8D9BA5" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="9 6"/>
+<text x="176" y="973" text-anchor="start" fill="#B86626" font-size="25" font-weight="400">[异常处置示例：触发停止 / 中止规则]</text>
+<path d="M 1800 1019 L 630 1019" fill="none" stroke="#B86626" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="9 6" marker-end="url(#constraint)"/>
+<text x="1215" y="1004" text-anchor="middle" fill="#B86626" font-size="26" font-weight="400">停止 / 中止请求</text>
+<path d="M 1800 1072 L 230 1072" fill="none" stroke="#B86626" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="9 6" marker-end="url(#constraint)"/>
+<text x="1015" y="1057" text-anchor="middle" fill="#B86626" font-size="26" font-weight="400">同步任务处理</text>
+<text x="1000" y="1150" text-anchor="middle" fill="#193B58" font-size="29" font-weight="600">节点满足完成条件后推进；越界与异常按约束规则处理。</text></svg>

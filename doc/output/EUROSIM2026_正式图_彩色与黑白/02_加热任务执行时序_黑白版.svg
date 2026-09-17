@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1470" height="780" viewBox="0 0 1470 780" role="img" aria-labelledby="title desc"><title id="title">加热任务执行时序</title><desc id="desc">四条生命线依次为加热节点、设备状态机、Adapter、反应釜。六条消息按时间从上到下排列：请求加热，下发加热命令，执行加热，温度与运行状态，反馈更新，执行状态。节点满足完成条件后推进后续步骤，越界或异常由约束返回状态机处理。</desc><defs><marker id="control" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="11" markerHeight="11" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#000000"/></marker><marker id="feedback" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="11" markerHeight="11" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#000000"/></marker><marker id="constraint" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="11" markerHeight="11" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#000000"/></marker><marker id="observe" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="11" markerHeight="11" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#000000"/></marker></defs><style>text{font-family:'Microsoft YaHei','微软雅黑',sans-serif}</style><rect width="1470" height="780" fill="#FFFFFF"/><rect x="25" y="36" width="230" height="82" rx="0" fill="#FFFFFF" stroke="#000000" stroke-width="2.2"/>
+<text x="140" y="91" font-size="44" font-weight="600" text-anchor="middle" fill="#000000">加热节点</text>
+<path d="M 140 118 L 140 627" fill="none" stroke="#000000" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="8 10"/>
+<rect x="415" y="36" width="230" height="82" rx="0" fill="#FFFFFF" stroke="#000000" stroke-width="2.2"/>
+<text x="530" y="91" font-size="41" font-weight="600" text-anchor="middle" fill="#000000">设备状态机</text>
+<path d="M 530 118 L 530 627" fill="none" stroke="#000000" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="8 10"/>
+<rect x="805" y="36" width="230" height="82" rx="0" fill="#FFFFFF" stroke="#000000" stroke-width="2.2"/>
+<text x="920" y="91" font-size="44" font-weight="600" text-anchor="middle" fill="#000000">Adapter</text>
+<path d="M 920 118 L 920 627" fill="none" stroke="#000000" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="8 10"/>
+<rect x="1195" y="36" width="230" height="82" rx="0" fill="#FFFFFF" stroke="#000000" stroke-width="2.2"/>
+<text x="1310" y="91" font-size="44" font-weight="600" text-anchor="middle" fill="#000000">反应釜</text>
+<path d="M 1310 118 L 1310 627" fill="none" stroke="#000000" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="8 10"/>
+<rect x="130" y="164" width="20" height="448" rx="0" fill="#FFFFFF" stroke="#000000" stroke-width="1.8"/>
+<rect x="520" y="188" width="20" height="439" rx="0" fill="#FFFFFF" stroke="#000000" stroke-width="1.8"/>
+<rect x="910" y="267" width="20" height="246" rx="0" fill="#FFFFFF" stroke="#000000" stroke-width="1.8"/>
+<rect x="1300" y="346" width="20" height="88" rx="0" fill="#FFFFFF" stroke="#000000" stroke-width="1.8"/>
+<path d="M 151 188 L 519 188" fill="none" stroke="#000000" stroke-width="2.9" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#control)"/>
+<text x="335" y="168" font-size="38" font-weight="400" text-anchor="middle" fill="#000000">① 请求加热</text>
+<path d="M 541 267 L 909 267" fill="none" stroke="#000000" stroke-width="2.9" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#control)"/>
+<text x="725" y="247" font-size="38" font-weight="400" text-anchor="middle" fill="#000000">② 下发加热命令</text>
+<path d="M 931 346 L 1299 346" fill="none" stroke="#000000" stroke-width="2.9" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#control)"/>
+<text x="1115" y="326" font-size="38" font-weight="400" text-anchor="middle" fill="#000000">③ 执行加热</text>
+<path d="M 1299 425 L 931 425" fill="none" stroke="#000000" stroke-width="2.9" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="13 8" marker-end="url(#feedback)"/>
+<text x="1115" y="405" font-size="38" font-weight="400" text-anchor="middle" fill="#000000">④ 温度 / 运行状态</text>
+<path d="M 909 504 L 541 504" fill="none" stroke="#000000" stroke-width="2.9" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="13 8" marker-end="url(#feedback)"/>
+<text x="725" y="484" font-size="38" font-weight="400" text-anchor="middle" fill="#000000">⑤ 反馈更新</text>
+<path d="M 519 583 L 151 583" fill="none" stroke="#000000" stroke-width="2.9" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="13 8" marker-end="url(#feedback)"/>
+<text x="335" y="563" font-size="38" font-weight="400" text-anchor="middle" fill="#000000">⑥ 执行状态</text>
+<rect x="25" y="649" width="602" height="102" rx="0" fill="#FFFFFF" stroke="#000000" stroke-width="2.2"/>
+<text x="326" y="690" font-size="38" font-weight="400" text-anchor="middle" fill="#000000">满足完成条件后</text>
+<text x="326" y="737" font-size="38" font-weight="400" text-anchor="middle" fill="#000000">节点推进后续步骤</text>
+<path d="M 140 612 L 140 649" fill="none" stroke="#000000" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="13 8"/>
+<rect x="705" y="649" width="721" height="102" rx="0" fill="#FFFFFF" stroke="#000000" stroke-width="2.2"/>
+<text x="1065" y="690" font-size="38" font-weight="400" text-anchor="middle" fill="#000000">温度越界 / 设备异常</text>
+<text x="1065" y="737" font-size="38" font-weight="400" text-anchor="middle" fill="#000000">按约束处理：停止、报警等</text>
+<path d="M 705 700 L 665 700 L 665 628 L 530 628" fill="none" stroke="#000000" stroke-width="2.9" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="14 7 3 7" marker-end="url(#constraint)"/>
+<text x="1441" y="174" font-size="38" font-weight="400" text-anchor="middle" fill="#000000">时</text>
+<text x="1441" y="217" font-size="38" font-weight="400" text-anchor="middle" fill="#000000">间</text>
+<path d="M 1441 241 L 1441 603" fill="none" stroke="#000000" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="none" marker-end="url(#observe)"/></svg>

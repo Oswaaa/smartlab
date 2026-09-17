@@ -108,6 +108,16 @@
         <!-- 2.1 视角一：数据表详情视角 (Dataset View - 核心走势与宽幅卡片表格) -->
         <template v-if="selectedDataset">
           <div class="metric-ribbon">
+            <div v-if="selectedTask" class="m-cell">
+              <span class="m-label">所属任务</span>
+              <strong class="m-val">{{ selectedTask.taskName || ('任务 ' + selectedTask.id) }}</strong>
+            </div>
+            <div v-if="selectedTask" class="m-cell">
+              <span class="m-label">任务时段</span>
+              <strong class="m-val" style="font-size: 12px; font-weight: 500;">
+                {{ formatTime(selectedTask.startTime) }} ~ {{ selectedTask.endTime ? formatTime(selectedTask.endTime) : '进行中...' }}
+              </strong>
+            </div>
             <div class="m-cell">
               <span class="m-label">设备模型</span>
               <strong class="m-val">{{ selectedDatasetBinding.modelLabel }}</strong>
@@ -121,7 +131,7 @@
               <strong class="m-val">{{ templateName(selectedDataset.dataTemplateId) }}</strong>
             </div>
             <div class="m-cell">
-              <span class="m-label">历史采样总量</span>
+              <span class="m-label">{{ selectedTask ? '任务采样总量' : '历史采样总量' }}</span>
               <strong class="m-val highlight">{{ recordPage.total }} 条</strong>
             </div>
           </div>
@@ -132,7 +142,13 @@
               <div class="section-toolbar">
                 <div class="section-title">
                   <span>遥测趋势走势图</span>
-                  <span class="status-dot-badge normal" style="margin-left: 8px;">
+                  <span v-if="selectedTask && isSelectedTaskFinished" class="status-dot-badge" style="margin-left: 8px; background: #f1f5f9; color: #475569; border-color: #cbd5e1;">
+                    <span class="dot" style="background: #94a3b8;"></span> 任务归档时段
+                  </span>
+                  <span v-else-if="selectedTask" class="status-dot-badge normal" style="margin-left: 8px;">
+                    <span class="dot"></span> 任务实时采样 (1s)
+                  </span>
+                  <span v-else class="status-dot-badge normal" style="margin-left: 8px;">
                     <span class="dot"></span> 实时采样 (1s)
                   </span>
                   <span class="count-pill">{{ chartLiveLabel }}</span>
@@ -154,14 +170,17 @@
                     </template>
                   </template>
                   <button v-if="canShiftChartEarlier" class="btn-aliyun" type="button" @click="shiftChartWindow(-1)">上一窗</button>
-                  <button v-if="!chartLiveFollow" class="btn-aliyun" type="button" @click="shiftChartWindow(1)">下一窗</button>
-                  <button v-if="!chartLiveFollow" class="btn-aliyun" type="button" @click="resumeChartLive">回到最新</button>
+                  <button v-if="!chartLiveFollow && !isSelectedTaskFinished" class="btn-aliyun" type="button" @click="shiftChartWindow(1)">下一窗</button>
+                  <button v-if="!chartLiveFollow && !isSelectedTaskFinished" class="btn-aliyun" type="button" @click="resumeChartLive">回到最新</button>
                   <button class="btn-aliyun" type="button" @click="resetChartZoom">重置缩放</button>
                   <button class="btn-aliyun" type="button" @click="refreshTelemetry(false)">刷新采样</button>
                   <button class="btn-primary-blue" type="button" @click="exportChartImage">导出图表图片</button>
                 </div>
               </div>
-              <div class="chart-section">
+              <div class="chart-section" style="position: relative;">
+                <div v-if="isTaskNotStarted" class="chart-empty-mask">
+                  <el-empty description="该任务尚未开始执行，暂无时序采样数据" />
+                </div>
                 <div ref="chartRef" class="chart-box" :style="{ height: chartBoxHeight + 'px' }"></div>
               </div>
             </div>
@@ -789,7 +808,16 @@ const chartBoxHeight = computed(() => {
   const count = Math.max(chartUnits.value.length, 1)
   return Math.min(540, Math.max(255, 56 + count * 88)) + zoomPad
 })
+const isSelectedTaskFinished = computed(() => {
+  if (!selectedTask.value) return false
+  return Boolean(selectedTask.value.endTime) ||
+    ['COMPLETED', 'FAILED', 'TERMINATED', 'CANCELLED', 'SUCCEEDED'].includes(String(selectedTask.value.taskStatus || '').toUpperCase())
+})
+const isTaskNotStarted = computed(() => {
+  return Boolean(selectedTask.value && !selectedTask.value.startTime)
+})
 const canShiftChartEarlier = computed(() => {
+  if (isSelectedTaskFinished.value) return false
   if (chartWindowStart.value == null) return false
   if (chartEarliestAvailable.value == null) return true
   return chartWindowStart.value > chartEarliestAvailable.value + 1000
@@ -799,6 +827,12 @@ const chartWindowLabel = computed(() => {
   return `${formatChartAxisTime(chartWindowStart.value)} ~ ${formatChartAxisTime(chartWindowEnd.value)}`
 })
 const chartLiveLabel = computed(() => {
+  if (selectedTask.value) {
+    if (isSelectedTaskFinished.value) {
+      return '任务全周期时段'
+    }
+    return '任务执行中'
+  }
   if (!chartLiveFollow.value) return '历史窗口（固定）'
   if (chartEarliestAvailable.value && chartWindowEnd.value) {
     const spanMs = chartWindowEnd.value - chartEarliestAvailable.value
@@ -1150,7 +1184,11 @@ async function loadRecords(silent = false) {
   if (!silent) loadingRecords.value = true
   tableRequestInFlight = true
   try {
-    const res = await axios.get(`/api/data/record/dataset/${datasetId}`, { params: { pageNo: recordPage.pageNo, pageSize: recordPage.pageSize } })
+    const params = { pageNo: recordPage.pageNo, pageSize: recordPage.pageSize }
+    if (selectedTask.value?.id) {
+      params.taskId = selectedTask.value.id
+    }
+    const res = await axios.get(`/api/data/record/dataset/${datasetId}`, { params })
     if (seq !== tableLoadSeq || selectedDataset.value?.id !== datasetId) return
     const data = res.data?.data
     records.value = asArray(data?.list || data?.records)
@@ -1190,6 +1228,9 @@ async function loadChartRecords(silent = false, range = null) {
   chartRequestInFlight = true
   try {
     const params = { windowMinutes: CHART_WINDOW_MINUTES, maxPoints: CHART_MAX_POINTS }
+    if (selectedTask.value?.id) {
+      params.taskId = selectedTask.value.id
+    }
     if (range?.from != null && range?.to != null) {
       params.from = range.from
       params.to = range.to
@@ -1938,11 +1979,19 @@ async function deleteTemplate(template) {
 async function exportDataset() {
   if (!selectedDataset.value?.id) return
   try {
-    const response = await axios.get(`/api/data/record/export/${selectedDataset.value.id}`, { responseType: 'blob' })
+    const params = {}
+    if (selectedTask.value?.id) {
+      params.taskId = selectedTask.value.id
+    }
+    const response = await axios.get(`/api/data/record/export/${selectedDataset.value.id}`, {
+      params,
+      responseType: 'blob'
+    })
     const url = URL.createObjectURL(new Blob([response.data], { type: 'text/csv;charset=utf-8' }))
     const link = document.createElement('a')
     link.href = url
-    link.download = `${selectedDataset.value.dataTable || 'dataset'}.csv`
+    const taskSuffix = selectedTask.value?.id ? `_task_${selectedTask.value.id}` : ''
+    link.download = `${selectedDataset.value.dataTable || 'dataset'}${taskSuffix}.csv`
     document.body.appendChild(link)
     link.click()
     link.remove()
@@ -2187,6 +2236,8 @@ onMounted(() => {
   window.addEventListener('resize', resizeChart)
   refreshInterval = setInterval(() => {
     if (!selectedDataset.value) return
+    // 若当前查看的是已结束归档的历史任务，无需高频轮询
+    if (isSelectedTaskFinished.value) return
     if (chartLiveFollow.value) {
       loadChartRecords(true)
     }
@@ -2201,6 +2252,15 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+.chart-empty-mask {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.9);
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
 .data-workbench-page {
   height: calc(100vh - 50px);
   padding: 10px 14px 14px;

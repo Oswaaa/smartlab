@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1120" viewBox="0 0 2000 1120" role="img"><title>约束层：跨层观察与处理</title><desc>局部复用 C 模块，并展开它对资源和任务的共同观察，以及处理动作返回模型的关系。</desc><defs><marker id="control" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#235F9A"/></marker><marker id="feedback" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#168270"/></marker><marker id="constraint" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#B86626"/></marker><marker id="guide" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#8D9BA5"/></marker></defs><style>text{font-family:'Microsoft YaHei','微软雅黑',sans-serif}</style><rect width="2000" height="1120" fill="#FFFFFF"/><text x="1000" y="53" text-anchor="middle" fill="#193B58" font-size="40" font-weight="600">约束层：跨层观察与处理</text>
+<rect x="100" y="183" width="740" height="198" rx="0" fill="#F1F6EB" stroke="#586D7D" stroke-width="1.8"/>
+<rect x="100" y="183" width="740" height="50" rx="0" fill="#DCE8CA" stroke="#586D7D" stroke-width="1.6"/>
+<text x="124" y="219" text-anchor="start" fill="#193B58" font-size="31" font-weight="600">资源侧</text>
+<text x="470" y="282" text-anchor="middle" fill="#193B58" font-size="29" font-weight="400">设备状态 · 属性 · 测量数据</text>
+<text x="470" y="331" text-anchor="middle" fill="#193B58" font-size="29" font-weight="400">内禀约束由设备状态机本地处理</text>
+<rect x="1160" y="183" width="740" height="198" rx="0" fill="#EFF4FA" stroke="#586D7D" stroke-width="1.8"/>
+<rect x="1160" y="183" width="740" height="50" rx="0" fill="#CCDEEF" stroke="#586D7D" stroke-width="1.6"/>
+<text x="1184" y="219" text-anchor="start" fill="#193B58" font-size="31" font-weight="600">工作流侧</text>
+<text x="1530" y="282" text-anchor="middle" fill="#193B58" font-size="29" font-weight="400">当前步骤 · 节点生命周期</text>
+<text x="1530" y="331" text-anchor="middle" fill="#193B58" font-size="29" font-weight="400">任务变量 · 执行上下文</text>
+<path d="M 440 381 L 440 600" fill="none" stroke="#168270" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback)"/>
+<text x="418" y="487" text-anchor="end" fill="#168270" font-size="28" font-weight="400">资源侧观察</text>
+<path d="M 1560 381 L 1560 600" fill="none" stroke="#168270" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6" marker-end="url(#feedback)"/>
+<text x="1582" y="487" text-anchor="start" fill="#168270" font-size="28" font-weight="400">工作流侧观察</text>
+<path d="M 1700 600 L 1700 540 L 1020 540 L 1020 330 L 840 330" fill="none" stroke="#B86626" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="9 6" marker-end="url(#constraint)"/>
+<path d="M 1020 330 L 1160 330" fill="none" stroke="#B86626" stroke-width="2.8" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="9 6" marker-end="url(#constraint)"/>
+<text x="1044" y="461" text-anchor="start" fill="#B86626" font-size="27" font-weight="400">警告 / 报警</text>
+<text x="1044" y="499" text-anchor="start" fill="#B86626" font-size="27" font-weight="400">停止 / 中止</text>
+<g transform="translate(60 600) scale(1)">
+<rect x="0" y="0" width="1880" height="145" rx="0" fill="#FFF3E9" stroke="#586D7D" stroke-width="1.8"/>
+<rect x="0" y="0" width="1880" height="43" rx="0" fill="#F4D6BE" stroke="#586D7D" stroke-width="1.6"/>
+<text x="24" y="30.959999999999997" text-anchor="start" fill="#193B58" font-size="30" font-weight="600">C  约束层</text>
+<rect x="24" y="63" width="572" height="64" rx="0" fill="#FFFFFF" stroke="#B86626" stroke-width="1.4"/>
+<text x="310" y="88" text-anchor="middle" fill="#193B58" font-size="26" font-weight="600">观察空间</text>
+<text x="310" y="116" text-anchor="middle" fill="#193B58" font-size="24" font-weight="400">资源状态 + 工作流上下文</text>
+<rect x="654" y="63" width="572" height="64" rx="0" fill="#FFFFFF" stroke="#B86626" stroke-width="1.4"/>
+<text x="940" y="88" text-anchor="middle" fill="#193B58" font-size="26" font-weight="600">约束规则</text>
+<text x="940" y="116" text-anchor="middle" fill="#193B58" font-size="24" font-weight="400">实验室基线约束 / 任务约束</text>
+<rect x="1284" y="63" width="572" height="64" rx="0" fill="#FFFFFF" stroke="#B86626" stroke-width="1.4"/>
+<text x="1570" y="88" text-anchor="middle" fill="#193B58" font-size="26" font-weight="600">处理动作</text>
+<text x="1570" y="116" text-anchor="middle" fill="#193B58" font-size="24" font-weight="400">警告 / 报警 / 停止 / 中止</text>
+</g>
+<text x="1000" y="825" text-anchor="middle" fill="#193B58" font-size="31" font-weight="600">观察资源与任务，按规则判断，并通过共同接口采取动作。</text>
+<rect x="100" y="897" width="1800" height="110" rx="0" fill="#F5F7F8" stroke="#8D9BA5" stroke-width="1.4"/>
+<text x="1000" y="938" text-anchor="middle" fill="#193B58" font-size="28" font-weight="400">内禀约束：本地处理　｜　实验室基线约束：持续监督　｜　任务约束：任务期间生效</text>
+<text x="1000" y="982" text-anchor="middle" fill="#193B58" font-size="28" font-weight="400">约束与执行模型协同运行，处理动作回到节点或设备状态机。</text></svg>

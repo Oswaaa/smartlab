@@ -1,0 +1,61 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1470" height="780" viewBox="0 0 1470 780" role="img" aria-labelledby="title desc"><title id="title">统一执行链路</title><desc id="desc">人工、流程和大模型的控制请求与工作流节点请求汇入共同执行入口，进入设备模型中的状态机。状态机通过 Adapter 控制物理设备，状态反馈沿原路返回。约束层观察工作流上下文和资源状态，并将处理动作返回状态机。</desc><defs><marker id="control" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="11" markerHeight="11" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#000000"/></marker><marker id="feedback" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="11" markerHeight="11" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#000000"/></marker><marker id="constraint" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="11" markerHeight="11" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#000000"/></marker><marker id="observe" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="11" markerHeight="11" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#000000"/></marker></defs><style>text{font-family:'Microsoft YaHei','微软雅黑',sans-serif}</style><rect width="1470" height="780" fill="#FFFFFF"/><rect x="340" y="58" width="380" height="100" rx="0" fill="#FFFFFF" stroke="#000000" stroke-width="2.2"/>
+<text x="530" y="119" font-size="44" font-weight="600" text-anchor="middle" fill="#000000">工作流节点</text>
+<rect x="340" y="284" width="380" height="174" rx="0" fill="#FFFFFF" stroke="#000000" stroke-width="2.2"/>
+<text x="435" y="331" font-size="42" font-weight="600" text-anchor="middle" fill="#000000">设备模型</text>
+<rect x="354" y="370" width="173" height="68" rx="0" fill="#FFFFFF" stroke="#000000" stroke-width="2.2"/>
+<text x="441" y="415" font-size="38" font-weight="400" text-anchor="middle" fill="#000000">能力模型</text>
+<rect x="539" y="370" width="165" height="68" rx="0" fill="#FFFFFF" stroke="#000000" stroke-width="2.2"/>
+<text x="622" y="415" font-size="40" font-weight="600" text-anchor="middle" fill="#000000">状态机</text>
+<rect x="340" y="522" width="380" height="84" rx="0" fill="#FFFFFF" stroke="#000000" stroke-width="2.2"/>
+<text x="530" y="578" font-size="44" font-weight="600" text-anchor="middle" fill="#000000">Adapter</text>
+<rect x="340" y="658" width="380" height="84" rx="0" fill="#FFFFFF" stroke="#000000" stroke-width="2.2"/>
+<text x="530" y="714" font-size="44" font-weight="600" text-anchor="middle" fill="#000000">物理设备</text>
+<text x="769" y="100" font-size="38" font-weight="400" text-anchor="start" fill="#000000">接口、数据端口</text>
+<text x="769" y="149" font-size="38" font-weight="400" text-anchor="start" fill="#000000">任务步骤</text>
+<text x="769" y="345" font-size="38" font-weight="400" text-anchor="start" fill="#000000">设备能力与属性</text>
+<text x="769" y="394" font-size="38" font-weight="400" text-anchor="start" fill="#000000">状态转移</text>
+<text x="769" y="551" font-size="38" font-weight="400" text-anchor="start" fill="#000000">协议映射</text>
+<text x="769" y="600" font-size="38" font-weight="400" text-anchor="start" fill="#000000">发令与反馈转换</text>
+<text x="769" y="688" font-size="38" font-weight="400" text-anchor="start" fill="#000000">执行操作</text>
+<text x="769" y="737" font-size="38" font-weight="400" text-anchor="start" fill="#000000">产生测量与状态</text>
+<text x="142" y="55" font-size="40" font-weight="600" text-anchor="middle" fill="#000000">控制意图</text>
+<rect x="24" y="96" width="232" height="68" rx="0" fill="#FFFFFF" stroke="#000000" stroke-width="2.2"/>
+<text x="140" y="143" font-size="42" font-weight="400" text-anchor="middle" fill="#000000">人工</text>
+<path d="M 256 130 L 288 130" fill="none" stroke="#000000" stroke-width="2.9" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="24" y="192" width="232" height="68" rx="0" fill="#FFFFFF" stroke="#000000" stroke-width="2.2"/>
+<text x="140" y="239" font-size="42" font-weight="400" text-anchor="middle" fill="#000000">流程</text>
+<path d="M 256 226 L 288 226" fill="none" stroke="#000000" stroke-width="2.9" stroke-linejoin="round" stroke-linecap="round"/>
+<rect x="24" y="288" width="232" height="68" rx="0" fill="#FFFFFF" stroke="#000000" stroke-width="2.2"/>
+<text x="140" y="335" font-size="42" font-weight="400" text-anchor="middle" fill="#000000">大模型</text>
+<path d="M 256 322 L 288 322" fill="none" stroke="#000000" stroke-width="2.9" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 288 130 L 288 322" fill="none" stroke="#000000" stroke-width="2.9" stroke-linejoin="round" stroke-linecap="round"/>
+<path d="M 288 226 L 622 226" fill="none" stroke="#000000" stroke-width="2.9" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#control)"/>
+<text x="447" y="204" font-size="38" font-weight="400" text-anchor="middle" fill="#000000">共同执行入口</text>
+<path d="M 622 158 L 622 370" fill="none" stroke="#000000" stroke-width="2.9" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#control)"/>
+<circle cx="622" cy="226" r="5" fill="#000000"/>
+<path d="M 622 438 L 622 522" fill="none" stroke="#000000" stroke-width="2.9" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#control)"/>
+<path d="M 622 606 L 622 658" fill="none" stroke="#000000" stroke-width="2.9" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#control)"/>
+<path d="M 686 284 L 686 158" fill="none" stroke="#000000" stroke-width="2.9" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="13 8" marker-end="url(#feedback)"/>
+<path d="M 686 522 L 686 458" fill="none" stroke="#000000" stroke-width="2.9" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="13 8" marker-end="url(#feedback)"/>
+<path d="M 686 658 L 686 606" fill="none" stroke="#000000" stroke-width="2.9" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="13 8" marker-end="url(#feedback)"/>
+<rect x="1140" y="58" width="304" height="606" rx="0" fill="#FFFFFF" stroke="#000000" stroke-width="2.2"/>
+<text x="1292" y="115" font-size="44" font-weight="600" text-anchor="middle" fill="#000000">约束层</text>
+<text x="1292" y="193" font-size="40" font-weight="600" text-anchor="middle" fill="#000000">观察</text>
+<text x="1292" y="250" font-size="38" font-weight="400" text-anchor="middle" fill="#000000">工作流上下文</text>
+<text x="1292" y="299" font-size="38" font-weight="400" text-anchor="middle" fill="#000000">资源状态</text>
+<path d="M 1164 336 L 1420 336" stroke="#000000" stroke-width="1.8"/>
+<text x="1292" y="393" font-size="38" font-weight="600" text-anchor="middle" fill="#000000">按条件触发动作</text>
+<text x="1292" y="459" font-size="38" font-weight="400" text-anchor="middle" fill="#000000">警告 / 报警</text>
+<text x="1292" y="508" font-size="38" font-weight="400" text-anchor="middle" fill="#000000">停止 / 中止</text>
+<text x="1292" y="603" font-size="38" font-weight="400" text-anchor="middle" fill="#000000">回到状态机处理</text>
+<path d="M 701 58 L 701 25 L 1106 25 L 1106 180 L 1140 180" fill="none" stroke="#000000" stroke-width="2.9" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="3 8" marker-end="url(#observe)"/>
+<path d="M 720 309 L 1120 309 L 1120 286 L 1140 286" fill="none" stroke="#000000" stroke-width="2.9" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="3 8" marker-end="url(#observe)"/>
+<path d="M 1140 540 L 1110 540 L 1110 488 L 741 488 L 741 414 L 704 414" fill="none" stroke="#000000" stroke-width="2.9" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="14 7 3 7" marker-end="url(#constraint)"/>
+<path d="M 24 456 L 91 456" fill="none" stroke="#000000" stroke-width="2.9" stroke-linejoin="round" stroke-linecap="round" marker-end="url(#control)"/>
+<text x="112" y="468" font-size="38" font-weight="400" text-anchor="start" fill="#000000">控制请求</text>
+<path d="M 91 531 L 24 531" fill="none" stroke="#000000" stroke-width="2.9" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="13 8" marker-end="url(#feedback)"/>
+<text x="112" y="543" font-size="38" font-weight="400" text-anchor="start" fill="#000000">状态反馈</text>
+<path d="M 24 606 L 91 606" fill="none" stroke="#000000" stroke-width="2.9" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="3 8" marker-end="url(#observe)"/>
+<text x="112" y="618" font-size="38" font-weight="400" text-anchor="start" fill="#000000">约束观察</text>
+<path d="M 24 681 L 91 681" fill="none" stroke="#000000" stroke-width="2.9" stroke-linejoin="round" stroke-linecap="round" stroke-dasharray="14 7 3 7" marker-end="url(#constraint)"/>
+<text x="112" y="693" font-size="38" font-weight="400" text-anchor="start" fill="#000000">约束动作</text></svg>

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="445" height="250" viewBox="0 0 445 250"><rect width="100%" height="100%" fill="white"/><rect x="0" y="0" width="445" height="250" fill="#F6F9EF" stroke="#95AE62" stroke-width="1"/>
+<rect x="0" y="0" width="445" height="32" fill="#E9F0DB" stroke="#95AE62" stroke-width="1"/>
+<text x="8" y="22" text-anchor="start" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="20" font-weight="700" fill="#111111">资源层</text>
+<rect x="38" y="45" width="385" height="171" fill="#FFFFFF" stroke="#95AE62" stroke-width="1"/>
+<rect x="30" y="53" width="385" height="171" fill="#FFFFFF" stroke="#95AE62" stroke-width="1"/>
+<rect x="22" y="61" width="385" height="171" fill="#FFFFFF" stroke="#95AE62" stroke-width="1"/>
+<text x="214" y="82.1" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="18" font-weight="700" fill="#111111">设备对象模型</text>
+<rect x="40" y="96" width="168" height="117" fill="#F6F9EF" stroke="#C3D39E" stroke-width="1"/>
+<text x="124" y="115.15" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="17" font-weight="700" fill="#111111">能力模型</text>
+<text x="124" y="136.3" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="14" font-weight="400" fill="#111111">设备属性、能力与参数</text>
+<text x="124" y="152.68" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="14" font-weight="400" fill="#111111">接口与 Adapter 映射契约</text>
+<text x="124" y="169.06" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="14" font-weight="400" fill="#111111">内禀约束</text>
+<rect x="226" y="96" width="168" height="117" fill="#F6F9EF" stroke="#C3D39E" stroke-width="1"/>
+<text x="310" y="115.15" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="17" font-weight="700" fill="#111111">状态机</text>
+<text x="310" y="136.3" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="14" font-weight="400" fill="#111111">处理请求与状态判断</text>
+<text x="310" y="152.68" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="14" font-weight="400" fill="#111111">状态转移与指令输出</text>
+<text x="310" y="169.06" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="14" font-weight="400" fill="#111111">依据反馈更新状态</text></svg>

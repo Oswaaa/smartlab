@@ -1,0 +1,37 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1160" height="335" viewBox="0 0 1160 335"><rect width="100%" height="100%" fill="white"/><rect x="0" y="0" width="445" height="103" fill="#FAF8FC" stroke="#9A83BB" stroke-width="1"/>
+<rect x="0" y="0" width="445" height="32" fill="#EEE9F2" stroke="#9A83BB" stroke-width="1"/>
+<text x="8" y="22" text-anchor="start" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="20" font-weight="700" fill="#111111">工作流层</text>
+<text x="222.5" y="66.95" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="21" font-weight="400" fill="#111111">节点生命周期与任务变量</text>
+<text x="222.5" y="91.52000000000001" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="21" font-weight="400" fill="#111111">任务执行上下文</text>
+<rect x="715" y="0" width="445" height="103" fill="#F6F9EF" stroke="#95AE62" stroke-width="1"/>
+<rect x="715" y="0" width="445" height="32" fill="#E9F0DB" stroke="#95AE62" stroke-width="1"/>
+<text x="723" y="22" text-anchor="start" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="20" font-weight="700" fill="#111111">资源层</text>
+<text x="937.5" y="66.95" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="21" font-weight="400" fill="#111111">设备状态与属性</text>
+<text x="937.5" y="91.52000000000001" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="21" font-weight="400" fill="#111111">测量数据</text>
+<rect x="0" y="225" width="1160" height="110" fill="#FEF5EE" stroke="#6F7B83" stroke-width="1"/>
+<rect x="0" y="225" width="1160" height="32" fill="#FBEADB" stroke="#6F7B83" stroke-width="1"/>
+<text x="8" y="247" text-anchor="start" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="20" font-weight="700" fill="#111111">约束层</text>
+<rect x="22" y="268" width="328" height="57" fill="#FFFFFF" stroke="#6F7B83" stroke-width="1"/>
+<text x="186" y="289.05" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="19" font-weight="700" fill="#111111">观察空间</text>
+<text x="186" y="307.15" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="17" font-weight="400" fill="#111111">设备状态、属性 / 工作流上下文</text>
+<rect x="416" y="268" width="328" height="57" fill="#FFFFFF" stroke="#6F7B83" stroke-width="1"/>
+<text x="580" y="289.05" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="19" font-weight="700" fill="#111111">约束规则</text>
+<text x="580" y="307.15" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="17" font-weight="400" fill="#111111">实验室基线约束 / 任务约束</text>
+<rect x="810" y="268" width="328" height="57" fill="#FFFFFF" stroke="#6F7B83" stroke-width="1"/>
+<text x="974" y="289.05" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="19" font-weight="700" fill="#111111">处理动作</text>
+<text x="974" y="307.15" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="17" font-weight="400" fill="#111111">设备动作 / 警告、报警 / 中止</text>
+<path d="M350 290 L416 290" fill="none" stroke="#B15F20" stroke-width="1.5"/>
+<polygon points="416,290 409,286.9 409,293.1" fill="#B15F20" stroke="#B15F20" stroke-width="0.1"/>
+<path d="M744 290 L810 290" fill="none" stroke="#B15F20" stroke-width="1.5"/>
+<polygon points="810,290 803,286.9 803,293.1" fill="#B15F20" stroke="#B15F20" stroke-width="0.1"/>
+<path d="M245 103 L245 225" fill="none" stroke="#9A83BB" stroke-width="1.5" stroke-dasharray="7 5"/>
+<polygon points="245,225 248.1,218 241.9,218" fill="#9A83BB" stroke="#9A83BB" stroke-width="0.1"/>
+<text x="127" y="166" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="20" font-weight="400" fill="#9A83BB">工作流侧观察</text>
+<path d="M985 103 L985 143 L330 143 L330 225" fill="none" stroke="#799A39" stroke-width="1.5" stroke-dasharray="7 5"/>
+<polygon points="330,225 333.1,218 326.9,218" fill="#799A39" stroke="#799A39" stroke-width="0.1"/>
+<text x="843" y="133" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="20" font-weight="400" fill="#799A39">资源侧观察</text>
+<path d="M1095 225 L1095 186 L580 186 L580 58 L445 58" fill="none" stroke="#B15F20" stroke-width="1.5" stroke-dasharray="7 5"/>
+<polygon points="445,58 452,61.1 452,54.9" fill="#B15F20" stroke="#B15F20" stroke-width="0.1"/>
+<path d="M580 58 L715 58" fill="none" stroke="#B15F20" stroke-width="1.5" stroke-dasharray="7 5"/>
+<polygon points="715,58 708,54.9 708,61.1" fill="#B15F20" stroke="#B15F20" stroke-width="0.1"/>
+<text x="875" y="207.05" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="19" font-weight="400" fill="#B15F20">处理动作 → 节点 / 状态机接口</text></svg>

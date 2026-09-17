@@ -1,0 +1,147 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="500" viewBox="0 0 1200 500"><rect width="100%" height="100%" fill="white"/><polygon points="0,51 64,0 392,0 328,51" fill="#FAF8FC" stroke="#6F7B83" stroke-width="1"/>
+<polygon points="0,51 328,51 328,58 0,58" fill="#EEE9F2" stroke="#6F7B83" stroke-width="1"/>
+<polygon points="328,51 392,0 392,7 328,58" fill="#EEE9F2" stroke="#6F7B83" stroke-width="1"/>
+<text x="217" y="22.849999999999998" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="23" font-weight="700" fill="#152C40">工作流层</text>
+<polygon points="15,47 32,35 117,35 100,47" fill="#FFFFFF" stroke="#6F7B83" stroke-width="1"/>
+<text x="66" y="46.3" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="14" font-weight="400" fill="#152C40">设备执行节点</text>
+<polygon points="120,47 137,35 222,35 205,47" fill="#FFFFFF" stroke="#6F7B83" stroke-width="1"/>
+<text x="171" y="46.3" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="14" font-weight="400" fill="#152C40">设备执行节点</text>
+<polygon points="225,47 242,35 327,35 310,47" fill="#FFFFFF" stroke="#6F7B83" stroke-width="1"/>
+<text x="276" y="46.3" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="14" font-weight="400" fill="#152C40">设备执行节点</text>
+<path d="M105 41 L122 41" fill="none" stroke="#28849C" stroke-width="1.5"/>
+<polygon points="122,41 115,37.9 115,44.1" fill="#28849C" stroke="#28849C" stroke-width="0.1"/>
+<path d="M210 41 L227 41" fill="none" stroke="#28849C" stroke-width="1.5"/>
+<polygon points="227,41 220,37.9 220,44.1" fill="#28849C" stroke="#28849C" stroke-width="0.1"/>
+<polygon points="0,207 64,156 392,156 328,207" fill="#F6F9EF" stroke="#6F7B83" stroke-width="1"/>
+<polygon points="0,207 328,207 328,214 0,214" fill="#E9F0DB" stroke="#6F7B83" stroke-width="1"/>
+<polygon points="328,207 392,156 392,163 328,214" fill="#E9F0DB" stroke="#6F7B83" stroke-width="1"/>
+<text x="217" y="178.85" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="23" font-weight="700" fill="#152C40">设备模型层</text>
+<polygon points="15,203 32,191 117,191 100,203" fill="#FFFFFF" stroke="#6F7B83" stroke-width="1"/>
+<text x="66" y="202.3" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="14" font-weight="400" fill="#152C40">设备模型</text>
+<polygon points="120,203 137,191 222,191 205,203" fill="#FFFFFF" stroke="#6F7B83" stroke-width="1"/>
+<text x="171" y="202.3" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="14" font-weight="400" fill="#152C40">设备模型</text>
+<polygon points="225,203 242,191 327,191 310,203" fill="#FFFFFF" stroke="#6F7B83" stroke-width="1"/>
+<text x="276" y="202.3" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="14" font-weight="400" fill="#152C40">设备模型</text>
+<polygon points="0,373 64,322 392,322 328,373" fill="#FFF8E2" stroke="#6F7B83" stroke-width="1"/>
+<polygon points="0,373 328,373 328,380 0,380" fill="#F8E8B0" stroke="#6F7B83" stroke-width="1"/>
+<polygon points="328,373 392,322 392,329 328,380" fill="#F8E8B0" stroke="#6F7B83" stroke-width="1"/>
+<text x="217" y="344.85" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="23" font-weight="700" fill="#152C40">Adapter 层</text>
+<polygon points="15,369 32,357 117,357 100,369" fill="#FFFFFF" stroke="#6F7B83" stroke-width="1"/>
+<text x="66" y="368.3" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="14" font-weight="400" fill="#152C40">Adapter</text>
+<polygon points="120,369 137,357 222,357 205,369" fill="#FFFFFF" stroke="#6F7B83" stroke-width="1"/>
+<text x="171" y="368.3" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="14" font-weight="400" fill="#152C40">Adapter</text>
+<polygon points="225,369 242,357 327,357 310,369" fill="#FFFFFF" stroke="#6F7B83" stroke-width="1"/>
+<text x="276" y="368.3" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="14" font-weight="400" fill="#152C40">Adapter</text>
+<polygon points="0,493 64,442 392,442 328,493" fill="#FEF5EE" stroke="#6F7B83" stroke-width="1"/>
+<polygon points="0,493 328,493 328,500 0,500" fill="#FBEADB" stroke="#6F7B83" stroke-width="1"/>
+<polygon points="328,493 392,442 392,449 328,500" fill="#FBEADB" stroke="#6F7B83" stroke-width="1"/>
+<text x="217" y="464.85" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="23" font-weight="700" fill="#152C40">物理设备</text>
+<polygon points="15,489 32,477 117,477 100,489" fill="#FFFFFF" stroke="#6F7B83" stroke-width="1"/>
+<text x="66" y="488.3" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="14" font-weight="400" fill="#152C40">物理设备</text>
+<polygon points="120,489 137,477 222,477 205,489" fill="#FFFFFF" stroke="#6F7B83" stroke-width="1"/>
+<text x="171" y="488.3" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="14" font-weight="400" fill="#152C40">物理设备</text>
+<polygon points="225,489 242,477 327,477 310,489" fill="#FFFFFF" stroke="#6F7B83" stroke-width="1"/>
+<text x="276" y="488.3" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="14" font-weight="400" fill="#152C40">物理设备</text>
+<path d="M26 58 L26 191" fill="none" stroke="#939CA3" stroke-width="0.8" stroke-dasharray="7 5"/>
+<path d="M130 58 L130 191" fill="none" stroke="#939CA3" stroke-width="0.8" stroke-dasharray="7 5"/>
+<path d="M235 58 L235 191" fill="none" stroke="#939CA3" stroke-width="0.8" stroke-dasharray="7 5"/>
+<path d="M320 58 L320 191" fill="none" stroke="#939CA3" stroke-width="0.8" stroke-dasharray="7 5"/>
+<path d="M63 68 L63 181" fill="none" stroke="#28849C" stroke-width="1.5"/>
+<polygon points="63,181 66.1,174 59.9,174" fill="#28849C" stroke="#28849C" stroke-width="0.1"/>
+<path d="M107 181 L107 68" fill="none" stroke="#799A39" stroke-width="1.5"/>
+<polygon points="107,68 103.9,75 110.1,75" fill="#799A39" stroke="#799A39" stroke-width="0.1"/>
+<text x="44" y="118.7" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#28849C">执行</text>
+<text x="44" y="137.42000000000002" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#28849C">信号</text>
+<text x="128" y="118.7" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#799A39">状态</text>
+<text x="128" y="137.42000000000002" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#799A39">反馈</text>
+<path d="M26 214 L26 357" fill="none" stroke="#939CA3" stroke-width="0.8" stroke-dasharray="7 5"/>
+<path d="M130 214 L130 357" fill="none" stroke="#939CA3" stroke-width="0.8" stroke-dasharray="7 5"/>
+<path d="M235 214 L235 357" fill="none" stroke="#939CA3" stroke-width="0.8" stroke-dasharray="7 5"/>
+<path d="M320 214 L320 357" fill="none" stroke="#939CA3" stroke-width="0.8" stroke-dasharray="7 5"/>
+<path d="M63 224 L63 347" fill="none" stroke="#28849C" stroke-width="1.5"/>
+<polygon points="63,347 66.1,340 59.9,340" fill="#28849C" stroke="#28849C" stroke-width="0.1"/>
+<path d="M107 347 L107 224" fill="none" stroke="#799A39" stroke-width="1.5"/>
+<polygon points="107,224 103.9,231 110.1,231" fill="#799A39" stroke="#799A39" stroke-width="0.1"/>
+<text x="44" y="279.7" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#28849C">控制</text>
+<text x="44" y="298.41999999999996" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#28849C">指令</text>
+<text x="128" y="279.7" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#799A39">数据</text>
+<text x="128" y="298.41999999999996" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#799A39">反馈</text>
+<path d="M26 380 L26 477" fill="none" stroke="#939CA3" stroke-width="0.8" stroke-dasharray="7 5"/>
+<path d="M130 380 L130 477" fill="none" stroke="#939CA3" stroke-width="0.8" stroke-dasharray="7 5"/>
+<path d="M235 380 L235 477" fill="none" stroke="#939CA3" stroke-width="0.8" stroke-dasharray="7 5"/>
+<path d="M320 380 L320 477" fill="none" stroke="#939CA3" stroke-width="0.8" stroke-dasharray="7 5"/>
+<path d="M63 390 L63 467" fill="none" stroke="#28849C" stroke-width="1.5"/>
+<polygon points="63,467 66.1,460 59.9,460" fill="#28849C" stroke="#28849C" stroke-width="0.1"/>
+<path d="M107 467 L107 390" fill="none" stroke="#799A39" stroke-width="1.5"/>
+<polygon points="107,390 103.9,397 110.1,397" fill="#799A39" stroke="#799A39" stroke-width="0.1"/>
+<text x="44" y="422.7" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#28849C">驱动</text>
+<text x="44" y="441.41999999999996" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#28849C">指令</text>
+<text x="128" y="422.7" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#799A39">测量</text>
+<text x="128" y="441.41999999999996" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#799A39">状态</text>
+<path d="M370 20 L395 20 L430 20" fill="none" stroke="#939CA3" stroke-width="0.8" stroke-dasharray="7 5"/>
+<path d="M370 178 L395 178 L430 178" fill="none" stroke="#939CA3" stroke-width="0.8" stroke-dasharray="7 5"/>
+<path d="M370 339 L395 339 L430 339" fill="none" stroke="#939CA3" stroke-width="0.8" stroke-dasharray="7 5"/>
+<path d="M370 466 L395 466 L430 466" fill="none" stroke="#939CA3" stroke-width="0.8" stroke-dasharray="7 5"/>
+<rect x="430" y="0" width="770" height="114" fill="#FAF8FC" stroke="#6F7B83" stroke-width="1"/>
+<rect x="430" y="0" width="770" height="32" fill="#EEE9F2" stroke="#6F7B83" stroke-width="1"/>
+<text x="438" y="23.9" text-anchor="start" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="22" font-weight="700" fill="#111111">工作流节点</text>
+<text x="1041.5" y="24.099999999999998" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="18" font-weight="400" fill="#152C40">控制接口 / 数据端口</text>
+<rect x="448" y="43" width="217" height="29" fill="#FFFFFF" stroke="#6F7B83" stroke-width="1"/>
+<text x="556.5" y="63.099999999999994" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="18" font-weight="700" fill="#111111">变量空间</text>
+<rect x="448" y="79" width="217" height="27" fill="#FFFFFF" stroke="#6F7B83" stroke-width="1"/>
+<text x="556.5" y="99.1" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="18" font-weight="700" fill="#111111">节点生命周期</text>
+<rect x="720" y="43" width="460" height="63" fill="#FFFFFF" stroke="#9A83BB" stroke-width="1"/>
+<text x="950" y="65" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="20" font-weight="700" fill="#111111">触发器：条件 → 动作</text>
+<text x="950" y="82.2" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#111111">读取变量、接口信号与生命周期</text>
+<text x="950" y="100.92" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#111111">更新变量与状态，发送执行信号</text>
+<path d="M665 57 L720 57" fill="none" stroke="#939CA3" stroke-width="1.5"/>
+<polygon points="720,57 713,53.9 713,60.1" fill="#939CA3" stroke="#939CA3" stroke-width="0.1"/>
+<path d="M665 92 L720 92" fill="none" stroke="#939CA3" stroke-width="1.5"/>
+<polygon points="720,92 713,88.9 713,95.1" fill="#939CA3" stroke="#939CA3" stroke-width="0.1"/>
+<path d="M510 114 L510 169" fill="none" stroke="#28849C" stroke-width="1.5"/>
+<polygon points="510,169 513.1,162 506.9,162" fill="#28849C" stroke="#28849C" stroke-width="0.1"/>
+<text x="521" y="145.1" text-anchor="start" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="18" font-weight="400" fill="#28849C">控制请求 / 操作参数</text>
+<path d="M1100 169 L1100 114" fill="none" stroke="#799A39" stroke-width="1.5"/>
+<polygon points="1100,114 1096.9,121 1103.1,121" fill="#799A39" stroke="#799A39" stroke-width="0.1"/>
+<text x="966" y="145.1" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="18" font-weight="400" fill="#799A39">执行状态 / 数据反馈</text>
+<rect x="430" y="169" width="770" height="121" fill="#F6F9EF" stroke="#6F7B83" stroke-width="1"/>
+<rect x="430" y="169" width="770" height="32" fill="#E9F0DB" stroke="#6F7B83" stroke-width="1"/>
+<text x="438" y="192.9" text-anchor="start" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="22" font-weight="700" fill="#111111">设备状态机</text>
+<text x="946" y="191.2" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#152C40">能力模型提供操作定义与 Adapter 映射契约</text>
+<rect x="448" y="212" width="210" height="47" fill="#FFFFFF" stroke="#6F7B83" stroke-width="1"/>
+<text x="553" y="233.05" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="19" font-weight="700" fill="#111111">请求处理</text>
+<text x="553" y="250.2" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#111111">检查请求与当前状态</text>
+<rect x="708" y="212" width="210" height="47" fill="#FFFFFF" stroke="#6F7B83" stroke-width="1"/>
+<text x="813" y="233.05" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="19" font-weight="700" fill="#111111">状态转移</text>
+<text x="813" y="250.2" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#111111">按规则执行转移动作</text>
+<rect x="968" y="212" width="212" height="47" fill="#FFFFFF" stroke="#6F7B83" stroke-width="1"/>
+<text x="1074" y="233.05" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="19" font-weight="700" fill="#111111">指令输出</text>
+<text x="1074" y="250.2" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="16" font-weight="400" fill="#111111">通过输出接口发令</text>
+<path d="M658 236 L708 236" fill="none" stroke="#28849C" stroke-width="1.5"/>
+<polygon points="708,236 701,232.9 701,239.1" fill="#28849C" stroke="#28849C" stroke-width="0.1"/>
+<path d="M918 236 L968 236" fill="none" stroke="#28849C" stroke-width="1.5"/>
+<polygon points="968,236 961,232.9 961,239.1" fill="#28849C" stroke="#28849C" stroke-width="0.1"/>
+<text x="814" y="284.15" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="17" font-weight="400" fill="#799A39">事件与遥测反馈 → 更新设备状态及属性</text>
+<path d="M510 290 L510 343" fill="none" stroke="#28849C" stroke-width="1.5"/>
+<polygon points="510,343 513.1,336 506.9,336" fill="#28849C" stroke="#28849C" stroke-width="0.1"/>
+<text x="521" y="320.1" text-anchor="start" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="18" font-weight="400" fill="#28849C">标准控制指令</text>
+<path d="M1100 343 L1100 290" fill="none" stroke="#799A39" stroke-width="1.5"/>
+<polygon points="1100,290 1096.9,297 1103.1,297" fill="#799A39" stroke="#799A39" stroke-width="0.1"/>
+<text x="970" y="320.1" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="18" font-weight="400" fill="#799A39">设备事件 / 测量数据</text>
+<rect x="430" y="343" width="770" height="86" fill="#FFF8E2" stroke="#6F7B83" stroke-width="1"/>
+<rect x="430" y="343" width="770" height="32" fill="#F8E8B0" stroke="#6F7B83" stroke-width="1"/>
+<text x="438" y="366.9" text-anchor="start" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="22" font-weight="700" fill="#111111">Adapter</text>
+<rect x="448" y="381" width="340" height="39" fill="#FFFFFF" stroke="#6F7B83" stroke-width="1"/>
+<text x="618" y="401.1" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="18" font-weight="700" fill="#111111">指令映射</text>
+<text x="618" y="417.25" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="15" font-weight="400" fill="#111111">标准指令 → 设备协议</text>
+<rect x="842" y="381" width="338" height="39" fill="#FFFFFF" stroke="#6F7B83" stroke-width="1"/>
+<text x="1011" y="401.1" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="18" font-weight="700" fill="#111111">反馈转换</text>
+<text x="1011" y="417.25" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="15" font-weight="400" fill="#111111">设备数据 → 事件 / 遥测</text>
+<path d="M510 429 L510 471" fill="none" stroke="#28849C" stroke-width="1.5"/>
+<polygon points="510,471 513.1,464 506.9,464" fill="#28849C" stroke="#28849C" stroke-width="0.1"/>
+<text x="521" y="456.15" text-anchor="start" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="17" font-weight="400" fill="#28849C">驱动指令</text>
+<path d="M1100 471 L1100 429" fill="none" stroke="#799A39" stroke-width="1.5"/>
+<polygon points="1100,429 1096.9,436 1103.1,436" fill="#799A39" stroke="#799A39" stroke-width="0.1"/>
+<text x="982" y="456.15" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="17" font-weight="400" fill="#799A39">测量 / 运行状态</text>
+<rect x="430" y="471" width="770" height="29" fill="#FEF5EE" stroke="#6F7B83" stroke-width="1"/>
+<text x="815" y="494" text-anchor="middle" font-family="Microsoft YaHei,微软雅黑,sans-serif" font-size="20" font-weight="700" fill="#152C40">物理设备：执行操作，返回测量与运行状态</text></svg>

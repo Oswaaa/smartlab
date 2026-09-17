@@ -1,0 +1,179 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 735 390" width="735" height="390" style="background:#FFFFFF; font-family:'Microsoft YaHei', 'PingFang SC', sans-serif;">
+  
+  <defs>
+    <!-- Arrow Markers -->
+    <!-- Blue solid arrow for control request -->
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 8 5 L 1 8.5 z" fill="#2563EB" />
+    </marker>
+    <!-- Dark Blue arrow -->
+    <marker id="arrow-darkblue" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 8 5 L 1 8.5 z" fill="#1E3A8A" />
+    </marker>
+    <!-- Green solid arrow for status/data feedback -->
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 8 5 L 1 8.5 z" fill="#16A34A" />
+    </marker>
+    <!-- Orange dashed arrow for constraints -->
+    <marker id="arrow-orange" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 8 5 L 1 8.5 z" fill="#EA580C" />
+    </marker>
+    <!-- Subtle drop shadows for key cards -->
+    <filter id="card-shadow" x="-4%" y="-4%" width="108%" height="108%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0F172A" flood-opacity="0.06"/>
+    </filter>
+    <filter id="badge-shadow" x="-6%" y="-6%" width="112%" height="112%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#0F172A" flood-opacity="0.08"/>
+    </filter>
+  </defs>
+
+
+  <!-- Canvas Outer Background & Subtle Border -->
+  <rect x="0" y="0" width="735" height="390" fill="#FFFFFF" rx="8" stroke="#E2E8F0" stroke-width="1.5"/>
+
+  <!-- Diagram Title Header Bar -->
+  <g transform="translate(18, 14)">
+    <rect x="0" y="0" width="4" height="18" fill="#1E3A8A" rx="2"/>
+    <text x="12" y="15" font-size="16" font-weight="bold" fill="#0F172A" letter-spacing="0.5">正式图 2：加热任务执行时序</text>
+    <text x="216" y="14.5" font-size="12" fill="#64748B">（控制下发 · 遥测回传 · 条件判断推进 · 异常约束介入）</text>
+  </g>
+
+  <!-- ==================== LIFELINE HEADERS ==================== -->
+  <!-- Header 1: 加热节点 -->
+  <g transform="translate(37, 44)">
+    <rect x="0" y="0" width="110" height="32" rx="5" fill="#EFF6FF" stroke="#2563EB" stroke-width="1.6" filter="url(#badge-shadow)"/>
+    <text x="55" y="16" text-anchor="middle" font-size="12" font-weight="bold" fill="#1E40AF">加热节点</text>
+    <text x="55" y="27" text-anchor="middle" font-size="9" fill="#3B82F6">Workflow Node</text>
+  </g>
+
+  <!-- Header 2: 设备状态机 -->
+  <g transform="translate(192, 44)">
+    <rect x="0" y="0" width="120" height="32" rx="5" fill="#F5F3FF" stroke="#7C3AED" stroke-width="1.8" filter="url(#badge-shadow)"/>
+    <text x="60" y="16" text-anchor="middle" font-size="12" font-weight="bold" fill="#5B21B6">★ 设备状态机</text>
+    <text x="60" y="27" text-anchor="middle" font-size="9" fill="#7C3AED">State Machine (Core)</text>
+  </g>
+
+  <!-- Header 3: Adapter -->
+  <g transform="translate(357, 44)">
+    <rect x="0" y="0" width="110" height="32" rx="5" fill="#F0FDF4" stroke="#059669" stroke-width="1.6" filter="url(#badge-shadow)"/>
+    <text x="55" y="16" text-anchor="middle" font-size="12" font-weight="bold" fill="#065F46">Adapter</text>
+    <text x="55" y="27" text-anchor="middle" font-size="9" fill="#10B981">边缘适配层</text>
+  </g>
+
+  <!-- Header 4: 反应釜 -->
+  <g transform="translate(517, 44)">
+    <rect x="0" y="0" width="110" height="32" rx="5" fill="#1E293B" stroke="#0F172A" stroke-width="1.6" filter="url(#badge-shadow)"/>
+    <text x="55" y="16" text-anchor="middle" font-size="12" font-weight="bold" fill="#F8FAFC">反应釜</text>
+    <text x="55" y="27" text-anchor="middle" font-size="9" fill="#94A3B8">物理仪器 / PLC</text>
+  </g>
+
+  <!-- Vertical Lifelines (Dashed Lines) -->
+  <line x1="92" y1="76" x2="92" y2="350" stroke="#CBD5E1" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <line x1="252" y1="76" x2="252" y2="350" stroke="#CBD5E1" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <line x1="412" y1="76" x2="412" y2="350" stroke="#CBD5E1" stroke-width="1.5" stroke-dasharray="4 4"/>
+  <line x1="572" y1="76" x2="572" y2="350" stroke="#CBD5E1" stroke-width="1.5" stroke-dasharray="4 4"/>
+
+  <!-- Activation Bars (Slim Rectangles on Lifelines) -->
+  <!-- Node Activation -->
+  <rect x="87" y="95" width="10" height="230" rx="2" fill="#DBEAFE" stroke="#2563EB" stroke-width="1"/>
+  <!-- State Machine Activation -->
+  <rect x="247" y="105" width="10" height="210" rx="2" fill="#EDE9FE" stroke="#7C3AED" stroke-width="1"/>
+  <!-- Adapter Activation -->
+  <rect x="407" y="135" width="10" height="150" rx="2" fill="#D1FAE5" stroke="#059669" stroke-width="1"/>
+  <!-- Reactor Activation -->
+  <rect x="567" y="165" width="10" height="90" rx="2" fill="#E2E8F0" stroke="#475569" stroke-width="1"/>
+
+
+  <!-- ==================== 6 NUMBERED MESSAGES ==================== -->
+
+  <!-- 1. 加热节点 -> 状态机: 请求加热 (Blue ->) -->
+  <g id="msg-1">
+    <line x1="97" y1="108" x2="247" y2="108" stroke="#2563EB" stroke-width="2" marker-end="url(#arrow-blue)"/>
+    <rect x="114.0" y="96" width="116" height="20" rx="4" fill="#EFF6FF" stroke="#93C5FD" stroke-width="1"/>
+    <text x="172.0" y="110" text-anchor="middle" font-size="11" font-weight="bold" fill="#1D4ED8">1. 请求加热</text>
+  </g>
+
+  <!-- 2. 状态机 -> Adapter: 下发加热命令 (Blue ->) -->
+  <g id="msg-2">
+    <line x1="257" y1="140" x2="407" y2="140" stroke="#2563EB" stroke-width="2" marker-end="url(#arrow-blue)"/>
+    <rect x="267.0" y="128" width="130" height="20" rx="4" fill="#EFF6FF" stroke="#93C5FD" stroke-width="1"/>
+    <text x="332.0" y="142" text-anchor="middle" font-size="11" font-weight="bold" fill="#1D4ED8">2. 下发加热命令</text>
+  </g>
+
+  <!-- 3. Adapter -> 反应釜: 执行加热 (Blue ->) -->
+  <g id="msg-3">
+    <line x1="417" y1="172" x2="567" y2="172" stroke="#2563EB" stroke-width="2" marker-end="url(#arrow-blue)"/>
+    <rect x="434.0" y="160" width="116" height="20" rx="4" fill="#EFF6FF" stroke="#93C5FD" stroke-width="1"/>
+    <text x="492.0" y="174" text-anchor="middle" font-size="11" font-weight="bold" fill="#1D4ED8">3. 执行加热</text>
+  </g>
+
+  <!-- 4. 反应釜 -> Adapter: 温度 / 运行状态 (Green <-) -->
+  <g id="msg-4">
+    <line x1="567" y1="216" x2="417" y2="216" stroke="#16A34A" stroke-width="2" marker-end="url(#arrow-green)"/>
+    <rect x="420.0" y="204" width="144" height="20" rx="4" fill="#F0FDF4" stroke="#86EFAC" stroke-width="1"/>
+    <text x="492.0" y="218" text-anchor="middle" font-size="11" font-weight="bold" fill="#15803D">4. 温度 / 运行状态</text>
+    <!-- Note that 4 is NOT completion -->
+    <text x="492.0" y="235" text-anchor="middle" font-size="9" fill="#64748B">（遥测采样，非任务完成）</text>
+  </g>
+
+  <!-- 5. Adapter -> 状态机: 反馈更新 (Green <-) -->
+  <g id="msg-5">
+    <line x1="407" y1="254" x2="257" y2="254" stroke="#16A34A" stroke-width="2" marker-end="url(#arrow-green)"/>
+    <rect x="274.0" y="242" width="116" height="20" rx="4" fill="#F0FDF4" stroke="#86EFAC" stroke-width="1"/>
+    <text x="332.0" y="256" text-anchor="middle" font-size="11" font-weight="bold" fill="#15803D">5. 反馈更新</text>
+  </g>
+
+  <!-- 6. 状态机 -> 加热节点: 执行状态 (Green <-) -->
+  <g id="msg-6">
+    <line x1="247" y1="288" x2="97" y2="288" stroke="#16A34A" stroke-width="2" marker-end="url(#arrow-green)"/>
+    <rect x="114.0" y="276" width="116" height="20" rx="4" fill="#F0FDF4" stroke="#86EFAC" stroke-width="1"/>
+    <text x="172.0" y="290" text-anchor="middle" font-size="11" font-weight="bold" fill="#15803D">6. 执行状态</text>
+  </g>
+
+  <!-- CRITICAL ANNOTATION NEAR STEP 6 -->
+  <g transform="translate(18, 318)">
+    <rect x="0" y="0" width="220" height="52" rx="5" fill="#EFF6FF" stroke="#3B82F6" stroke-width="1.4" filter="url(#badge-shadow)"/>
+    <text x="10" y="16" font-size="10.5" font-weight="bold" fill="#1E40AF">★ 任务推进判定条件：</text>
+    <text x="10" y="32" font-size="9.5" fill="#1D4ED8">满足完成条件后，节点推进后续步骤</text>
+    <text x="10" y="45" font-size="9" fill="#64748B">（例如目标温度 80℃ 且持续达到预设保持时长）</text>
+  </g>
+
+
+  <!-- ==================== ORANGE CONSTRAINT BRANCH (右侧异常分支) ==================== -->
+  <g id="constraint-branch" transform="translate(485, 275)">
+    <!-- Branch Container Box -->
+    <rect x="0" y="0" width="232" height="95" rx="6" fill="#FFF7ED" stroke="#EA580C" stroke-width="1.5" filter="url(#card-shadow)"/>
+    
+    <!-- Header -->
+    <g transform="translate(8, 8)">
+      <circle cx="6" cy="6" r="5" fill="#EA580C"/>
+      <text x="16" y="10" font-size="11" font-weight="bold" fill="#9A3412">约束触发分支 (异常防护)</text>
+    </g>
+
+    <text x="12" y="36" font-size="10.5" font-weight="bold" fill="#C2410C">温度越界 / 设备异常</text>
+    <text x="12" y="52" font-size="9.5" fill="#7C2D12">→ 按规则采取动作 (停止/报警/安全降温)</text>
+
+    <!-- Branch Action Label -->
+    <rect x="12" y="60" width="208" height="24" rx="4" fill="#FFFFFF" stroke="#FDBA74" stroke-width="1"/>
+    <text x="116" y="76" text-anchor="middle" font-size="9.5" font-weight="bold" fill="#EA580C">回到设备状态机处理 · 严禁直穿物理层</text>
+  </g>
+
+  <!-- Orange Constraint Arrow: From Right side looping back into State Machine lifeline -->
+  <!-- Originates from Constraint Branch, points to State Machine lifeline -->
+  <path d="M 485 322 C 380 322, 320 310, 257 310" fill="none" stroke="#EA580C" stroke-width="2" stroke-dasharray="4 3" marker-end="url(#arrow-orange)"/>
+  <rect x="310" y="318" width="86" height="16" rx="3" fill="#FFFFFF" stroke="#FDBA74" stroke-width="0.8"/>
+  <text x="353" y="330" text-anchor="middle" font-size="9" font-weight="bold" fill="#EA580C">异常动作回注状态机</text>
+
+  <!-- Legend in lower middle -->
+  <g transform="translate(254, 345)">
+    <line x1="0" y1="8" x2="20" y2="8" stroke="#2563EB" stroke-width="2"/>
+    <text x="24" y="11" font-size="9" fill="#1E3A8A">控制消息</text>
+
+    <line x1="75" y1="8" x2="95" y2="8" stroke="#16A34A" stroke-width="2"/>
+    <text x="99" y="11" font-size="9" fill="#15803D">反馈消息</text>
+
+    <line x1="150" y1="8" x2="170" y2="8" stroke="#EA580C" stroke-width="1.8" stroke-dasharray="3 2"/>
+    <text x="174" y="11" font-size="9" fill="#C2410C">约束动作</text>
+  </g>
+
+</svg>

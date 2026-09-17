@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="880" viewBox="0 0 2000 880"><title>Adapter 内的模拟执行与真机执行闭环</title><desc>同一 Adapter 内包含模拟执行和真机执行两种模式。先模拟，反馈沿共同模型返回大模型；模拟检查通过后切换真机模式，仅真机模式连接物理设备。</desc><defs><marker id="blue" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#235F9A"/></marker><marker id="green" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#168270"/></marker><marker id="orange" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#B86626"/></marker></defs><style>text{font-family:'Microsoft YaHei','微软雅黑',sans-serif}</style><rect width="2000" height="880" fill="#FFFFFF"/><rect x="40" y="65" width="360" height="220" fill="#EFF4FA" stroke="#586D7D" stroke-width="1.8"/>
+<rect x="40" y="65" width="360" height="48" fill="#CCDEEF" stroke="#586D7D" stroke-width="1.8"/>
+<text x="62" y="99" text-anchor="start" font-size="32" font-weight="700" fill="#193B58">大模型</text>
+<text x="220" y="150" text-anchor="middle" font-size="34" font-weight="700" fill="#193B58">决策与调整</text>
+<text x="220" y="205" text-anchor="middle" font-size="28" font-weight="400" fill="#193B58">提出方案与控制请求</text>
+<text x="220" y="251" text-anchor="middle" font-size="28" font-weight="400" fill="#193B58">依据反馈调整方案</text>
+<rect x="580" y="20" width="1300" height="220" fill="#EFF4FA" stroke="#586D7D" stroke-width="1.8"/>
+<rect x="580" y="20" width="1300" height="48" fill="#CCDEEF" stroke="#586D7D" stroke-width="1.8"/>
+<text x="602" y="54" text-anchor="start" font-size="32" font-weight="700" fill="#193B58">共同模型与执行机制</text>
+<rect x="610" y="90" width="390" height="120" fill="#EFF4FA" stroke="#586D7D" stroke-width="1.8"/>
+<text x="805" y="132" text-anchor="middle" font-size="33" font-weight="700" fill="#193B58">工作流</text>
+<text x="805" y="178" text-anchor="middle" font-size="28" font-weight="400" fill="#193B58">任务步骤与节点交互</text>
+<rect x="1030" y="90" width="390" height="120" fill="#F1F6EB" stroke="#586D7D" stroke-width="1.8"/>
+<text x="1225" y="132" text-anchor="middle" font-size="33" font-weight="700" fill="#193B58">设备模型</text>
+<text x="1225" y="178" text-anchor="middle" font-size="28" font-weight="400" fill="#193B58">能力模型与状态机</text>
+<rect x="1450" y="90" width="400" height="120" fill="#FFF3E9" stroke="#586D7D" stroke-width="1.8"/>
+<text x="1650" y="132" text-anchor="middle" font-size="33" font-weight="700" fill="#193B58">约束</text>
+<text x="1650" y="178" text-anchor="middle" font-size="28" font-weight="400" fill="#193B58">运行规则与边界检查</text>
+<path d="M 400 165 L 580 165" fill="none" stroke="#235F9A" stroke-width="2.8" stroke-linejoin="round" marker-end="url(#blue)"/>
+<text x="490" y="145" text-anchor="middle" font-size="28" font-weight="400" fill="#235F9A">控制请求</text>
+<path d="M 580 215 L 460 215 L 460 320 L 220 320 L 220 285" fill="none" stroke="#168270" stroke-width="2.8" stroke-linejoin="round" marker-end="url(#green)"/>
+<text x="220" y="363" text-anchor="middle" font-size="27" font-weight="400" fill="#168270">状态、数据与约束结果</text>
+<text x="220" y="402" text-anchor="middle" font-size="27" font-weight="400" fill="#168270">反馈驱动方案调整</text>
+<rect x="580" y="350" width="1300" height="380" fill="#FFF8E5" stroke="#586D7D" stroke-width="1.8"/>
+<rect x="580" y="350" width="1300" height="48" fill="#F5E4B0" stroke="#586D7D" stroke-width="1.8"/>
+<text x="602" y="384" text-anchor="start" font-size="32" font-weight="700" fill="#193B58">Adapter：模拟执行 / 真机执行</text>
+<rect x="610" y="430" width="1240" height="55" fill="#F5F7F8" stroke="#586D7D" stroke-width="1.8"/>
+<text x="1230" y="468" text-anchor="middle" font-size="31" font-weight="700" fill="#193B58">统一控制入口与反馈接口</text>
+<path d="M 1300 240 L 1300 430" fill="none" stroke="#235F9A" stroke-width="2.8" stroke-linejoin="round" marker-end="url(#blue)"/>
+<text x="1324" y="326" text-anchor="start" font-size="28" font-weight="400" fill="#235F9A">控制请求</text>
+<path d="M 1590 430 L 1590 240" fill="none" stroke="#168270" stroke-width="2.8" stroke-linejoin="round" marker-end="url(#green)"/>
+<text x="1614" y="326" text-anchor="start" font-size="28" font-weight="400" fill="#168270">状态 / 数据反馈</text>
+<rect x="625" y="550" width="455" height="155" fill="#FFF8E5" stroke="#586D7D" stroke-width="1.8"/>
+<rect x="625" y="550" width="455" height="48" fill="#F5E4B0" stroke="#586D7D" stroke-width="1.8"/>
+<text x="647" y="584" text-anchor="start" font-size="32" font-weight="700" fill="#193B58">模拟执行</text>
+<text x="852" y="639" text-anchor="middle" font-size="28" font-weight="400" fill="#193B58">在 Adapter 内模拟指令</text>
+<text x="852" y="680" text-anchor="middle" font-size="28" font-weight="400" fill="#193B58">生成模拟状态与数据</text>
+<rect x="1360" y="550" width="455" height="155" fill="#FFF8E5" stroke="#586D7D" stroke-width="1.8"/>
+<rect x="1360" y="550" width="455" height="48" fill="#F5E4B0" stroke="#586D7D" stroke-width="1.8"/>
+<text x="1382" y="584" text-anchor="start" font-size="32" font-weight="700" fill="#193B58">真机执行</text>
+<text x="1587" y="639" text-anchor="middle" font-size="28" font-weight="400" fill="#193B58">映射设备协议并下发指令</text>
+<text x="1587" y="680" text-anchor="middle" font-size="28" font-weight="400" fill="#193B58">接收测量与运行状态</text>
+<path d="M 760 485 L 760 550" fill="none" stroke="#235F9A" stroke-width="2.8" stroke-linejoin="round" marker-end="url(#blue)"/>
+<text x="684" y="525" text-anchor="middle" font-size="27" font-weight="400" fill="#235F9A">先模拟</text>
+<path d="M 970 550 L 970 485" fill="none" stroke="#168270" stroke-width="2.8" stroke-linejoin="round" marker-end="url(#green)"/>
+<path d="M 1460 485 L 1460 550" fill="none" stroke="#235F9A" stroke-width="2.8" stroke-linejoin="round" marker-end="url(#blue)"/>
+<text x="1542" y="525" text-anchor="middle" font-size="26" font-weight="400" fill="#235F9A">通过检查后</text>
+<path d="M 1690 550 L 1690 485" fill="none" stroke="#168270" stroke-width="2.8" stroke-linejoin="round" marker-end="url(#green)"/>
+<path d="M 1080 630 L 1360 630" fill="none" stroke="#B86626" stroke-width="2.8" stroke-linejoin="round" stroke-dasharray="9 6" marker-end="url(#orange)"/>
+<text x="1220" y="600" text-anchor="middle" font-size="28" font-weight="400" fill="#B86626">模拟检查通过</text>
+<text x="1220" y="680" text-anchor="middle" font-size="27" font-weight="400" fill="#B86626">切换为真机模式</text>
+<text x="855" y="783" text-anchor="middle" font-size="27" font-weight="400" fill="#B86626">未通过检查：继续模拟与调整</text>
+<rect x="1360" y="790" width="455" height="80" fill="#F5F7F8" stroke="#586D7D" stroke-width="1.8"/>
+<text x="1587" y="824" text-anchor="middle" font-size="32" font-weight="700" fill="#193B58">物理设备</text>
+<text x="1587" y="858" text-anchor="middle" font-size="26" font-weight="400" fill="#193B58">执行操作，产生实际反馈</text>
+<path d="M 1460 705 L 1460 790" fill="none" stroke="#235F9A" stroke-width="2.8" stroke-linejoin="round" marker-end="url(#blue)"/>
+<text x="1400" y="765" text-anchor="middle" font-size="26" font-weight="400" fill="#235F9A">指令</text>
+<path d="M 1690 790 L 1690 705" fill="none" stroke="#168270" stroke-width="2.8" stroke-linejoin="round" marker-end="url(#green)"/>
+<text x="1770" y="765" text-anchor="middle" font-size="26" font-weight="400" fill="#168270">实际反馈</text></svg>

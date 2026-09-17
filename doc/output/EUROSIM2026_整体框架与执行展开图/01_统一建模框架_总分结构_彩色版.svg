@@ -1,0 +1,106 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2000" height="1160" viewBox="0 0 2000 1160" role="img"><title>统一建模框架：整体关系与模型组成</title><desc>工作流层包含节点及其变量空间、生命周期、接口端口和触发器；资源层包含由能力模型与状态机构成的设备对象模型；约束层同时观察资源和任务并返回处理动作；跨层协议约定控制与反馈交互。Adapter 和物理设备位于模型框架外侧。</desc><defs><marker id="control" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#235F9A"/></marker><marker id="feedback" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#168270"/></marker><marker id="constraint" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#B86626"/></marker><marker id="guide" viewBox="0 0 12 12" refX="10.5" refY="6" markerWidth="12" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto"><path d="M 1 1 L 11 6 L 1 11 Z" fill="#8D9BA5"/></marker></defs><style>text{font-family:'Microsoft YaHei','微软雅黑',sans-serif}</style><rect width="2000" height="1160" fill="#FFFFFF"/><text x="1000" y="48" text-anchor="middle" fill="#193B58" font-size="39" font-weight="600">统一建模框架：整体关系与模型组成</text>
+<rect x="24" y="82" width="1530" height="1026" rx="0" fill="#FFFFFF" stroke="#8D9BA5" stroke-width="1.6" stroke-dasharray="10 7"/>
+<text x="52" y="116" text-anchor="start" fill="#193B58" font-size="28" font-weight="600">L = ⟨R, F, C, Π⟩</text>
+<rect x="52" y="134" width="1471" height="50" rx="0" fill="#F5F7F8" stroke="#8D9BA5" stroke-width="1.4"/>
+<text x="786" y="169" text-anchor="middle" fill="#193B58" font-size="29" font-weight="600">Π  跨层协议：控制信号 · 数据类型 · 端口关系 · 执行反馈</text>
+<rect x="52" y="206" width="660" height="550" rx="0" fill="#EFF4FA" stroke="#586D7D" stroke-width="1.9"/>
+<rect x="52" y="206" width="660" height="50" rx="0" fill="#CCDEEF" stroke="#586D7D" stroke-width="1.7"/>
+<text x="76" y="241.5" text-anchor="start" fill="#193B58" font-size="31" font-weight="600">F  工作流层</text>
+<rect x="86" y="284" width="136" height="66" rx="2" fill="#FFFFFF" stroke="#235F9A" stroke-width="1.8"/>
+<text x="154" y="326" text-anchor="middle" fill="#193B58" font-size="27" font-weight="400">前序节点</text>
+<rect x="284" y="284" width="194" height="66" rx="2" fill="#FFFFFF" stroke="#235F9A" stroke-width="1.8"/>
+<text x="381" y="326" text-anchor="middle" fill="#193B58" font-size="27" font-weight="600">执行节点</text>
+<rect x="544" y="284" width="136" height="66" rx="2" fill="#FFFFFF" stroke="#235F9A" stroke-width="1.8"/>
+<text x="612" y="326" text-anchor="middle" fill="#193B58" font-size="27" font-weight="400">后续节点</text>
+<path d="M 222 317 L 278 317" fill="none" stroke="#235F9A" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control)"/>
+<path d="M 478 317 L 538 317" fill="none" stroke="#235F9A" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control)"/>
+<path d="M 381 350 L 381 379" fill="none" stroke="#8D9BA5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<rect x="86" y="380" width="592" height="329" rx="0" fill="#FFFFFF" stroke="#235F9A" stroke-width="1.8"/>
+<text x="382" y="416" text-anchor="middle" fill="#193B58" font-size="28" font-weight="600">工作流节点</text>
+<rect x="109" y="442" width="259" height="83" rx="0" fill="#EFF4FA" stroke="#8D9BA5" stroke-width="1.2"/>
+<text x="239" y="475" text-anchor="middle" fill="#193B58" font-size="27" font-weight="600">变量空间</text>
+<text x="239" y="510" text-anchor="middle" fill="#193B58" font-size="22" font-weight="400">当前值 / 目标值 / 标志</text>
+<rect x="387" y="442" width="267" height="83" rx="0" fill="#EFF4FA" stroke="#8D9BA5" stroke-width="1.2"/>
+<text x="520" y="475" text-anchor="middle" fill="#193B58" font-size="27" font-weight="600">节点生命周期</text>
+<text x="520" y="510" text-anchor="middle" fill="#193B58" font-size="23" font-weight="400">执行阶段与结果</text>
+<rect x="109" y="548" width="259" height="62" rx="0" fill="#EFF4FA" stroke="#8D9BA5" stroke-width="1.2"/>
+<text x="239" y="589" text-anchor="middle" fill="#193B58" font-size="26" font-weight="600">接口与数据端口</text>
+<rect x="387" y="548" width="267" height="62" rx="0" fill="#EFF4FA" stroke="#8D9BA5" stroke-width="1.2"/>
+<text x="520" y="589" text-anchor="middle" fill="#193B58" font-size="25" font-weight="600">触发器：条件 → 动作</text>
+<text x="382" y="667" text-anchor="middle" fill="#193B58" font-size="26" font-weight="400">组织步骤与数据依赖，驱动节点协同</text>
+<rect x="857" y="206" width="666" height="550" rx="0" fill="#F1F6EB" stroke="#586D7D" stroke-width="1.9"/>
+<rect x="857" y="206" width="666" height="50" rx="0" fill="#DCE8CA" stroke="#586D7D" stroke-width="1.7"/>
+<text x="881" y="241.5" text-anchor="start" fill="#193B58" font-size="31" font-weight="600">R  资源层</text>
+<rect x="884" y="282" width="612" height="434" rx="0" fill="#FFFFFF" stroke="#586D7D" stroke-width="1.7"/>
+<text x="1190" y="319" text-anchor="middle" fill="#193B58" font-size="29" font-weight="600">设备对象模型</text>
+<rect x="909" y="342" width="562" height="137" rx="0" fill="#F1F6EB" stroke="#8D9BA5" stroke-width="1.3"/>
+<text x="1190" y="376" text-anchor="middle" fill="#193B58" font-size="29" font-weight="600">能力模型</text>
+<text x="1190" y="415" text-anchor="middle" fill="#193B58" font-size="25" font-weight="400">属性 · 可用能力 · 参数</text>
+<text x="1190" y="453" text-anchor="middle" fill="#193B58" font-size="25" font-weight="400">接口 · 数据端口 · 内禀约束</text>
+<text x="1190" y="507" text-anchor="middle" fill="#8D9BA5" font-size="29" font-weight="400">＋</text>
+<rect x="909" y="516" width="562" height="167" rx="0" fill="#F1F6EB" stroke="#8D9BA5" stroke-width="1.3"/>
+<text x="1190" y="553" text-anchor="middle" fill="#193B58" font-size="29" font-weight="600">状态机</text>
+<text x="1190" y="597" text-anchor="middle" fill="#193B58" font-size="26" font-weight="400">请求处理 → 状态转移 → 发令</text>
+<text x="1190" y="653" text-anchor="middle" fill="#193B58" font-size="25" font-weight="400">根据事件与测量反馈更新状态</text>
+<path d="M 678 406 L 909 406" fill="none" stroke="#8D9BA5" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="8 6"/>
+<text x="793" y="394" text-anchor="middle" fill="#8D9BA5" font-size="25" font-weight="400">能力绑定</text>
+<path d="M 678 580 L 909 580" fill="none" stroke="#235F9A" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control)"/>
+<text x="793" y="563" text-anchor="middle" fill="#235F9A" font-size="25" font-weight="400">控制请求</text>
+<rect x="673" y="575" width="10" height="10" rx="0" fill="#FFFFFF" stroke="#235F9A" stroke-width="2"/>
+<rect x="904" y="575" width="10" height="10" rx="0" fill="#FFFFFF" stroke="#235F9A" stroke-width="2"/>
+<path d="M 909 629 L 678 629" fill="none" stroke="#168270" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#feedback)"/>
+<text x="793" y="671" text-anchor="middle" fill="#168270" font-size="24" font-weight="400">状态 / 数据反馈</text>
+<rect x="673" y="624" width="10" height="10" rx="0" fill="#FFFFFF" stroke="#168270" stroke-width="2"/>
+<rect x="904" y="624" width="10" height="10" rx="0" fill="#FFFFFF" stroke="#168270" stroke-width="2"/>
+<path d="M 312 756 L 312 854 L 280 854 L 280 874" fill="none" stroke="#168270" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="7 6" marker-end="url(#feedback)"/>
+<text x="126" y="801" text-anchor="start" fill="#168270" font-size="23" font-weight="400">节点变量</text>
+<text x="126" y="834" text-anchor="start" fill="#168270" font-size="23" font-weight="400">执行上下文</text>
+<path d="M 1120 756 L 1120 798 L 435 798 L 435 874" fill="none" stroke="#168270" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="7 6" marker-end="url(#feedback)"/>
+<text x="914" y="785" text-anchor="middle" fill="#168270" font-size="23" font-weight="400">资源状态 / 测量数据</text>
+<path d="M 1325 874 L 1325 835 L 746 835 L 746 690 L 678 690" fill="none" stroke="#B86626" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="9 6" marker-end="url(#constraint)"/>
+<path d="M 1325 835 L 1501 835 L 1501 660 L 1471 660" fill="none" stroke="#B86626" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="9 6" marker-end="url(#constraint)"/>
+<text x="1088" y="865" text-anchor="middle" fill="#B86626" font-size="24" font-weight="400">处理动作返回节点 / 状态机</text>
+<rect x="52" y="874" width="1471" height="208" rx="0" fill="#FFF3E9" stroke="#586D7D" stroke-width="1.9"/>
+<rect x="52" y="874" width="1471" height="48" rx="0" fill="#F4D6BE" stroke="#586D7D" stroke-width="1.7"/>
+<text x="76" y="908.08" text-anchor="start" fill="#193B58" font-size="31" font-weight="600">C  约束层</text>
+<rect x="78" y="941" width="421" height="116" rx="0" fill="#FFFFFF" stroke="#B86626" stroke-width="1.5"/>
+<text x="288.5" y="972" text-anchor="middle" fill="#193B58" font-size="27" font-weight="600">观察空间</text>
+<text x="288.5" y="1007" text-anchor="middle" fill="#193B58" font-size="24" font-weight="400">资源状态 · 测量数据</text>
+<text x="288.5" y="1039" text-anchor="middle" fill="#193B58" font-size="24" font-weight="400">节点变量 · 执行上下文</text>
+<rect x="523" y="941" width="530" height="116" rx="0" fill="#FFFFFF" stroke="#B86626" stroke-width="1.5"/>
+<text x="788" y="972" text-anchor="middle" fill="#193B58" font-size="27" font-weight="600">约束规则</text>
+<text x="788" y="1007" text-anchor="middle" fill="#193B58" font-size="24" font-weight="400">实验室基线约束</text>
+<text x="788" y="1039" text-anchor="middle" fill="#193B58" font-size="24" font-weight="400">任务约束</text>
+<rect x="1077" y="941" width="420" height="116" rx="0" fill="#FFFFFF" stroke="#B86626" stroke-width="1.5"/>
+<text x="1287" y="972" text-anchor="middle" fill="#193B58" font-size="27" font-weight="600">处理动作</text>
+<text x="1287" y="1007" text-anchor="middle" fill="#193B58" font-size="24" font-weight="400">警告 · 报警</text>
+<text x="1287" y="1039" text-anchor="middle" fill="#193B58" font-size="24" font-weight="400">停止 · 中止</text>
+<text x="1785" y="225" text-anchor="middle" fill="#193B58" font-size="31" font-weight="600">执行接入</text>
+<rect x="1610" y="432" width="350" height="225" rx="0" fill="#FFF8E5" stroke="#586D7D" stroke-width="1.9"/>
+<rect x="1610" y="432" width="350" height="50" rx="0" fill="#F5E4B0" stroke="#586D7D" stroke-width="1.7"/>
+<text x="1634" y="467.5" text-anchor="start" fill="#193B58" font-size="31" font-weight="600">Adapter</text>
+<text x="1785" y="527" text-anchor="middle" fill="#193B58" font-size="26" font-weight="400">指令映射 · 设备通信</text>
+<text x="1785" y="574" text-anchor="middle" fill="#193B58" font-size="26" font-weight="400">反馈转换</text>
+<path d="M 1471 578 L 1610 578" fill="none" stroke="#235F9A" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control)"/>
+<text x="1541" y="562" text-anchor="middle" fill="#235F9A" font-size="24" font-weight="400">发令</text>
+<path d="M 1610 622 L 1471 622" fill="none" stroke="#168270" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#feedback)"/>
+<text x="1541" y="610" text-anchor="middle" fill="#168270" font-size="24" font-weight="400">反馈</text>
+<rect x="1466" y="573" width="10" height="10" rx="0" fill="#FFFFFF" stroke="#235F9A" stroke-width="2"/>
+<rect x="1605" y="573" width="10" height="10" rx="0" fill="#FFFFFF" stroke="#235F9A" stroke-width="2"/>
+<rect x="1466" y="617" width="10" height="10" rx="0" fill="#FFFFFF" stroke="#168270" stroke-width="2"/>
+<rect x="1605" y="617" width="10" height="10" rx="0" fill="#FFFFFF" stroke="#168270" stroke-width="2"/>
+<rect x="1610" y="794" width="350" height="144" rx="0" fill="#F5F7F8" stroke="#586D7D" stroke-width="1.8"/>
+<text x="1785" y="842" text-anchor="middle" fill="#193B58" font-size="31" font-weight="600">物理设备</text>
+<text x="1785" y="895" text-anchor="middle" fill="#193B58" font-size="25" font-weight="400">执行操作 · 返回测量</text>
+<path d="M 1710 657 L 1710 794" fill="none" stroke="#235F9A" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control)"/>
+<text x="1688" y="735" text-anchor="end" fill="#235F9A" font-size="24" font-weight="400">控制</text>
+<path d="M 1850 794 L 1850 657" fill="none" stroke="#168270" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#feedback)"/>
+<text x="1872" y="735" text-anchor="start" fill="#168270" font-size="24" font-weight="400">反馈</text>
+<text x="1785" y="995" text-anchor="middle" fill="#193B58" font-size="25" font-weight="400">设备通信与实际执行</text>
+<text x="56" y="1144" text-anchor="start" fill="#193B58" font-size="25" font-weight="600">模型描述结构与规则；共同执行语义组织运行。</text>
+<path d="M 1290 1137 L 1340 1137" fill="none" stroke="#235F9A" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#control)"/>
+<text x="1355" y="1145" text-anchor="start" fill="#193B58" font-size="22" font-weight="400">控制</text>
+<path d="M 1465 1137 L 1515 1137" fill="none" stroke="#168270" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" marker-end="url(#feedback)"/>
+<text x="1530" y="1145" text-anchor="start" fill="#193B58" font-size="22" font-weight="400">状态 / 数据</text>
+<path d="M 1710 1137 L 1760 1137" fill="none" stroke="#B86626" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="9 6" marker-end="url(#constraint)"/>
+<text x="1775" y="1145" text-anchor="start" fill="#193B58" font-size="22" font-weight="400">约束处理</text></svg>

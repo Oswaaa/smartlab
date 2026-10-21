@@ -14,12 +14,13 @@
         </div>
       </div>
 
-      <div v-if="variables.length" class="variables-inline-table">
+      <div v-if="variables.length" class="variables-inline-table" :class="{ 'is-device': node.nodeType === 'DEV_NODE' }">
         <!-- 极简表头 -->
         <div class="inline-table-head">
           <span class="col-head-name">变量名称</span>
           <span class="col-head-type">数据类型</span>
-          <span v-if="node.nodeType === 'DEV_NODE'" class="col-head-mapping">设备属性映射</span>
+          <span v-if="node.nodeType === 'DEV_NODE'" class="col-head-mapping-kind">映射类型</span>
+          <span v-if="node.nodeType === 'DEV_NODE'" class="col-head-mapping">映射对象</span>
           <span class="col-head-action">操作</span>
         </div>
 
@@ -39,18 +40,31 @@
           <div class="col-cell-type">
             <el-select
               :model-value="row.dataType"
-              :disabled="readonly || isSystemItem(row)"
+              :disabled="readonly || isSystemItem(row) || !!row.stateMapping"
               @update:model-value="updateVariable(row, 'dataType', $event)"
             >
               <el-option v-for="type in dataTypes" :key="type" :label="type" :value="type" />
             </el-select>
           </div>
 
-          <!-- 3. 设备属性映射 (DEV_NODE 专属，精简回显，只显示 displayName 和 数据类型) -->
+          <!-- 3. 映射类型 (DEV_NODE 专属) -->
+          <div v-if="node.nodeType === 'DEV_NODE'" class="col-cell-mapping-kind">
+            <el-select
+              :model-value="mappingKind(row)"
+              :disabled="readonly || isSystemItem(row)"
+              @update:model-value="changeMappingKind(row, $event)"
+            >
+              <el-option label="无" value="NONE" />
+              <el-option label="设备属性" value="ATTRIBUTE" />
+              <el-option label="设备状态" value="STATE" />
+            </el-select>
+          </div>
+
+          <!-- 4. 映射对象：设备属性或设备状态机区域 -->
           <div v-if="node.nodeType === 'DEV_NODE'" class="col-cell-mapping">
             <el-select
+              v-if="mappingKind(row) === 'ATTRIBUTE'"
               :model-value="row.attributesMapping"
-              clearable
               filterable
               :disabled="readonly || isSystemItem(row)"
               placeholder="选择绑定的设备属性"
@@ -68,9 +82,30 @@
                 </div>
               </el-option>
             </el-select>
+            <el-select
+              v-else-if="mappingKind(row) === 'STATE'"
+              :model-value="row.stateMapping"
+              filterable
+              :disabled="readonly || isSystemItem(row)"
+              placeholder="选择设备状态区域"
+              @update:model-value="mapState(row, $event)"
+            >
+              <el-option
+                v-for="region in deviceStateRegions"
+                :key="region.regionName"
+                :label="regionOptionLabel(region)"
+                :value="region.regionName"
+              >
+                <div class="attr-option-layout">
+                  <span class="attr-opt-main">{{ region.regionName }}</span>
+                  <span class="attr-opt-type-badge">{{ regionTypeLabel(region.regionType) }}</span>
+                </div>
+              </el-option>
+            </el-select>
+            <span v-else class="mapping-none">—</span>
           </div>
 
-          <!-- 4. 操作 -->
+          <!-- 5. 操作 -->
           <div class="col-cell-action">
             <el-tag v-if="isSystemItem(row)" size="small" type="info">系统</el-tag>
             <button
@@ -101,12 +136,12 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue'
 import WorkflowConfigurationEmpty from './WorkflowConfigurationEmpty.vue'
-import { isSystemItem, removeVariable } from '../../../../../utils/workflowNodeDefinition.js'
+import { isSystemItem, removeVariable, stateMappingDataType } from '../../../../../utils/workflowNodeDefinition.js'
 
 type Item = Record<string, any>
-const props = withDefaults(defineProps<{ node: Item, readonly?: boolean, deviceAttributes?: Item[] }>(), { readonly: false, deviceAttributes: () => [] })
+const props = withDefaults(defineProps<{ node: Item, readonly?: boolean, deviceAttributes?: Item[], deviceStateRegions?: Item[] }>(), { readonly: false, deviceAttributes: () => [], deviceStateRegions: () => [] })
 const emit = defineEmits<{ 'update:node': [node: Item] }>()
-const dataTypes = ['INTEGER', 'DOUBLE', 'STRING', 'BOOLEAN']
+const dataTypes = ['INTEGER', 'DOUBLE', 'STRING', 'BOOLEAN', 'JSON']
 const message = ref('')
 const variables = computed(() => props.node.internalVariables || [])
 
@@ -116,13 +151,46 @@ function addVariable() { publish([...variables.value, { name: uniqueName(), data
 function updateVariable(target: Item, field: string, value: unknown) {
   publish(variables.value.map((item: Item) => item === target ? { ...item, [field]: value } : item))
 }
+function withoutMappings(item: Item) {
+  const { attributesMapping, stateMapping, ...rest } = item
+  return rest
+}
+function mappingKind(row: Item) {
+  if (row.stateMapping) return 'STATE'
+  if (Object.hasOwn(row, 'attributesMapping')) return 'ATTRIBUTE'
+  return 'NONE'
+}
+function changeMappingKind(target: Item, kind: string) {
+  publish(variables.value.map((item: Item) => {
+    if (item !== target) return item
+    const base = withoutMappings(item)
+    if (kind === 'ATTRIBUTE') return { ...base, attributesMapping: '' }
+    if (kind === 'STATE') {
+      const region = props.deviceStateRegions[0]
+      return region ? { ...base, stateMapping: region.regionName, dataType: stateMappingDataType(region.regionType) } : base
+    }
+    return base
+  }))
+}
 function mapAttribute(target: Item, attributeName: string) {
-  publish(variables.value.map((item: Item) => item === target ? { ...item, attributesMapping: attributeName } : item))
+  publish(variables.value.map((item: Item) => item === target ? { ...withoutMappings(item), attributesMapping: attributeName } : item))
+}
+function mapState(target: Item, regionName: string) {
+  const region = props.deviceStateRegions.find((item: Item) => item.regionName === regionName)
+  publish(variables.value.map((item: Item) => item === target
+    ? { ...withoutMappings(item), stateMapping: regionName, dataType: stateMappingDataType(region?.regionType) }
+    : item))
 }
 function attributeOptionLabel(attribute: Item) {
   const name = attribute.displayName || attribute.attributeName || '未命名属性'
   const type = attribute.dataType ? ` · ${attribute.dataType}` : ''
   return `${name}${type}`
+}
+function regionTypeLabel(regionType: string) {
+  return regionType === 'EXCEPTION' ? '异常区域 · JSON' : '运行区域 · STRING'
+}
+function regionOptionLabel(region: Item) {
+  return `${region.regionName} · ${regionTypeLabel(region.regionType)}`
 }
 function deleteVariable(name: string) {
   try {
@@ -202,17 +270,30 @@ function deleteVariable(name: string) {
   flex: none;
 }
 
-/* 极简单行网格 (方案一) */
+/* 列宽按抽屉内容区分配，映射类型和删除按钮不再被裁切 */
 .variables-inline-table {
   display: flex;
   flex-direction: column;
+  overflow-x: auto;
+}
+
+.inline-table-head,
+.inline-table-row {
+  display: grid;
+  grid-template-columns: minmax(88px, 1.2fr) 108px 48px;
+  align-items: center;
+  gap: 8px;
+  min-width: 280px;
+}
+
+.variables-inline-table.is-device .inline-table-head,
+.variables-inline-table.is-device .inline-table-row {
+  grid-template-columns: minmax(84px, 0.8fr) 96px 112px minmax(168px, 1.9fr) 48px;
+  min-width: 540px;
 }
 
 .inline-table-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 14px;
+  padding: 6px 12px;
   background: var(--sl-bg-hover, #f8fafc);
   border-bottom: 1px solid var(--sl-border-subtle, #f1f5f9);
   font-size: 11px;
@@ -221,10 +302,7 @@ function deleteVariable(name: string) {
 }
 
 .inline-table-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 14px;
+  padding: 6px 12px;
   border-bottom: 1px solid var(--sl-border-subtle, #f1f5f9);
   transition: background-color 0.15s ease;
 }
@@ -238,30 +316,37 @@ function deleteVariable(name: string) {
 }
 
 .col-head-name,
-.col-cell-name {
-  flex: 1.4;
-  min-width: 140px;
-}
-
+.col-cell-name,
 .col-head-type,
-.col-cell-type {
-  flex: 1;
-  min-width: 110px;
-}
-
+.col-cell-type,
+.col-head-mapping-kind,
+.col-cell-mapping-kind,
 .col-head-mapping,
 .col-cell-mapping {
-  flex: 1.6;
-  min-width: 150px;
+  min-width: 0;
+}
+
+.mapping-none {
+  font-size: 12px;
+  color: var(--sl-text-secondary, #64748b);
 }
 
 .col-head-action,
 .col-cell-action {
-  width: 44px;
-  flex: none;
   display: flex;
   justify-content: flex-end;
   align-items: center;
+  white-space: nowrap;
+}
+
+.variables-inline-table :deep(.el-select__wrapper),
+.variables-inline-table :deep(.el-input__wrapper) {
+  font-size: 12px;
+}
+
+.variables-inline-table :deep(.el-select__selected-item),
+.variables-inline-table :deep(.el-select__placeholder) {
+  font-size: 12px;
 }
 
 /* 下拉菜单丰富信息展示：只显示 displayName 与类型徽章 */

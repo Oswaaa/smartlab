@@ -54,6 +54,55 @@ class DefaultWorkflowExecutionOperationsTest {
     }
 
     @Test
+    void mapsOperationalRegionToCurrentStateName() {
+        FlowNode node = deviceNodeWithStateVariable("heaterState", "STRING", "Main");
+        ObjectNode opState = JsonNodeSupport.objectNode();
+        opState.putArray("Main").add("保温");
+        stubTwin(node, JsonNodeSupport.objectNode(), opState);
+
+        ObjectNode updates = operations.resolveMappedVariables(task, step, node);
+
+        assertThat(updates.path("heaterState").asText()).isEqualTo("保温");
+    }
+
+    @Test
+    void mapsExceptionRegionToActiveStateArray() {
+        FlowNode node = deviceNodeWithStateVariable("heaterException", "JSON", "Exception");
+        ObjectNode opState = JsonNodeSupport.objectNode();
+        opState.putArray("Exception").add("超温").add("超压");
+        stubTwin(node, JsonNodeSupport.objectNode(), opState);
+
+        ObjectNode updates = operations.resolveMappedVariables(task, step, node);
+
+        assertThat(updates.path("heaterException").isArray()).isTrue();
+        assertThat(updates.path("heaterException").size()).isEqualTo(2);
+        assertThat(updates.path("heaterException").get(0).asText()).isEqualTo("超温");
+    }
+
+    @Test
+    void mapsEmptyExceptionRegionToEmptyArray() {
+        FlowNode node = deviceNodeWithStateVariable("heaterException", "JSON", "Exception");
+        ObjectNode opState = JsonNodeSupport.objectNode();
+        opState.putArray("Exception");
+        stubTwin(node, JsonNodeSupport.objectNode(), opState);
+
+        ObjectNode updates = operations.resolveMappedVariables(task, step, node);
+
+        assertThat(updates.path("heaterException").isArray()).isTrue();
+        assertThat(updates.path("heaterException").size()).isZero();
+    }
+
+    @Test
+    void skipsStateVariableWhenRegionIsMissing() {
+        FlowNode node = deviceNodeWithStateVariable("heaterState", "STRING", "Main");
+        stubTwin(node, JsonNodeSupport.objectNode(), JsonNodeSupport.objectNode());
+
+        ObjectNode updates = operations.resolveMappedVariables(task, step, node);
+
+        assertThat(updates.has("heaterState")).isFalse();
+    }
+
+    @Test
     void messageIdIsStableWithoutWritingRuntimeMetadataIntoInterfaceSnapshots() {
         task.setId(9L);
         step.setId(12L);
@@ -70,12 +119,26 @@ class DefaultWorkflowExecutionOperationsTest {
     }
 
     private void stubTwin(FlowNode node, ObjectNode attributes) {
+        stubTwin(node, attributes, null);
+    }
+
+    private void stubTwin(FlowNode node, ObjectNode attributes, ObjectNode operationState) {
         DeviceInstances instance = new DeviceInstances();
         instance.setId(101L);
         DeviceTwinStates twin = new DeviceTwinStates();
         twin.setCurrentAttr(attributes);
+        twin.setCurrentOpState(operationState);
         when(resources.resolveDeviceInstance(task, step, node)).thenReturn(instance);
         when(twins.getByInstanceId(101L)).thenReturn(twin);
+    }
+
+    private FlowNode deviceNodeWithStateVariable(String name, String dataType, String regionName) {
+        FlowNode node = new FlowNode();
+        node.setNodeType("DEV_NODE");
+        ArrayNode variables = JsonNodeSupport.arrayNode();
+        variables.addObject().put("name", name).put("dataType", dataType).put("stateMapping", regionName);
+        node.setInVariables(variables);
+        return node;
     }
 
     private FlowNode deviceNodeWithVariable(String name, String dataType, String mapping) {

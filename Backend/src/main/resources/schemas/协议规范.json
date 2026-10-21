@@ -138,15 +138,27 @@
     },
     "AdapterHeartbeat": {
       "type": "object",
-      "description": "heartbeatTopic消息格式规范心跳只声明ALIVE；系统以超时判定Adapter离线",
+      "description": "heartbeatTopic消息格式规范",
       "properties": {
         "status": {
           "type": "string",
           "enum": [ "ALIVE" ]
         },
-        "timestamp": { "type": "number" }
+        "timestamp": { "type": "number" },
+        "points": {
+          "type": "array",
+          "description": "物理点与仍生效虚拟点的在线名单。已绑定且使用中的实例未出现在数组中时视为离线；数组中无对应实例的点忽略",
+          "items": {
+            "type": "object",
+            "properties": {
+              "devicePoint": { "type": "string", "description": "设备点名，物理点或虚拟点" },
+              "online": { "type": "boolean", "description": "true为在线，false为离线，由Adapter判断" }
+            },
+            "required": [ "devicePoint", "online" ]
+          }
+        }
       },
-      "required": [ "status", "timestamp" ]
+      "required": [ "status", "timestamp", "points" ]
     },
     "LeaseRequestFormat": {
       "type": "object",

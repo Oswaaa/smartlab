@@ -270,6 +270,64 @@ class WorkflowTaskResourceServiceTest {
     }
 
     @Test
+    void optionalHoleMayStayBlank() throws Exception {
+        WorkflowService workflows = mock(WorkflowService.class);
+        DeviceModelsMapper models = mock(DeviceModelsMapper.class);
+        WorkflowTaskResourceService service = new WorkflowTaskResourceService(workflows, mock(DeviceInstancesMapper.class), models,
+                mock(TaskStepMapper.class), mock(FlowNodeMapper.class));
+        stubHeatCapabilityWorkflow(workflows, models, 3L, 7L);
+        DeviceModels model = models.selectById(7L);
+        ((ObjectNode) model.getCapabilities().get(0).path("parameters").get(1)).put("required", false);
+
+        ObjectNode missing = resourceMap("3:1", 7L, 55L);
+        assertTrue(service.inspectCapabilityParameters(3L, missing).stream().noneMatch(issue -> "TASK_BINDING_PARAM_MISSING".equals(issue.code())));
+
+        FlowNode node = flowNode(10L, 3L, 1L, "DEV_NODE", 7L);
+        node.setCapability(JsonNodeSupport.MAPPER.readTree("{\"capabilityName\":\"heat\",\"capabilityParameters\":{\"duration\":30}}"));
+        Task task = new Task();
+        task.setResourceMap(resourceMap("root/heat", 7L, 55L));
+        JsonNode effective = service.resolveCapabilityParameters(task, step(1L, 10L, null), node);
+        assertEquals(30, effective.path("duration").asInt());
+        assertFalse(effective.has("target"));
+    }
+
+    @Test
+    void fixedMappingsStillExposeDeclaredCapabilityParameters() throws Exception {
+        WorkflowService workflows = mock(WorkflowService.class);
+        DeviceModelsMapper models = mock(DeviceModelsMapper.class);
+        WorkflowTaskResourceService service = new WorkflowTaskResourceService(workflows, mock(DeviceInstancesMapper.class), models,
+                mock(TaskStepMapper.class), mock(FlowNodeMapper.class));
+        stubHeatCapabilityWorkflow(workflows, models, 3L, 7L);
+        ObjectNode capability = (ObjectNode) models.selectById(7L).getCapabilities().get(0);
+        capability.putArray("parameterMapping")
+                .add(JsonNodeSupport.objectNode().put("commandParamName", "duration").put("isFixedValue", true).put("fixedValue", 1))
+                .add(JsonNodeSupport.objectNode().put("commandParamName", "temperature").put("isFixedValue", false).put("capabilityParamName", "target"));
+
+        assertEquals(List.of("duration", "target"), service.requirements(3L).bindings().get(0).capabilityParameters().stream()
+                .map(CapabilityParameterRequirement::name).toList());
+        ObjectNode resources = resourceMap("3:1", 7L, 55L);
+        assertTrue(service.inspectCapabilityParameters(3L, resources).stream()
+                .anyMatch(issue -> "TASK_BINDING_PARAM_MISSING".equals(issue.code())));
+        ((ObjectNode) resources.path("deviceBindings").path("3:1"))
+                .set("capabilityParameters", JsonNodeSupport.objectNode().put("target", 80));
+        assertTrue(service.inspectCapabilityParameters(3L, resources).isEmpty());
+
+        FlowNode node = flowNode(10L, 3L, 1L, "DEV_NODE", 7L);
+        node.setCapability(JsonNodeSupport.MAPPER.readTree("{\"capabilityName\":\"heat\",\"capabilityParameters\":{\"duration\":30,\"target\":null}}"));
+        Task task = new Task();
+        task.setResourceMap(resources);
+        JsonNode effective = service.resolveCapabilityParameters(task, step(1L, 10L, null), node);
+        assertEquals(30, effective.path("duration").asInt());
+        assertEquals(80, effective.path("target").asInt());
+
+        capability.putArray("parameterMapping")
+                .add(JsonNodeSupport.objectNode().put("commandParamName", "duration").put("isFixedValue", true).put("fixedValue", 1))
+                .add(JsonNodeSupport.objectNode().put("commandParamName", "temperature").put("isFixedValue", true).put("fixedValue", 80));
+        assertEquals(List.of("duration", "target"), service.requirements(3L).bindings().get(0).capabilityParameters().stream()
+                .map(CapabilityParameterRequirement::name).toList());
+    }
+
+    @Test
     void resolveCapabilityParametersPrefersModelValuesAndFillsHolesFromSlot() throws Exception {
         WorkflowService workflows = mock(WorkflowService.class);
         DeviceModelsMapper models = mock(DeviceModelsMapper.class);
@@ -350,8 +408,8 @@ class WorkflowTaskResourceServiceTest {
         DeviceModels model = new DeviceModels();
         model.setCapabilities(JsonNodeSupport.MAPPER.readTree(
                 "[{\"capabilityName\":\"heat\",\"displayName\":\"恒温加热\",\"parameters\":["
-                        + "{\"name\":\"duration\",\"displayName\":\"时长\",\"dataType\":\"INTEGER\"},"
-                        + "{\"name\":\"target\",\"displayName\":\"目标\",\"dataType\":\"DOUBLE\"}]}]")
+                        + "{\"name\":\"duration\",\"displayName\":\"时长\",\"dataType\":\"INTEGER\",\"required\":true},"
+                        + "{\"name\":\"target\",\"displayName\":\"目标\",\"dataType\":\"DOUBLE\",\"required\":true}]}]")
         );
         when(models.selectById(deviceModelId)).thenReturn(model);
     }

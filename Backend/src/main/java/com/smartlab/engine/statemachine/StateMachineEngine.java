@@ -517,9 +517,12 @@ public class StateMachineEngine implements StateMachineCommandPort {
                 && executionMessageId.equals(runtime.normalExecution().messageId())) {
             throw new IllegalStateException("附属终止命令必须使用不同于普通命令的新messageId");
         }
+        boolean publishesLifecycle = role == DeviceStateMachineRuntime.ExecutionRole.NORMAL
+                || (role == DeviceStateMachineRuntime.ExecutionRole.TERMINATION
+                && initialState(model.getCmdState(), "CMD").equals(currentCommandState(twinState, model)));
         DeviceStateMachineRuntime.CommandExecution execution = new DeviceStateMachineRuntime.CommandExecution(
                 executionMessageId, capability.capabilityName(), capability.adapterCommandName(),
-                "SENT", context, role, affectedMessageIds);
+                "SENT", context, role, affectedMessageIds, publishesLifecycle);
         if (role == DeviceStateMachineRuntime.ExecutionRole.NORMAL) runtime.normalExecution(execution);
         else if (role == DeviceStateMachineRuntime.ExecutionRole.TERMINATION) runtime.terminationExecution(execution);
         else runtime.normalExecution().attachedAbortExecution(execution);
@@ -531,7 +534,7 @@ public class StateMachineEngine implements StateMachineCommandPort {
             runtime.removeExecution(execution);
             throw publishFailure;
         }
-        if (role == DeviceStateMachineRuntime.ExecutionRole.NORMAL) {
+        if (publishesLifecycle) {
             twinState.setCurrentCmdState("SENT");
             twinState.setUpdateTime(OffsetDateTime.now());
         }
@@ -542,11 +545,12 @@ public class StateMachineEngine implements StateMachineCommandPort {
                 transitionNormalState(instance, model, twinState, interfaceName, signalName, normal, "ABORTING", emitted);
             }
         }
-        if (role == DeviceStateMachineRuntime.ExecutionRole.NORMAL) {
+        if (publishesLifecycle) {
             deviceTwinStateService.patchRuntimeState(twinState, true, List.of());
         }
         executeExecutionActions(instance, model, twinState, interfaceName, signalName, context,
-                findOnEntryActions(new StateMachineModels.Definition(model), "CMD", "SENT"), emitted);
+                visibleLifecycleActions(findOnEntryActions(new StateMachineModels.Definition(model), "CMD", "SENT"), publishesLifecycle),
+                emitted);
         return List.copyOf(emitted);
     }
     private List<ObjectNode> handleAdapterEvent(DeviceStateMachineRuntime runtime, DeviceInstances instance,
@@ -603,14 +607,13 @@ public class StateMachineEngine implements StateMachineCommandPort {
                                           List<String> changedOpRegions, List<ObjectNode> emitted) {
         execution.state(nextState);
         Map<String, Object> context = executionContext(execution, nextState);
-        if (execution.role() == DeviceStateMachineRuntime.ExecutionRole.NORMAL) {
+        if (execution.publishesLifecycle()) {
             twinState.setCurrentCmdState(nextState);
             twinState.setUpdateTime(OffsetDateTime.now());
         }
-        deviceTwinStateService.patchRuntimeState(twinState,
-                execution.role() == DeviceStateMachineRuntime.ExecutionRole.NORMAL, changedOpRegions);
+        deviceTwinStateService.patchRuntimeState(twinState, execution.publishesLifecycle(), changedOpRegions);
         executeExecutionActions(instance, model, twinState, interfaceName, signalName, context,
-                transitionActions, emitted);
+                visibleLifecycleActions(transitionActions, execution.publishesLifecycle()), emitted);
         if (!SystemExecutionContract.terminalCommandStateNames().contains(nextState)) return;
         if (execution.role() == DeviceStateMachineRuntime.ExecutionRole.NORMAL) {
             runtime.removeExecution(execution);
@@ -621,6 +624,9 @@ public class StateMachineEngine implements StateMachineCommandPort {
         runtime.removeExecution(execution);
         if (completed) completeAbortTargets(runtime, instance, model, twinState, interfaceName, signalName,
                 execution.affectedMessageIds(), emitted);
+        if (execution.publishesLifecycle()) {
+            resetTerminalCommandState(instance, model, twinState, interfaceName, signalName, emitted);
+        }
     }
 
     private void completeAbortTargets(DeviceStateMachineRuntime runtime, DeviceInstances instance, DeviceModels model,
@@ -828,6 +834,19 @@ public class StateMachineEngine implements StateMachineCommandPort {
                 .orElse(null);
     }
 
+    private List<StateMachineModels.ActionDefinition> visibleLifecycleActions(
+            List<StateMachineModels.ActionDefinition> actions, boolean publishesLifecycle) {
+        if (publishesLifecycle) return actions;
+        return actions.stream().filter(action -> !isCommandLifecycleBroadcast(action)).toList();
+    }
+
+    private boolean isCommandLifecycleBroadcast(StateMachineModels.ActionDefinition action) {
+        JsonNode payload = action.payload();
+        return "SEND".equals(action.actionName())
+                && SystemExecutionContract.stateOutputInterfaceName().equals(payload.path("interfaceName").asText(""))
+                && "CMD_STATE".equals(payload.path("signalName").asText(""));
+    }
+
     private StateMachineModels.ActionDefinition sendAction(String interfaceName, String signalName) {
         return sendAction(interfaceName, signalName, null);
     }
@@ -953,7 +972,7 @@ public class StateMachineEngine implements StateMachineCommandPort {
         source.put("parameters", snapshot.path("parameters"));
         DeviceStateMachineRuntime.CommandExecution restored = new DeviceStateMachineRuntime.CommandExecution(
                 messageId, capability.capabilityName(), capability.adapterCommandName(), currentCommandState(twinState, model),
-                commandContext(capability, source, messageId), DeviceStateMachineRuntime.ExecutionRole.NORMAL, Set.of());
+                commandContext(capability, source, messageId), DeviceStateMachineRuntime.ExecutionRole.NORMAL, Set.of(), true);
         runtime.normalExecution(restored);
         log.info("从TaskStep快照恢复设备普通命令运行时, instanceId={}, messageId={}", instance.getId(), messageId);
         return restored;

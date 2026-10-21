@@ -175,6 +175,17 @@ test('treats 0 and false as filled hole values and omits model-filled parameters
   assert.equal(isParameterHole(null), true)
   assert.equal(missingHoleCount(requirements, { '1:1': { target: 0, enabled: false } }), 0)
   assert.equal(missingHoleCount(requirements, { '1:1': { target: 0 } }), 1)
+  const optional = [{
+    slotId: '1:1',
+    capabilityParameters: [
+      { name: 'temperature2', hole: true, required: false },
+      { name: 'target', hole: true, required: true }
+    ]
+  }]
+  assert.equal(missingHoleCount(optional, { '1:1': {} }), 1)
+  assert.deepEqual(buildDeviceBindings(optional, { '1:1': 101 }, { '1:1': {} }), [
+    { slotId: '1:1', deviceInstanceId: 101, capabilityParameters: {} }
+  ])
   assert.deepEqual(buildDeviceBindings(requirements, form.resourceBindings, form.parameterBindings), [
     { slotId: '1:1', deviceInstanceId: 101, capabilityParameters: { target: 0, enabled: false } }
   ])

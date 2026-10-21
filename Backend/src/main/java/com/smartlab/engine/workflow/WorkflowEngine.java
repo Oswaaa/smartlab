@@ -56,6 +56,7 @@ public class WorkflowEngine implements WorkflowTaskPollScheduler {
     private final Executor workflowExecutor;
     private final PortConnectionPuller portConnectionPuller;
     private final InterfaceConnectionForwarder interfaceConnections;
+    private final WorkflowTaskRounds rounds = new WorkflowTaskRounds();
     private final Set<Long> inFlightTaskIds = ConcurrentHashMap.newKeySet();
     private final Set<Long> pendingTaskIds = ConcurrentHashMap.newKeySet();
     private final ThreadLocal<Boolean> roundDirty = ThreadLocal.withInitial(() -> Boolean.FALSE);
@@ -150,12 +151,17 @@ public class WorkflowEngine implements WorkflowTaskPollScheduler {
                 }
                 try {
                     Task task = runtime.task(taskId);
-                    if (task == null || !isPollableTask(task.getTaskStatus())) break;
+                    if (task == null || !isPollableTask(task.getTaskStatus())) {
+                        rounds.evict(taskId);
+                        break;
+                    }
                     if (processTask(task)) pendingTaskIds.add(taskId);
+                    if (!isPollableTask(task.getTaskStatus())) rounds.evict(task.getId());
                 } catch (Exception error) {
                     log.error("工作流任务{}调度失败", taskId, error);
                     Task task = runtime.task(taskId);
                     if (task != null) runtime.failTask(task, error.getMessage());
+                    rounds.evict(taskId);
                     break;
                 }
             }
@@ -182,10 +188,12 @@ public class WorkflowEngine implements WorkflowTaskPollScheduler {
     }
 
     private void processTaskLocked(Task task) {
-        List<TaskStep> steps = runtime.steps(task.getId());
+        List<TaskStep> steps = rounds.stepsFor(task, runtime, workflowService, flowNodeService);
         if (steps == null) steps = List.of();
-        portConnectionPuller.pullForTask(task, steps);
-        interfaceConnections.refreshForTask(task, steps);
+        try {
+        WorkflowRoundNodes round = WorkflowRoundNodes.of(steps, rounds.nodes(task.getId()));
+        portConnectionPuller.pullForTask(task, round);
+        interfaceConnections.refreshForTask(task, round);
         List<TaskStep> pollable = pollableSteps(steps);
         if (pollable.isEmpty()) {
             Task latest = runtime.task(task.getId());
@@ -203,10 +211,10 @@ public class WorkflowEngine implements WorkflowTaskPollScheduler {
                 return;
             try {
                 boolean terminalAtPollStart = TERMINAL_NODE_STATES.contains(step.getNodeStatus());
-                processStep(task, step);
+                processStep(task, step, round.node(step));
                 failTaskIfNodeFailed(task, step);
                 if (terminalAtPollStart) {
-                    FlowNode node = flowNodeService.getById(step.getFlowNodeId());
+                    FlowNode node = round.node(step);
                     if (node != null && "SUCCEEDED".equals(step.getNodeStatus())
                             && "END".equals(functionType(node))) {
                         settleSuccessfulEnd(task, step);
@@ -221,6 +229,9 @@ public class WorkflowEngine implements WorkflowTaskPollScheduler {
         if (latest != null && "TERMINATING".equals(latest.getTaskStatus())) {
             runtime.completeTerminationIfSettled(latest.getId());
         }
+        } finally {
+            rounds.capture(task.getId(), steps);
+        }
     }
 
     private void startFlow(Task task, Long flowModelId, Long parentStepId, int depth) {
@@ -228,13 +239,17 @@ public class WorkflowEngine implements WorkflowTaskPollScheduler {
             throw new IllegalArgumentException("子流程节点缺少流程模型引用");
         if (depth > MAX_SUB_FLOW_DEPTH)
             throw new IllegalStateException("子流程嵌套超过" + MAX_SUB_FLOW_DEPTH + "层");
+        rounds.ensureModel(task.getId(), flowModelId, workflowService);
         var compiled = workflowService.compileDefinition(flowModelId);
-        runtime.createStep(task, nodeByRef(flowModelId, compiled.startNodeIdRef()), parentStepId, depth,
-                null);
+        FlowNode start = rounds.findNode(task.getId(), flowModelId, compiled.startNodeIdRef());
+        if (start == null) {
+            start = nodeByRef(flowModelId, compiled.startNodeIdRef());
+            rounds.rememberNode(task.getId(), start);
+        }
+        runtime.createStep(task, start, parentStepId, depth, null);
     }
 
-    private void processStep(Task task, TaskStep step) {
-        FlowNode node = flowNodeService.getById(step.getFlowNodeId());
+    private void processStep(Task task, TaskStep step, FlowNode node) {
         if (node == null)
             throw new IllegalArgumentException("找不到FLOW_NODE: " + step.getFlowNodeId());
         if ("SUBFLOW_NODE".equals(node.getNodeType()) && "RUNNING".equals(step.getNodeStatus())

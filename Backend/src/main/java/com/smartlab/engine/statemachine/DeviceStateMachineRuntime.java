@@ -100,6 +100,7 @@ final class DeviceStateMachineRuntime {
         private final ExecutionRole role;
         private final Set<String> affectedMessageIds;
         private final Instant startedAt;
+        private final boolean publishesLifecycle;
         private String state;
         private CommandExecution attachedAbortExecution;
 
@@ -109,7 +110,8 @@ final class DeviceStateMachineRuntime {
                          String state,
                          Map<String, Object> context,
                          ExecutionRole role,
-                         Set<String> affectedMessageIds) {
+                         Set<String> affectedMessageIds,
+                         boolean publishesLifecycle) {
             this.messageId = messageId;
             this.capabilityName = capabilityName;
             this.adapterCommandName = adapterCommandName;
@@ -120,6 +122,7 @@ final class DeviceStateMachineRuntime {
             this.affectedMessageIds = affectedMessageIds == null
                     ? Set.of()
                     : Set.copyOf(new LinkedHashSet<>(affectedMessageIds));
+            this.publishesLifecycle = publishesLifecycle;
         }
 
         Instant startedAt() {
@@ -152,6 +155,10 @@ final class DeviceStateMachineRuntime {
 
         ExecutionRole role() {
             return role;
+        }
+
+        boolean publishesLifecycle() {
+            return publishesLifecycle;
         }
 
         Set<String> affectedMessageIds() {

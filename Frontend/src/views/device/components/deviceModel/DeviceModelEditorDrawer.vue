@@ -128,11 +128,13 @@
                       <div class="grid-table-header cap-param-grid-cols">
                         <span class="grid-th">参数名称</span>
                         <span class="grid-th">数据类型</span>
+                        <span class="grid-th col-center">必填</span>
                         <span class="grid-th col-center">操作</span>
                       </div>
                       <div v-for="(row, $index) in capability.parameters" :key="$index" class="grid-table-row cap-param-grid-cols">
                         <div class="grid-td"><el-input v-model="row.displayName" size="small" placeholder="例如：目标温度" /></div>
                         <div class="grid-td"><data-type-select v-model="row.dataType" :options="attributeDataTypes" /></div>
+                        <div class="grid-td col-center"><el-switch v-model="row.required" /></div>
                         <div class="grid-td col-center"><button class="btn-link danger" type="button" @click="removeCapabilityParameter(capability, $index)">删除</button></div>
                       </div>
                     </div>
@@ -236,12 +238,12 @@
                   </div>
                   <div v-if="draft.adapterContract.commands.length > 0" class="editor-card-list command-editor-list">
                     <article v-for="(command, commandIndex) in draft.adapterContract.commands" :key="command._key" class="editor-card command-editor-card">
-                      <div class="editor-card-head">
+                      <div class="editor-card-head command-card-head">
                         <div class="editor-card-title">
                           <span class="item-index">{{ commandIndex + 1 }}</span>
                           <strong>{{ command.commandName }}</strong>
                         </div>
-                        <el-text type="info">{{ command.description || '暂无说明' }}</el-text>
+                        <p class="command-card-desc">{{ command.description || '暂无说明' }}</p>
                       </div>
                       <div v-if="visibleCommandParameters(command).length > 0" class="grid-table-container nested-grid-table" style="margin-top: 6px;">
                         <div class="grid-table-header cmd-param-grid-cols">
@@ -885,7 +887,10 @@ const selectedRegisteredAdapterTemplate = ref('')
 
 const usedTemplateKeys = computed(() => {
   const keys = new Set()
+  const editingId = drawerMode.value === 'edit' ? String(draft.basic.modelId || '') : ''
   for (const model of (props.models || [])) {
+    const modelId = String(model?.modelId || model?.id || '')
+    if (editingId && modelId === editingId) continue
     const ac = model?.adapterContract || {}
     const cfg = (typeof ac === 'object' && !Array.isArray(ac)) ? (ac.config || {}) : {}
     const adapterName = cfg?.adapterName || ''
@@ -1415,7 +1420,11 @@ function buildSavePayload(includeBlankBasic = true, propertyTypes = []) {
   const attributes = attributeResult.rows
   const attrNameByKey = attributeResult.nameByKey
   const functionMappings = materializeFunctionMappings(draft.functionMappings)
-  const capabilities = materializeCapabilities(draft.capabilities, functionMappings)
+  const commandParameterTypes = new Map(asArray(draft.adapterContract?.commands).map(command => [
+    command.commandName,
+    new Map(asArray(command.commandParameters).map(param => [param.paramName, param.dataType]))
+  ]))
+  const capabilities = materializeCapabilities(draft.capabilities, functionMappings, commandParameterTypes)
   const payload = {
     modelId: numericOrNull(draft.basic.modelId),
     modelName: includeBlankBasic ? draft.basic.modelName.trim() : draft.basic.modelName?.trim() || '',
@@ -1673,7 +1682,9 @@ function removeCapability(capability) {
   removeObjectRow(draft.capabilities, capability)
   draft.functionMappings = draft.functionMappings.filter(mapping => mapping.capabilityKey !== capability._key)
 }
-function addCapabilityParameter(capability) { ensureArrayField(capability, 'parameters').push({ _key: makeUiKey('param'), name: '', displayName: '', dataType: 'DOUBLE' }) }
+function addCapabilityParameter(capability) {
+  ensureArrayField(capability, 'parameters').push({ _key: makeUiKey('param'), name: '', displayName: '', dataType: 'DOUBLE', required: true })
+}
 
 function removeCapabilityParameter(capability, index) {
   const removed = capability.parameters[index]
@@ -2400,7 +2411,7 @@ function summaryText(model) {
 }
 .cap-param-grid-cols {
   display: grid;
-  grid-template-columns: minmax(130px, 1.4fr) minmax(120px, 1.1fr) 50px;
+  grid-template-columns: minmax(130px, 1.4fr) minmax(110px, 1fr) 64px 50px;
   gap: 8px;
   align-items: center;
 }
@@ -3117,6 +3128,8 @@ function summaryText(model) {
 .editor-card-list { display: grid; gap: 8px; }
 .editor-card { border: 1px solid #dfe4ed; border-radius: 4px; background: #fff; overflow: hidden; padding: 9px; }
 .editor-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.command-card-head { flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 4px; }
+.command-card-desc { margin: 0; color: #64748b; font-size: 12px; line-height: 1.5; white-space: normal; word-break: break-word; }
 .editor-card-title { min-width: 0; display: flex; align-items: center; gap: 8px; flex: 1; }
 .editor-card-title :deep(.el-input) { flex: 1; min-width: 180px; }
 .item-index { width: 22px; height: 22px; flex: 0 0 22px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; background: #eef2f7; color: #475569; font-size: 12px; font-weight: 700; }

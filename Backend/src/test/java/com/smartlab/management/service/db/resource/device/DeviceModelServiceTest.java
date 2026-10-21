@@ -240,6 +240,16 @@ class DeviceModelServiceTest {
         }
 
         @Test
+        void saveRejectsCapabilityParameterWithoutRequiredBeforeInsert() {
+                DeviceModelSaveDTO payload = completePayload();
+                ((ObjectNode) payload.getCapabilities().get(0).path("parameters").get(0)).remove("required");
+
+                IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> service.savePayload(payload));
+                assertTrue(error.getMessage().contains("required"));
+                verify(modelMapper, never()).insert(any(DeviceModels.class));
+        }
+
+        @Test
         void rejectsCollectionElementFieldsWithTypesOutsideFrozenCapabilitySchema() {
                 List<ShapeCase> cases = List.of(
                                 new ShapeCase("portName", payload -> ((ArrayNode) payload.getPorts()).addObject()
@@ -404,6 +414,29 @@ class DeviceModelServiceTest {
                 }
 
                 assertDoesNotThrow(() -> service.previewModel(payload));
+        }
+
+        @Test
+        void previewRejectsFixedValueWhoseJsonTypeDoesNotMatchTheCommandParameter() {
+                DeviceModelSaveDTO payload = completePayload();
+                ObjectNode mapping = (ObjectNode) payload.getCapabilities().get(0).path("parameterMapping").get(0);
+                mapping.put("isFixedValue", true);
+                mapping.remove("capabilityParamName");
+                mapping.put("fixedValue", "12");
+
+                assertThrows(IllegalArgumentException.class, () -> service.previewModel(payload));
+        }
+
+        @Test
+        void previewKeepsFixedValueWhenItAlreadyMatchesTheCommandParameterType() {
+                DeviceModelSaveDTO payload = completePayload();
+                ObjectNode mapping = (ObjectNode) payload.getCapabilities().get(0).path("parameterMapping").get(0);
+                mapping.put("isFixedValue", true);
+                mapping.remove("capabilityParamName");
+                mapping.put("fixedValue", 12);
+
+                assertDoesNotThrow(() -> service.previewModel(payload));
+                assertEquals(12, mapping.path("fixedValue").intValue());
         }
 
         @Test
@@ -657,7 +690,8 @@ class DeviceModelServiceTest {
                 capability.putArray("parameters").addObject()
                                 .put("name", "duration")
                                 .put("displayName", "时长")
-                                .put("dataType", "INTEGER");
+                                .put("dataType", "INTEGER")
+                                .put("required", true);
                 capability.putArray("parameterMapping").addObject()
                                 .put("commandParamName", "duration")
                                 .put("capabilityParamName", "duration")

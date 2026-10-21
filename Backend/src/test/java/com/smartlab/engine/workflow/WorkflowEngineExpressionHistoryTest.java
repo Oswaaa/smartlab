@@ -42,6 +42,14 @@ class WorkflowEngineExpressionHistoryTest {
     private final WorkflowExecutionOperations operations = mock(WorkflowExecutionOperations.class);
     private final WorkflowService workflows = mock(WorkflowService.class);
     private final FlowNodeService flowNodes = mock(FlowNodeService.class);
+
+    @org.junit.jupiter.api.BeforeEach
+    void stubBatchDefinitions() {
+        when(flowNodes.listByIds(org.mockito.ArgumentMatchers.any())).thenAnswer(call ->
+                call.<java.util.Collection<Long>>getArgument(0).stream()
+                        .map(flowNodes::getById).filter(java.util.Objects::nonNull).toList());
+    }
+
     private final ObservableSnapshotReader observations = mock(ObservableSnapshotReader.class);
 
     private final WorkflowEngine engine = new WorkflowEngine(runtime, workflows, flowNodes,

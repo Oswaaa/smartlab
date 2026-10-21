@@ -479,6 +479,54 @@ test('device attribute mapping reports variable and attribute type mismatches', 
   assert.deepEqual(validateNodeDefinition(node, { deviceAttributes: [{ attributeName: 'temperature', dataType: 'DOUBLE' }] }), [])
 })
 
+const stateDeviceModel = {
+  id: 7,
+  capabilities: [{ capabilityName: 'heat', parameters: [] }],
+  opState: { regions: [
+    { regionName: 'Main', regionType: 'OPERATIONAL' },
+    { regionName: 'Exception', regionType: 'EXCEPTION' },
+  ] },
+}
+
+function stateMappedDeviceNode() {
+  const node = createDeviceNode(stateDeviceModel, 'device1')
+  node.capability = { capabilityName: 'heat', capabilityParameters: {} }
+  return node
+}
+
+test('device state mapping accepts region with matching data type', () => {
+  const node = stateMappedDeviceNode()
+  node.internalVariables.push(
+    { name: 'heaterState', dataType: 'STRING', stateMapping: 'Main' },
+    { name: 'heaterException', dataType: 'JSON', stateMapping: 'Exception' },
+  )
+  const errors = validateNodeDefinition(node, { deviceModel: stateDeviceModel })
+  assert.ok(!errors.some(error => error.path.startsWith('internalVariables')), JSON.stringify(errors))
+})
+
+test('device state mapping rejects unknown region and wrong data type', () => {
+  const node = stateMappedDeviceNode()
+  node.internalVariables.push(
+    { name: 'mode', dataType: 'STRING', stateMapping: 'Mode' },
+    { name: 'heaterException', dataType: 'STRING', stateMapping: 'Exception' },
+  )
+  const errors = validateNodeDefinition(node, { deviceModel: stateDeviceModel })
+  assert.ok(errors.some(error => /Mode不存在/.test(error.message)))
+  assert.ok(errors.some(error => /必须为JSON/.test(error.message)))
+})
+
+test('device state mapping cannot coexist with attribute mapping or live outside device nodes', () => {
+  const device = stateMappedDeviceNode()
+  device.internalVariables.push({ name: 'heaterState', dataType: 'STRING', stateMapping: 'Main', attributesMapping: 'temperature' })
+  assert.ok(validateNodeDefinition(device, { deviceModel: stateDeviceModel })
+    .some(error => /不能与设备属性映射同时填写/.test(error.message)))
+
+  const aggregate = withAggregateCompletionTrigger(createFunctionNode('AGGREGATE', 'aggregate'))
+  aggregate.internalVariables.push({ name: 'heaterState', dataType: 'STRING', stateMapping: 'Main' })
+  assert.ok(validateNodeDefinition(aggregate)
+    .some(error => /只允许出现在设备节点/.test(error.message)))
+})
+
 test('lifecycle UPDATE validates target state and rejects value fields', () => {
   const node = createFunctionNode('END', 'end')
   node.interfaces[0].bindingTriggers.push({ condition: { object: 'nodeLifecycleState', operator: '=', threshold: 'RUNNING' }, action: action('UPDATE', { updateType: 'NODE_LIFECYCLE', targetName: 'UNKNOWN', value: 1 }) })

@@ -58,7 +58,7 @@
                   </el-icon>
                   
                   <!-- 4. 设备实例 / 任务下物理实例：设备/芯片图标 -->
-                  <el-icon v-else-if="data.type === 'instance' || data.type === 'task-instance'" class="t-icon instance-icon">
+                  <el-icon v-else-if="data.type === 'instance' || data.type === 'task-instance' || data.type === 'virtual-instance'" class="t-icon instance-icon">
                     <Cpu />
                   </el-icon>
                   
@@ -737,6 +737,7 @@ const selectedCategory = ref(null)
 const tasks = ref([])
 const taskAssets = ref({})
 const virtualLeases = ref([])
+const virtualInstances = ref([])
 const chartRef = ref(null)
 const chart = shallowRef(null)
 const chartLegendSelected = ref({})
@@ -888,47 +889,77 @@ const treeData = computed(() => {
     count: categories.value.length,
     children: []
   }
+  const categoryIds = new Set(categories.value.map(cat => String(cat.id)))
+  const categoriesByParent = new Map()
   categories.value.forEach(cat => {
-    const cNode = {
-      key: `cat-${cat.id}`,
-      label: cat.categoryName,
-      type: 'category', // 具体的设备类别 -> 文件夹图标
-      data: cat,
-      count: categoryModels(cat).length,
-      children: []
-    }
-    categoryModels(cat).forEach(model => {
-      const mNode = {
-        key: `model-${modelId(model)}`,
-        label: model.modelName,
-        type: 'model', // 设备模型 -> 文档图标
-        data: model,
-        count: modelInstances(model).length,
+    const rawParent = cat.parentCategoryId
+    const parentId = rawParent == null || rawParent === '' || !categoryIds.has(String(rawParent)) ? '' : String(rawParent)
+    if (!categoriesByParent.has(parentId)) categoriesByParent.set(parentId, [])
+    categoriesByParent.get(parentId).push(cat)
+  })
+  const appendCategoryBranch = (parentId, bucket, seen) => {
+    asArray(categoriesByParent.get(parentId)).forEach(cat => {
+      const id = String(cat.id)
+      if (seen.has(id)) return
+      seen.add(id)
+      const cNode = {
+        key: `cat-${cat.id}`,
+        label: cat.categoryName,
+        type: 'category',
+        data: cat,
+        count: categoryModels(cat).length,
         children: []
       }
-      modelInstances(model).forEach(ins => {
-        const iNode = {
-          key: `instance-${instanceId(ins)}`,
-          label: ins.instanceName,
-          type: 'instance', // 设备实例 -> 设备/芯片图标
-          data: ins,
-          count: instanceDatasets(ins).length,
+      appendCategoryBranch(id, cNode.children, seen)
+      categoryModels(cat).forEach(model => {
+        const mNode = {
+          key: `model-${modelId(model)}`,
+          label: model.modelName,
+          type: 'model',
+          data: model,
+          count: modelInstances(model).length,
           children: []
         }
-        instanceDatasets(ins).forEach(ds => {
-          iNode.children.push({
-            key: `dataset-${ds.id}`,
-            label: ds.dataTable,
-            type: 'dataset', // 数据表 -> 票据/表格图标
-            data: ds
+        modelInstances(model).forEach(ins => {
+          const iNode = {
+            key: `instance-${instanceId(ins)}`,
+            label: ins.instanceName,
+            type: 'instance',
+            data: ins,
+            count: instanceDatasets(ins).length,
+            children: []
+          }
+          instanceDatasets(ins).forEach(ds => {
+            iNode.children.push({
+              key: `dataset-${ds.id}`,
+              label: ds.dataTable,
+              type: 'dataset',
+              data: ds
+            })
           })
+          virtualMachinesForInstance(ins).forEach(vm => {
+            iNode.children.push({
+              key: `virtual-${vm.lease.id}`,
+              label: vm.point,
+              type: 'virtual-instance',
+              data: { lease: vm.lease, virtual: vm.virtual, physical: ins },
+              count: vm.tables.length,
+              children: vm.tables.map(ds => ({
+                key: `dataset-${ds.id}`,
+                label: ds.dataTable,
+                type: 'dataset',
+                data: ds
+              }))
+            })
+          })
+          mNode.children.push(iNode)
         })
-        mNode.children.push(iNode)
+        cNode.children.push(mNode)
       })
-      cNode.children.push(mNode)
+      bucket.push(cNode)
     })
-    categoryGroup.children.push(cNode)
-  })
+  }
+  appendCategoryBranch('', categoryGroup.children, new Set())
 
   // 2. 数据模板分组 (大标题无图标)
   const templateGroup = {
@@ -972,10 +1003,11 @@ const filteredTree = computed(() => {
 async function loadAll() {
   loading.value = true
   try {
-    const [cRes, mRes, iRes, dRes, tRes, pRes, taskRes, leaseRes] = await Promise.all([
+    const [cRes, mRes, iRes, vRes, dRes, tRes, pRes, taskRes, leaseRes] = await Promise.all([
       axios.get('/api/device/category/list'),
       axios.get('/api/device/model/list'),
       axios.get('/api/device/instance/list'),
+      axios.get('/api/device/instance/list', { params: { instanceKind: 'VIRTUAL' } }).catch(() => ({ data: { data: [] } })),
       axios.get('/api/data/index/list'),
       axios.get('/api/data/template/list'),
       axios.get('/api/data/property-type/list'),
@@ -985,6 +1017,7 @@ async function loadAll() {
     categories.value = asArray(cRes.data?.data)
     models.value = asArray(mRes.data?.data)
     instances.value = asArray(iRes.data?.data)
+    virtualInstances.value = asArray(vRes.data?.data)
     datasets.value = asArray(dRes.data?.data)
     templates.value = asArray(tRes.data?.data)
     propertyTypes.value = asArray(pRes.data?.data)
@@ -1073,6 +1106,7 @@ function handleTreeClick(node) {
   else if (node.type === 'task') selectTask(node.data)
   else if (node.type === 'dataset') selectDataset(node.data)
   else if (node.type === 'template') selectTemplate(node.data)
+  else if (node.type === 'virtual-instance') selectVirtualInstance(node)
   else if (node.type === 'instance') selectInstance(node.data)
   else if (node.type === 'model') selectModel(node.data)
   else if (node.type === 'category') selectCategory(node.data)
@@ -1111,7 +1145,9 @@ async function selectDataset(dataset, context) {
     selectedInstance.value = instances.value.find(ins => String(instanceId(ins)) === String(dataset.deviceInstanceId)) || null
     activeKey.value = `template-${context.template.id}-dataset-${dataset.id}`
   } else {
-    selectedInstance.value = instances.value.find(ins => String(instanceId(ins)) === String(dataset.deviceInstanceId)) || null
+    selectedInstance.value = instances.value.find(ins => String(instanceId(ins)) === String(dataset.deviceInstanceId))
+      || virtualInstances.value.find(ins => String(instanceId(ins)) === String(dataset.deviceInstanceId))
+      || null
     activeKey.value = `dataset-${dataset.id}`
   }
   await loadTemplateDetail(dataset.dataTemplateId)
@@ -1125,6 +1161,12 @@ async function selectTemplate(template) {
   selectedTemplate.value = template
   activeKey.value = `template-${template.id}`
   await loadTemplateDetail(template.id)
+}
+
+function selectVirtualInstance(node) {
+  clearAllSelections()
+  selectedInstance.value = node.data?.virtual || node.data?.physical || null
+  activeKey.value = node.key
 }
 
 function selectInstance(instance) {
@@ -2090,6 +2132,15 @@ function resolveDatasetBinding(dataset, preferredInstance) {
   }
   const live = preferredInstance
     || instances.value.find(ins => String(instanceId(ins)) === String(dataset.deviceInstanceId))
+    || virtualInstances.value.find(ins => String(instanceId(ins)) === String(dataset.deviceInstanceId))
+  if (live && (live.instanceKind === 'VIRTUAL' || virtualInstances.value.some(ins => String(instanceId(ins)) === String(instanceId(live))))) {
+    const point = String(live.boundDevicePoint || '').trim() || live.instanceName || `实例 #${instanceId(live)}`
+    return {
+      modelLabel: modelName(live.deviceModelId || live.modelId),
+      instanceLabel: `${point}（虚拟机）`,
+      virtual: true
+    }
+  }
   if (live?.deviceModelId || live?.modelId || live?.instanceName) {
     return {
       modelLabel: modelName(live.deviceModelId || live.modelId),
@@ -2119,6 +2170,29 @@ function instancePathByDataset(dataset) {
 function modelInstances(model) { if (!model) return []; const mId = String(modelId(model)); return instances.value.filter(ins => String(ins.deviceModelId || ins.modelId) === mId) }
 function modelDatasets(model) { const mInstances = modelInstances(model); const insIds = new Set(mInstances.map(ins => String(instanceId(ins)))); return datasets.value.filter(ds => insIds.has(String(ds.deviceInstanceId))) }
 function instanceDatasets(instance) { if (!instance) return []; const iId = String(instanceId(instance)); return datasets.value.filter(ds => String(ds.deviceInstanceId) === iId) }
+function virtualMachinesForInstance(instance) {
+  const physicalId = String(instanceId(instance))
+  const adapterName = String(instance?.boundAdapterName || '')
+  const seen = new Set()
+  const nodes = []
+  virtualLeases.value.forEach(lease => {
+    if (String(lease.physicalInstanceId) !== physicalId) return
+    const status = String(lease.status || '').toUpperCase()
+    if (status === 'RELEASED' || status === 'FAILED') return
+    const point = String(lease.virtualDevicePoint || '').trim()
+    if (!point || seen.has(point)) return
+    seen.add(point)
+    const virtual = virtualInstances.value.find(item =>
+      String(item.boundDevicePoint || '') === point
+      && (!adapterName || !item.boundAdapterName || String(item.boundAdapterName) === adapterName)
+    )
+    const tables = virtual
+      ? instanceDatasets(virtual)
+      : datasets.value.filter(ds => lease.dataIndexId != null && String(ds.id) === String(lease.dataIndexId))
+    nodes.push({ lease, virtual, point, tables })
+  })
+  return nodes
+}
 function displayedInstanceDatasets(instance) {
   if (selectedTask.value) return taskInstanceDatasets(selectedTask.value, instance)
   return instanceDatasets(instance)

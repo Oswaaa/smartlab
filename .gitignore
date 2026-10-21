@@ -45,6 +45,10 @@ vcpkg_installed/
 *.lib
 *.zip
 
+# Adapter runtime valve opening; absent file means fully tight
+adapter/new/GetPLCData/valve-travel.json
+adapter/new/GetPLCData/valve-travel.json.tmp
+
 # Logs and local temp files
 *.log
 .cache/

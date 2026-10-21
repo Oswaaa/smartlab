@@ -59,6 +59,19 @@ export const useConsoleStore = defineStore('console', () => {
 
   let globalEventSource: EventSource | null = null
   let lastSignalKey = ''
+  let closedByUser = false
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null
+  let lastEventAt = Date.now()
+
+  const STALE_MS = 45_000
+
+  setInterval(() => {
+    if (closedByUser || !globalEventSource) return
+    if (Date.now() - lastEventAt <= STALE_MS) return
+    globalEventSource.close()
+    globalEventSource = null
+    scheduleReconnect()
+  }, 15_000)
 
   /**
    * 注册实体元数据（实例与组件），方便后台静默流翻译中文名与参数
@@ -242,10 +255,25 @@ export const useConsoleStore = defineStore('console', () => {
     }
   }
 
+  const scheduleReconnect = () => {
+    if (closedByUser || reconnectTimer) return
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null
+      if (closedByUser) return
+      globalEventSource = null
+      initGlobalStream()
+    }, 1000)
+  }
+
+  const noteStreamEvent = () => {
+    lastEventAt = Date.now()
+  }
+
   /**
    * 启动全局单通道 SSE 长连接（登录后全系统只存在 1 条）
    */
   const initGlobalStream = () => {
+    closedByUser = false
     if (globalEventSource && globalEventSource.readyState !== EventSource.CLOSED) {
       if (Object.keys(entityMetaMap.value).length === 0) {
         void hydrateEntityMeta()
@@ -258,11 +286,12 @@ export const useConsoleStore = defineStore('console', () => {
         ? `/api/device/instance/console/stream?token=${encodeURIComponent(token)}`
         : `/api/device/instance/console/stream`
 
+      noteStreamEvent()
       globalEventSource = new EventSource(url)
-      globalEventSource.addEventListener('connected', () => {
-        // SSE connection ready
-      })
+      globalEventSource.addEventListener('connected', noteStreamEvent)
+      globalEventSource.addEventListener('ping', noteStreamEvent)
       globalEventSource.addEventListener('signal', (event: MessageEvent) => {
+        noteStreamEvent()
         try {
           const data = JSON.parse(event.data)
           handleIncomingSignal(data)
@@ -271,15 +300,25 @@ export const useConsoleStore = defineStore('console', () => {
         }
       })
       globalEventSource.onerror = () => {
-        // EventSource 具备浏览器原生断线指数避让重连机制
+        if (closedByUser || !globalEventSource) return
+        if (globalEventSource.readyState === EventSource.CLOSED) {
+          globalEventSource = null
+          scheduleReconnect()
+        }
       }
       void hydrateEntityMeta()
     } catch (e) {
       console.error('Global console SSE stream initialization failed:', e)
+      scheduleReconnect()
     }
   }
 
   const closeGlobalStream = () => {
+    closedByUser = true
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
     if (globalEventSource) {
       globalEventSource.close()
       globalEventSource = null

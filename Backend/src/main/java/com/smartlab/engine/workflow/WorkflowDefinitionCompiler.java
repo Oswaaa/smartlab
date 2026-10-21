@@ -154,6 +154,20 @@ public class WorkflowDefinitionCompiler {
                 throw nodeError(name, "internalVariables[" + position + "].attributesMapping",
                         "attributesMapping只允许出现在DEV_NODE");
             }
+            if (variable.has("stateMapping") && !variable.path("stateMapping").isTextual()) {
+                throw nodeError(name, "internalVariables[" + position + "].stateMapping", "必须是字符串");
+            }
+            boolean hasStateMapping = variable.path("stateMapping").isTextual()
+                    && !variable.path("stateMapping").asText().isBlank();
+            if (hasStateMapping && !WorkflowNodeType.DEV_NODE.name().equals(type)) {
+                throw nodeError(name, "internalVariables[" + position + "].stateMapping",
+                        "stateMapping只允许出现在DEV_NODE");
+            }
+            if (hasStateMapping && variable.path("attributesMapping").isTextual()
+                    && !variable.path("attributesMapping").asText().isBlank()) {
+                throw nodeError(name, "internalVariables[" + position + "].stateMapping",
+                        "stateMapping不能与attributesMapping同时填写");
+            }
             position++;
         }
 

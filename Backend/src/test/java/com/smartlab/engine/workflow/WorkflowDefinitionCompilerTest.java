@@ -645,6 +645,31 @@ class WorkflowDefinitionCompilerTest {
         assertTrue(error.getMessage().contains("attributesMapping只允许出现在DEV_NODE"), error.getMessage());
     }
 
+    @Test
+    void rejectsStateMappingOnNonDeviceNode() {
+        ObjectNode branch = node(new NodeCase("FUNC_NODE", "BRANCH"));
+        addBranchOutput(branch);
+        ((ObjectNode) branch.withArray("internalVariables").get(0)).put("stateMapping", "Main");
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> compiler.compile(requestWith(branch)));
+
+        assertTrue(error.getMessage().contains("stateMapping只允许出现在DEV_NODE"), error.getMessage());
+    }
+
+    @Test
+    void rejectsStateMappingTogetherWithAttributeMapping() {
+        ObjectNode device = node(new NodeCase("DEV_NODE", null));
+        device.withArray("internalVariables").addObject()
+                .put("name", "heaterState").put("dataType", "STRING")
+                .put("attributesMapping", "temperature").put("stateMapping", "Main");
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> compiler.compile(requestWith(device)));
+
+        assertTrue(error.getMessage().contains("stateMapping不能与attributesMapping同时填写"), error.getMessage());
+    }
+
     private List<NodeCase> cases() { return List.of(new NodeCase("FUNC_NODE", "START"), new NodeCase("FUNC_NODE", "END"), new NodeCase("FUNC_NODE", "BRANCH"), new NodeCase("FUNC_NODE", "AGGREGATE"), new NodeCase("DEV_NODE", null), new NodeCase("SUBFLOW_NODE", null)); }
     @Test
     void draftPreparationRestoresSystemContractAndPreservesBusinessItems() {

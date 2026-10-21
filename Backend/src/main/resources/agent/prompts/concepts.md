@@ -12,6 +12,12 @@ keywords: 内部变量, 属性名, 属性映射, 设备属性, 不是变量, con
 
 设备属性名不是节点变量名。设备属性要先在设备节点（`DEV_NODE`）中通过 `attributesMapping` 映射为该节点的节点变量，再经数据端口传给下游。下游节点的触发器条件中，`condition.object` 只能引用本节点已声明的节点变量名，不能写设备属性名，也不能写其他节点的变量名。
 
+## 变量与设备状态
+
+keywords: 设备状态, 运行状态, 状态映射, stateMapping, 保温, 调节中, 异常区域, OP状态, 区域
+
+设备当前业务状态也通过节点变量读取：在设备节点（`DEV_NODE`）的变量上写 `stateMapping`，值为 `get_device_model` 返回的 `stateRegions[].regionName`。运行区域（`OPERATIONAL`）的变量类型是 `STRING`，值是当前唯一状态名；异常区域（`EXCEPTION`）的变量类型是 `JSON`，值是当前异常状态名数组。映射会自动同步当前状态，不需要也不要用 `UPDATE` 去抄状态。`Interface_state_in` 只接收指令状态，节点成功与否仍看 `CMD_STATE`。
+
 ## 控制流
 
 keywords: 控制连线, 谁激活谁, 接口连线, 执行流, NODE_TO_NODE
@@ -22,7 +28,7 @@ keywords: 控制连线, 谁激活谁, 接口连线, 执行流, NODE_TO_NODE
 
 keywords: 没有目标温度, 无法指定, 参数不够, 散热只有, 能力没有, 发明参数
 
-设备能力有哪些能力参数，就只能填哪些。目录里散热只有时间参数，就不能再造一个目标温度参数。用户口头多出来的数字，能对应到已有能力参数就填进去，对不上就写进 `metadata.description`，不要为了看起来完整而编造字段。
+设备能力有哪些能力参数，就只能填哪些。目录里散热只有时间参数，就不能再造一个目标温度参数。用户口头多出来的数字，能对应到已有能力参数就填进去，对不上就写进 `metadata.description`，不要为了看起来完整而编造字段。`required` 为 `false` 的参数可以不写进 `capabilityParameters`，不要用 `0` 或空字符串占位。目录里某个参数没有布尔 `required`，或设备带有 `error`，说明模型不完整，不要替它补成必填。
 
 ## 含糊描述
 

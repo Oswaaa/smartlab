@@ -12,5 +12,14 @@ public record DeviceCatalogItem(
         List<CatalogCapability> capabilities,
         List<CatalogAttribute> attributes,
         List<CatalogPort> ports,
-        List<CatalogInterface> stateMachineInterfaces) {
+        List<CatalogInterface> stateMachineInterfaces,
+        List<CatalogStateRegion> stateRegions,
+        String error) {
+
+    public DeviceCatalogItem(Long deviceModelId, String deviceModelName, String categoryName,
+            List<CatalogCapability> capabilities, List<CatalogAttribute> attributes,
+            List<CatalogPort> ports, List<CatalogInterface> stateMachineInterfaces) {
+        this(deviceModelId, deviceModelName, categoryName, capabilities, attributes, ports,
+                stateMachineInterfaces, null, null);
+    }
 }

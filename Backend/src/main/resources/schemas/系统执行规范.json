@@ -355,6 +355,16 @@
         "comment": "同一任务100ms轮询周期内先按目标端口拉取活跃端口连接，再评接口触发器。端口边以下游步骤处于PENDING/RUNNING/TERMINATING为准；拉取只写入目标PORT_IN_SNAPSHOT与目标内部变量。源步骤若已SUCCEEDED则变量空间与PORT_OUT冻结，绑定声明仍用于从孪生取值。终态上游不进入接口触发器轮询。"
       }
     ],
+    "nodeVariableMappingRules": [
+      {
+        "ruleName": "DEVICE_TWIN_TO_MAPPED_VARIABLES",
+        "comment": "DEV_NODE内部变量的attributesMapping与stateMapping统一从节点绑定设备实例的DEVICE_TWIN_STATES同一行读取，在每轮接口触发器求值前、设备信号写入节点时和端口拉取时同步写入变量空间。attributesMapping读取current_attr中的同名属性；stateMapping读取current_op_state中的同名区域，OPERATIONAL区域写入唯一状态名，EXCEPTION区域写入完整状态名数组。current_attr只由设备遥测映射写入，current_op_state只由状态机和内置约束监测器写入，工作流引擎只读。映射同步不经过接口，不执行UPDATE，不改变节点生命周期；孪生行或对应区域缺失时本轮跳过该变量。",
+        "nodeTypes": [ "DEV_NODE" ],
+        "source": { "table": "DEVICE_TWIN_STATES", "columns": [ "current_attr", "current_op_state" ] },
+        "target": "TASK_STEP.VARIABLE_SPACE",
+        "mappingFields": [ "internalVariables[].attributesMapping", "internalVariables[].stateMapping" ]
+      }
+    ],
     "interfaceConnectionRuntimeRules": [
       {
         "ruleName": "INTERFACE_LIVE_EDGES_ALIGN_WITH_PORTS",
@@ -412,7 +422,7 @@
       "allowedSignalsRef": "协议规范.json#/definitions/WorkflowControlSignal"
     },
     {
-      "comment": "设备状态机通过状态广播接口发送CMD_STATE和OP_STATE；投递工作流设备能力节点时由目标Interface_state_in.allowedSignals独立过滤，仅CMD_STATE被接收，OP_STATE不写入工作流接口快照",
+      "comment": "设备状态机通过状态广播接口发送CMD_STATE和OP_STATE；投递工作流设备能力节点时由目标Interface_state_in.allowedSignals独立过滤，仅CMD_STATE被接收，OP_STATE不写入工作流接口快照。节点需要设备当前业务状态时，由internalVariables[].stateMapping按DEVICE_TWIN_TO_MAPPED_VARIABLES规则从孪生读取",
       "connectionType": "STATE_MACHINE_TO_WORKFLOW_NODE",
       "source": { "engine": "STATE_MACHINE_ENGINE", "interfaceName": "Interface_state_out" },
       "target": { "engine": "WORKFLOW_ENGINE", "interfaceName": "DEV_NODE.Interface_state_in" },
@@ -438,6 +448,13 @@
       "connectionType": "DEVICE_DATA_TO_INTRINSIC_CONSTRAINT_MONITOR",
       "source": { "engine": "DEVICE_DATA_SERVICE", "data": "已提交的设备实例最新属性快照" },
       "target": { "engine": "STATE_MACHINE_ENGINE", "targetName": "INTRINSIC_CONSTRAINT_MONITOR" }
+    },
+    {
+      "comment": "设备孪生向工作流设备能力节点提供映射变量的当前值；属性来自current_attr，业务状态来自状态机写入的current_op_state。这是只读的映射同步，不经过任何接口，规则见workflowEngine.nodeVariableMappingRules",
+      "connectionType": "DEVICE_TWIN_TO_WORKFLOW_NODE_VARIABLE",
+      "source": { "table": "DEVICE_TWIN_STATES", "columns": [ "current_attr", "current_op_state" ] },
+      "target": { "engine": "WORKFLOW_ENGINE", "targetName": "DEV_NODE.internalVariables" },
+      "mappingFields": [ "attributesMapping", "stateMapping" ]
     },
     {
       "comment": "工作流引擎向约束引擎提供节点和任务可观测状态",

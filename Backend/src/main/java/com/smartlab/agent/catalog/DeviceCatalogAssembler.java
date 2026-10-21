@@ -46,14 +46,36 @@ public class DeviceCatalogAssembler {
 
     DeviceCatalogItem summarize(DeviceModels model, String categoryName, boolean includeInterfaces) {
         if (model == null) return null;
+        List<String> missingRequired = new ArrayList<>();
+        List<CatalogCapability> capabilityItems = capabilities(model.getCapabilities(), missingRequired);
+        String error = missingRequired.isEmpty()
+                ? null
+                : "能力参数缺少required: " + String.join("、", missingRequired);
         return new DeviceCatalogItem(
                 model.getId(),
                 model.getModelName(),
                 categoryName,
-                capabilities(model.getCapabilities()),
+                capabilityItems,
                 attributes(model.getAttributes()),
                 includeInterfaces ? ports(model.getPorts()) : null,
-                includeInterfaces ? interfaces(model.getStateMachineInterfaces()) : null);
+                includeInterfaces ? interfaces(model.getStateMachineInterfaces()) : null,
+                includeInterfaces ? stateRegions(model.getOpState()) : null,
+                error);
+    }
+
+    private List<CatalogStateRegion> stateRegions(JsonNode opState) {
+        List<CatalogStateRegion> result = new ArrayList<>();
+        for (JsonNode region : iterable(opState == null ? null : opState.path("regions"))) {
+            String regionName = text(region, "regionName");
+            if (regionName.isBlank()) continue;
+            List<String> states = new ArrayList<>();
+            for (JsonNode state : iterable(region.path("states"))) {
+                String stateName = text(state, "stateName");
+                if (!stateName.isBlank()) states.add(stateName);
+            }
+            result.add(new CatalogStateRegion(regionName, text(region, "regionType"), List.copyOf(states)));
+        }
+        return List.copyOf(result);
     }
 
     private Map<Long, String> categoryNames() {
@@ -64,15 +86,21 @@ public class DeviceCatalogAssembler {
         return names;
     }
 
-    private List<CatalogCapability> capabilities(JsonNode source) {
+    private List<CatalogCapability> capabilities(JsonNode source, List<String> missingRequired) {
         List<CatalogCapability> result = new ArrayList<>();
         for (JsonNode item : iterable(source)) {
+            String capabilityName = text(item, "capabilityName");
             List<CatalogParameter> parameters = new ArrayList<>();
             for (JsonNode parameter : iterable(item.path("parameters"))) {
+                String name = text(parameter, "name");
+                JsonNode requiredNode = parameter.get("required");
+                Boolean required = requiredNode != null && requiredNode.isBoolean() ? requiredNode.booleanValue() : null;
+                if (required == null && !name.isBlank()) missingRequired.add(capabilityName + "." + name);
                 parameters.add(new CatalogParameter(
-                        text(parameter, "name"),
+                        name,
                         text(parameter, "displayName"),
-                        text(parameter, "dataType")));
+                        text(parameter, "dataType"),
+                        required));
             }
             result.add(new CatalogCapability(
                     text(item, "capabilityName"),

@@ -24,6 +24,7 @@
           :selected="selected || isSelected(data.nodeName)"
           :issues="issuesForNode(data.nodeName)"
           :device-capabilities="capabilitiesForNode(data.nodeName)"
+          :device-model-name="modelNameForNode(data.nodeName)"
           :overlay="overlayForNode(data.nodeName)"
           readonly
         />
@@ -55,6 +56,7 @@ import WorkflowCanvasEdge from '../WorkflowDesigner/components/WorkflowCanvasEdg
 type Item = Record<string, any>
 const props = withDefaults(defineProps<{
   nodes?: Item[]
+  models?: Item[]
   interfaceConnections?: Item[]
   portConnections?: Item[]
   selectedNodeName?: string | null
@@ -67,6 +69,7 @@ const props = withDefaults(defineProps<{
   decorateEdge?: (edge: Item, nodesByName: Map<string, Item>) => Item
 }>(), {
   nodes: () => [],
+  models: () => [],
   interfaceConnections: () => [],
   portConnections: () => [],
   selectedNodeName: null,
@@ -92,6 +95,11 @@ const defaultEdgeOptions = { type: 'workflow', markerEnd: 'arrowclosed', style: 
 const nodesByName = computed(() => new Map(props.nodes.map(node => [node.name, node])))
 const hostRef = ref<HTMLElement | null>(null)
 const refreshTimers: number[] = []
+
+function modelNameForNode(name: string) {
+  const node = nodesByName.value.get(name)
+  return props.models.find(model => Number(model.id ?? model.modelId) === Number(node?.deviceModelId))?.modelName || ''
+}
 
 function graphNodes() {
   return props.nodes.map((node: Item, index: number) => {

@@ -493,7 +493,7 @@ export function validateNodeDefinition(node, context = {}) {
   uniqueErrors(errors, node.ports, 'name', 'ports')
   uniqueErrors(errors, node.interfaces, 'name', 'interfaces')
   uniqueActionErrors(errors, node.actions)
-  validateVariables(node, errors, context.deviceAttributes || [])
+  validateVariables(node, errors, context.deviceAttributes || [], context.deviceModel?.opState?.regions || [])
   validatePorts(node, errors)
   validateActions(node, errors)
   validateTriggers(node, errors)
@@ -531,10 +531,29 @@ function uniqueErrors(errors, items = [], field, path) {
   })
 }
 
-function validateVariables(node, errors, deviceAttributes = []) {
-  const allowed = new Set(['INTEGER', 'DOUBLE', 'BOOLEAN', 'STRING'])
+export function stateMappingDataType(regionType) {
+  return regionType === 'EXCEPTION' ? 'JSON' : 'STRING'
+}
+
+function validateVariables(node, errors, deviceAttributes = [], stateRegions = []) {
+  const allowed = new Set(['INTEGER', 'DOUBLE', 'BOOLEAN', 'STRING', 'JSON'])
   const attributes = new Map(deviceAttributes.map(item => [item.attributeName, item]))
+  const regions = new Map(stateRegions.map(item => [item.regionName, item]))
   ;(node.internalVariables ?? []).forEach((variable, index) => {
+    if (variable.stateMapping) {
+      if (node.nodeType !== 'DEV_NODE') {
+        errors.push({ path: `internalVariables[${index}].stateMapping`, message: '设备状态映射只允许出现在设备节点' })
+      } else if (variable.attributesMapping) {
+        errors.push({ path: `internalVariables[${index}].stateMapping`, message: '设备状态映射不能与设备属性映射同时填写' })
+      } else {
+        const region = regions.get(variable.stateMapping)
+        if (!region) {
+          errors.push({ path: `internalVariables[${index}].stateMapping`, message: `设备状态区域${variable.stateMapping}不存在` })
+        } else if (stateMappingDataType(region.regionType) !== variable.dataType) {
+          errors.push({ path: `internalVariables[${index}].dataType`, message: `映射${variable.stateMapping}区域的变量类型必须为${stateMappingDataType(region.regionType)}` })
+        }
+      }
+    }
     if (!allowed.has(variable.dataType)) errors.push({ path: `internalVariables[${index}].dataType`, message: '变量类型无效' })
     if (Object.hasOwn(variable, 'initialValue') && !matchesInternalValue(variable.initialValue, variable.dataType)) {
       errors.push({ path: `internalVariables[${index}].initialValue`, message: '变量初始值与数据类型不一致' })

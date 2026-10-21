@@ -15,6 +15,7 @@ public class PortConnectionIndex {
 
     public void replaceTaskEdges(Long taskId, List<PortConnectionEdge> edges) {
         if (taskId == null) return;
+        if (edges(taskId).equals(edges == null ? List.of() : edges)) return;
         if (edges == null || edges.isEmpty()) {
             edgesByTask.remove(taskId);
             return;

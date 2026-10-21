@@ -27,7 +27,12 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.OffsetDateTime;
+import java.util.Collection;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 @Service
@@ -109,6 +114,31 @@ public class WorkflowRuntimeService {
         return stepMapper.selectList(Wrappers.<TaskStep>lambdaQuery()
                 .eq(TaskStep::getTaskId, taskId).in(TaskStep::getNodeStatus, ACTIVE_NODE_STATES)
                 .orderByAsc(TaskStep::getId));
+    }
+
+    /**
+     * 本轮要刷新的步骤：仍在推进的步骤，加上调用方记下的、终态信号尚未处理完的步骤。
+     * 已经处理完的步骤不在这里返回。
+     */
+    public List<TaskStep> stepsForRound(Long taskId, Collection<Long> unobservedTerminalIds) {
+        List<TaskStep> active = activeSteps(taskId);
+        if (active == null) active = List.of();
+        if (taskId == null || unobservedTerminalIds == null || unobservedTerminalIds.isEmpty()) return active;
+        List<Long> ids = unobservedTerminalIds.stream().filter(Objects::nonNull).distinct().toList();
+        if (ids.isEmpty()) return active;
+        List<TaskStep> extra = stepMapper.selectBatchIds(ids);
+        if (extra == null || extra.isEmpty()) return active;
+        Map<Long, TaskStep> merged = new LinkedHashMap<>();
+        for (TaskStep step : active) {
+            if (step != null && step.getId() != null) merged.put(step.getId(), step);
+        }
+        for (TaskStep step : extra) {
+            if (step == null || step.getId() == null || !taskId.equals(step.getTaskId())) continue;
+            merged.putIfAbsent(step.getId(), step);
+        }
+        return merged.values().stream()
+                .sorted(Comparator.comparing(TaskStep::getId))
+                .toList();
     }
 
     @Transactional(rollbackFor = Exception.class)

@@ -194,7 +194,8 @@ export function normalizeCapabilities(value) {
       _key: param._key || makeUiKey('param'),
       name: stringValue(param.name),
       displayName: stringValue(param.displayName),
-      dataType: normalizeDataType(param.dataType, 'DOUBLE', attributeDataTypes)
+      dataType: normalizeDataType(param.dataType, 'DOUBLE', attributeDataTypes),
+      required: param.required === true ? true : param.required === false ? false : null
     }))
     const parameterMapping = asArray(item.parameterMapping).map(mapping => ({
       _key: mapping._key || makeUiKey('param_map'),
@@ -251,7 +252,7 @@ export function extractFunctionMappings(capabilities, normalizedCapabilities = n
         capabilityParamName: stringValue(mapping.capabilityParamName),
         capabilityParamKey: mapping.capabilityParamKey || findKeyByName(capability.parameters, mapping.capabilityParamName),
         isFixedValue: !!mapping.isFixedValue,
-        fixedValue: mapping.fixedValue ?? ''
+        fixedValue: fixedValueInputText(mapping.fixedValue)
       }))
     }
   })
@@ -268,7 +269,7 @@ export function normalizeFunctionMappings(value) {
       capabilityParamName: stringValue(mapping.capabilityParamName),
       capabilityParamKey: mapping.capabilityParamKey || '',
       isFixedValue: !!mapping.isFixedValue,
-      fixedValue: mapping.fixedValue ?? ''
+      fixedValue: fixedValueInputText(mapping.fixedValue)
     }))
   }))
 }
@@ -475,7 +476,7 @@ export function materializePorts(rows, attrNameByKey) {
   })).filter(item => item.portName && item.bindingAttrName)
 }
 
-export function materializeCapabilities(rows, functionMappings = []) {
+export function materializeCapabilities(rows, functionMappings = [], commandParameterTypes = new Map()) {
   const usedCapabilityNames = new Set()
   const preparedRows = asArray(rows).filter(item => stringValue(item.name || item.displayName)).map((item, index) => ({
     item,
@@ -491,7 +492,12 @@ export function materializeCapabilities(rows, functionMappings = []) {
     const parameters = asArray(item.parameters).filter(param => stringValue(param.name || param.displayName)).map((param, paramIndex) => {
       const name = materializedName(param, 'parameter_' + (paramIndex + 1), usedParamNames)
       paramNames.set(param._key, name)
-      return { name, displayName: stringValue(param.displayName || name), dataType: normalizeDataType(param.dataType, 'DOUBLE', attributeDataTypes) }
+      return {
+        name,
+        displayName: stringValue(param.displayName || name),
+        dataType: normalizeDataType(param.dataType, 'DOUBLE', attributeDataTypes),
+        ...(param.required === true || param.required === false ? { required: param.required } : {})
+      }
     })
     const isAbort = item.isAbort === true
     const capability = {
@@ -503,7 +509,11 @@ export function materializeCapabilities(rows, functionMappings = []) {
         ? null
         : (lookupName(capabilityNameByKey, item.abortCapabilityKey) || stringValue(item.abortCapabilityName) || null),
       parameters,
-      parameterMapping: materializeParameterMappings(mapping?.parameterMapping || item.parameterMapping, paramNames)
+      parameterMapping: materializeParameterMappings(
+        mapping?.parameterMapping || item.parameterMapping,
+        paramNames,
+        commandParameterTypes.get(mapping?.adapterCommandName || item.adapterCommandName) || new Map()
+      )
     }
     if (isAbort) {
       const scopeNames = asArray(item.scopeCapabilityKeys)
@@ -517,18 +527,59 @@ export function materializeCapabilities(rows, functionMappings = []) {
   })
 }
 
-export function materializeParameterMappings(rows, paramNames) {
+export function materializeParameterMappings(rows, paramNames, commandParameterTypes = new Map()) {
   return asArray(rows).map(pm => {
     const commandParamName = stringValue(pm.commandParamName)
     const isFixedValue = !!pm.isFixedValue
     const out = { commandParamName, isFixedValue }
     if (isFixedValue) {
-      out.fixedValue = pm.fixedValue
+      const dataType = commandParameterTypes.get(commandParamName)
+      if (!dataType) throw new Error(`找不到命令参数 ${commandParamName} 的数据类型`)
+      out.fixedValue = coerceFixedValue(dataType, pm.fixedValue)
     } else {
       out.capabilityParamName = lookupName(paramNames, pm.capabilityParamKey) || stringValue(pm.capabilityParamName)
     }
     return out
   }).filter(pm => pm.commandParamName && (pm.isFixedValue || pm.capabilityParamName))
+}
+
+export function coerceFixedValue(dataType, raw) {
+  const type = String(dataType || 'STRING').trim().toUpperCase()
+  if (type === 'BOOLEAN') {
+    if (raw === true || raw === false) return raw
+    const text = String(raw ?? '').trim().toLowerCase()
+    if (text === 'true') return true
+    if (text === 'false') return false
+    throw new Error('固定值必须是 true 或 false')
+  }
+  if (type === 'INTEGER') {
+    if (typeof raw === 'number' && Number.isInteger(raw)) return raw
+    const text = String(raw ?? '').trim()
+    if (/^-?\d+$/.test(text)) return Number(text)
+    throw new Error('固定值必须是整数')
+  }
+  if (type === 'DOUBLE') {
+    if (typeof raw === 'number' && Number.isFinite(raw)) return raw
+    const text = String(raw ?? '').trim()
+    if (text !== '' && Number.isFinite(Number(text))) return Number(text)
+    throw new Error('固定值必须是数字')
+  }
+  if (type === 'JSON') {
+    if (raw && typeof raw === 'object') return raw
+    const parsed = JSON.parse(String(raw ?? ''))
+    if (parsed && typeof parsed === 'object') return parsed
+    throw new Error('固定值必须是 JSON 对象或数组')
+  }
+  const text = raw == null ? '' : String(raw)
+  if (!String(text).trim()) throw new Error('固定值不能为空')
+  return text
+}
+
+function fixedValueInputText(value) {
+  if (value == null) return ''
+  if (typeof value === 'string') return value
+  if (typeof value === 'boolean' || typeof value === 'number') return String(value)
+  return JSON.stringify(value)
 }
 
 export function materializeFunctionMappings(rows) {

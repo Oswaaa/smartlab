@@ -55,17 +55,38 @@ public class DefaultWorkflowExecutionOperations implements WorkflowExecutionOper
         }
         DeviceInstances instance = taskResourceService.resolveDeviceInstance(task, step, node);
         DeviceTwinStates twin = twinStateService.getByInstanceId(instance.getId());
-        JsonNode attributes = twin == null ? null : twin.getCurrentAttr();
-        if (attributes == null || !attributes.isObject()) return result;
+        if (twin == null) return result;
+        JsonNode attributes = twin.getCurrentAttr();
+        JsonNode operationState = twin.getCurrentOpState();
         for (JsonNode variable : node.getInVariables()) {
             String variableName = variable.path("name").asText("").trim();
+            if (variableName.isBlank()) continue;
+            String dataType = variable.path("dataType").asText("");
             String attributeName = variable.path("attributesMapping").asText("").trim();
-            if (variableName.isBlank() || attributeName.isBlank() || !attributes.has(attributeName)) continue;
-            JsonNode value = attributes.get(attributeName);
-            requireCompatibleType(variableName, attributeName, variable.path("dataType").asText(""), value);
+            if (!attributeName.isBlank()) {
+                if (attributes == null || !attributes.isObject() || !attributes.has(attributeName)) continue;
+                JsonNode value = attributes.get(attributeName);
+                requireCompatibleType(variableName, "设备属性" + attributeName, dataType, value);
+                result.set(variableName, value.deepCopy());
+                continue;
+            }
+            String regionName = variable.path("stateMapping").asText("").trim();
+            if (regionName.isBlank() || operationState == null || !operationState.isObject()) continue;
+            JsonNode states = operationState.get(regionName);
+            if (states == null || !states.isArray()) continue;
+            JsonNode value = "STRING".equals(dataType) ? singleState(variableName, regionName, states) : states;
+            requireCompatibleType(variableName, "设备状态区域" + regionName, dataType, value);
             result.set(variableName, value.deepCopy());
         }
         return result;
+    }
+
+    private JsonNode singleState(String variableName, String regionName, JsonNode states) {
+        if (states.size() != 1 || !states.get(0).isTextual()) {
+            throw new IllegalArgumentException("变量" + variableName + "映射的设备状态区域" + regionName
+                    + "必须恰好有一个当前状态");
+        }
+        return states.get(0);
     }
 
     @Override
@@ -110,7 +131,7 @@ public class DefaultWorkflowExecutionOperations implements WorkflowExecutionOper
         return interfaceConnections;
     }
 
-    private void requireCompatibleType(String variableName, String attributeName, String dataType, JsonNode value) {
+    private void requireCompatibleType(String variableName, String source, String dataType, JsonNode value) {
         boolean valid = value != null && !value.isNull() && switch (dataType) {
             case "INTEGER" -> value.isIntegralNumber();
             case "DOUBLE" -> value.isNumber();
@@ -121,7 +142,7 @@ public class DefaultWorkflowExecutionOperations implements WorkflowExecutionOper
         };
         if (!valid) {
             throw new IllegalArgumentException("变量" + variableName + "要求" + dataType
-                    + "，设备属性" + attributeName + "的实际类型不一致");
+                    + "，" + source + "的实际类型不一致");
         }
     }
 }

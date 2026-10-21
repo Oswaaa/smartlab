@@ -195,22 +195,25 @@
 }
 ```
 
-能力参数键来自该设备能力定义。禁止写 `capability.parameters`。禁止在节点顶层写 `capabilityName`。
+能力参数键来自该设备能力定义。`required` 为 `false` 的参数可以不写进 `capabilityParameters`，不要用 `0` 或空字符串占位。禁止写 `capability.parameters`。禁止在节点顶层写 `capabilityName`。
 
 ### 6.3 节点变量
 
 ```json
 {
   "name": "<节点内唯一>",
-  "dataType": "INTEGER | DOUBLE | BOOLEAN | STRING",
+  "dataType": "INTEGER | DOUBLE | BOOLEAN | STRING | JSON",
   "initialValue": "<可选，类型与 dataType 一致>",
-  "attributesMapping": "<可选，仅 DEV_NODE，值为 get_device_model 返回的设备属性名>"
+  "attributesMapping": "<可选，仅 DEV_NODE，值为 get_device_model 返回的设备属性名>",
+  "stateMapping": "<可选，仅 DEV_NODE，值为 get_device_model 返回的 stateRegions[].regionName>"
 }
 ```
 
 - 触发器 `condition.object`、数据端口 `internalVariableName`、`expression` 赋值目标，除系统标识外，必须等于本节点某个 `internalVariables[].name`。
 - 设备属性名不得直接作为 `condition.object`。在 `DEV_NODE` 用 `attributesMapping` 映射为节点变量；经数据连线传递后，接收节点用本节点的变量名判断。
 - 仅 `DEV_NODE` 可写 `attributesMapping`。
+- 需要设备当前业务状态（如「保温」「调节中」或异常）时，在 `DEV_NODE` 声明变量并写 `stateMapping`。`regionType` 为 `OPERATIONAL` 的区域，`dataType` 写 `STRING`，变量值是唯一状态名，触发器写 `变量 = 状态名`；`regionType` 为 `EXCEPTION` 的区域，`dataType` 写 `JSON`，变量值是当前异常状态名数组。状态名只能取该区域 `states` 里的值。
+- 同一变量只能写 `attributesMapping` 或 `stateMapping` 其中一个。不要用 `UPDATE` 去抄设备状态，映射会自动同步。
 - 禁止在 `internalVariables` 中声明名为 `aggregateCount` 的项。
 
 ### 6.4 数据端口

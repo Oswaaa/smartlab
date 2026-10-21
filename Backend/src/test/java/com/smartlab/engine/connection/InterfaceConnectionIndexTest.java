@@ -9,6 +9,21 @@ import static org.assertj.core.api.Assertions.assertThat;
 class InterfaceConnectionIndexTest {
 
     @Test
+    void retainsUnchangedEdgesAndOccupancyAcrossRefreshes() {
+        InterfaceConnectionIndex index = new InterfaceConnectionIndex();
+        LiveInterfaceConnection edge = new LiveInterfaceConnection(
+                "DEVICE_TO_NODE", 9L, 1L, null, 2L, "state-out", "state-in", 21L, 99L, null, 12L);
+        index.replaceTaskEdges(9L, new java.util.ArrayList<>(List.of(edge)));
+        index.occupy(99L, 9L, 12L, "m-1");
+        var before = index.edges(9L);
+        index.replaceTaskEdges(9L, new java.util.ArrayList<>(List.of(edge)));
+        assertThat(index.edges(9L)).isSameAs(before);
+        index.upsert(edge);
+        assertThat(index.edges(9L)).isSameAs(before);
+        assertThat(index.occupancy(99L).messageId()).isEqualTo("m-1");
+    }
+
+    @Test
     void replacesAndClearsTaskEdges() {
         InterfaceConnectionIndex index = new InterfaceConnectionIndex();
         LiveInterfaceConnection edge = new LiveInterfaceConnection(

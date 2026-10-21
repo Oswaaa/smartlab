@@ -33,6 +33,14 @@ class InterfaceConnectionForwarderTest {
     private final WorkflowRuntimeService runtime = mock(WorkflowRuntimeService.class);
     private final WorkflowService workflows = mock(WorkflowService.class);
     private final FlowNodeService flowNodes = mock(FlowNodeService.class);
+
+    @org.junit.jupiter.api.BeforeEach
+    void stubBatchDefinitions() {
+        when(flowNodes.listByIds(org.mockito.ArgumentMatchers.any())).thenAnswer(call ->
+                call.<java.util.Collection<Long>>getArgument(0).stream()
+                        .map(flowNodes::getById).filter(java.util.Objects::nonNull).toList());
+    }
+
     private final WorkflowExecutionOperations operations = mock(WorkflowExecutionOperations.class);
     private final PortConnectionPuller puller = mock(PortConnectionPuller.class);
     private final StateMachineCommandPort stateMachine = mock(StateMachineCommandPort.class);

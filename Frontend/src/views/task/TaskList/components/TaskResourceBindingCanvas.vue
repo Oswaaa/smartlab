@@ -20,6 +20,7 @@
           <WorkflowStageGraph
             :key="currentGroup?.groupKey || 'empty'"
             :nodes="currentGroup?.nodes || []"
+            :models="models"
             :interface-connections="currentGroup?.interfaceConnections || []"
             :port-connections="currentGroup?.portConnections || []"
             :selected-node-name="selectedNodeName"
@@ -61,7 +62,7 @@
             <div v-for="parameter in selectedParameters" :key="parameter.name" class="parameter-row">
               <div class="parameter-label">
                 <strong>{{ parameter.displayName || parameter.name }}</strong>
-                <span>{{ parameter.hole ? '创建任务时填写' : '流程已写死' }}</span>
+                <span>{{ parameterStatus(parameter) }}</span>
               </div>
               <WorkflowTypedValueInput
                 :model-value="parameterDisplayValue(parameter)"
@@ -113,6 +114,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { buildBindingWorkflowView, compatibleInstances, presentCapabilityDisplayName } from '../../../../utils/taskResourceBindings.js'
+import { capabilityInputParameters } from '../../../../utils/deviceCapabilityParameters.js'
 import WorkflowStageGraph from '../../components/WorkflowStageGraph.vue'
 import WorkflowTypedValueInput from '../../WorkflowDesigner/components/inspector/WorkflowTypedValueInput.vue'
 
@@ -142,7 +144,16 @@ const selectedNodeName = computed(() => {
   const node = (currentGroup.value?.nodes || []).find((item: Item) => item.slotId != null && String(item.slotId) === selectedSlotId.value)
   return node?.name || null
 })
-const selectedParameters = computed(() => selectedRequirement.value?.capabilityParameters || [])
+const selectedParameters = computed(() => {
+  const requirement = selectedRequirement.value
+  const parameters = requirement?.capabilityParameters || []
+  if (!requirement) return []
+  const model = props.models.find(item => Number(item.id ?? item.modelId) === Number(requirement.deviceModelId))
+  const capability = (model?.capabilities || []).find((item: Item) => item.capabilityName === requirement.capabilityName)
+  if (!capability) return parameters
+  const visible = new Set(capabilityInputParameters(capability).map((item: Item) => item.name))
+  return parameters.filter((parameter: Item) => visible.has(parameter.name))
+})
 const boundCount = computed(() => props.requirements.filter(requirement => props.modelValue[requirement.slotId]).length)
 const unboundCount = computed(() => props.requirements.length - boundCount.value)
 const selectedInstances = computed(() => selectedRequirement.value ? compatibleInstances(selectedRequirement.value, props.instances, props.models) : [])
@@ -239,6 +250,11 @@ function instanceStatusLabel(instance: Item) {
 function setBinding(value: number | null) {
   if (!selectedRequirement.value) return
   emit('update:modelValue', { ...props.modelValue, [selectedRequirement.value.slotId]: value == null ? null : Number(value) })
+}
+
+function parameterStatus(parameter: Item) {
+  if (!parameter.hole) return '流程已写死'
+  return parameter.required === false ? '可以不填' : '创建任务时填写'
 }
 
 function parameterDisplayValue(parameter: Item) {

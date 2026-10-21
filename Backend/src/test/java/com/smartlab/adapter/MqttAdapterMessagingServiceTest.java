@@ -1,5 +1,6 @@
 package com.smartlab.adapter;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.engine.statemachine.StateMachineSendActionEvent;
 import com.smartlab.global.event.AdapterDeletedEvent;
@@ -29,6 +30,9 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -142,6 +146,83 @@ class MqttAdapterMessagingServiceTest {
         service.messageArrived("smartlab/adapter/adapter-A/point-1/telemetry", message);
 
         verify(mapper, never()).applyTelemetry(any(), any(), any());
+        verify(mapper, never()).applyTelemetrySamples(any(), any(), any());
+    }
+
+    @Test
+    void singleTelemetryIsGroupedByDevicePointWhenTheQueueIsFlushed() {
+        AdapterPayloadMapperService mapper = mock(AdapterPayloadMapperService.class);
+        MqttAdapterMessagingService service = new MqttAdapterMessagingService(
+                mock(AdapterIndexService.class), mapper, new ProtocolDictionaryService(), mock(Executor.class));
+
+        service.messageArrived("smartlab/adapter/adapter-A/point-1/telemetry",
+                mqttMessage(telemetry("adapter-A", "point-1", 1_000L, 23.4)));
+        service.messageArrived("smartlab/adapter/adapter-A/point-2/telemetry",
+                mqttMessage(telemetry("adapter-A", "point-2", 1_000L, 1.0)));
+        service.messageArrived("smartlab/adapter/adapter-A/point-1/telemetry",
+                mqttMessage(telemetry("adapter-A", "point-1", 4_000L, 23.5)));
+        verify(mapper, never()).applyTelemetry(any(), any(), any());
+        verify(mapper, never()).applyTelemetrySamples(any(), any(), any());
+
+        service.flushQueuedTelemetry();
+
+        verify(mapper).applyTelemetrySamples(eq("adapter-A"), eq("point-1"), argThat(messages ->
+                messages.size() == 2
+                        && messages.get(0).path("telemetryData").path("temperature").asDouble() == 23.4
+                        && messages.get(1).path("telemetryData").path("temperature").asDouble() == 23.5));
+        verify(mapper).applyTelemetrySamples(eq("adapter-A"), eq("point-2"), argThat(messages ->
+                messages.size() == 1
+                        && messages.get(0).path("telemetryData").path("temperature").asDouble() == 1.0));
+        verify(mapper, never()).applyTelemetry(any(), any(), any());
+        verify(mapper, never()).applyBatchTelemetry(any(), any(), any());
+    }
+
+    @Test
+    void batchTelemetryUsesTheExistingBatchPath() {
+        AdapterPayloadMapperService mapper = mock(AdapterPayloadMapperService.class);
+        MqttAdapterMessagingService service = new MqttAdapterMessagingService(
+                mock(AdapterIndexService.class), mapper, new ProtocolDictionaryService(), mock(Executor.class));
+        ObjectNode payload = telemetry("adapter-A", "point-1", 1_000L, 0);
+        payload.put("formatType", "BATCH");
+        payload.remove("telemetryData");
+        var items = payload.putArray("items");
+        items.addObject().put("timestamp", 1_000L).putObject("telemetryData").put("temperature", 23.4);
+        items.addObject().put("timestamp", 4_000L).putObject("telemetryData").put("temperature", 23.5);
+
+        service.messageArrived("smartlab/adapter/adapter-A/point-1/telemetry", mqttMessage(payload));
+        verify(mapper, never()).applyBatchTelemetry(any(), any(), any());
+
+        service.flushQueuedTelemetry();
+
+        verify(mapper).applyBatchTelemetry(eq("adapter-A"), eq("point-1"), argThat(node ->
+                "BATCH".equals(node.path("formatType").asText()) && node.path("items").size() == 2));
+        verify(mapper, never()).applyTelemetrySamples(any(), any(), any());
+    }
+
+    @Test
+    void failedTelemetryIsRetriedAheadOfSamplesThatArrivedDuringTheWrite() {
+        AdapterPayloadMapperService mapper = mock(AdapterPayloadMapperService.class);
+        MqttAdapterMessagingService service = new MqttAdapterMessagingService(
+                mock(AdapterIndexService.class), mapper, new ProtocolDictionaryService(), mock(Executor.class));
+        doAnswer(invocation -> {
+            service.messageArrived("smartlab/adapter/adapter-A/point-1/telemetry",
+                    mqttMessage(telemetry("adapter-A", "point-1", 4_000L, 23.5)));
+            throw new RuntimeException("数据库不可用");
+        }).doNothing().when(mapper).applyTelemetrySamples(any(), any(), any());
+
+        service.messageArrived("smartlab/adapter/adapter-A/point-1/telemetry",
+                mqttMessage(telemetry("adapter-A", "point-1", 1_000L, 23.4)));
+        service.flushQueuedTelemetry();
+        service.flushQueuedTelemetry();
+
+        verify(mapper, org.mockito.Mockito.times(2)).applyTelemetrySamples(eq("adapter-A"), eq("point-1"), argThat(messages ->
+                !messages.isEmpty()));
+        org.mockito.ArgumentCaptor<List<JsonNode>> captured = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(mapper, org.mockito.Mockito.times(2)).applyTelemetrySamples(eq("adapter-A"), eq("point-1"), captured.capture());
+        List<JsonNode> retried = captured.getAllValues().get(1);
+        assertEquals(2, retried.size());
+        assertEquals(1_000L, retried.get(0).path("timestamp").asLong());
+        assertEquals(4_000L, retried.get(1).path("timestamp").asLong());
     }
 
     @Test
@@ -270,6 +351,15 @@ class MqttAdapterMessagingServiceTest {
         service.handleDeviceInstanceDeleted(new DeviceInstanceDeletedEvent(7L));
 
         verify(service, org.mockito.Mockito.times(3)).syncRuntimeSubscriptions();
+    }
+
+    private ObjectNode telemetry(String adapterName, String devicePoint, long timestamp, double temperature) {
+        ObjectNode payload = JsonNodeSupport.objectNode();
+        payload.put("timestamp", timestamp);
+        payload.put("adapterName", adapterName);
+        payload.put("devicePoint", devicePoint);
+        payload.putObject("telemetryData").put("temperature", temperature);
+        return payload;
     }
 
     private ObjectNode registerManifest() {

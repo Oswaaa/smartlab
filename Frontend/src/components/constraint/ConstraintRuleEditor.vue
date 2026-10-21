@@ -349,7 +349,7 @@
           <!-- 第二行：执行能力参数 -->
           <div v-if="parameterDefinitions(act).length" class="action-device-params-row">
             <div v-for="param in parameterDefinitions(act)" :key="param.name" class="field field-param">
-              <span class="field-label">{{ param.displayName }}</span>
+              <span class="field-label">{{ param.displayName }} · {{ param.required === false ? '可以不填' : param.required === true ? '必填' : '未声明是否必填' }}</span>
               <el-select v-if="param.dataType === 'BOOLEAN'" v-model="act.parameters[param.name]" size="small">
                 <el-option label="true" :value="true" />
                 <el-option label="false" :value="false" />
@@ -775,7 +775,12 @@ function selectActionResource(act: any) {
 function parameterDefinitions(act: any) {
   const cap = capabilitiesFor(act.deviceModelId).find((x: any) => x.capabilityName === act.capabilityName)
   const raw = cap?.parameters
-  if (Array.isArray(raw)) return raw.map((x: any) => ({ name: x.name, displayName: x.displayName || x.name, dataType: x.dataType || 'STRING' }))
+  if (Array.isArray(raw)) return raw.map((x: any) => ({
+    name: x.name,
+    displayName: x.displayName || x.name,
+    dataType: x.dataType || 'STRING',
+    required: x.required === true ? true : x.required === false ? false : null
+  }))
   return []
 }
 
@@ -907,12 +912,19 @@ function actionPayload(act: any) {
   if (!act.deviceInstanceId && (props.taskMode || !deviceBindingsAreModelWide.value)) {
     throw Error('设备能力动作必须选择具体执行实例')
   }
-  const parameters = act.parameters || {}
+  const source = act.parameters || {}
+  const parameters: Record<string, any> = {}
   for (const param of parameterDefinitions(act)) {
-    const value = parameters[param.name]
-    if (value === null || value === undefined || value === '') {
-      throw Error(`设备能力参数「${param.displayName || param.name}」不能为空`)
+    if (param.required !== true && param.required !== false) {
+      throw Error(`设备能力参数「${param.displayName || param.name}」缺少是否必填`)
     }
+    const value = source[param.name]
+    const empty = value === null || value === undefined || value === ''
+    if (empty) {
+      if (param.required === true) throw Error(`设备能力参数「${param.displayName || param.name}」不能为空`)
+      continue
+    }
+    parameters[param.name] = value
   }
   const payload: Record<string, any> = {
     actionType: 'DEVICE_CAPABILITY',

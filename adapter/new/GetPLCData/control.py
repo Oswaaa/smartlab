@@ -1,24 +1,43 @@
 """
-GetPLCData 南向物理驱动程序 (ControlImpl)。
-遵循 SmartLab Adapter 设计规范：
-- 仅处理 adapterSetup.ini 声明的物理点。若收到虚拟点，立即 COMMAND_FAILED 快速失败，不执行硬件 I/O。
-- 对接真实 PLC (Modbus TCP) 与 485 压力电机网关。
-- 毫秒级回执原则：execute(command) 入口处立即发射 COMMAND_RUNNING（防看门狗熔断），将实际 I/O 任务交由后台处理。
-- 周期轮询 PLC 寄存器，按物理点独立组装并上报 DeviceData，点名精确归属，杜绝错点或混淆。
-- 遥测字段匹配 attributeMapping: raw_temp, raw_press。
+GetPLCData 南向驱动。
+
+PLC 用 Modbus TCP 功能码 0x03 / 0x06，地址是点位表 Addr_0 到 Addr_295。
+加压电机用 485 上的 Modbus RTU。加热程序由 PLC 执行；本模块只写段寄存器和启动位，
+再读反应温度判断指令是否结束。
 """
 
 from __future__ import annotations
 
+import json
 import logging
-import queue
+import math
 import socket
 import struct
 import threading
 import time
+from pathlib import Path
 from typing import Any, Callable
 
+from core import AdapterEvent, DeviceData
+
 logger = logging.getLogger("smartlab.adapter.getplcdata.control")
+
+MIRROR_SIZE = 297
+HOLD_MINUTES = 9999
+MANUAL_REG = 267
+CHROM_ACTUAL = 276
+CHROM_ALARM = 277
+CHROM_SET = 278
+MUTE_REG = 293
+HEATSINK_ALARM = {1: 220, 2: 221, 3: 222, 4: 223, 5: 289, 6: 290, 7: 292, 8: 291}
+# 点位表里标成“写”的设定区，外加热阱报警 5～8、消音和两个总阀。
+# 实测、压力、流量反馈不在这里，接管时不写。267 最后单独写。
+PRESERVE_BEFORE_CONTROL = (
+    tuple(range(34, 251))
+    + tuple(range(268, 276))
+    + (277, 278)
+    + tuple(range(289, 296))
+)
 
 
 def now_ms() -> int:
@@ -26,7 +45,6 @@ def now_ms() -> int:
 
 
 def calc_crc16_modbus(data: bytes) -> int:
-    """计算 Modbus RTU CRC16 校验码"""
     crc = 0xFFFF
     for pos in data:
         crc ^= pos
@@ -39,10 +57,123 @@ def calc_crc16_modbus(data: bytes) -> int:
     return crc
 
 
-class ModbusTcpClient:
-    """轻量级纯 Python Modbus TCP 客户端，直连 PLC (端口 502)"""
+def step_temp_addr(channel: int, step: int) -> int:
+    return 34 + (channel - 1) * 22 + (step - 1) * 2
 
-    def __init__(self, host: str, port: int = 502, timeout: float = 3.0) -> None:
+
+def step_time_addr(channel: int, step: int) -> int:
+    return step_temp_addr(channel, step) + 1
+
+
+def back_pressure_addr(channel: int) -> int:
+    return 11 + (channel - 1) * 3
+
+
+def heatsink_set_addr(channel: int) -> int:
+    return 54 + (channel - 1) * 22
+
+
+def heatsink_actual_addr(channel: int) -> int:
+    return 278 + channel
+
+
+def gas_set_addr(channel: int, segment: int) -> int:
+    return 235 + (channel - 1) * 2 + (segment - 1)
+
+
+def gas_read_addr(channel: int, segment: int) -> int:
+    return 251 + (channel - 1) * 2 + (segment - 1)
+
+
+def start_addr(channel: int) -> int:
+    return 267 + channel
+
+
+def _blank(value: Any) -> bool:
+    return value is None or str(value).strip() == ""
+
+
+def segments_from_params(params: dict[str, Any]) -> list[tuple[float, int]]:
+    """从 temperature1/minutes1 到 temperature10/minutes10 读取加热段。
+
+    某一段分钟数为 0，或温度与分钟都没填，则这一段和后面的段都不使用。
+    """
+    segments: list[tuple[float, int]] = []
+    for index in range(1, 11):
+        temperature = params.get(f"temperature{index}")
+        minutes = params.get(f"minutes{index}")
+        if _blank(temperature) and _blank(minutes):
+            break
+        if _blank(minutes) or int(round(float(minutes))) == 0:
+            break
+        if _blank(temperature):
+            raise ValueError(f"第{index}段缺少温度")
+        minute_value = int(round(float(minutes)))
+        if minute_value < 0:
+            raise ValueError("加热分钟数不能为负")
+        segments.append((float(temperature), minute_value))
+    if not segments:
+        raise ValueError("至少要填写第1段的温度和分钟数")
+    return segments
+
+
+def plan_heat_writes(segments: list[tuple[float, int]]) -> tuple[list[tuple[int, int]], int]:
+    """返回要写入的 (温度整数, 分钟) 列表，以及用来判断完成的恒温温度。
+
+    未满 10 段且最后一段不是 9999 分钟时，在下一段补 9999 分钟、温度与最后一段相同。
+    补段之后的寄存器不在这个列表里，调用方不得写入。
+    """
+    if not 1 <= len(segments) <= 10:
+        raise ValueError("加热段数必须是 1 到 10")
+    planned = [(int(round(temperature)), minutes) for temperature, minutes in segments]
+    if planned[-1][1] != HOLD_MINUTES and len(planned) < 10:
+        planned.append((planned[-1][0], HOLD_MINUTES))
+    return planned, planned[-1][0]
+
+
+class _HoldWatch:
+    def __init__(self, start_event: str, event_name: str, payload: dict[str, Any], key: str, generation: int, ready) -> None:
+        self.start_event = start_event
+        self.event_name = event_name
+        self.payload = payload
+        self.key = key
+        self.generation = generation
+        self.ready = ready
+
+
+def as_bool(raw: Any) -> bool:
+    if isinstance(raw, bool):
+        return raw
+    if isinstance(raw, (int, float)):
+        return int(raw) != 0
+    text = str(raw).strip().lower()
+    if text in {"1", "true", "yes"}:
+        return True
+    if text in {"0", "false", "no"}:
+        return False
+    raise ValueError(f"无法解析布尔值: {raw}")
+
+
+def _kind(point: str) -> str:
+    if point.startswith("Reactor"):
+        return "reactor"
+    if point.startswith("Heatsink"):
+        return "heatsink"
+    if point.startswith("CoFlow") or point.startswith("H2Flow"):
+        return "flow"
+    if point.startswith("Incubator"):
+        return "incubator"
+    if point == "Chromatography":
+        return "chromatography"
+    if point in {"CoValve", "H2Valve"}:
+        return "valve"
+    if point == "Plant":
+        return "plant"
+    return ""
+
+
+class ModbusTcpClient:
+    def __init__(self, host: str, port: int, timeout: float) -> None:
         self.host = host
         self.port = port
         self.timeout = timeout
@@ -50,427 +181,912 @@ class ModbusTcpClient:
         self._lock = threading.Lock()
         self._transaction_id = 0
 
-    def _next_tid(self) -> int:
-        self._transaction_id = (self._transaction_id + 1) & 0xFFFF
-        return self._transaction_id
-
-    def connect(self) -> bool:
-        with self._lock:
-            if self._sock:
-                try:
-                    self._sock.close()
-                except Exception:
-                    pass
-                self._sock = None
-            try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(self.timeout)
-                s.connect((self.host, self.port))
-                self._sock = s
-                logger.info("已连接真实 PLC (Modbus TCP) -> %s:%d", self.host, self.port)
-                return True
-            except Exception as e:
-                logger.debug("连接 PLC 失败 %s:%d: %s", self.host, self.port, e)
-                return False
-
     def close(self) -> None:
         with self._lock:
-            if self._sock:
-                try:
-                    self._sock.close()
-                except Exception:
-                    pass
-                self._sock = None
+            self._close_locked()
+
+    def _close_locked(self) -> None:
+        if self._sock is not None:
+            try:
+                self._sock.close()
+            except Exception:
+                pass
+            self._sock = None
+
+    def _connect_locked(self) -> bool:
+        self._close_locked()
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(self.timeout)
+            sock.connect((self.host, self.port))
+            self._sock = sock
+            logger.info("已连接 PLC %s:%d", self.host, self.port)
+            return True
+        except Exception as error:
+            logger.warning("连接 PLC 失败 %s:%d: %s", self.host, self.port, error)
+            self._sock = None
+            return False
+
+    def _next_tid(self) -> int:
+        self._transaction_id = (self._transaction_id + 1) & 0xFFFF
+        if self._transaction_id == 0:
+            self._transaction_id = 1
+        return self._transaction_id
+
+    def _recv_exact(self, count: int) -> bytes:
+        assert self._sock is not None
+        buf = b""
+        while len(buf) < count:
+            chunk = self._sock.recv(count - len(buf))
+            if not chunk:
+                raise ConnectionError("PLC 连接已关闭")
+            buf += chunk
+        return buf
 
     def read_holding_registers(self, start_addr: int, count: int) -> list[int] | None:
-        """功能码 0x03: 读取保持寄存器"""
         with self._lock:
-            if not self._sock and not self.connect():
+            if self._sock is None and not self._connect_locked():
                 return None
             try:
                 tid = self._next_tid()
-                # MBAP: tid(2), proto=0(2), len=6(2), unit_id=1(1)
-                # PDU: func=3(1), start_addr(2), count(2)
                 req = struct.pack(">HHHBBHH", tid, 0, 6, 1, 3, start_addr, count)
+                assert self._sock is not None
                 self._sock.sendall(req)
-
-                header = self._sock.recv(9)
-                if len(header) < 9:
-                    raise ConnectionError("Modbus 读取响应头过短")
-                r_tid, r_proto, r_len, r_unit, r_func = struct.unpack(">HHHBB", header[:7])
-                if r_func & 0x80:
-                    raise RuntimeError(f"Modbus 异常响应: 0x{r_func:02X}")
-                byte_count = header[8]
-                payload = b""
-                while len(payload) < byte_count:
-                    chunk = self._sock.recv(byte_count - len(payload))
-                    if not chunk:
-                        raise ConnectionError("Modbus 数据流提前终止")
-                    payload += chunk
-                values = [struct.unpack(">h", payload[i:i + 2])[0] for i in range(0, len(payload), 2)]
-                return values
-            except Exception as e:
-                logger.debug("PLC 寄存器读取失败: %s", e)
-                self.close()
+                header = self._recv_exact(9)
+                r_tid, _proto, _length, _unit, func = struct.unpack(">HHHBB", header[:8])
+                if r_tid != tid or func != 3 or header[8] != count * 2:
+                    raise RuntimeError(f"PLC 读响应不匹配 tid={r_tid} func={func} bytes={header[8]}")
+                payload = self._recv_exact(header[8])
+                return [struct.unpack(">h", payload[i:i + 2])[0] for i in range(0, len(payload), 2)]
+            except Exception as error:
+                logger.warning("读寄存器 %s 数量 %s 失败: %s", start_addr, count, error)
+                self._close_locked()
                 return None
 
     def write_single_register(self, addr: int, value: int) -> bool:
-        """功能码 0x06: 写入单个保持寄存器"""
+        word = int(value) & 0xFFFF
         with self._lock:
-            if not self._sock and not self.connect():
+            if self._sock is None and not self._connect_locked():
                 return False
             try:
                 tid = self._next_tid()
-                # PDU: func=6(1), addr(2), value(2)
-                req = struct.pack(">HHHBBHH", tid, 0, 6, 1, 6, addr, value & 0xFFFF)
+                req = struct.pack(">HHHBBHH", tid, 0, 6, 1, 6, addr, word)
+                assert self._sock is not None
                 self._sock.sendall(req)
-                resp = self._sock.recv(12)
-                return len(resp) >= 12
-            except Exception as e:
-                logger.debug("PLC 寄存器写入失败 addr=%d: %s", addr, e)
-                self.close()
+                resp = self._recv_exact(12)
+                r_tid, _proto, _length, _unit, func, r_addr, r_val = struct.unpack(">HHHBBHH", resp)
+                if func == 0x86:
+                    raise RuntimeError("PLC 拒绝写入")
+                if r_tid != tid or func != 6 or r_addr != addr or r_val != word:
+                    raise RuntimeError("PLC 写响应回显不一致")
+                return True
+            except Exception as error:
+                logger.warning("写寄存器 %s=%s 失败: %s", addr, value, error)
+                self._close_locked()
                 return False
 
 
-class Rs485GatewayClient:
-    """RS-485 网关客户端，通过 TCP 传输 Modbus RTU 压力电机控制帧"""
-
-    def __init__(self, host: str, port: int = 26, timeout: float = 2.0) -> None:
+class Rs485Client:
+    def __init__(self, host: str, port: int, timeout: float) -> None:
         self.host = host
         self.port = port
         self.timeout = timeout
         self._sock: socket.socket | None = None
         self._lock = threading.Lock()
 
-    def connect(self) -> bool:
-        with self._lock:
-            if self._sock:
-                try:
-                    self._sock.close()
-                except Exception:
-                    pass
-                self._sock = None
-            try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                s.settimeout(self.timeout)
-                s.connect((self.host, self.port))
-                self._sock = s
-                logger.info("已连接 RS-485 网关 -> %s:%d", self.host, self.port)
-                return True
-            except Exception as e:
-                logger.debug("连接 RS-485 网关失败 %s:%d: %s", self.host, self.port, e)
-                return False
-
     def close(self) -> None:
         with self._lock:
-            if self._sock:
-                try:
-                    self._sock.close()
-                except Exception:
-                    pass
-                self._sock = None
+            self._close_locked()
 
-    def send_press_command(self, channel: int, target_pressure: float) -> bool:
-        """
-        向 485 压力电机发送控制帧（对齐 PLCCtrl::sendPresscommand）
-        使用功能码 0x10 写多个寄存器 (0x00FD 起始 5 个寄存器)
-        """
-        with self._lock:
-            if not self._sock and not self.connect():
-                return False
+    def _close_locked(self) -> None:
+        if self._sock is not None:
             try:
-                dev_addr = channel
-                func = 0x10
-                reg_addr = 0x00FD
-                reg_num = 0x0005
-                byte_num = 10
-                direction = 1 if target_pressure > 0 else 0
-                dlt_speed = 0
-                speed = 2  # 默认转速
-                pulse = int(target_pressure * 1000)  # 脉冲换算
+                self._sock.close()
+            except Exception:
+                pass
+            self._sock = None
 
-                frame_without_crc = struct.pack(
-                    ">BBHHBBBHI",
-                    dev_addr, func, reg_addr, reg_num, byte_num,
-                    direction, dlt_speed, speed, pulse
-                ) + b"\x00\x00"  # abs=0, sync=0
+    def _connect_locked(self) -> bool:
+        self._close_locked()
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(self.timeout)
+            sock.connect((self.host, self.port))
+            self._sock = sock
+            logger.info("已连接 485 网关 %s:%d", self.host, self.port)
+            return True
+        except Exception as error:
+            logger.warning("连接 485 失败 %s:%d: %s", self.host, self.port, error)
+            self._sock = None
+            return False
 
-                crc = calc_crc16_modbus(frame_without_crc)
-                full_frame = frame_without_crc + struct.pack("<H", crc)
-                self._sock.sendall(full_frame)
-                return True
-            except Exception as e:
-                logger.debug("485 加压帧发送失败 ch=%d: %s", channel, e)
-                self.close()
-                return False
+    def _exchange(self, frame: bytes, expect: int) -> bytes | None:
+        with self._lock:
+            if self._sock is None and not self._connect_locked():
+                return None
+            try:
+                assert self._sock is not None
+                self._sock.sendall(frame)
+                buf = b""
+                while len(buf) < expect:
+                    chunk = self._sock.recv(expect - len(buf))
+                    if not chunk:
+                        raise ConnectionError("485 连接已关闭")
+                    buf += chunk
+                return buf
+            except Exception as error:
+                logger.warning("485 通信失败: %s", error)
+                self._close_locked()
+                return None
+
+    def move(self, dev_addr: int, direction: int, speed: float, pulse: int) -> bool:
+        speed_val = int(abs(speed))
+        if 0 < speed_val < 2:
+            speed_val = 2
+        body = struct.pack(
+            ">BBHHBBBHI BB".replace(" ", ""),
+            dev_addr & 0xFF,
+            0x10,
+            0x00FD,
+            5,
+            10,
+            direction & 0xFF,
+            0,
+            speed_val & 0xFFFF,
+            pulse & 0xFFFFFFFF,
+            0,
+            0,
+        )
+        frame = body + struct.pack("<H", calc_crc16_modbus(body))
+        response = self._exchange(frame, 8)
+        echo = struct.pack(">BBHH", dev_addr & 0xFF, 0x10, 0x00FD, 5)
+        return response == echo + struct.pack("<H", calc_crc16_modbus(echo))
+
+    def read_alarm(self, dev_addr: int) -> bool | None:
+        body = struct.pack(">BBHH", dev_addr & 0xFF, 0x04, 0x0043, 0x0010)
+        frame = body + struct.pack("<H", calc_crc16_modbus(body))
+        resp = self._exchange(frame, 37)
+        if (resp is None or len(resp) != 37 or resp[:3] != bytes([dev_addr & 0xFF, 4, 32])
+                or resp[-2:] != struct.pack("<H", calc_crc16_modbus(resp[:-2]))):
+            return None
+        return bool(resp[34] & 0x08)
+
+    def stop(self, dev_addr: int) -> bool:
+        """沿用旧 PLCCtrl::stop：向 0x00FE 写 0x9800，地址为 1 到 8。"""
+        if not 1 <= dev_addr <= 8:
+            raise ValueError("加压电机地址必须是 1 到 8")
+        body = struct.pack(">BBHHBH", dev_addr, 0x10, 0x00FE, 1, 2, 0x9800)
+        frame = body + struct.pack("<H", calc_crc16_modbus(body))
+        response = self._exchange(frame, 8)
+        echo = struct.pack(">BBHH", dev_addr, 0x10, 0x00FE, 1)
+        expected = echo + struct.pack("<H", calc_crc16_modbus(echo))
+        if response != expected:
+            logger.warning("加压电机 %s 停止失败：未收到有效响应", dev_addr)
+            return False
+        return True
+
+
+class _ValveTravel:
+    """启动时人工归零；记录指令行程，不冒充编码器反馈。
+
+    正常小步等待名义运动时间后记账。中途停止时无法知道完成了多少，
+    保留起止位置的范围，后续按最保守的剩余行程限制两端。
+    """
+    def __init__(self) -> None:
+        self.low = self.high = 0
+        self.pending: int | None = None
+        self.ready_after = 0.0
+        self.blocked = False
+
+    def settle(self, now: float) -> None:
+        if self.pending is not None and now >= self.ready_after:
+            self.low += self.pending
+            self.high += self.pending
+            self.pending = None
+
+    def begin(self, delta: int, duration: float) -> None:
+        self.pending = delta
+        self.ready_after = time.monotonic() + duration + 0.05
+
+    def interrupt(self) -> None:
+        self.settle(time.monotonic())
+        if self.pending is not None:
+            self.low += min(0, self.pending)
+            self.high += max(0, self.pending)
+            self.pending = None
+        self.ready_after = time.monotonic()
 
 
 class ControlImpl:
-    """真实 PLC 与 485 南向硬件驱动实现"""
-
     def __init__(
         self,
         extra: dict[str, dict[str, str]],
-        physical_points: tuple[str, ...] | list[str] = (),
+        physical_points: tuple[str, ...] | list[str],
         point_fields: dict[str, dict[str, str]] | None = None,
     ) -> None:
-        plc_cfg = extra.get("plc", {})
-        rs485_cfg = extra.get("rs485", {})
-
-        self.plc_ip = plc_cfg.get("ip", "192.168.0.10")
-        self.plc_port = int(plc_cfg.get("port", "502"))
-        self.poll_interval = float(plc_cfg.get("pollIntervalSec", "1.0"))
-
-        self.rs485_ip = rs485_cfg.get("ip", "192.168.0.201")
-        self.rs485_port = int(rs485_cfg.get("port", "26"))
-
-        self.physical_points = tuple(physical_points)
+        self.points = tuple(physical_points)
         self.point_fields = point_fields or {}
-        self._index_to_point: dict[str, str] = self._build_index_map(self.physical_points, self.point_fields)
-        self._point_to_index: dict[str, int] = {
-            pt: int(self.point_fields.get(pt, {}).get("index", idx + 1))
-            for idx, pt in enumerate(self.physical_points)
+        plc = extra.get("plc", {})
+        rs485 = extra.get("rs485", {})
+        self.temperature_tolerance = float(plc.get("temperatureTolerance", "0"))
+        self.pressure_tolerance = float(plc.get("pressureTolerance", "0.01"))
+        self.link_timeout_sec = float(plc.get("linkTimeoutSec", "30"))
+        self.poll_interval_sec = float(plc.get("pollIntervalSec", "1"))
+        self.chunk_gap_sec = float(plc.get("chunkGapMs", "50")) / 1000.0
+        self.pulses_per_turn = int(rs485.get("pulsesPerTurn", "3200"))
+        self.valve_turns = float(rs485.get("valveTravelTurns", "4"))
+        self.valve_travel_ratio = float(rs485.get("valveTravelRatio", "0.9"))
+        self.pressure_poll_sec = float(rs485.get("pressurePollIntervalSec", "0.2"))
+        self.pressure_fresh_sec = float(rs485.get("pressureFreshSec", "3"))
+        # 兼容旧配置中的 pressureStepTurns，将其作为单步上限。
+        self.pressure_step_turns = float(rs485.get("pressureMaxStepTurns", rs485.get("pressureStepTurns", "0.5")))
+        self.pressure_full_step_error = float(rs485.get("pressureFullStepErrorMPa", "1"))
+        self.pressure_step_speed = int(rs485.get("pressureStepSpeedRpm", "10"))
+        self.pressure_settle_sec = float(rs485.get("pressureSettleSec", "2"))
+        self.open_direction = int(rs485.get("openingDirection", "1"))
+        numbers = (self.valve_turns, self.valve_travel_ratio, self.pressure_poll_sec,
+                   self.pressure_fresh_sec, self.pressure_step_turns, self.pressure_settle_sec,
+                   self.pressure_tolerance, self.pressure_full_step_error)
+        if (not all(math.isfinite(v) for v in numbers) or self.pulses_per_turn <= 0
+                or self.valve_turns <= 0 or not 0 < self.valve_travel_ratio <= 1
+                or self.pressure_poll_sec <= 0 or self.pressure_fresh_sec <= 0
+                or self.pressure_step_turns <= 0 or self.pressure_settle_sec <= 0
+                or self.pressure_full_step_error <= 0
+                or not 2 <= self.pressure_step_speed <= 100 or self.open_direction not in (0, 1)
+                or self.pressure_tolerance < 0):
+            raise ValueError("背压阀行程或调节参数无效")
+        self.max_valve_pulses = int(self.pulses_per_turn * self.valve_turns * self.valve_travel_ratio)
+        if self.max_valve_pulses < 1:
+            raise ValueError("背压阀允许行程必须至少为一个脉冲")
+        self.pressure_step_pulses = int(self.pulses_per_turn * self.pressure_step_turns)
+        if self.pressure_step_pulses < 1:
+            raise ValueError("背压阀每步行程必须至少为一个脉冲")
+        self.plc = ModbusTcpClient(plc.get("ip", "192.168.0.10"), int(plc.get("port", "502")), float(plc.get("timeoutSec", "3")))
+        self.rs485 = Rs485Client(rs485.get("ip", "192.168.0.201"), int(rs485.get("port", "26")), float(rs485.get("timeoutSec", "2")))
+        self._mirror = [None] * MIRROR_SIZE
+        self._data_lock = threading.Lock()
+        self._last_ok = 0.0
+        self._running = False
+        self._poll_thread: threading.Thread | None = None
+        self._pressure_thread: threading.Thread | None = None
+        self._job_lock = threading.Lock()
+        self._jobs: dict[str, int] = {}
+        self._pressure_targets: dict[int, float] = {}
+        self._pressure_decision_after: dict[int, float] = {}
+        self._valve_travel = {channel: _ValveTravel() for channel in range(1, 9)}
+        self._valve_travel_path = self._resolve_valve_travel_path(rs485.get("valveTravelFile", ""))
+        self._load_valve_travel()
+        self._pressure_samples: dict[int, tuple[float, float]] = {}
+        self._pressure_points: dict[int, str] = {}
+        self._pressure_failures: dict[int, tuple[int, str]] = {}
+        self._pressure_last_sample: dict[int, float] = {}
+        self._pressure_requested_at: dict[int, float] = {}
+        self._pressure_limits: dict[int, str] = {}
+        self._data_handler: Callable[[DeviceData], None] | None = None
+        self._event_handler: Callable[[AdapterEvent], None] | None = None
+
+    def _resolve_valve_travel_path(self, raw: str) -> Path | None:
+        text = str(raw).strip()
+        if not text:
+            return None
+        path = Path(text)
+        if not path.is_absolute():
+            path = Path(__file__).resolve().parent / path
+        return path
+
+    def _load_valve_travel(self) -> None:
+        """文件不存在时八路保持最紧。参数不一致或内容损坏时也不沿用旧开度。"""
+        path = self._valve_travel_path
+        if path is None or not path.is_file():
+            return
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            if (payload.get("version") != 1
+                    or int(payload.get("pulsesPerTurn")) != self.pulses_per_turn
+                    or int(payload.get("maxValvePulses")) != self.max_valve_pulses):
+                raise ValueError("行程文件与当前阀门参数不一致")
+            channels = payload.get("channels")
+            if not isinstance(channels, dict):
+                raise ValueError("行程文件缺少通道")
+            loaded: dict[int, tuple[int, int]] = {}
+            for name, item in channels.items():
+                channel = int(name)
+                if channel not in self._valve_travel or not isinstance(item, dict):
+                    raise ValueError(f"行程通道无效: {name}")
+                low = int(item["low"])
+                high = int(item["high"])
+                if not 0 <= low <= high <= self.max_valve_pulses:
+                    raise ValueError(f"行程越界: {name}")
+                loaded[channel] = (low, high)
+        except Exception as error:
+            logger.warning("阀门行程文件无法读取，八路按最紧启动: %s", error)
+            return
+        for channel, (low, high) in loaded.items():
+            travel = self._valve_travel[channel]
+            travel.low = low
+            travel.high = high
+
+    def _persist_valve_travel(self) -> None:
+        """把未完成的一步按停止时的保守开度写入文件，重启后不把这步当成已经走完。"""
+        path = self._valve_travel_path
+        if path is None:
+            return
+        channels = {}
+        for channel, travel in self._valve_travel.items():
+            low, high = travel.low, travel.high
+            if travel.pending is not None:
+                low += min(0, travel.pending)
+                high += max(0, travel.pending)
+            channels[str(channel)] = {"low": low, "high": high}
+        payload = {
+            "version": 1,
+            "pulsesPerTurn": self.pulses_per_turn,
+            "maxValvePulses": self.max_valve_pulses,
+            "channels": channels,
         }
-
-        # 硬件客户端
-        self.plc_client = ModbusTcpClient(self.plc_ip, self.plc_port)
-        self.rs485_client = Rs485GatewayClient(self.rs485_ip, self.rs485_port)
-
-        # 回调处理器
-        self._data_handler: Callable | None = None
-        self._event_handler: Callable | None = None
-
-        # 运行控制与队列
-        self._stop_event = threading.Event()
-        self._cmd_queue: queue.Queue = queue.Queue()
-        self._threads: list[threading.Thread] = []
-
-        # 物理点缓存数据（用于离线备援或瞬时查询）
-        self._point_state: dict[str, dict[str, float]] = {
-            pt: {"temp": 25.0, "press": 0.10} for pt in self.physical_points
-        }
-        self._state_lock = threading.Lock()
-
-    @staticmethod
-    def _build_index_map(
-        physical_points: tuple[str, ...],
-        point_fields: dict[str, dict[str, str]],
-    ) -> dict[str, str]:
-        mapping: dict[str, str] = {}
-        for point in physical_points:
-            fields = point_fields.get(point, {})
-            index = str(fields.get("index", "")).strip()
-            if index:
-                mapping[index] = point
-        return mapping
-
-    def set_data_handler(self, handler: Callable) -> None:
-        self._data_handler = handler
-
-    def set_event_handler(self, handler: Callable) -> None:
-        self._event_handler = handler
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temporary = path.with_name(path.name + ".tmp")
+            temporary.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+            temporary.replace(path)
+        except Exception as error:
+            logger.warning("阀门行程文件写入失败: %s", error)
 
     def start(self) -> None:
-        self._stop_event.clear()
-        # 启动后台硬件轮询线程
-        poll_thread = threading.Thread(target=self._poll_loop, name="getplcdata-poll", daemon=True)
-        # 启动后台指令执行工作线程
-        worker_thread = threading.Thread(target=self._cmd_worker_loop, name="getplcdata-worker", daemon=True)
-        self._threads = [poll_thread, worker_thread]
-        for t in self._threads:
-            t.start()
-        logger.info("GetPLCData 物理控制驱动已启动 (物理点: %s)", self.physical_points)
+        self._running = True
+        self._poll_thread = threading.Thread(target=self._poll_loop, name="plc-poll", daemon=True)
+        self._pressure_thread = threading.Thread(target=self._pressure_loop, name="pressure-step", daemon=True)
+        self._poll_thread.start()
+        self._pressure_thread.start()
 
     def stop(self) -> None:
-        self._stop_event.set()
-        self.plc_client.close()
-        self.rs485_client.close()
-        logger.info("GetPLCData 物理控制驱动已停止")
+        self._running = False
+        with self._job_lock:
+            active = list(self._pressure_targets)
+            for channel in active:
+                self._valve_travel[channel].interrupt()
+            self._persist_valve_travel()
+            for channel in active:
+                self.rs485.stop(channel)
+            self._pressure_targets.clear()
+        self.plc.close()
+        self.rs485.close()
 
-    def execute(self, command: Any) -> None:
-        """
-        接收系统指令。
-        严格规范要求：
-        1. 检查是否为物理点，若为虚拟点立即 COMMAND_FAILED 快速失败；
-        2. 毫秒级回执发射 COMMAND_RUNNING（防看门狗熔断）；
-        3. 放入异步工作队列，由后台执行实际硬件 I/O。
-        """
-        device_point = command.device_point
+    def set_data_handler(self, handler: Callable[[DeviceData], None]) -> None:
+        self._data_handler = handler
 
-        # 1. 守卫物理点边界（防御实现错误时误入）
-        if device_point not in self.physical_points:
-            logger.error("Control 收到非物理点指令: %s，立即拒绝", device_point)
-            self._emit_event(
-                device_point,
-                "COMMAND_FAILED",
-                command.message_id,
-                {"error": f"非物理设备点: {device_point}"}
-            )
+    def set_event_handler(self, handler: Callable[[AdapterEvent], None]) -> None:
+        self._event_handler = handler
+
+    def heartbeat_points(self) -> list[dict[str, Any]]:
+        online = self._link_online()
+        return [{"devicePoint": point, "online": online} for point in self.points]
+
+    def execute(self, command) -> None:
+        point = command.device_point
+        if point not in self.points:
+            self._fail(point, command.message_id, "VIRTUAL_POINT", "控制模块不处理虚拟点")
             return
+        self._emit(point, "COMMAND_RUNNING", command.message_id)
+        threading.Thread(
+            target=self._run_command,
+            args=(command,),
+            name=f"plc-cmd-{point}",
+            daemon=True,
+        ).start()
 
-        # 2. 毫秒级回复 COMMAND_RUNNING
-        self._emit_event(
-            device_point,
-            "COMMAND_RUNNING",
-            command.message_id,
-            {"commandName": command.command_name}
+    def _run_command(self, command) -> None:
+        try:
+            reason = self._dispatch(command)
+        except Exception as error:
+            logger.exception("命令失败 %s %s", command.device_point, command.command_name)
+            reason = str(error)
+        if isinstance(reason, str):
+            self._fail(command.device_point, command.message_id, reason, reason)
+            return
+        if isinstance(reason, _HoldWatch):
+            self._follow_hold(command.device_point, command.message_id, reason)
+            return
+        if isinstance(reason, tuple):
+            event_name, payload = reason
+            self._emit(command.device_point, event_name, command.message_id, payload)
+        self._emit(command.device_point, "COMMAND_COMPLETED", command.message_id)
+
+    def _dispatch(self, command) -> str | None:
+        name = command.command_name
+        point = command.device_point
+        kind = _kind(point)
+        params = command.parameters
+        if name == "takeControl":
+            failed = self._take_control()
+            return failed or ("CONTROL_TAKEN", {"ourControl": True})
+        if name == "releaseControl":
+            failed = self._write_gate(0)
+            return failed or ("CONTROL_RELEASED", {"ourControl": False})
+        if name == "stopPressurize":
+            return self._stop_pressurize(params)
+        blocked = self._require_control()
+        if blocked:
+            return blocked
+        if name == "heat":
+            return self._heat(point, params)
+        if name == "stopHeat":
+            return self._stop_heat(point, params)
+        if name == "pressurize":
+            return self._pressurize(point, params)
+        if name == "setAlarmTemp":
+            return self._set_alarm(kind, params)
+        if name == "setTemp":
+            return self._set_temp(kind, params)
+        if name == "setFlow":
+            return self._set_flow(params)
+        if name == "open":
+            failed = self._write_ok(int(params["register"]), 1)
+            return failed or ("VALVE_OPENED", {"isOpen": True})
+        if name == "close":
+            failed = self._write_ok(int(params["register"]), 0)
+            return failed or ("VALVE_CLOSED", {"isOpen": False})
+        if name == "setEnable":
+            enable_id = int(params["enableId"])
+            if not 1 <= enable_id <= 9:
+                return "使能编号必须是 1 到 9"
+            return self._write_ok(225 + enable_id, 1 if as_bool(params["enabled"]) else 0)
+        if name == "setAlarmMute":
+            return self._write_ok(MUTE_REG, 1 if as_bool(params["muted"]) else 0)
+        return f"未知命令: {name}"
+
+    def _heat(self, point: str, params: dict[str, Any]) -> str | None:
+        channel = int(params["index"])
+        planned, hold_temp = plan_heat_writes(segments_from_params(params))
+        key = f"heat:{channel}"
+        generation = self._bump(key)
+        for step, (temperature, minutes) in enumerate(planned, start=1):
+            if not self._is_current(key, generation):
+                return "STOPPED"
+            if not self.plc.write_single_register(step_temp_addr(channel, step), temperature):
+                return "PLC_WRITE_FAILED"
+            time.sleep(0.01)
+            if not self.plc.write_single_register(step_time_addr(channel, step), minutes):
+                return "PLC_WRITE_FAILED"
+            time.sleep(0.01)
+        if not self._is_current(key, generation):
+            return "STOPPED"
+        if not self.plc.write_single_register(start_addr(channel), 1):
+            return "PLC_WRITE_FAILED"
+        self._remember(start_addr(channel), 1)
+        logger.info("%s 已写入 %d 段并启动，恒温目标 %s°C", point, len(planned), hold_temp)
+        target = float(hold_temp)
+        return _HoldWatch(
+            "TEMPERATURE_ADJUSTING",
+            "TEMPERATURE_HOLDING",
+            {"temperature": target},
+            key,
+            generation,
+            lambda: self._temperature_ready(channel - 1, target),
         )
 
-        # 3. 压入异步任务队列
-        self._cmd_queue.put(command)
+    def _stop_heat(self, _point: str, params: dict[str, Any]) -> str | None:
+        channel = int(params["index"])
+        self._bump(f"heat:{channel}")
+        if not self.plc.write_single_register(start_addr(channel), 0):
+            return "PLC_WRITE_FAILED"
+        self._remember(start_addr(channel), 0)
+        return ("HEATING_STOPPED", {})
 
-    def _cmd_worker_loop(self) -> None:
-        """后台指令执行工作循环"""
-        while not self._stop_event.is_set():
-            try:
-                cmd = self._cmd_queue.get(timeout=0.2)
-            except queue.Empty:
-                continue
+    def _pressurize(self, _point: str, params: dict[str, Any]) -> str | _HoldWatch:
+        channel = int(params["index"])
+        target = float(params["targetPressure"])
+        if not 1 <= channel <= 8 or not math.isfinite(target) or target < 0:
+            return "INVALID_PRESSURE_PARAMETERS"
+        key = f"press:{channel}"
+        with self._job_lock:
+            if self._valve_travel[channel].blocked:
+                return "VALVE_POSITION_UNKNOWN"
+            generation = self._jobs.get(key, 0) + 1
+            self._jobs[key] = generation
+            self._pressure_targets[channel] = target
+            self._pressure_points[channel] = _point
+            self._pressure_requested_at[channel] = time.monotonic()
+            self._pressure_limits.pop(channel, None)
+        return _HoldWatch(
+            "PRESSURE_ADJUSTING",
+            "PRESSURE_HOLDING",
+            {"pressure": target},
+            key,
+            generation,
+            lambda: self._pressure_ready(channel, target),
+        )
 
-            try:
-                self._dispatch_hardware_command(cmd)
-            except Exception as e:
-                logger.exception("指令执行异常 cmd=%s: %s", cmd.command_name, e)
-                self._emit_event(
-                    cmd.device_point,
-                    "COMMAND_FAILED",
-                    cmd.message_id,
-                    {"error": str(e)}
-                )
+    def _stop_pressurize(self, params: dict[str, Any]) -> str | tuple[str, dict[str, Any]]:
+        channel = int(params["index"])
+        if not 1 <= channel <= 8:
+            return "加压通道必须是 1 到 8"
+        # 与调压下发共用锁，确保在途运动先结束发送，随后才发送停止命令。
+        with self._job_lock:
+            key = f"press:{channel}"
+            self._jobs[key] = self._jobs.get(key, 0) + 1
+            self._pressure_targets.pop(channel, None)
+            self._valve_travel[channel].interrupt()
+            self._persist_valve_travel()
+            if not self.rs485.stop(channel):
+                self._valve_travel[channel].blocked = True
+                return "MOTOR_STOP_FAILED"
+        return ("PRESSURE_STOPPED", {})
 
-    def _dispatch_hardware_command(self, command: Any) -> None:
-        """根据指令名分发到具体硬件写入"""
-        ch = self._point_to_index.get(command.device_point, 1)
-        params = command.parameters
-        cname = command.command_name
-
-        if cname == "heat":
-            target_temp = float(params.get("targetTemperature", 25.0))
-            duration_sec = int(params.get("durationSec", 60))
-            minutes = max(1, duration_sec // 60)
-
-            # 对齐 PLCCtrl::set_reactor_step
-            channel_base = 34 + (ch - 1) * 22
-            temp_reg = channel_base
-            time_reg = temp_reg + 1
-            start_reg = 268 + (ch - 1)
-
-            # 写入温度与时间
-            self.plc_client.write_single_register(temp_reg, int(target_temp))
-            time.sleep(0.01)
-            self.plc_client.write_single_register(time_reg, minutes)
-            # 智能启动
-            self.plc_client.write_single_register(start_reg, 1)
-
-            with self._state_lock:
-                self._point_state[command.device_point]["temp"] = target_temp
-
-            self._emit_event(command.device_point, "HEAT_STARTED", command.message_id, {
-                "targetTemperature": target_temp, "channel": ch
-            })
-            self._emit_event(command.device_point, "COMMAND_COMPLETED", command.message_id, {
-                "status": "SUCCESS"
-            })
-
-        elif cname == "pressurize":
-            target_press = float(params.get("targetPressure", 0.10))
-            # 发送 485 加压帧
-            self.rs485_client.send_press_command(ch, target_press)
-
-            with self._state_lock:
-                self._point_state[command.device_point]["press"] = target_press
-
-            self._emit_event(command.device_point, "PRESSURIZE_STARTED", command.message_id, {
-                "targetPressure": target_press, "channel": ch
-            })
-            self._emit_event(command.device_point, "COMMAND_COMPLETED", command.message_id, {
-                "status": "SUCCESS"
-            })
-
-        elif cname == "setOperatingMode":
-            mode = str(params.get("mode", "AUTO")).upper()
-            enable_write = 1 if mode == "AUTO" else 0
-            # 寄存器 267 为手自动开关
-            self.plc_client.write_single_register(267, enable_write)
-            self._emit_event(command.device_point, "COMMAND_COMPLETED", command.message_id, {
-                "operatingMode": mode
-            })
-
-        elif cname == "setAlarmTemp":
-            alarm_temp = float(params.get("alarmTemperature", 100.0))
-            addr = 212 + (ch - 1)
-            self.plc_client.write_single_register(addr, int(alarm_temp))
-            self._emit_event(command.device_point, "COMMAND_COMPLETED", command.message_id, {
-                "alarmTemperature": alarm_temp
-            })
-
+    def _set_temp(self, kind: str, params: dict[str, Any]) -> str | None:
+        temperature = int(round(float(params["temperature"])))
+        point_index = 0
+        if kind == "heatsink":
+            point_index = int(params["index"])
+            addr = heatsink_set_addr(point_index)
+            actual = heatsink_actual_addr(point_index)
+        elif kind == "incubator":
+            point_index = int(params["index"])
+            addr = 209 + point_index
+            actual = 286 + point_index
+        elif kind == "chromatography":
+            addr = CHROM_SET
+            actual = CHROM_ACTUAL
         else:
-            logger.warning("未知的物理控制指令: %s", cname)
-            self._emit_event(command.device_point, "COMMAND_FAILED", command.message_id, {
-                "error": f"不支持的指令: {cname}"
-            })
+            return "该设备没有设温命令"
+        if not self.plc.write_single_register(addr, temperature):
+            return "PLC_WRITE_FAILED"
+        self._remember(addr, temperature)
+        target = float(temperature)
+        key = f"temp:{kind}:{point_index}"
+        generation = self._bump(key)
+        return _HoldWatch(
+            "TEMPERATURE_ADJUSTING",
+            "TEMPERATURE_HOLDING",
+            {"temperature": target},
+            key,
+            generation,
+            lambda: self._temperature_ready(actual, target),
+        )
+
+    def _set_alarm(self, kind: str, params: dict[str, Any]) -> str | None:
+        temperature = int(round(float(params["alarmTemperature"])))
+        if kind == "reactor":
+            addr = 211 + int(params["index"])
+        elif kind == "heatsink":
+            channel = int(params["index"])
+            addr = HEATSINK_ALARM.get(channel, 0)
+            if addr == 0:
+                return "热阱通道无效"
+        elif kind == "incubator":
+            addr = 223 + int(params["index"])
+        elif kind == "chromatography":
+            addr = CHROM_ALARM
+        else:
+            return "该设备没有报警温度"
+        return self._write_ok(addr, temperature)
+
+    def _set_flow(self, params: dict[str, Any]) -> str | None:
+        channel = int(params["index"])
+        meter = int(params["meter"])
+        if meter not in (1, 2):
+            return "流量计编号必须是 1 或 2"
+        flow = int(round(float(params["flow"])))
+        if not self.plc.write_single_register(gas_set_addr(channel, meter), flow):
+            return "PLC_WRITE_FAILED"
+        self._remember(gas_set_addr(channel, meter), flow)
+        key = f"flow:{channel}:{meter}"
+        generation = self._bump(key)
+        return _HoldWatch(
+            "FLOW_ADJUSTING",
+            "FLOW_HOLDING",
+            {"flow": float(flow)},
+            key,
+            generation,
+            lambda: self._flow_ready(channel, meter, flow),
+        )
+
+    def _take_control(self) -> str | None:
+        """每次现场读取当前值，全部读完后写回设定区，最后写 267=1。
+
+        这些写寄存器在手动模式下也能读到加热段、报警温度、设定值和阀门。
+        PLC 接管后会把写入区搬去生效。先按刚刚读到的值写一遍，避免搬过去的是 0。
+        """
+        # 使用本次请求自己的读取结果，不能复用或再次读取轮询缓存。
+        snapshot: list[int] = []
+        for start in range(0, MIRROR_SIZE, 30):
+            count = min(30, MIRROR_SIZE - start)
+            values = self.plc.read_holding_registers(start, count)
+            if values is None or len(values) != count:
+                return "PLC_READ_FAILED"
+            snapshot.extend(values)
+            if start + count < MIRROR_SIZE:
+                time.sleep(self.chunk_gap_sec)
+        for addr in PRESERVE_BEFORE_CONTROL:
+            if addr >= len(snapshot) or snapshot[addr] is None:
+                return "PLC_READ_FAILED"
+            value = int(snapshot[addr])
+            if not self.plc.write_single_register(addr, value):
+                return "PLC_WRITE_FAILED"
+            self._remember(addr, value)
+            time.sleep(0.01)
+        return self._write_gate(1)
+
+    def _write_gate(self, value: int) -> str | None:
+        if not self.plc.write_single_register(MANUAL_REG, value):
+            return "PLC_WRITE_FAILED"
+        self._remember(MANUAL_REG, value)
+        return None
+
+    def _write_ok(self, addr: int, value: int) -> str | None:
+        if not self.plc.write_single_register(addr, value):
+            return "PLC_WRITE_FAILED"
+        self._remember(addr, value)
+        return None
+
+    def _follow_hold(self, point: str, message_id: str, watch: _HoldWatch) -> None:
+        if not self._is_current(watch.key, watch.generation):
+            reason = self._watch_failure(watch)
+            self._fail(point, message_id, reason, reason)
+            return
+        self._emit(point, watch.start_event, message_id, watch.payload)
+        while self._running and self._is_current(watch.key, watch.generation):
+            if not watch.key.startswith("press:") and not self._link_online():
+                self._fail(point, message_id, "PLC_OFFLINE", f"等待{watch.event_name}时PLC离线")
+                return
+            if watch.ready():
+                self._emit(point, watch.event_name, message_id, watch.payload)
+                self._emit(point, "COMMAND_COMPLETED", message_id)
+                return
+            time.sleep(1)
+        if self._running:
+            reason = self._watch_failure(watch)
+            self._fail(point, message_id, reason, reason)
+
+    def _watch_failure(self, watch: _HoldWatch) -> str:
+        if watch.key.startswith("press:"):
+            with self._job_lock:
+                failure = self._pressure_failures.get(int(watch.key.split(":")[1]))
+                if failure and failure[0] == watch.generation:
+                    return failure[1]
+        return "STOPPED"
+
+    def _temperature_ready(self, addr: int, target: float) -> bool:
+        raw = self._raw(addr)
+        return raw is not None and abs((raw / 10.0) - target) <= self.temperature_tolerance
+
+    def _pressure_ready(self, channel: int, target: float) -> bool:
+        with self._job_lock:
+            travel = self._valve_travel[channel]
+            travel.settle(time.monotonic())
+            with self._data_lock:
+                sample = self._pressure_samples.get(channel)
+            return (self._pressure_targets.get(channel) == target and sample is not None
+                    and not travel.blocked and travel.pending is None
+                    and sample[1] > travel.ready_after
+                    and sample[1] > self._pressure_decision_after.get(channel, 0)
+                    and sample[1] >= self._pressure_requested_at.get(channel, 0)
+                    and time.monotonic() - sample[1] <= self.pressure_fresh_sec
+                    and abs(sample[0] - target) <= self.pressure_tolerance + 1e-12)
+
+    def _flow_ready(self, channel: int, segment: int, flow: int) -> bool:
+        raw = self._raw(gas_read_addr(channel, segment))
+        return raw is not None and int(raw) == flow
+
+    def _require_control(self) -> str | None:
+        if not self._link_online():
+            return "PLC_OFFLINE"
+        raw = self._raw(MANUAL_REG)
+        if raw is None or int(raw) != 1:
+            return "NOT_IN_CONTROL"
+        return None
 
     def _poll_loop(self) -> None:
-        """周期性轮询 PLC 寄存器并上报物理点遥测"""
-        while not self._stop_event.is_set():
-            start_time = time.time()
-            try:
-                # 批量读取 0~35 寄存器（包含 8 通道温度与压力）
-                regs = self.plc_client.read_holding_registers(0, 36)
-                if regs is not None and len(regs) >= 35:
-                    # 成功读取真实 PLC 数据
-                    for ch in range(1, 9):
-                        point_name = self._index_to_point.get(str(ch))
-                        if not point_name or point_name not in self.physical_points:
-                            continue
-                        # 温度：地址 0~7，值除以 10
-                        temp_val = float(regs[ch - 1]) / 10.0
-                        # 压力：地址 11, 14, 17... (11 + (ch-1)*3)，值除以 100
-                        press_val = float(regs[11 + (ch - 1) * 3]) / 100.0
+        while self._running:
+            if self._read_all():
+                self._publish_telemetry()
+            time.sleep(self.poll_interval_sec)
 
-                        with self._state_lock:
-                            self._point_state[point_name] = {"temp": temp_val, "press": press_val}
+    def _read_all(self) -> bool:
+        mirror: list[int | None] = [None] * MIRROR_SIZE
+        for start in range(0, 270, 30):
+            if not self._running:
+                return False
+            values = self.plc.read_holding_registers(start, 30)
+            if values is None or len(values) != 30:
+                return False
+            mirror[start:start + 30] = values
+            time.sleep(self.chunk_gap_sec)
+        tail = self.plc.read_holding_registers(270, 27)
+        if tail is None or len(tail) != 27:
+            return False
+        mirror[270:297] = tail
+        with self._data_lock:
+            self._mirror = mirror
+            self._last_ok = time.monotonic()
+        return True
 
-                        self._emit_telemetry(point_name, temp_val, press_val)
-                else:
-                    # 未连接真实硬件时，使用状态缓存上报，保持心跳与基线遥测
-                    for pt in self.physical_points:
-                        with self._state_lock:
-                            st = self._point_state.get(pt, {"temp": 25.0, "press": 0.10})
-                        self._emit_telemetry(pt, st["temp"], st["press"])
+    def _publish_telemetry(self) -> None:
+        if self._data_handler is None:
+            return
+        stamp = now_ms()
+        for point in self.points:
+            fields = self._fields_for(point)
+            if fields is None:
+                continue
+            self._data_handler(DeviceData(point, fields, stamp))
 
-            except Exception as e:
-                logger.debug("数据采集循环异常: %s", e)
+    def _fields_for(self, point: str) -> dict[str, Any] | None:
+        kind = _kind(point)
+        fields = self.point_fields.get(point, {})
+        if kind == "reactor":
+            channel = int(fields["index"])
+            temp = self._raw(channel - 1)
+            press = self._raw(back_pressure_addr(channel))
+            if temp is None or press is None:
+                return None
+            return {"raw_temp": temp / 10.0, "raw_press": press / 100.0}
+        if kind == "heatsink":
+            channel = int(fields["index"])
+            temp = self._raw(heatsink_actual_addr(channel))
+            return None if temp is None else {"raw_temp": temp / 10.0}
+        if kind == "flow":
+            channel = int(fields["index"])
+            meter = int(fields["meter"])
+            raw = self._raw(gas_read_addr(channel, meter))
+            return None if raw is None else {"raw_flow": float(raw)}
+        if kind == "incubator":
+            incubator_id = int(fields["index"])
+            temp = self._raw(286 + incubator_id)
+            return None if temp is None else {"raw_temp": temp / 10.0}
+        if kind == "chromatography":
+            temp = self._raw(CHROM_ACTUAL)
+            return None if temp is None else {"raw_temp": temp / 10.0}
+        if kind == "valve":
+            raw = self._raw(int(fields["register"]))
+            return None if raw is None else {"raw_open": int(raw) != 0}
+        if kind == "plant":
+            gate = self._raw(MANUAL_REG)
+            if gate is None:
+                return None
+            body: dict[str, Any] = {"raw_our_control": int(gate) == 1}
+            for enable_id in range(1, 10):
+                raw = self._raw(225 + enable_id)
+                body[f"raw_enable_{enable_id}"] = False if raw is None else int(raw) != 0
+            return body
+        return None
 
-            # 维持采样周期
-            elapsed = time.time() - start_time
-            sleep_time = max(0.1, self.poll_interval - elapsed)
-            time.sleep(sleep_time)
+    def _pressure_loop(self) -> None:
+        while self._running:
+            with self._job_lock:
+                targets = dict(self._pressure_targets)
+            if targets:
+                self._read_pressure_samples()
+            for channel, target in targets.items():
+                self._pressure_step(channel, target)
+            time.sleep(self.pressure_poll_sec)
 
-    def _emit_telemetry(self, device_point: str, raw_temp: float, raw_press: float) -> None:
-        if self._data_handler:
-            from core import DeviceData
-            data = DeviceData(
-                device_point=device_point,
-                fields={"raw_temp": round(raw_temp, 2), "raw_press": round(raw_press, 3)},
-                timestamp=now_ms(),
-            )
-            self._data_handler(data)
+    def _read_pressure_samples(self) -> bool:
+        # 独立读取八路后段压力，避免每次等待整个 PLC 点表刷新。
+        stamp = time.monotonic()
+        values = self.plc.read_holding_registers(11, 22)
+        with self._data_lock:
+            self._pressure_samples = {}
+            if values is None or len(values) != 22:
+                return False
+            for channel in range(1, 9):
+                raw = values[(channel - 1) * 3]
+                if raw is not None and raw >= 0:
+                    self._pressure_samples[channel] = (raw / 100.0, stamp)
+                    self._mirror[back_pressure_addr(channel)] = raw
+        return True
 
-    def _emit_event(
-        self,
-        device_point: str,
-        event_name: str,
-        message_id: str | None,
-        payload: dict[str, Any] | None = None
-    ) -> None:
-        if self._event_handler:
-            from core import AdapterEvent
-            event = AdapterEvent(
-                device_point=device_point,
-                event_name=event_name,
-                message_id=message_id,
-                payload=payload or {},
-                timestamp=now_ms(),
-            )
-            self._event_handler(event)
+    def _pressure_fault(self, channel: int, reason: str) -> None:
+        """调用方持有 _job_lock；失败后取消调节，并终结仍在等待的命令。"""
+        key = f"press:{channel}"
+        generation = self._jobs.get(key, 0)
+        self._pressure_failures[channel] = (generation, reason)
+        self._jobs[key] = generation + 1
+        self._pressure_targets.pop(channel, None)
+        travel = self._valve_travel[channel]
+        travel.interrupt()
+        self._persist_valve_travel()
+        stopped = self.rs485.stop(channel)
+        if not stopped:
+            travel.blocked = True
+        self._emit(self._pressure_points.get(channel, f"Reactor{channel}"),
+                   "PRESSURE_CONTROL_FAILED", None, {"reason": reason, "motorStopConfirmed": stopped})
+
+    def _pressure_step(self, channel: int, target: float) -> None:
+        with self._job_lock:
+            if not self._running or self._pressure_targets.get(channel) != target:
+                return
+            with self._data_lock:
+                sample = self._pressure_samples.get(channel)
+            now = time.monotonic()
+            if sample is None or now - sample[1] > self.pressure_fresh_sec:
+                self._pressure_fault(channel, "PRESSURE_FEEDBACK_INVALID")
+                return
+            current, stamp = sample
+            travel = self._valve_travel[channel]
+            pending_before = travel.pending
+            travel.settle(now)
+            if pending_before is not None and travel.pending is None:
+                self._persist_valve_travel()
+            if (travel.pending is not None or stamp <= travel.ready_after
+                    or stamp <= self._pressure_decision_after.get(channel, 0)
+                    or stamp < self._pressure_requested_at.get(channel, 0)
+                    or stamp <= self._pressure_last_sample.get(channel, 0)):
+                return
+            self._pressure_last_sample[channel] = stamp
+            err = target - current
+            if abs(err) <= self.pressure_tolerance + 1e-12:
+                self._pressure_limits.pop(channel, None)
+                return
+            opening = err < 0  # 压力偏高：松开泄压；偏低：拧紧减少泄压。
+            remaining = self.max_valve_pulses - travel.high if opening else travel.low
+            if remaining <= 0:
+                boundary = "MAX" if opening else "MIN"
+                if self._pressure_limits.get(channel) != boundary:
+                    self._pressure_limits[channel] = boundary
+                    self._emit(self._pressure_points.get(channel, f"Reactor{channel}"),
+                               "PRESSURE_LIMIT_REACHED", None,
+                               {"boundary": boundary, "pressure": current, "targetPressure": target,
+                                "openingTurnsMin": travel.low / self.pulses_per_turn,
+                                "openingTurnsMax": travel.high / self.pulses_per_turn})
+                return  # 保留目标，继续读压力，允许压力变化后反向调节。
+            self._pressure_limits.pop(channel, None)
+            direction = self.open_direction if opening else 1 - self.open_direction
+            speed = self.pressure_step_speed
+            ratio = min(abs(err) / self.pressure_full_step_error, 1.0)
+            # 向下取整为整脉冲，微小误差修正避免0.2MPa等值少算一个脉冲。
+            requested_pulses = max(1, int(self.pressure_step_pulses * ratio + 1e-9))
+            pulse = min(remaining, self.pressure_step_pulses, requested_pulses)
+            sent = self.rs485.move(channel, direction, speed, pulse)
+            travel.begin(pulse if opening else -pulse, pulse * 60 / (speed * self.pulses_per_turn))
+            # 运动结束时间与压力等待时间分开：等待时仍读压力、允许停止，
+            # 但只能使用等待结束后采到的新读数进行下一次调整或判断达标。
+            self._pressure_decision_after[channel] = travel.ready_after + self.pressure_settle_sec
+            self._persist_valve_travel()
+            if not sent:
+                travel.blocked = True
+                self._pressure_fault(channel, "MOTOR_MOVE_FAILED")
+                return
+            alarm = self.rs485.read_alarm(channel)
+            if alarm is not False:
+                travel.blocked = True
+                self._pressure_fault(channel, "MOTOR_ALARM" if alarm else "MOTOR_FEEDBACK_INVALID")
+
+    def _pressure(self, channel: int) -> float | None:
+        with self._data_lock:
+            sample = self._pressure_samples.get(channel)
+        if sample is None or time.monotonic() - sample[1] > self.pressure_fresh_sec:
+            return None
+        return sample[0]
+
+    def _raw(self, addr: int) -> int | None:
+        with self._data_lock:
+            if addr < 0 or addr >= len(self._mirror):
+                return None
+            value = self._mirror[addr]
+        return None if value is None else int(value)
+
+    def _remember(self, addr: int, value: int) -> None:
+        signed = value if value < 0x8000 else value - 0x10000
+        with self._data_lock:
+            if 0 <= addr < len(self._mirror):
+                self._mirror[addr] = signed
+
+    def _link_online(self) -> bool:
+        return self._last_ok > 0 and (time.monotonic() - self._last_ok) <= self.link_timeout_sec
+
+    def _bump(self, key: str) -> int:
+        with self._job_lock:
+            self._jobs[key] = self._jobs.get(key, 0) + 1
+            return self._jobs[key]
+
+    def _is_current(self, key: str, generation: int) -> bool:
+        with self._job_lock:
+            return self._jobs.get(key) == generation
+
+    def _emit(self, point: str, name: str, message_id: str | None, payload: dict[str, Any] | None = None) -> None:
+        if self._event_handler is not None:
+            self._event_handler(AdapterEvent(point, name, message_id, payload or {}, now_ms()))
+
+    def _fail(self, point: str, message_id: str, reason: str, error: str) -> None:
+        self._emit(point, "COMMAND_FAILED", message_id, {"reason": reason, "error": error})

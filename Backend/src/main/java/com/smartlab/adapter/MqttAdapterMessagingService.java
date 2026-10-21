@@ -71,6 +71,7 @@ public class MqttAdapterMessagingService implements MqttCallbackExtended {
     private final AdapterPayloadMapperService protocolMapperService;
     private final ProtocolDictionaryService protocolDictionaryService;
     private final Executor executor;
+    private final TelemetryIngestQueue telemetryIngest;
     private DeviceInstancesMapper deviceInstancesMapper;
     private InProcessAdapterSimulator adapterSimulator;
     private ApplicationEventPublisher events;
@@ -108,6 +109,7 @@ public class MqttAdapterMessagingService implements MqttCallbackExtended {
         this.protocolMapperService = protocolMapperService;
         this.protocolDictionaryService = protocolDictionaryService;
         this.executor = executor;
+        this.telemetryIngest = new TelemetryIngestQueue(protocolMapperService);
     }
 
     @Autowired(required = false)
@@ -131,6 +133,7 @@ public class MqttAdapterMessagingService implements MqttCallbackExtended {
             connectionStatus = "DISABLED";
             return;
         }
+        telemetryIngest.start();
         executor.execute(() -> tryStartRegistrationListener(true));
     }
 
@@ -152,6 +155,7 @@ public class MqttAdapterMessagingService implements MqttCallbackExtended {
 
     @PreDestroy
     public void stop() {
+        telemetryIngest.stop();
         try {
             if (client != null && client.isConnected()) {
                 client.disconnect();
@@ -159,6 +163,10 @@ public class MqttAdapterMessagingService implements MqttCallbackExtended {
         } catch (Exception e) {
             log.warn("断开 MQTT 连接失败: {}", e.getMessage());
         }
+    }
+
+    void flushQueuedTelemetry() {
+        telemetryIngest.flushAvailable();
     }
 
     public Map<String, Object> statusSnapshot() {
@@ -445,18 +453,13 @@ public class MqttAdapterMessagingService implements MqttCallbackExtended {
         String adapterName = variables.get("adapterName");
         if ("heartbeatTopic".equals(topicMatch.topicName())) {
             protocolDictionaryService.validateDefinition("AdapterHeartbeat", payload);
-            adapterIndexService.heartbeat(adapterName, payload.path("status").asText("ONLINE"));
+            adapterIndexService.heartbeat(adapterName, payload);
             return;
         }
         if ("telemetryTopic".equals(topicMatch.topicName())) {
             protocolDictionaryService.validateDefinition("TelemetryMessageFormat", payload);
             validatePayloadIdentity(variables, payload);
-            String formatType = payload.path("formatType").asText("SINGLE").trim().toUpperCase();
-            if ("BATCH".equals(formatType)) {
-                protocolMapperService.applyBatchTelemetry(adapterName, variables.get("devicePoint"), payload);
-            } else {
-                protocolMapperService.applyTelemetry(adapterName, variables.get("devicePoint"), payload);
-            }
+            telemetryIngest.enqueue(adapterName, variables.get("devicePoint"), payload);
             return;
         }
         if ("eventTopic".equals(topicMatch.topicName())) {

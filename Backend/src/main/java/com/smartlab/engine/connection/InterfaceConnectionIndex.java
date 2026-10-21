@@ -24,6 +24,7 @@ public class InterfaceConnectionIndex {
 
     public synchronized void replaceTaskEdges(Long taskId, List<LiveInterfaceConnection> edges) {
         if (taskId == null) return;
+        if (edges(taskId).equals(edges == null ? List.of() : edges)) return;
         if (edges == null || edges.isEmpty()) {
             edgesByTask.remove(taskId);
         } else {
@@ -34,6 +35,7 @@ public class InterfaceConnectionIndex {
 
     public synchronized void upsert(LiveInterfaceConnection edge) {
         if (edge == null || edge.taskId() == null) return;
+        if (edges(edge.taskId()).contains(edge)) return;
         List<LiveInterfaceConnection> current = new ArrayList<>(edges(edge.taskId()));
         current.removeIf(existing -> sameChannel(existing, edge));
         current.add(edge);

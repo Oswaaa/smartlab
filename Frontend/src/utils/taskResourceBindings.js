@@ -147,11 +147,16 @@ export function holeParametersOf(requirement) {
   return (requirement?.capabilityParameters || []).filter(parameter => parameter.hole)
 }
 
+export function isOptionalHole(parameter) {
+  return parameter?.hole && parameter.required === false
+}
+
 export function missingHoleCount(requirements, parameterBindings = {}) {
   if (!Array.isArray(requirements)) return 0
   return requirements.reduce((count, requirement) => {
     const values = parameterBindings[requirement.slotId] || {}
-    return count + holeParametersOf(requirement).filter(parameter => isParameterHole(values[parameter.name])).length
+    return count + holeParametersOf(requirement).filter(parameter =>
+      !isOptionalHole(parameter) && isParameterHole(values[parameter.name])).length
   }, 0)
 }
 

@@ -147,6 +147,7 @@ class LeaseRecord:
     virtual_point: str
     released: bool = False
     status: str = "ACTIVE"
+    state: dict[str, Any] | None = None
 
 
 @dataclass
@@ -325,7 +326,8 @@ class AdapterCore:
                         self._log.info("跳过已释放的历史虚拟点位: %s (leaseId=%d, status=%s)", virt, lease_id, status)
                         continue
                     if phys in self.setup.physical_points and virt:
-                        rec = LeaseRecord(lease_id, phys, virt, released=False, status="ACTIVE")
+                        stored = state if isinstance(state, dict) else None
+                        rec = LeaseRecord(lease_id, phys, virt, released=False, status="ACTIVE", state=stored)
                         self._leases[lease_id] = rec
                         self._virtual_to_lease[virt] = lease_id
                         topic = self._command_topic(virt)
@@ -341,8 +343,9 @@ class AdapterCore:
             snapshot: dict[str, Any] = {}
             with self._lock:
                 for lease_id, rec in self._leases.items():
-                    state = None
-                    if self.simulation is not None and hasattr(self.simulation, "get_device_state"):
+                    state = rec.state
+                    active = not rec.released and rec.status != "RELEASED"
+                    if active and self.simulation is not None and hasattr(self.simulation, "get_device_state"):
                         state = self.simulation.get_device_state(rec.virtual_point)
                     status = "RELEASED" if (rec.released or rec.status == "RELEASED") else "ACTIVE"
                     snapshot[str(lease_id)] = {
@@ -351,7 +354,7 @@ class AdapterCore:
                         "virtualPoint": rec.virtual_point,
                         "status": status,
                         "released": (status == "RELEASED"),
-                        "state": state or {"current_temp": 25.0, "current_pressure": 0.10},
+                        "state": state,
                         "updatedTime": now_ms(),
                     }
             tmp_path = self.leases_file.with_suffix(".tmp")
@@ -454,11 +457,8 @@ class AdapterCore:
 
         # 订阅租约请求主题
         client.subscribe(self.lease_request_topic(), qos=qos)
-        # 使用单层通配符订阅指令主题，彻底保证所有物理点与未来/历史虚拟点位均能接收指令
         wildcard_cmd = f"smartlab/adapter/{self.setup.adapter_name}/+/command"
         client.subscribe(wildcard_cmd, qos=qos)
-        for topic in self._command_topics:
-            client.subscribe(topic, qos=qos)
         self._log.info("已订阅主题: %s, %s", self.lease_request_topic(), wildcard_cmd)
 
         # 仅在初次连接时发布注册报文，避免重连时重复全量广播
@@ -472,7 +472,7 @@ class AdapterCore:
             self._has_registered = True
             self._log.info("已向系统发布初始注册元数据 (%s)", REGISTER_TOPIC)
 
-        self._publish_json(self.heartbeat_topic(), {"status": "ALIVE", "timestamp": now_ms()})
+        self._publish_heartbeat()
 
     def _on_disconnect(self, _client, _userdata, _flags, reason_code, _properties=None) -> None:
         self._connected = False
@@ -557,9 +557,11 @@ class AdapterCore:
             if action == "LEASE":
                 record = self._lease(lease_id, device_point)
                 self._publish_lease_result(lease_id, "LEASE", "GRANTED", record.virtual_point)
+                self._publish_heartbeat()
             elif action == "RELEASE":
                 virtual = self._release(lease_id, device_point)
                 self._publish_lease_result(lease_id, "RELEASE", "RELEASED", virtual)
+                self._publish_heartbeat()
             else:
                 raise ValueError(f"不支持的租约 action: {action}")
         except Exception as error:
@@ -585,8 +587,6 @@ class AdapterCore:
             self.simulation.attach(virtual, physical_point)
             topic = self._command_topic(virtual)
             self._command_topics[topic] = virtual
-            if self._client is not None and self._connected:
-                self._client.subscribe(topic, qos=self.runtime.qos)
             record = LeaseRecord(lease_id, physical_point, virtual)
             self._leases[lease_id] = record
             self._virtual_to_lease[virtual] = lease_id
@@ -605,12 +605,12 @@ class AdapterCore:
             if virtual_point and virtual_point != record.virtual_point:
                 raise ValueError("RELEASE 的 devicePoint 与租约虚拟点不一致")
             if self.simulation is not None:
+                if hasattr(self.simulation, "get_device_state"):
+                    record.state = self.simulation.get_device_state(record.virtual_point)
                 self.simulation.detach(record.virtual_point)
             topic = self._command_topic(record.virtual_point)
             self._command_topics.pop(topic, None)
             self._virtual_to_lease.pop(record.virtual_point, None)
-            if self._client is not None and self._connected:
-                self._client.unsubscribe(topic)
             record.released = True
             record.status = "RELEASED"
             self._save_stored_leases()
@@ -634,8 +634,6 @@ class AdapterCore:
             self._virtual_to_lease[virtual_point] = lease_id
             topic = self._command_topic(virtual_point)
             self._command_topics[topic] = virtual_point
-            if self._client is not None and self._connected:
-                self._client.subscribe(topic, qos=self.runtime.qos)
         self.simulation.attach(virtual_point, physical_point)
         self._save_stored_leases()
 
@@ -731,9 +729,32 @@ class AdapterCore:
         interval = max(self.runtime.heartbeat_interval_sec, 1.0)
         while not self._stop.wait(interval):
             if self._connected:
-                self._publish_json(self.heartbeat_topic(), {"status": "ALIVE", "timestamp": now_ms()})
+                self._publish_heartbeat()
             if self._leases:
                 self._save_stored_leases()
+
+    def _heartbeat_body(self) -> dict[str, Any]:
+        points: list[dict[str, Any]] = []
+        reporter = getattr(self.control, "heartbeat_points", None)
+        if callable(reporter):
+            reported = reporter()
+            if isinstance(reported, list):
+                points.extend(item for item in reported if isinstance(item, dict))
+        with self._lock:
+            virtual_points = [
+                record.virtual_point
+                for record in self._leases.values()
+                if not record.released and record.status == "ACTIVE"
+            ]
+        for virtual_point in virtual_points:
+            online = False
+            if self.simulation is not None and hasattr(self.simulation, "get_device_state"):
+                online = self.simulation.get_device_state(virtual_point) is not None
+            points.append({"devicePoint": virtual_point, "online": online})
+        return {"status": "ALIVE", "timestamp": now_ms(), "points": points}
+
+    def _publish_heartbeat(self) -> None:
+        self._publish_json(self.heartbeat_topic(), self._heartbeat_body())
 
     def _publish_json(self, topic: str, payload: dict[str, Any]) -> None:
         client = self._client
@@ -770,7 +791,11 @@ def main() -> int:
     logger.info("MQTT Broker: %s:%d", runtime.broker, runtime.port)
     logger.info("==================================================")
     control = ControlImpl(runtime.extra, setup.physical_points, setup.point_fields)
-    simulation = SimulationImpl(runtime.extra.get("simulation", {}))
+    sim_config = dict(runtime.extra.get("simulation", {}))
+    plc_config = runtime.extra.get("plc", {})
+    if "temperatureTolerance" in plc_config:
+        sim_config.setdefault("temperatureTolerance", plc_config["temperatureTolerance"])
+    simulation = SimulationImpl(sim_config)
     AdapterCore(setup, runtime, control, simulation).run_forever()
     return 0
 

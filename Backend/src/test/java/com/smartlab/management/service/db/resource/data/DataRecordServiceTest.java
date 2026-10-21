@@ -3,6 +3,7 @@ package com.smartlab.management.service.db.resource.data;
 import com.smartlab.management.dto.common.PageResult;
 import com.smartlab.management.dto.resource.data.DataSeriesResponse;
 import com.smartlab.management.entity.resource.data.DataIndex;
+import com.smartlab.management.entity.resource.data.DataTemplateDetail;
 import com.smartlab.management.entity.workflow.Task;
 import com.smartlab.global.contract.TaskLifecycleState;
 import com.smartlab.management.mapper.resource.data.DataIndexMapper;
@@ -10,8 +11,10 @@ import com.smartlab.management.mapper.resource.data.DataTemplateDetailMapper;
 import com.smartlab.management.mapper.workflow.TaskMapper;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -211,6 +214,48 @@ class DataRecordServiceTest {
         assertNull(response.windowEnd());
         assertFalse(response.live());
         assertTrue(response.records().isEmpty());
+    }
+
+    private DataTemplateDetail column(String name) {
+        DataTemplateDetail detail = new DataTemplateDetail();
+        detail.setColumnName(name);
+        detail.setDeviceAttrKey(name);
+        return detail;
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void appendRecordsSendsRowsWithSameColumnsAsOneBatchInOrder() {
+        when(dataIndexMapper.selectById(1L)).thenReturn(createDataIndex(1L, "device_data_1"));
+        when(detailMapper.selectList(any())).thenReturn(List.of(column("attribute_1"), column("attribute_2")));
+        Instant t1 = Instant.ofEpochMilli(1_000L);
+        Instant t2 = Instant.ofEpochMilli(2_000L);
+        Instant t3 = Instant.ofEpochMilli(3_000L);
+        Instant t4 = Instant.ofEpochMilli(4_000L);
+
+        int inserted = service.appendRecords(1L, List.of(
+                Map.of("attribute_1", 1, "attribute_2", "a", "create_time", t1),
+                Map.of("attribute_1", 2, "attribute_2", "b", "create_time", t2),
+                Map.of("attribute_1", 3, "create_time", t3),
+                Map.of("unknown", 9),
+                Map.of("attribute_1", 4, "attribute_2", "d", "create_time", t4)
+        ), t4);
+
+        assertEquals(4, inserted);
+        ArgumentCaptor<String> sql = ArgumentCaptor.forClass(String.class);
+        ArgumentCaptor<List<Object[]>> args = ArgumentCaptor.forClass(List.class);
+        verify(jdbcTemplate, times(3)).batchUpdate(sql.capture(), args.capture());
+        verify(jdbcTemplate, never()).update(anyString(), any(Object[].class));
+
+        String full = "insert into \"device_data_1\" (\"attribute_1\", \"attribute_2\", \"create_time\") values (?, ?, ?)";
+        String partial = "insert into \"device_data_1\" (\"attribute_1\", \"create_time\") values (?, ?)";
+        assertEquals(List.of(full, partial, full), sql.getAllValues());
+        List<List<Object[]>> batches = args.getAllValues();
+        assertEquals(2, batches.get(0).size());
+        assertArrayEquals(new Object[]{1, "a", OffsetDateTime.ofInstant(t1, ZoneOffset.UTC)}, batches.get(0).get(0));
+        assertArrayEquals(new Object[]{2, "b", OffsetDateTime.ofInstant(t2, ZoneOffset.UTC)}, batches.get(0).get(1));
+        assertArrayEquals(new Object[]{3, OffsetDateTime.ofInstant(t3, ZoneOffset.UTC)}, batches.get(1).get(0));
+        assertArrayEquals(new Object[]{4, "d", OffsetDateTime.ofInstant(t4, ZoneOffset.UTC)}, batches.get(2).get(0));
     }
 
     @Test

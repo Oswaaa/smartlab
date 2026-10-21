@@ -68,9 +68,10 @@
               "properties": {
                 "name": { "type": "string", "description": "参数标识名" },
                 "displayName": { "type": "string", "description": "参数展示名" },
-                "dataType": { "$ref": "协议规范.json#/definitions/DataType" }
+                "dataType": { "$ref": "协议规范.json#/definitions/DataType" },
+                "required": { "type": "boolean", "description": "是否为必填参数，创建任务时检查" }
               },
-              "required": [ "name", "displayName", "dataType" ]
+              "required": [ "name", "displayName", "dataType", "required" ]
             }
           },
           "parameterMapping": {

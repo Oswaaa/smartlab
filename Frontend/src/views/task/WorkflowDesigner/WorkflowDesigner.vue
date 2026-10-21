@@ -5,23 +5,22 @@
         <el-tabs v-model="tab" class="resource-tabs" stretch>
           <el-tab-pane label="设备库" name="devices">
             <div class="tree-search-bar">
-              <input v-model="resourceKeyword" class="tree-search-input" placeholder="搜索类别、模型或实例..." />
+              <input v-model="resourceKeyword" class="tree-search-input" placeholder="搜索类别或模型..." />
             </div>
             <div class="tree-list-scroll">
               <el-tree v-if="filteredDeviceTree.length" :data="filteredDeviceTree" node-key="key" default-expand-all :indent="16" :expand-on-click-node="false">
                 <template #default="{ data }">
                   <div
                     class="t-row"
-                    :class="[`node-type-${data.kind}`, { 'is-draggable': data.kind === 'instance' && canEdit }]"
-                    :draggable="data.kind === 'instance' && canEdit"
+                    :class="[`node-type-${data.kind}`, { 'is-draggable': data.kind === 'model' && canEdit }]"
+                    :draggable="data.kind === 'model' && canEdit"
                     @dragstart="drag($event, data)"
-                    @dblclick="data.kind === 'instance' && addResource({ kind:'instance', instance:data.instance, model:data.model })"
-                    :title="data.kind === 'instance' ? '按住拖拽至画布，或双击添加设备实例' : data.kind === 'model' ? '设备模型' : '设备分类'"
+                    @dblclick="data.kind === 'model' && addResource({ kind:'model', model:data.model })"
+                    :title="data.kind === 'model' ? '按住拖拽至画布，或双击添加设备模型' : '设备分类'"
                   >
                     <span class="t-row-left">
                       <el-icon v-if="data.kind === 'category'" class="t-icon category-icon"><Folder /></el-icon>
                       <el-icon v-else-if="data.kind === 'model'" class="t-icon model-icon"><Document /></el-icon>
-                      <el-icon v-else class="t-icon instance-icon"><Cpu /></el-icon>
                       <span class="t-label">{{ data.label }}</span>
                     </span>
                     <div class="t-row-right">
@@ -83,7 +82,7 @@
         <div class="canvas-commandbar">
           <div class="island-left">
             <div class="flow-title-row">
-              <strong>{{ form.name || '未命名流程' }}</strong>
+              <strong :class="{ 'is-missing-name': nameMissing }">{{ form.name || '未填写流程名称' }}</strong>
               <span class="status-chip" :class="form.status === 'ACTIVE' ? 'is-active' : 'is-draft'">
                 <i class="chip-dot"></i>{{ form.status === 'ACTIVE' ? '已启用' : '草稿' }}
               </span>
@@ -129,7 +128,7 @@
               </ControlButton>
             </Controls>
             <template #node-workflow="slotProps">
-              <WorkflowCanvasNode :node="nodeByName(slotProps.data.nodeName)" :selected="slotProps.selected" :issues="nodeIssues(slotProps.data.nodeName)" :device-capabilities="capabilitiesForCanvasNode(slotProps.data.nodeName)" :hide-port-tooltips="connectionInProgress" />
+              <WorkflowCanvasNode :node="nodeByName(slotProps.data.nodeName)" :selected="slotProps.selected" :issues="nodeIssues(slotProps.data.nodeName)" :device-model-name="modelById(nodeByName(slotProps.data.nodeName)?.deviceModelId)?.modelName || ''" :device-capabilities="capabilitiesForCanvasNode(slotProps.data.nodeName)" :hide-port-tooltips="connectionInProgress" />
             </template>
             <template #edge-workflow="edgeProps">
               <WorkflowCanvasEdge v-bind="edgeProps" :hide-tooltips="connectionInProgress" />
@@ -168,17 +167,20 @@
                   <span class="fold-chev">▶</span>
                   <strong>基本配置</strong>
                 </span>
-                <span class="fold-meta">{{ basicConfigOpen ? (canEdit ? '点文字编辑' : '只读') : (form.name || '未命名流程') }}</span>
+                <span class="fold-meta" :class="{ 'is-warning': nameMissing }">{{ basicConfigOpen ? (canEdit ? '点文字编辑' : '只读') : (form.name || '未填写流程名称') }}</span>
               </button>
               <div v-if="basicConfigOpen" class="identity-block">
                 <input
+                  ref="nameInput"
                   class="id-name"
+                  :class="{ 'is-invalid': nameMissing }"
                   :value="form.name"
                   :disabled="!canEdit"
                   maxlength="80"
                   placeholder="流程名称"
                   @input="onNameInput"
                 />
+                <p v-if="nameMissing" class="name-missing-hint">请填写流程名称。</p>
                 <textarea
                   class="id-desc"
                   :value="form.description"
@@ -324,7 +326,7 @@
     </div>
     <el-drawer v-model="elementDrawerVisible" :with-header="false" class="workflow-element-drawer" size="600px" append-to-body @closed="clearElementSelection">
       <div class="workflow-element-drawer-body">
-        <WorkflowNodeInspector v-if="selectedNode" :visible="elementDrawerVisible" :node="selectedNode" :readonly="!canEdit" :protocol-metadata="protocolMetadata" :errors="selectedNodeIssues" :device-capabilities="selectedDeviceModel?.capabilities || []" :device-attributes="selectedDeviceModel?.attributes || []" :interface-connections="form.interfaceConnections" :port-connections="form.portConnections" :contract-ready="contractReady" @close="closeElementDrawer" @rename="renameSelectedNode" @update:node="replaceSelectedNode" @update:interface-connections="replaceInterfaceConnections" @update:port-connections="replacePortConnections" @remove-port-request="confirmRemovePort" @remove-node="removeSelectedNode" />
+        <WorkflowNodeInspector v-if="selectedNode" :visible="elementDrawerVisible" :node="selectedNode" :readonly="!canEdit" :protocol-metadata="protocolMetadata" :errors="selectedNodeIssues" :device-capabilities="selectedDeviceModel?.capabilities || []" :device-attributes="selectedDeviceModel?.attributes || []" :device-state-regions="selectedDeviceModel?.opState?.regions || []" :interface-connections="form.interfaceConnections" :port-connections="form.portConnections" :contract-ready="contractReady" @close="closeElementDrawer" @rename="renameSelectedNode" @update:node="replaceSelectedNode" @update:interface-connections="replaceInterfaceConnections" @update:port-connections="replacePortConnections" @remove-port-request="confirmRemovePort" @remove-node="removeSelectedNode" />
         <section v-else-if="selectedEdge" class="edge-view">
           <div class="connection-type" :class="selectedEdgeDetails.kind.toLowerCase()"><span>{{ selectedEdgeDetails.kind === 'PORT' ? '数据流' : '执行流' }}</span><b>{{ selectedEdgeDetails.title }}</b></div>
           <dl class="property-list">
@@ -342,7 +344,7 @@ import { computed, markRaw, nextTick, onBeforeUnmount, onMounted, reactive, ref,
 import { useRoute } from 'vue-router'
 import axios from 'axios'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { Cpu, Document, Folder, Grid, Plus } from '@element-plus/icons-vue'
+import { Document, Folder, Grid, Plus } from '@element-plus/icons-vue'
 import { VueFlow, useVueFlow } from '@vue-flow/core'
 import { Background } from '@vue-flow/background'
 import { Controls, ControlButton } from '@vue-flow/controls'
@@ -383,7 +385,6 @@ const route = useRoute()
 const tab = ref('devices')
 const workflows = ref<any[]>([])
 const models = ref<any[]>([])
-const instances = ref<any[]>([])
 const categories = ref<any[]>([])
 const draftSaving = ref(false)
 const publishSaving = ref(false)
@@ -433,6 +434,8 @@ const workflowIssueIndex = ref(indexWorkflowIssues())
 
 const empty = () => ({ id:null as number | null, name:'', description:'', version:1, status:'DRAFT', nodesDef:[] as NodeDefinition[], interfaceConnections:[] as any[], portConnections:[] as any[] })
 const form = reactive<any>(empty())
+const nameInput = ref<HTMLInputElement | null>(null)
+const nameMissing = computed(() => !String(form.name || '').trim())
 const palette = [
   { type:'START', label:'开始', glyph:'▶', description:'流程入口' },
   { type:'END', label:'结束', glyph:'■', description:'流程终点' },
@@ -551,10 +554,13 @@ const flowValidationIssues = computed<ValidationIssue[]>(() => [
   ...backendValidationIssues.value.filter(issue => issue.scope === 'flow'),
 ])
 const workflowValidationIssues = computed<ValidationIssue[]>(() => [...flowValidationIssues.value, ...nodeValidationIssues.value])
-const validationSummary = computed(() => ({
-  errors: workflowValidationIssues.value.filter(issue => issue.severity === 'error').length,
-  warnings: workflowValidationIssues.value.filter(issue => issue.severity === 'warning').length
-}))
+const validationSummary = computed(() => {
+  const counted = workflowValidationIssues.value.filter(issue => issue.scope !== 'flow' || String(issue.code).startsWith('server-'))
+  return {
+    errors: counted.filter(issue => issue.severity === 'error').length,
+    warnings: counted.filter(issue => issue.severity === 'warning').length,
+  }
+})
 const deviceTree = computed(() => {
   const map = new Map<any, any>()
   categories.value.forEach((category:any) => map.set(category.id || category.categoryId, { key:'c-'+(category.id || category.categoryId), kind:'category', type:'category', label:category.categoryName || category.name, children:[] }))
@@ -567,21 +573,18 @@ const deviceTree = computed(() => {
   models.value.forEach((model:any) => {
     const category = map.get(model.categoryId)
     const parent = category ? category.children : roots
-    const modelInstances = instances.value.filter((item:any) => Number(item.deviceModelId || item.modelId) === Number(model.id))
     parent.push({
       key:'m-'+model.id,
       kind:'model',
       type:'model',
       label:model.modelName,
       model,
-      count: modelInstances.length,
-      children: modelInstances.map((item:any) => ({ key:'i-'+item.id, kind:'instance', type:'instance', label:item.instanceName || '设备'+item.id, instance:item, model }))
     })
   })
   const withCounts = (nodes:any[]):any[] => nodes.map(node => {
     if (node.kind !== 'category') return node
     const children = withCounts(node.children || [])
-    return { ...node, children, count: children.reduce((total:number, child:any) => total + (child.kind === 'instance' ? 1 : Number(child.count || 0)), 0) }
+    return { ...node, children, count: children.reduce((total:number, child:any) => total + (child.kind === 'model' ? 1 : Number(child.count || 0)), 0) }
   })
   return withCounts(roots)
 })
@@ -807,9 +810,23 @@ function stripNodeName(title = '', nodeName = '') {
   return nodeName && title.startsWith(`${nodeName}：`) ? title.slice(nodeName.length + 1) : title
 }
 
+function focusFlowName() {
+  basicConfigOpen.value = true
+  nextTick(() => nameInput.value?.focus())
+}
+
+function ensureFlowName() {
+  if (!nameMissing.value) return true
+  focusFlowName()
+  checkSectionOpen.value = true
+  ElMessage.warning('请先在右侧「基本配置」填写流程名称')
+  return false
+}
+
 async function runValidation() {
   closeElementDrawer()
   if (checking.value) return
+  if (!ensureFlowName()) return
   validating.value = true
   simulating.value = false
   checkPhase.value = 'structure'
@@ -882,7 +899,7 @@ async function runValidation() {
       }
       walkExpanded.value = true
     }
-    ElMessage.error(error.message || '校验失败')
+    ElMessage.error(error.response?.data?.message || error.message || '校验失败')
   } finally {
     validating.value = false
     simulating.value = false
@@ -914,8 +931,11 @@ function focusSimulationIssue(issue: any) {
 }
 
 function focusValidationIssue(issue:ValidationIssue) {
+  if (issue.code === 'flow-name') {
+    focusFlowName()
+    return
+  }
   if (issue.scope === 'node' && issue.nodeName && nodeByName(issue.nodeName)) openNodeDrawer(issue.nodeName)
-  else if (issue.code === 'flow-name') ElMessage.info('请在右侧“基本配置”中填写流程名称')
   else ElMessage.info(issue.detail)
 }
 
@@ -1059,11 +1079,6 @@ function uniqueName(prefix:string) {
 
 function createResourceNode(data:any):NodeDefinition | null {
   if (data.kind === 'model') return createDeviceNode(data.model, uniqueName('device'))
-  if (data.kind === 'instance') {
-    const node = createDeviceNode(data.model, uniqueName('device'))
-    node.boundInstanceId = data.instance?.id
-    return node
-  }
   if (data.kind === 'workflow') return createSubflowNode(data.workflow, uniqueName('subflow'))
   if (data.kind === 'function') return createFunctionNode(data.type, uniqueName(data.type === 'START' ? 'start' : data.type === 'END' ? 'end' : data.type === 'BRANCH' ? 'branch' : 'aggregate'))
   return null
@@ -1072,12 +1087,8 @@ function createResourceNode(data:any):NodeDefinition | null {
 function drag(event:DragEvent, data:any) {
   if (!canEdit.value) return event.preventDefault()
   if (data.kind === 'workflow' && !canDragWorkflowResource(data.workflow, form.id, canEdit.value)) return event.preventDefault()
-  if (data.kind === 'model') {
-    event.preventDefault()
-    return
-  }
-  const payload = data.kind === 'instance' ? { kind:'instance', instance:data.instance, model:data.model } : data
-  if (!canEdit.value) return
+  if (!['model', 'workflow', 'function'].includes(data.kind)) return event.preventDefault()
+  const payload = data.kind === 'model' ? { kind:'model', model:data.model } : data
   event.dataTransfer?.setData('workflow-resource', JSON.stringify(payload))
   if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy'
 }
@@ -1105,9 +1116,6 @@ function addResource(data:any, position = suggestedPosition()) {
   if (!canEdit.value) return
   if (data.kind === 'workflow' && !canDragWorkflowResource(data.workflow, form.id, canEdit.value)) {
     return ElMessage.warning('当前流程不能引用自身')
-  }
-  if (data.kind === 'model') {
-    return ElMessage.warning('设备模型不能直接作为节点放至画布，请展开并拖拽具体的“设备实例”')
   }
   if (!contractReady.value) return ElMessage.error(contractError.value || '工作流系统模板尚未加载，暂时不能添加节点')
   let node:NodeDefinition | null
@@ -1395,9 +1403,8 @@ function loadList() {
 }
 
 async function loadCreationResources() {
-  const [modelResponse, instanceResponse, categoryResponse] = await Promise.all([axios.get('/api/device/model/list'),axios.get('/api/device/instance/list'),axios.get('/api/device/category/list')])
+  const [modelResponse, categoryResponse] = await Promise.all([axios.get('/api/device/model/list'),axios.get('/api/device/category/list')])
   if (modelResponse.data?.success) models.value = modelResponse.data.data || []
-  if (instanceResponse.data?.success) instances.value = instanceResponse.data.data || []
   if (categoryResponse.data?.success) categories.value = categoryResponse.data.data || []
 }
 
@@ -1453,6 +1460,7 @@ async function openSuccessorIfPresent(body:any) {
 
 async function saveDraft() {
   if (!canEdit.value) return ElMessage.warning('请先点击编辑')
+  if (!ensureFlowName()) return
   draftSaving.value = true
   const previousLayoutKey = currentLayoutKey()
   const currentLayout = serializeLayout(flowNodes.value)
@@ -1481,6 +1489,7 @@ async function saveDraft() {
 
 async function saveAsNew() {
   if (copySaving.value) return
+  if (!ensureFlowName()) return
   copySaving.value = true
   const currentLayout = serializeLayout(flowNodes.value)
   try {
@@ -1822,6 +1831,11 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
   font-size: 13px;
   font-weight: 600;
   line-height: 20px;
+}
+
+.flow-title-row > strong.is-missing-name {
+  color: var(--sl-danger, #dc2626);
+  font-weight: 600;
 }
 
 .status-chip,
@@ -2313,6 +2327,11 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
   white-space: nowrap;
 }
 
+.fold-meta.is-warning {
+  color: var(--sl-danger, #dc2626);
+  font-weight: 600;
+}
+
 .identity-block {
   padding: 8px 12px 14px;
 }
@@ -2356,6 +2375,18 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', handleBeforeUnl
 .id-name:focus,
 .id-desc:focus {
   box-shadow: inset 0 0 0 1px #cbd5e1;
+}
+
+.id-name.is-invalid {
+  box-shadow: inset 0 0 0 1px #fecaca;
+  background: #fef2f2;
+}
+
+.name-missing-hint {
+  margin: 6px 0 0;
+  color: var(--sl-danger, #dc2626);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .id-name:disabled,

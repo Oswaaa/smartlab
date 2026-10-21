@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.entity.resource.adapter.AdapterIndex;
+import com.smartlab.management.entity.resource.device.DeviceInstanceLifecycle;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
 import com.smartlab.management.entity.resource.device.DeviceModels;
 import com.smartlab.management.mapper.resource.adapter.AdapterIndexMapper;
@@ -22,6 +23,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -290,23 +292,62 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
      * 记录已注册 Adapter 的心跳并更新时间戳。
      * 未完成注册的 Adapter 不能因为心跳入库，否则会挡住 MQTT 待审核队列。
      */
-    public AdapterIndex heartbeat(String adapterName, String status) {
+    public AdapterIndex heartbeat(String adapterName, JsonNode payload) {
         AdapterIndex adapter = getByName(adapterName);
         if (adapter == null || !hasCompletedRegistration(adapter)) {
             log.debug("忽略未完成注册的 Adapter 心跳: {}", adapterName);
             return null;
         }
+        Map<String, Boolean> points = readHeartbeatPoints(payload);
         if (adapter.getStatus() == null || adapter.getStatus().isBlank()) {
             adapter.setStatus("ENABLED");
         }
         OffsetDateTime now = OffsetDateTime.now();
         adapter.setLastHeartbeat(now);
         AdapterIndex saved = save(adapter);
-        if (deviceTwinStatesMapper != null && adapterName != null && !adapterName.isBlank()
+        if (deviceTwinStatesMapper != null && deviceInstancesMapper != null
+                && adapterName != null && !adapterName.isBlank()
                 && !"DISABLED".equalsIgnoreCase(adapter.getStatus())) {
-            deviceTwinStatesMapper.updateOnlineStatusByAdapter(adapterName, "ONLINE", now);
+            applyHeartbeatPoints(adapterName.trim(), points, now);
         }
         return saved;
+    }
+
+    private Map<String, Boolean> readHeartbeatPoints(JsonNode payload) {
+        JsonNode points = payload == null ? null : payload.get("points");
+        if (points == null || !points.isArray()) {
+            throw new IllegalArgumentException("points 必须是数组");
+        }
+        Map<String, Boolean> reported = new LinkedHashMap<>();
+        for (JsonNode item : points) {
+            if (item == null || !item.isObject()) {
+                throw new IllegalArgumentException("points 元素必须是对象");
+            }
+            String devicePoint = item.path("devicePoint").asText("").trim();
+            JsonNode online = item.get("online");
+            if (devicePoint.isBlank() || online == null || !online.isBoolean()) {
+                throw new IllegalArgumentException("points 元素必须包含 devicePoint 和布尔 online");
+            }
+            if (reported.put(devicePoint, online.booleanValue()) != null) {
+                throw new IllegalArgumentException("points 中 devicePoint 重复: " + devicePoint);
+            }
+        }
+        return reported;
+    }
+
+    private void applyHeartbeatPoints(String adapterName, Map<String, Boolean> points, OffsetDateTime now) {
+        List<DeviceInstances> instances = deviceInstancesMapper.selectList(Wrappers.<DeviceInstances>lambdaQuery()
+                .eq(DeviceInstances::getBoundAdapterName, adapterName)
+                .eq(DeviceInstances::getLifecycleStatus, DeviceInstanceLifecycle.IN_USE));
+        for (DeviceInstances instance : instances) {
+            if (instance.getId() == null) {
+                continue;
+            }
+            String devicePoint = instance.getBoundDevicePoint() == null ? "" : instance.getBoundDevicePoint().trim();
+            Boolean online = points.get(devicePoint);
+            deviceTwinStatesMapper.updateOnlineStatus(instance.getId(),
+                    Boolean.TRUE.equals(online) ? "ONLINE" : "OFFLINE", now);
+        }
     }
 
     /**

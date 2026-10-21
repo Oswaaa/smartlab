@@ -10,6 +10,7 @@ import com.smartlab.engine.workflow.WorkflowExecutionOperations;
 import com.smartlab.engine.workflow.WorkflowInterfaceSnapshots;
 import com.smartlab.engine.workflow.WorkflowTaskLocks;
 import com.smartlab.engine.workflow.WorkflowTaskPollScheduler;
+import com.smartlab.engine.workflow.WorkflowRoundNodes;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.workflow.WorkflowDetailResponse;
 import com.smartlab.management.entity.workflow.FlowNode;
@@ -37,7 +38,6 @@ import java.util.Set;
 @Service
 public class InterfaceConnectionForwarder {
     private static final Set<String> TERMINAL_NODE_STATES = Set.of("SUCCEEDED", "FAILED", "TERMINATED");
-    private static final Set<String> ACTIVE_NODE_STATES = Set.of("PENDING", "RUNNING", "TERMINATING");
     private static final Set<String> DEVICE_EDGE_STATES = Set.of("RUNNING", "TERMINATING");
     private static final Set<String> TERMINAL_COMMAND_STATES = Set.of("COMPLETED", "FAILED", "ABORTED");
 
@@ -99,20 +99,23 @@ public class InterfaceConnectionForwarder {
 
     public void refreshForTask(Task task, List<TaskStep> steps) {
         if (task == null || task.getId() == null) return;
+        refreshForTask(task, WorkflowRoundNodes.load(steps, flowNodeService));
+    }
+
+    public void refreshForTask(Task task, WorkflowRoundNodes round) {
+        if (task == null || task.getId() == null) return;
+        List<TaskStep> steps = round.steps();
         if (steps == null || steps.isEmpty()) {
             index.replaceTaskEdges(task.getId(), List.of());
             return;
         }
-        Map<Long, FlowNode> nodesByStepId = nodesByStepId(steps);
         List<LiveInterfaceConnection> active = new ArrayList<>();
-        java.util.Set<Long> processedModels = new java.util.HashSet<>();
-        for (FlowNode node : nodesByStepId.values()) {
-            Long flowModelId = node.getFlowModelId();
-            if (flowModelId == null || !processedModels.add(flowModelId)) continue;
-            collectNodeToNode(task, steps, nodesByStepId, flowModelId, active);
+        for (Long flowModelId : round.activeModels()) {
+            if (flowModelId == null) continue;
+            collectNodeToNode(task, round, flowModelId, active);
         }
-        for (TaskStep step : steps) {
-            FlowNode node = nodesByStepId.get(step.getId());
+        for (TaskStep step : round.activeSteps()) {
+            FlowNode node = round.node(step);
             if (node == null || !"DEV_NODE".equals(node.getNodeType())) continue;
             if (!DEVICE_EDGE_STATES.contains(step.getNodeStatus())) continue;
             Long instanceId = resolveInstanceOrNull(task, step, node);
@@ -242,7 +245,7 @@ public class InterfaceConnectionForwarder {
         return index;
     }
 
-    private void collectNodeToNode(Task task, List<TaskStep> steps, Map<Long, FlowNode> nodesByStepId,
+    private void collectNodeToNode(Task task, WorkflowRoundNodes round,
             Long flowModelId, List<LiveInterfaceConnection> active) {
         WorkflowDetailResponse definition = workflowService.getDefinition(flowModelId);
         JsonNode connections = definition == null ? null : definition.getInterfaceConnections();
@@ -257,12 +260,8 @@ public class InterfaceConnectionForwarder {
             if (sourceRef == null || targetRef == null || sourceInterface.isBlank() || targetInterface.isBlank()) {
                 continue;
             }
-            for (TaskStep targetStep : steps) {
-                FlowNode targetNode = nodesByStepId.get(targetStep.getId());
-                if (targetNode == null || !flowModelId.equals(targetNode.getFlowModelId())) continue;
-                if (!Objects.equals(targetRef, targetStep.getNodeIdRef())) continue;
-                if (!ACTIVE_NODE_STATES.contains(targetStep.getNodeStatus())) continue;
-                TaskStep sourceStep = findPeerStep(steps, nodesByStepId, flowModelId, sourceRef, targetStep);
+            for (TaskStep targetStep : round.activeTargets(flowModelId, targetRef)) {
+                TaskStep sourceStep = round.peer(flowModelId, sourceRef, targetStep);
                 active.add(new LiveInterfaceConnection("NODE_TO_NODE", task.getId(), flowModelId,
                         sourceRef, targetRef, sourceInterface, targetInterface, null, null,
                         sourceStep == null ? null : sourceStep.getId(), targetStep.getId()));
@@ -380,29 +379,6 @@ public class InterfaceConnectionForwarder {
         } catch (RuntimeException ignored) {
             return null;
         }
-    }
-
-    private Map<Long, FlowNode> nodesByStepId(List<TaskStep> steps) {
-        Map<Long, FlowNode> nodesByStepId = new HashMap<>();
-        for (TaskStep step : steps) {
-            FlowNode node = flowNodeService.getById(step.getFlowNodeId());
-            if (node != null) nodesByStepId.put(step.getId(), node);
-        }
-        return nodesByStepId;
-    }
-
-    private TaskStep findPeerStep(List<TaskStep> steps, Map<Long, FlowNode> nodesByStepId,
-            Long flowModelId, Long nodeIdRef, TaskStep peer) {
-        for (TaskStep step : steps) {
-            FlowNode node = nodesByStepId.get(step.getId());
-            if (node == null || !flowModelId.equals(node.getFlowModelId())) continue;
-            if (!Objects.equals(nodeIdRef, step.getNodeIdRef())) continue;
-            if (!Objects.equals(peer.getParentStepId(), step.getParentStepId())) continue;
-            int peerDepth = peer.getStepDepth() == null ? 0 : peer.getStepDepth();
-            int depth = step.getStepDepth() == null ? 0 : step.getStepDepth();
-            if (peerDepth == depth) return step;
-        }
-        return null;
     }
 
     private Long deviceInstanceId(StateMachineInterfaceSignalEvent event) {

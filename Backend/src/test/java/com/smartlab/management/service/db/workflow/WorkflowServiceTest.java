@@ -459,6 +459,42 @@ class WorkflowServiceTest {
     }
 
     @Test
+    void acceptsStateMappingMatchingRegionType() throws Exception {
+        ServiceFixture fixture = semanticFixture();
+        WorkflowModelDocument request = validDeviceWorkflow();
+        ArrayNode variables = ((ObjectNode) request.getNodes().get(0)).withArray("internalVariables");
+        variables.addObject().put("name", "heaterState").put("dataType", "STRING").put("stateMapping", "Main");
+        variables.addObject().put("name", "heaterException").put("dataType", "JSON").put("stateMapping", "Exception");
+
+        assertDoesNotThrow(() -> fixture.service().validateDeviceConfiguration(request));
+    }
+
+    @Test
+    void rejectsStateMappingToUnknownRegion() throws Exception {
+        ServiceFixture fixture = semanticFixture();
+        WorkflowModelDocument request = validDeviceWorkflow();
+        ((ObjectNode) request.getNodes().get(0)).withArray("internalVariables").addObject()
+                .put("name", "heaterState").put("dataType", "STRING").put("stateMapping", "Mode");
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> fixture.service().validateDeviceConfiguration(request));
+        assertTrue(error.getMessage().contains("stateMapping"), error.getMessage());
+        assertTrue(error.getMessage().contains("Mode"), error.getMessage());
+    }
+
+    @Test
+    void rejectsStateMappingWithWrongDataTypeForRegion() throws Exception {
+        ServiceFixture fixture = semanticFixture();
+        WorkflowModelDocument request = validDeviceWorkflow();
+        ((ObjectNode) request.getNodes().get(0)).withArray("internalVariables").addObject()
+                .put("name", "heaterException").put("dataType", "STRING").put("stateMapping", "Exception");
+
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> fixture.service().validateDeviceConfiguration(request));
+        assertTrue(error.getMessage().contains("JSON"), error.getMessage());
+    }
+
+    @Test
     void rejectsUnknownDeviceConnectionInterface() throws Exception {
         ServiceFixture fixture = semanticFixture();
         WorkflowModelDocument request = validDeviceWorkflow();
@@ -552,6 +588,10 @@ class WorkflowServiceTest {
         DeviceModels model = new DeviceModels();
         model.setCapabilities(JsonNodeSupport.MAPPER.readTree("[{\"capabilityName\":\"heat\",\"parameters\":[{\"name\":\"target\",\"dataType\":\"DOUBLE\"}]}]"));
         model.setAttributes(JsonNodeSupport.MAPPER.readTree("[{\"attributeName\":\"temperature\",\"dataType\":\"DOUBLE\"}]"));
+        model.setOpState(JsonNodeSupport.MAPPER.readTree("""
+                {"regions":[{"regionName":"Main","regionType":"OPERATIONAL","initialStateName":"停止"},
+                            {"regionName":"Exception","regionType":"EXCEPTION","initialStateName":""}]}
+                """));
         model.setStateMachineInterfaces(JsonNodeSupport.MAPPER.readTree("""
                 [{"name":"Interface_workflow_in","direction":"IN","interfaceType":"WORKFLOW"},
                  {"name":"Interface_state_out","direction":"OUT","interfaceType":"STATE"}]

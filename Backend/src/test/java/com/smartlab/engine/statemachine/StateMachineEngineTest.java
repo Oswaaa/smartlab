@@ -137,10 +137,9 @@ class StateMachineEngineTest {
         Fixture fixture = fixture();
         startAndRun(fixture, "A-1");
         List<ObjectNode> started = fixture.engine().dispatchSignal(7L, "Interface_workflow_in", "WF_EXECUTE_ABORT", Map.of());
-        ObjectNode abortSent = started.stream().filter(signal -> "CMD_STATE".equals(signal.path("signalName").asText())).filter(signal -> "SENT".equals(signal.path("payload").path("stateName").asText())).filter(signal -> !"A-1".equals(signal.path("payload").path("messageId").asText())).findFirst().orElseThrow();
-        String abortMessageId = abortSent.path("payload").path("messageId").asText();
-        assertFalse(abortMessageId.isBlank());
+        String abortMessageId = publishedCommandMessageId(fixture, "CMD_ABORT");
         assertNotEquals("A-1", abortMessageId);
+        assertNull(state(started, "SENT", abortMessageId));
         assertEquals("ABORTING", fixture.twinState().getCurrentCmdState());
         assertEquals("CMD_ABORT", signal(started, "CMD_ABORT").path("signalName").asText());
 
@@ -150,7 +149,7 @@ class StateMachineEngineTest {
 
         List<ObjectNode> completed = fixture.engine().dispatchAdapterEvent(7L, "STOP_DONE",
                 JsonNodeSupport.objectNode().put("messageId", abortMessageId));
-        assertNotNull(state(completed, "COMPLETED", abortMessageId));
+        assertNull(state(completed, "COMPLETED", abortMessageId));
         assertNotNull(state(completed, "ABORTED", "A-1"));
         assertEquals("IDLE", fixture.twinState().getCurrentCmdState());
     }
@@ -161,14 +160,15 @@ class StateMachineEngineTest {
         startAndRun(fixture, "A-1");
         List<ObjectNode> started = fixture.engine().dispatchSignal(7L, "Interface_constraint_in", "CONSTRAINT_EXECUTE",
                 Map.of("deviceInstanceId", 7L, "capabilityName", "emergencyStop", "messageId", "C-1", "parameters", Map.of()));
-        assertNotNull(state(started, "SENT", "C-1"));
+        assertNull(state(started, "SENT", "C-1"));
         assertEquals("RUNNING", fixture.twinState().getCurrentCmdState());
         assertEquals("CMD_START", signal(started, "CMD_START").path("signalName").asText());
 
         List<ObjectNode> completed = fixture.engine().dispatchAdapterEvent(7L, "EMERGENCY_DONE",
                 JsonNodeSupport.objectNode().put("messageId", "C-1"));
-        assertNotNull(state(completed, "COMPLETED", "C-1"));
+        assertNull(state(completed, "COMPLETED", "C-1"));
         assertNotNull(state(completed, "ABORTED", "A-1"));
+        assertEquals("IDLE", fixture.twinState().getCurrentCmdState());
     }
 
     @Test
@@ -235,7 +235,7 @@ class StateMachineEngineTest {
                 Map.of("deviceInstanceId", 7L, "capabilityName", "emergencyStop", "messageId", "C-1", "parameters", Map.of()));
 
         assertNotNull(state(termination, "SENT", "C-1"));
-        assertEquals("IDLE", fixture.twinState().getCurrentCmdState());
+        assertEquals("SENT", fixture.twinState().getCurrentCmdState());
         assertEquals(List.of(), start(fixture, "A-1", "heat"));
 
         fixture.engine().dispatchAdapterEvent(7L, "EMERGENCY_DONE",
@@ -247,13 +247,8 @@ class StateMachineEngineTest {
     void explicitNormalTerminalResultWinsAndDestroysAttachedAbortRuntime() {
         Fixture fixture = fixture();
         startAndRun(fixture, "A-1");
-        List<ObjectNode> abortStarted = fixture.engine().dispatchSignal(
-                7L, "Interface_workflow_in", "WF_EXECUTE_ABORT", Map.of());
-        String abortMessageId = abortStarted.stream()
-                .filter(signal -> stateName(signal).equals("SENT"))
-                .map(signal -> signal.path("payload").path("messageId").asText())
-                .filter(messageId -> !"A-1".equals(messageId))
-                .findFirst().orElseThrow();
+        fixture.engine().dispatchSignal(7L, "Interface_workflow_in", "WF_EXECUTE_ABORT", Map.of());
+        String abortMessageId = publishedCommandMessageId(fixture, "CMD_ABORT");
 
         List<ObjectNode> normalCompleted = fixture.engine().dispatchAdapterEvent(7L, "HEAT_DONE",
                 JsonNodeSupport.objectNode().put("messageId", "A-1"));
@@ -275,9 +270,52 @@ class StateMachineEngineTest {
         List<ObjectNode> failed = fixture.engine().dispatchAdapterEvent(7L, "EMERGENCY_FAILED",
                 JsonNodeSupport.objectNode().put("messageId", "C-1"));
 
-        assertNotNull(state(failed, "FAILED", "C-1"));
+        assertNull(state(failed, "FAILED", "C-1"));
         assertEquals("RUNNING", fixture.twinState().getCurrentCmdState());
         assertNull(state(failed, "ABORTED", "A-1"));
+    }
+
+    @Test
+    void terminationOutsideScopeLeavesNormalLifecycleUntouched() {
+        Fixture fixture = fixture();
+        ((ObjectNode) fixture.model().getCapabilities().get(2)).putArray("scope").removeAll().add("other");
+        startAndRun(fixture, "A-1");
+        List<ObjectNode> started = fixture.engine().dispatchSignal(7L, "Interface_constraint_in", "CONSTRAINT_EXECUTE",
+                Map.of("deviceInstanceId", 7L, "capabilityName", "emergencyStop", "messageId", "C-1", "parameters", Map.of()));
+        assertNull(state(started, "SENT", "C-1"));
+        assertEquals("RUNNING", fixture.twinState().getCurrentCmdState());
+
+        List<ObjectNode> completed = fixture.engine().dispatchAdapterEvent(7L, "EMERGENCY_DONE",
+                JsonNodeSupport.objectNode().put("messageId", "C-1"));
+        assertNull(state(completed, "COMPLETED", "C-1"));
+        assertNull(state(completed, "ABORTED", "A-1"));
+        assertEquals("RUNNING", fixture.twinState().getCurrentCmdState());
+    }
+
+    @Test
+    void idleTerminationFailureReturnsLifecycleToIdle() {
+        Fixture fixture = fixture();
+        fixture.engine().dispatchSignal(7L, "Interface_constraint_in", "CONSTRAINT_EXECUTE",
+                Map.of("deviceInstanceId", 7L, "capabilityName", "emergencyStop", "messageId", "C-1", "parameters", Map.of()));
+        assertEquals("SENT", fixture.twinState().getCurrentCmdState());
+
+        List<ObjectNode> failed = fixture.engine().dispatchAdapterEvent(7L, "EMERGENCY_FAILED",
+                JsonNodeSupport.objectNode().put("messageId", "C-1"));
+        assertNotNull(state(failed, "FAILED", "C-1"));
+        assertEquals("IDLE", fixture.twinState().getCurrentCmdState());
+    }
+
+    private String publishedCommandMessageId(Fixture fixture, String signalName) {
+        ArgumentCaptor<Object> events = ArgumentCaptor.forClass(Object.class);
+        verify(fixture.publisher(), atLeastOnce()).publishEvent(events.capture());
+        return events.getAllValues().stream()
+                .filter(StateMachineSendActionEvent.class::isInstance)
+                .map(StateMachineSendActionEvent.class::cast)
+                .filter(event -> signalName.equals(event.signalName()))
+                .map(StateMachineSendActionEvent::messageId)
+                .filter(messageId -> messageId != null && !messageId.isBlank())
+                .reduce((first, second) -> second)
+                .orElseThrow();
     }
 
     private List<ObjectNode> start(Fixture fixture, String messageId, String capability) {

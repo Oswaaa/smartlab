@@ -1,4 +1,5 @@
 import { workflowTriggerActions, workflowTriggerConditions } from './workflowNodeDefinition.js'
+import { capabilityInputParameters } from './deviceCapabilityParameters.js'
 
 const LAYOUT_PREFIX = 'smartlab:workflow-layout:'
 
@@ -155,8 +156,8 @@ export function workflowDeviceCapabilityPresentation(node = {}, capabilities = [
     || capability.capabilityDisplayName
     || definition?.displayName
     || capabilityName
-  const parameters = definition?.parameters?.length
-    ? definition.parameters
+  const parameters = definition
+    ? capabilityInputParameters(definition)
     : Object.keys(capability.capabilityParameters || {}).map(name => ({ name, displayName: name }))
   const detail = parameters.map(item => item.displayName || item.name).filter(Boolean).join('、')
   return { title, detail }

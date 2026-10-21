@@ -763,6 +763,7 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
                 requireText(parameter, "name", "能力参数");
                 requireText(parameter, "displayName", "能力参数");
                 validateDataType(parameter, "dataType", "能力参数");
+                requireSchemaBoolean(parameter, "required", "能力参数");
             }
             for (JsonNode mapping : iterable(capability.path("parameterMapping"))) {
                 requireSchemaText(mapping, "commandParamName", "能力参数映射");
@@ -1306,9 +1307,9 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
                 if (!mapping.has("fixedValue") || mapping.path("fixedValue").isNull()) {
                     throw new IllegalArgumentException("固定参数缺少 fixedValue: " + commandName + "." + commandParamName);
                 }
-                if (!isFixedValueCompatible(commandType, mapping.path("fixedValue"))) {
-                    throw new IllegalArgumentException(
-                            "固定参数值类型不匹配: " + commandName + "." + commandParamName + " 需要 " + commandType);
+                if (!isFixedValueOfType(commandType, mapping.get("fixedValue"))) {
+                    throw new IllegalArgumentException("固定参数值类型不匹配: " + commandName + "." + commandParamName
+                            + " 需要 " + commandType);
                 }
                 continue;
             }
@@ -1331,33 +1332,21 @@ public class DeviceModelService extends ManagementCrudService<DeviceModels> {
         }
     }
 
-    private boolean isFixedValueCompatible(String dataType, JsonNode value) {
+    private String normalizeDataType(String dataType) {
+        return adapterManifestService.normalizeDataType(dataType);
+    }
+
+    private boolean isFixedValueOfType(String dataType, JsonNode value) {
         if (value == null || value.isNull()) {
             return false;
         }
         return switch (normalizeDataType(dataType)) {
-            case "BOOLEAN" -> value.isBoolean() || "true".equalsIgnoreCase(value.asText())
-                    || "false".equalsIgnoreCase(value.asText());
-            case "INTEGER" -> value.isIntegralNumber() || value.asText().matches("-?\\d+");
-            case "DOUBLE" -> value.isNumber() || isNumeric(value.asText());
-            default -> !value.asText().isBlank();
+            case "BOOLEAN" -> value.isBoolean();
+            case "INTEGER" -> value.isIntegralNumber();
+            case "DOUBLE" -> value.isNumber();
+            case "JSON" -> value.isObject() || value.isArray();
+            default -> value.isTextual() && !value.asText().isBlank();
         };
-    }
-
-    private boolean isNumeric(String value) {
-        if (value == null || value.isBlank()) {
-            return false;
-        }
-        try {
-            Double.parseDouble(value);
-            return true;
-        } catch (NumberFormatException ignored) {
-            return false;
-        }
-    }
-
-    private String normalizeDataType(String dataType) {
-        return adapterManifestService.normalizeDataType(dataType);
     }
 
     private Iterable<JsonNode> iterable(JsonNode node) {

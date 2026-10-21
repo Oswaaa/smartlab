@@ -44,7 +44,7 @@
       <header class="node-header">
         <span class="node-chip" v-html="meta.icon"></span>
         <div class="node-title">
-          <strong class="node-name" :title="node?.name">{{ node?.name || '未命名节点' }}</strong>
+          <strong class="node-name" :title="nodeTitleTooltip">{{ nodeTitle }}</strong>
           <small class="node-kind">{{ meta.label }}</small>
         </div>
         <span v-if="issues.length" class="warning-dot" :title="issues[0]?.message || '节点配置未完成'">!</span>
@@ -155,6 +155,7 @@ const props = withDefaults(defineProps<{
   selected?: boolean
   issues?: Item[]
   deviceCapabilities?: Item[]
+  deviceModelName?: string
   hidePortTooltips?: boolean
   readonly?: boolean
   overlay?: Item
@@ -163,6 +164,7 @@ const props = withDefaults(defineProps<{
   selected: false,
   issues: () => [],
   deviceCapabilities: () => [],
+  deviceModelName: '',
   hidePortTooltips: false,
   readonly: false,
   overlay: () => ({}),
@@ -176,6 +178,12 @@ const canvasSize = computed(() => workflowCanvasNodeSize(props.node || {}))
 const nodeDimensions = computed(() => ({ width: `${canvasSize.value.width}px`, height: `${canvasSize.value.height}px` }))
 const isCompact = computed(() => props.node?.functionType === 'START' || props.node?.functionType === 'END')
 const isBranch = computed(() => props.node?.functionType === 'BRANCH')
+const nodeTitle = computed(() => props.node?.nodeType === 'DEV_NODE'
+  ? (props.deviceModelName || `设备模型 #${props.node.deviceModelId || '-'}`)
+  : (props.node?.name || '未命名节点'))
+const nodeTitleTooltip = computed(() => props.node?.nodeType === 'DEV_NODE'
+  ? `${nodeTitle.value} · 节点 ${props.node.name || '-'}`
+  : nodeTitle.value)
 const meta = computed(() => {
   if (props.node?.nodeType === 'DEV_NODE') return { className: 'device', label: '设备能力', icon: NODE_ICONS.device }
   if (props.node?.nodeType === 'SUBFLOW_NODE') return { className: 'subflow', label: '子流程', icon: NODE_ICONS.subflow }

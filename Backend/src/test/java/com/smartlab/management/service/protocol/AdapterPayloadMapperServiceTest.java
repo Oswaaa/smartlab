@@ -189,6 +189,128 @@ class AdapterPayloadMapperServiceTest {
     }
 
     @Test
+    void omitsUnmappedOptionalCapabilityParameter() {
+        DeviceInstancesMapper instances = mock(DeviceInstancesMapper.class);
+        DeviceModelsMapper models = mock(DeviceModelsMapper.class);
+        AdapterPayloadMapperService service = new AdapterPayloadMapperService(
+                instances, models, mock(DeviceTwinStatesMapper.class), mock(AdapterIndexService.class),
+                new AdapterManifestService(), new ProtocolDictionaryService(),
+                mock(DataIndexService.class), mock(DataRecordService.class), mock(ApplicationEventPublisher.class), mock(StateMachineEngine.class));
+        DeviceInstances instance = new DeviceInstances();
+        instance.setId(7L);
+        instance.setDeviceModelId(9L);
+        instance.setBoundAdapterName("adapter-1");
+        instance.setBoundDevicePoint("point-1");
+        instance.setLifecycleStatus("IN_USE");
+        when(instances.selectById(7L)).thenReturn(instance);
+
+        DeviceModels model = new DeviceModels();
+        var capability = JsonNodeSupport.objectNode();
+        capability.put("capabilityName", "heat");
+        capability.put("adapterCommandName", "heat");
+        capability.putArray("parameters")
+                .add(JsonNodeSupport.objectNode().put("name", "duration").put("dataType", "INTEGER").put("required", true))
+                .add(JsonNodeSupport.objectNode().put("name", "temperature2").put("dataType", "DOUBLE").put("required", false));
+        capability.putArray("parameterMapping")
+                .add(JsonNodeSupport.objectNode().put("commandParamName", "duration").put("capabilityParamName", "duration").put("isFixedValue", false))
+                .add(JsonNodeSupport.objectNode().put("commandParamName", "temperature2").put("capabilityParamName", "temperature2").put("isFixedValue", false));
+        model.setCapabilities(JsonNodeSupport.MAPPER.createArrayNode().add(capability));
+        var contract = JsonNodeSupport.objectNode();
+        contract.putObject("config").put("protocol", "MQTT");
+        var command = contract.putArray("commands").addObject().put("commandName", "heat");
+        command.putArray("commandParameters")
+                .add(JsonNodeSupport.objectNode().put("paramName", "duration").put("dataType", "INTEGER"))
+                .add(JsonNodeSupport.objectNode().put("paramName", "temperature2").put("dataType", "DOUBLE"));
+        model.setAdapterContract(contract);
+        when(models.selectById(9L)).thenReturn(model);
+
+        var message = service.buildCommandMessage("7", "heat", "msg-1", java.util.Map.of("duration", 30));
+
+        assertEquals(30, message.path("payload").path("parameters").path("duration").asInt());
+        assertFalse(message.path("payload").path("parameters").has("temperature2"));
+    }
+
+    @Test
+    void booleanFixedValueIsSentAsBoolean() {
+        DeviceInstancesMapper instances = mock(DeviceInstancesMapper.class);
+        DeviceModelsMapper models = mock(DeviceModelsMapper.class);
+        AdapterPayloadMapperService service = new AdapterPayloadMapperService(
+                instances, models, mock(DeviceTwinStatesMapper.class), mock(AdapterIndexService.class),
+                new AdapterManifestService(), new ProtocolDictionaryService(),
+                mock(DataIndexService.class), mock(DataRecordService.class), mock(ApplicationEventPublisher.class), mock(StateMachineEngine.class));
+        DeviceInstances instance = new DeviceInstances();
+        instance.setId(7L);
+        instance.setDeviceModelId(9L);
+        instance.setBoundAdapterName("adapter-1");
+        instance.setBoundDevicePoint("point-1");
+        instance.setLifecycleStatus("IN_USE");
+        when(instances.selectById(7L)).thenReturn(instance);
+
+        DeviceModels model = new DeviceModels();
+        var capability = JsonNodeSupport.objectNode();
+        capability.put("capabilityName", "mute");
+        capability.put("adapterCommandName", "setAlarmMute");
+        capability.putArray("parameters");
+        capability.putArray("parameterMapping").addObject()
+                .put("commandParamName", "muted")
+                .put("isFixedValue", true)
+                .put("fixedValue", true);
+        model.setCapabilities(JsonNodeSupport.MAPPER.createArrayNode().add(capability));
+        var contract = JsonNodeSupport.objectNode();
+        contract.putObject("config").put("protocol", "MQTT");
+        contract.putArray("commands").addObject()
+                .put("commandName", "setAlarmMute")
+                .putArray("commandParameters").addObject()
+                .put("paramName", "muted").put("dataType", "BOOLEAN");
+        model.setAdapterContract(contract);
+        when(models.selectById(9L)).thenReturn(model);
+
+        var message = service.buildCommandMessage("7", "mute", "msg-1", java.util.Map.of());
+
+        assertTrue(message.path("payload").path("parameters").path("muted").isBoolean());
+        assertTrue(message.path("payload").path("parameters").path("muted").booleanValue());
+    }
+
+    @Test
+    void stringFixedBooleanIsRejected() {
+        DeviceInstancesMapper instances = mock(DeviceInstancesMapper.class);
+        DeviceModelsMapper models = mock(DeviceModelsMapper.class);
+        AdapterPayloadMapperService service = new AdapterPayloadMapperService(
+                instances, models, mock(DeviceTwinStatesMapper.class), mock(AdapterIndexService.class),
+                new AdapterManifestService(), new ProtocolDictionaryService(),
+                mock(DataIndexService.class), mock(DataRecordService.class), mock(ApplicationEventPublisher.class), mock(StateMachineEngine.class));
+        DeviceInstances instance = new DeviceInstances();
+        instance.setId(7L);
+        instance.setDeviceModelId(9L);
+        instance.setBoundAdapterName("adapter-1");
+        instance.setBoundDevicePoint("point-1");
+        instance.setLifecycleStatus("IN_USE");
+        when(instances.selectById(7L)).thenReturn(instance);
+
+        DeviceModels model = new DeviceModels();
+        var capability = JsonNodeSupport.objectNode();
+        capability.put("capabilityName", "mute");
+        capability.put("adapterCommandName", "setAlarmMute");
+        capability.putArray("parameters");
+        capability.putArray("parameterMapping").addObject()
+                .put("commandParamName", "muted")
+                .put("isFixedValue", true)
+                .put("fixedValue", "true");
+        model.setCapabilities(JsonNodeSupport.MAPPER.createArrayNode().add(capability));
+        var contract = JsonNodeSupport.objectNode();
+        contract.putObject("config").put("protocol", "MQTT");
+        contract.putArray("commands").addObject()
+                .put("commandName", "setAlarmMute")
+                .putArray("commandParameters").addObject()
+                .put("paramName", "muted").put("dataType", "BOOLEAN");
+        model.setAdapterContract(contract);
+        when(models.selectById(9L)).thenReturn(model);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> service.buildCommandMessage("7", "mute", "msg-1", java.util.Map.of()));
+    }
+
+    @Test
     void rejectsTelemetryWhoseValueDoesNotMatchTheResolvedAttributeType() {
         DeviceInstancesMapper instances = mock(DeviceInstancesMapper.class);
         DeviceTwinStatesMapper twins = mock(DeviceTwinStatesMapper.class);
@@ -323,6 +445,65 @@ class AdapterPayloadMapperServiceTest {
                 && ((Number) list.get(0).get("temperature")).doubleValue() == 25.0
                 && ((Number) list.get(1).get("temperature")).doubleValue() == 26.0), any());
         verify(twins).patchAttributesOnly(eq(17L), argThat(json -> json.contains("\"temperature\":26.0")), any());
+    }
+
+    @Test
+    void singleSamplesOfOneDeviceShareOneAppendAndKeepTheLatestTwinValue() {
+        DeviceInstancesMapper instances = mock(DeviceInstancesMapper.class);
+        DeviceTwinStatesMapper twins = mock(DeviceTwinStatesMapper.class);
+        DataIndexService dataSets = mock(DataIndexService.class);
+        DataRecordService records = mock(DataRecordService.class);
+        ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
+        AdapterPayloadMapperService service = new AdapterPayloadMapperService(
+                instances, mock(DeviceModelsMapper.class), twins, mock(AdapterIndexService.class),
+                new AdapterManifestService(), new ProtocolDictionaryService(),
+                dataSets, records, events, mock(StateMachineEngine.class));
+        DeviceInstances instance = new DeviceInstances();
+        instance.setId(17L);
+        instance.setDeviceModelId(9L);
+        instance.setBoundAdapterName("adapter-1");
+        instance.setBoundDevicePoint("point-1");
+        instance.setLifecycleStatus("IN_USE");
+        var config = JsonNodeSupport.objectNode();
+        var binding = config.putObject("adapterBinding");
+        binding.putObject("rawToModelAttribute").put("MW0", "temperature");
+        binding.putArray("resolvedAttributes").addObject()
+                .put("modelAttributeName", "temperature")
+                .put("templateAttributeName", "MW0")
+                .put("dataType", "DOUBLE");
+        instance.setInstanceConfig(config);
+        when(instances.selectList(any())).thenReturn(List.of(instance));
+        DeviceTwinStates twin = new DeviceTwinStates();
+        twin.setId(5L);
+        twin.setInstanceId(17L);
+        when(twins.selectOne(any())).thenReturn(twin);
+        when(twins.patchAttributesOnly(eq(17L), any(), any())).thenReturn(1);
+        DataIndex dataSet = new DataIndex();
+        dataSet.setId(33L);
+        when(dataSets.listByDeviceInstance(17L)).thenReturn(List.of(dataSet));
+        var first = JsonNodeSupport.objectNode().put("timestamp", 1_000L);
+        first.putObject("telemetryData").put("MW0", 23.4);
+        var second = JsonNodeSupport.objectNode().put("timestamp", 4_000L);
+        second.putObject("telemetryData").put("MW0", 23.5);
+        var rejected = JsonNodeSupport.objectNode().put("timestamp", 7_000L);
+        rejected.putObject("telemetryData").put("MW0", "bad");
+
+        service.applyTelemetrySamples("adapter-1", "point-1", List.of(first, rejected, second));
+
+        verify(records).appendRecords(eq(33L), argThat(list -> list.size() == 2
+                && ((Number) list.get(0).get("temperature")).doubleValue() == 23.4
+                && list.get(0).get("create_time").equals(Instant.ofEpochMilli(1_000L))
+                && ((Number) list.get(1).get("temperature")).doubleValue() == 23.5
+                && list.get(1).get("create_time").equals(Instant.ofEpochMilli(4_000L))), eq(Instant.ofEpochMilli(4_000L)));
+        verify(records, never()).appendRecord(any(), any(), any());
+        verify(twins).patchAttributesOnly(eq(17L), argThat(json -> json.contains("\"temperature\":23.5")), any());
+        verify(events).publishEvent(argThat((Object event) -> {
+            if (!(event instanceof com.smartlab.global.event.DeviceTelemetryUpdatedEvent telemetry)) {
+                return false;
+            }
+            return telemetry.occurredAt().equals(Instant.ofEpochMilli(4_000L))
+                    && telemetry.attributes().path("temperature").asDouble() == 23.5;
+        }));
     }
 
 }

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.engine.workflow.WorkflowExecutionOperations;
 import com.smartlab.engine.workflow.WorkflowPortSnapshots;
+import com.smartlab.engine.workflow.WorkflowRoundNodes;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.smartlab.management.dto.workflow.WorkflowDetailResponse;
 import com.smartlab.management.entity.workflow.FlowNode;
@@ -18,9 +19,7 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 
@@ -61,40 +60,35 @@ public class PortConnectionPuller {
 
     public void pullForTask(Task task, List<TaskStep> steps) {
         if (task == null || task.getId() == null) return;
+        pullForTask(task, WorkflowRoundNodes.load(steps, flowNodeService));
+    }
+
+    public void pullForTask(Task task, WorkflowRoundNodes round) {
+        if (task == null || task.getId() == null) return;
+        List<TaskStep> steps = round.steps();
         if (steps == null || steps.isEmpty()) {
             index.replaceTaskEdges(task.getId(), List.of());
             return;
         }
-        Map<Long, FlowNode> nodesByStepId = new HashMap<>();
-        for (TaskStep step : steps) {
-            FlowNode node = flowNodeService.getById(step.getFlowNodeId());
-            if (node != null) nodesByStepId.put(step.getId(), node);
-        }
         List<PortConnectionEdge> active = new ArrayList<>();
-        java.util.Set<Long> processedModels = new java.util.HashSet<>();
-        for (FlowNode node : nodesByStepId.values()) {
-            Long flowModelId = node.getFlowModelId();
-            if (flowModelId == null || !processedModels.add(flowModelId)) continue;
+        for (Long flowModelId : round.activeModels()) {
+            if (flowModelId == null) continue;
             WorkflowDetailResponse definition = workflowService.getDefinition(flowModelId);
             JsonNode connections = definition == null ? null : definition.getPortConnections();
             if (connections == null || !connections.isArray() || connections.isEmpty()) continue;
             var compiled = workflowService.compileDefinition(flowModelId);
-            Map<Long, FlowNode> nodesByRef = nodesByRef(flowModelId, nodesByStepId);
             for (JsonNode connection : connections) {
                 Long sourceRef = compiled.refsByNodeName().get(connection.path("source").path("nodeName").asText(""));
                 Long targetRef = compiled.refsByNodeName().get(connection.path("target").path("nodeName").asText(""));
                 if (sourceRef == null || targetRef == null) continue;
-                for (TaskStep targetStep : steps) {
-                    FlowNode targetNode = nodesByStepId.get(targetStep.getId());
-                    if (targetNode == null || !flowModelId.equals(targetNode.getFlowModelId())) continue;
-                    if (!Objects.equals(targetRef, targetStep.getNodeIdRef())) continue;
-                    if (!ACTIVE_NODE_STATES.contains(targetStep.getNodeStatus())) continue;
-                    FlowNode sourceNode = nodesByRef.get(sourceRef);
+                for (TaskStep targetStep : round.activeTargets(flowModelId, targetRef)) {
+                    FlowNode targetNode = round.node(targetStep);
+                    FlowNode sourceNode = round.node(flowModelId, sourceRef);
                     if (sourceNode == null) {
                         sourceNode = nodeByRef(flowModelId, sourceRef);
                     }
                     if (sourceNode == null) continue;
-                    TaskStep sourceStep = findPeerStep(steps, nodesByStepId, flowModelId, sourceRef, targetStep);
+                    TaskStep sourceStep = round.peer(flowModelId, sourceRef, targetStep);
                     active.add(new PortConnectionEdge(task.getId(), flowModelId, sourceRef, targetRef,
                             connection.path("source").path("portName").asText(""),
                             connection.path("target").path("portName").asText(""),
@@ -200,31 +194,9 @@ public class PortConnectionPuller {
         return frozen;
     }
 
-    private Map<Long, FlowNode> nodesByRef(Long flowModelId, Map<Long, FlowNode> nodesByStepId) {
-        Map<Long, FlowNode> result = new HashMap<>();
-        for (FlowNode node : nodesByStepId.values()) {
-            if (flowModelId.equals(node.getFlowModelId())) result.put(node.getNodeIdRef(), node);
-        }
-        return result;
-    }
-
     private FlowNode nodeByRef(Long flowModelId, Long nodeIdRef) {
         for (FlowNode node : workflowService.nodes(flowModelId)) {
             if (Objects.equals(node.getNodeIdRef(), nodeIdRef)) return node;
-        }
-        return null;
-    }
-
-    private TaskStep findPeerStep(List<TaskStep> steps, Map<Long, FlowNode> nodesByStepId,
-            Long flowModelId, Long nodeIdRef, TaskStep peer) {
-        for (TaskStep step : steps) {
-            FlowNode node = nodesByStepId.get(step.getId());
-            if (node == null || !flowModelId.equals(node.getFlowModelId())) continue;
-            if (!Objects.equals(nodeIdRef, step.getNodeIdRef())) continue;
-            if (!Objects.equals(peer.getParentStepId(), step.getParentStepId())) continue;
-            int peerDepth = peer.getStepDepth() == null ? 0 : peer.getStepDepth();
-            int depth = step.getStepDepth() == null ? 0 : step.getStepDepth();
-            if (peerDepth == depth) return step;
         }
         return null;
     }

@@ -3,6 +3,7 @@ package com.smartlab.management.service.db.constraint;
 import com.baomidou.mybatisplus.core.conditions.query.QueryWrapper;
 import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.smartlab.global.contract.DataType;
 import com.smartlab.global.contract.ObservableObjectType;
 import com.smartlab.global.contract.SystemViolationAction;
@@ -359,7 +360,15 @@ public class ConstraintRuleService extends ManagementCrudService<ConstraintRule>
             if (name.isBlank()) continue;
             JsonNode value = values.get(name);
             String display = definition.path("displayName").asText(name);
+            JsonNode required = definition.get("required");
+            if (required == null || !required.isBoolean()) {
+                throw new IllegalArgumentException(scope + ".parameters." + name + "缺少required");
+            }
             if (isBlankCapabilityParameter(value)) {
+                if (!required.booleanValue()) {
+                    if (values instanceof ObjectNode object) object.remove(name);
+                    continue;
+                }
                 throw new IllegalArgumentException(scope + ".parameters." + name + "不能为空（" + display + "）");
             }
             String dataType = definition.path("dataType").asText("STRING");

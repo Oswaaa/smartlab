@@ -41,7 +41,7 @@
           <template #label>业务配置 <small v-if="tabErrors.business">{{ tabErrors.business }}</small></template>
           <WorkflowBusinessPanel :node="node" :readonly="readonly" :contract-ready="contractReady" :device-capabilities="deviceCapabilities" :guidance="nodeGuidance" @update:node="emit('update:node', $event)" />
         </el-tab-pane>
-        <el-tab-pane name="variables"><template #label>变量空间 <small v-if="tabErrors.variables">{{ tabErrors.variables }}</small></template><WorkflowVariablesPanel :node="node" :readonly="readonly" :device-attributes="deviceAttributes" @update:node="emit('update:node', $event)" /></el-tab-pane>
+        <el-tab-pane name="variables"><template #label>变量空间 <small v-if="tabErrors.variables">{{ tabErrors.variables }}</small></template><WorkflowVariablesPanel :node="node" :readonly="readonly" :device-attributes="deviceAttributes" :device-state-regions="deviceStateRegions" @update:node="emit('update:node', $event)" /></el-tab-pane>
         <el-tab-pane name="ports"><template #label>数据端口 <small v-if="tabErrors.ports">{{ tabErrors.ports }}</small></template><WorkflowDataPortsPanel :node="node" :readonly="readonly" @update:node="emit('update:node', $event)" @remove-port-request="emit('remove-port-request', $event)" /></el-tab-pane>
         <el-tab-pane name="interfaces">
           <template #label>控制接口 <small v-if="tabErrors.interfaces">{{ tabErrors.interfaces }}</small></template>
@@ -70,7 +70,7 @@ import WorkflowDataPortsPanel from './inspector/WorkflowDataPortsPanel.vue'
 import WorkflowControlInterfacesPanel from './inspector/WorkflowControlInterfacesPanel.vue'
 import WorkflowLifecyclePanel from './inspector/WorkflowLifecyclePanel.vue'
 type Item = Record<string, any>
-const props = withDefaults(defineProps<{ visible: boolean, node: Item | null, readonly?: boolean, protocolMetadata?: Item, contractReady?: boolean, errors?: Item[], deviceCapabilities?: Item[], deviceAttributes?: Item[], interfaceConnections?: Item[], portConnections?: Item[] }>(), { readonly: false, protocolMetadata: () => ({}), contractReady: false, errors: () => [], deviceCapabilities: () => [], deviceAttributes: () => [], interfaceConnections: () => [], portConnections: () => [] })
+const props = withDefaults(defineProps<{ visible: boolean, node: Item | null, readonly?: boolean, protocolMetadata?: Item, contractReady?: boolean, errors?: Item[], deviceCapabilities?: Item[], deviceAttributes?: Item[], deviceStateRegions?: Item[], interfaceConnections?: Item[], portConnections?: Item[] }>(), { readonly: false, protocolMetadata: () => ({}), contractReady: false, errors: () => [], deviceCapabilities: () => [], deviceAttributes: () => [], deviceStateRegions: () => [], interfaceConnections: () => [], portConnections: () => [] })
 const emit = defineEmits<{ rename: [name: string], 'update:node': [node: Item], 'update:interfaceConnections': [connections: Item[]], 'update:portConnections': [connections: Item[]], 'remove-port-request': [portName: string], 'remove-node': [], close: [] }>()
 const activeTab = ref('business')
 const nameDraft = ref('')

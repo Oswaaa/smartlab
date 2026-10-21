@@ -47,6 +47,28 @@ const startNode = {
   interfaces: [{ name: 'Interface_workflow_out', direction: 'OUT', interfaceType: 'WORKFLOW' }]
 }
 
+test('固定命令参数不出现在画布摘要，required 不影响外部参数的展示', () => {
+  const node = { capability: { capabilityName: 'move', capabilityParameters: { parameter_1: 2 } } }
+  const capability = {
+    capabilityName: 'move', displayName: '上下移动到目标位置',
+    parameters: [
+      { name: 'parameter_1', displayName: '目标轴', required: true },
+      { name: 'parameter_2', displayName: '目标脉冲位置', required: true },
+    ],
+    parameterMapping: [
+      { commandParamName: 'axis', isFixedValue: true, fixedValue: 1 },
+      { commandParamName: 'position', isFixedValue: false, capabilityParamName: 'parameter_2' },
+    ],
+  }
+  assert.equal(workflowDeviceCapabilitySummary(node, [capability]), '上下移动到目标位置 · 目标脉冲位置')
+  capability.parameters[1].required = false
+  assert.equal(workflowDeviceCapabilitySummary(node, [capability]), '上下移动到目标位置 · 目标脉冲位置')
+  capability.parameterMapping[1] = { commandParamName: 'position', isFixedValue: true, fixedValue: 100 }
+  assert.equal(workflowDeviceCapabilitySummary(node, [capability]), '上下移动到目标位置')
+  capability.parameterMapping.push({ commandParamName: 'otherAxis', isFixedValue: false, capabilityParamName: 'parameter_1' })
+  assert.equal(workflowDeviceCapabilitySummary(node, [capability]), '上下移动到目标位置 · 目标轴')
+})
+
 const deviceNode = {
   name: 'device1',
   nodeType: 'DEV_NODE',

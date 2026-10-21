@@ -7,6 +7,7 @@ import com.smartlab.management.service.db.common.ManagementCrudService;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.Collection;
 
 /**
  * 流程节点表服务。
@@ -33,5 +34,10 @@ public class FlowNodeService extends ManagementCrudService<FlowNode> {
                 Wrappers.<FlowNode>lambdaQuery()
                         .eq(FlowNode::getFlowModelId, flowModelId)
                         .orderByAsc(FlowNode::getId));
+    }
+
+    public List<FlowNode> listByIds(Collection<Long> ids) {
+        if (ids == null || ids.isEmpty()) return List.of();
+        return mapper.selectBatchIds(ids);
     }
 }

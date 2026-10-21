@@ -326,58 +326,104 @@ public class AdapterPayloadMapperService {
         if (rawToModel == null || rawToModel.isEmpty()) {
             return;
         }
+        List<TelemetrySample> samples = new ArrayList<>(items.size());
+        for (JsonNode item : items) {
+            TelemetrySample sample = mapTelemetrySample(route, rawToModel, item, "telemetry");
+            if (sample != null) {
+                samples.add(sample);
+            }
+        }
+        writeTelemetrySamples(route, samples);
+    }
+
+    /**
+     * 把同一设备点上已经到达的多条 SINGLE 写成一批。每张数据表一次 {@code appendRecords}，
+     * 孪生属性和遥测事件只取最后一条有效采样。
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void applyTelemetrySamples(String adapterName, String devicePoint, List<JsonNode> messages) {
+        if (messages == null || messages.isEmpty()) {
+            return;
+        }
+        AdapterRouteDTO route = resolveAdapterRoute(adapterName, devicePoint);
+        if (route == null) {
+            return;
+        }
+        Map<String, String> rawToModel = route.getRawToModelMap();
+        if (rawToModel == null || rawToModel.isEmpty()) {
+            return;
+        }
+        List<TelemetrySample> samples = new ArrayList<>(messages.size());
+        for (JsonNode message : messages) {
+            try {
+                TelemetrySample sample = mapTelemetrySample(route, rawToModel, message, "telemetry");
+                if (sample != null) {
+                    samples.add(sample);
+                }
+            } catch (IllegalArgumentException error) {
+                log.warn("跳过无法映射的遥测采样 {}/{}: {}", adapterName, devicePoint, error.getMessage());
+            }
+        }
+        writeTelemetrySamples(route, samples);
+    }
+
+    private TelemetrySample mapTelemetrySample(AdapterRouteDTO route, Map<String, String> rawToModel,
+            JsonNode message, String pathPrefix) {
+        if (message == null || !message.isObject()) {
+            return null;
+        }
+        JsonNode data = message.path("telemetryData");
+        if (data == null || !data.isObject() || data.isEmpty()) {
+            return null;
+        }
+        long sourceTimestamp = message.path("timestamp").asLong(0L);
+        Instant sourceTime = sourceTimestamp > 0L ? Instant.ofEpochMilli(sourceTimestamp) : Instant.now();
+        ObjectNode mappedValues = JsonNodeSupport.objectNode();
+        data.fields().forEachRemaining(entry -> {
+            String modelAttr = rawToModel.get(entry.getKey());
+            if (modelAttr == null || modelAttr.isBlank()) {
+                return;
+            }
+            JsonNode definition = findResolvedAttribute(route.getResolvedAttributes(), entry.getKey(), modelAttr);
+            if (definition == null) {
+                return;
+            }
+            mappedValues.set(modelAttr, validatedValue(
+                    entry.getValue(), definition, pathPrefix + "." + entry.getKey()));
+        });
+        if (mappedValues.isEmpty()) {
+            return null;
+        }
+        Map<String, Object> record = new HashMap<>();
+        mappedValues.fields().forEachRemaining(entry -> record.put(entry.getKey(), recordValue(entry.getValue())));
+        record.put("create_time", sourceTime);
+        return new TelemetrySample(mappedValues, record, sourceTime);
+    }
+
+    private void writeTelemetrySamples(AdapterRouteDTO route, List<TelemetrySample> samples) {
+        if (samples == null || samples.isEmpty()) {
+            return;
+        }
         Long instanceId = route.getDeviceInstanceId();
         List<DataIndex> dataIndexes = dataIndexService.listByDeviceInstance(instanceId);
         if (dataIndexes == null || dataIndexes.isEmpty()) {
             throw new IllegalStateException("设备实例缺少数据集，拒绝产生不可追溯的遥测状态: " + instanceId);
         }
-
-        List<Map<String, Object>> records = new ArrayList<>(items.size());
-        ObjectNode lastMappedValues = null;
-        Instant lastSourceTime = null;
-
-        for (JsonNode item : items) {
-            if (item == null || !item.isObject()) continue;
-            long itemTs = item.path("timestamp").asLong(0L);
-            Instant sourceTime = itemTs > 0L ? Instant.ofEpochMilli(itemTs) : Instant.now();
-            JsonNode data = item.path("telemetryData");
-            if (data == null || !data.isObject()) continue;
-
-            ObjectNode mappedValues = JsonNodeSupport.objectNode();
-            data.fields().forEachRemaining(entry -> {
-                String modelAttr = rawToModel.get(entry.getKey());
-                if (modelAttr == null || modelAttr.isBlank()) return;
-                JsonNode definition = findResolvedAttribute(route.getResolvedAttributes(), entry.getKey(), modelAttr);
-                if (definition != null) {
-                    mappedValues.set(modelAttr, validatedValue(
-                            entry.getValue(), definition, "telemetry." + entry.getKey()));
-                }
-            });
-            if (mappedValues.isEmpty()) continue;
-
-            Map<String, Object> recordMap = new HashMap<>();
-            mappedValues.fields().forEachRemaining(entry -> recordMap.put(entry.getKey(), recordValue(entry.getValue())));
-            recordMap.put("create_time", sourceTime);
-            records.add(recordMap);
-
-            lastMappedValues = mappedValues;
-            lastSourceTime = sourceTime;
+        List<Map<String, Object>> records = new ArrayList<>(samples.size());
+        for (TelemetrySample sample : samples) {
+            records.add(sample.record());
         }
-
-        if (records.isEmpty()) {
-            return;
-        }
-
+        TelemetrySample last = samples.get(samples.size() - 1);
         for (DataIndex index : dataIndexes) {
-            dataRecordService.appendRecords(index.getId(), records, lastSourceTime);
+            dataRecordService.appendRecords(index.getId(), records, last.sourceTime());
         }
+        getOrCreateTwinState(instanceId);
+        twinStatesMapper.patchAttributesOnly(instanceId, last.mappedValues().toString(), OffsetDateTime.now());
+        eventPublisher.publishEvent(new DeviceTelemetryUpdatedEvent(
+                instanceId, route.getDeviceModelId(), last.mappedValues().deepCopy(), last.sourceTime()));
+    }
 
-        if (lastMappedValues != null) {
-            getOrCreateTwinState(instanceId);
-            twinStatesMapper.patchAttributesOnly(instanceId, lastMappedValues.toString(), OffsetDateTime.now());
-            eventPublisher.publishEvent(new DeviceTelemetryUpdatedEvent(
-                    instanceId, route.getDeviceModelId(), lastMappedValues.deepCopy(), lastSourceTime));
-        }
+    private record TelemetrySample(ObjectNode mappedValues, Map<String, Object> record, Instant sourceTime) {
     }
 
     private Object recordValue(JsonNode value) {
@@ -443,6 +489,9 @@ public class AdapterPayloadMapperService {
                 } else {
                     String capabilityParamName = mapping.path("capabilityParamName").asText("");
                     if (!parameters.containsKey(capabilityParamName)) {
+                        if (!capabilityParameterRequired(capability, capabilityParamName)) {
+                            continue;
+                        }
                         throw new IllegalArgumentException("缺少操作参数: " + capabilityParamName);
                     }
                     result.set(commandParamName, validatedValue(
@@ -503,6 +552,21 @@ public class AdapterPayloadMapperService {
             throw new IllegalArgumentException("Adapter 命令不存在: " + commandName);
         }
         return command;
+    }
+
+    private boolean capabilityParameterRequired(JsonNode capability, String parameterName) {
+        JsonNode definition = null;
+        for (JsonNode parameter : iterable(capability.path("parameters"))) {
+            if (parameterName.equals(parameter.path("name").asText(""))) {
+                definition = parameter;
+                break;
+            }
+        }
+        JsonNode required = definition == null ? null : definition.get("required");
+        if (required == null || !required.isBoolean()) {
+            throw new IllegalArgumentException("能力参数缺少required: " + parameterName);
+        }
+        return required.booleanValue();
     }
 
     private JsonNode findCapability(JsonNode capabilities, String capabilityName) {

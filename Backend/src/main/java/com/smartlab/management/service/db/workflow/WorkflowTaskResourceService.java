@@ -283,8 +283,10 @@ public class WorkflowTaskResourceService {
                 holeNames.add(parameter.name());
                 JsonNode value = slotParameters.path(parameter.name());
                 if (isParameterHole(value)) {
-                    issues.add(bindingIssue("TASK_BINDING_PARAM_MISSING", requirement.slotId(),
-                            "能力参数未填写: " + parameter.name(), "在创建任务时填写该设备节点的空洞参数"));
+                    if (parameter.required()) {
+                        issues.add(bindingIssue("TASK_BINDING_PARAM_MISSING", requirement.slotId(),
+                                "能力参数未填写: " + parameter.name(), "在创建任务时填写该设备节点的空洞参数"));
+                    }
                 } else if (!matchesDataType(parameter.dataType(), value)) {
                     issues.add(bindingIssue("TASK_BINDING_PARAM_TYPE", requirement.slotId(),
                             "能力参数类型不正确: " + parameter.name() + "，要求" + parameter.dataType(),
@@ -354,12 +356,17 @@ public class WorkflowTaskResourceService {
             if (name.isBlank()) continue;
             JsonNode modelValue = modelValues.get(name);
             boolean hole = isParameterHole(modelValue);
+            JsonNode requiredNode = definition.get("required");
+            if (requiredNode == null || !requiredNode.isBoolean()) {
+                throw new IllegalArgumentException("能力参数缺少required: " + name);
+            }
             result.add(new CapabilityParameterRequirement(
                     name,
                     definition.path("displayName").asText(name),
                     definition.path("dataType").asText(""),
                     hole ? JsonNodeSupport.MAPPER.nullNode() : modelValue,
-                    hole));
+                    hole,
+                    requiredNode.booleanValue()));
         }
         return result;
     }
@@ -386,7 +393,10 @@ public class WorkflowTaskResourceService {
             }
             JsonNode slotValue = slotParameters == null ? null : slotParameters.get(parameter.name());
             if (isParameterHole(slotValue)) {
-                throw new IllegalStateException("DEV_NODE能力参数未绑定: " + parameter.name());
+                if (parameter.required()) {
+                    throw new IllegalStateException("DEV_NODE能力参数未绑定: " + parameter.name());
+                }
+                continue;
             }
             effective.set(parameter.name(), slotValue.deepCopy());
         }

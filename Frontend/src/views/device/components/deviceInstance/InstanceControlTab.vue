@@ -78,21 +78,27 @@
             </div>
           </el-form-item>
 
-          <div class="control-param-grid" v-if="activeControlParams.length">
-            <el-form-item v-for="param in activeControlParams" :key="paramKey(param)" :label="param.displayName || param.name || param.paramName">
-              <el-switch v-if="isBooleanType(param.dataType)" v-model="controlParamValues[paramKey(param)]" />
-              <el-input-number
-                v-else-if="isNumberType(param.dataType)"
-                v-model="controlParamValues[paramKey(param)]"
-                :precision="isIntegerType(param.dataType) ? 0 : undefined"
-                :controls="false"
-                style="width: 100%"
-              />
-              <el-input v-else v-model="controlParamValues[paramKey(param)]" :placeholder="param.dataType || 'STRING'" />
-              <div class="field-hint">数据类型: {{ param.dataType || '-' }}</div>
-            </el-form-item>
+          <div class="control-param-scroll">
+            <div class="control-param-grid" v-if="activeControlParams.length">
+              <el-form-item v-for="param in activeControlParams" :key="paramKey(param)" :label="param.displayName || param.name || param.paramName">
+                <div class="param-control">
+                  <div v-if="isBooleanType(param.dataType)" class="bool-field">
+                  <el-switch v-model="controlParamValues[paramKey(param)]" />
+                  <span class="bool-field-label">{{ controlParamValues[paramKey(param)] ? '开启' : '关闭' }}</span>
+                </div>
+                  <el-input-number
+                    v-else-if="isNumberType(param.dataType)"
+                    v-model="controlParamValues[paramKey(param)]"
+                    :precision="isIntegerType(param.dataType) ? 0 : undefined"
+                    :controls="false"
+                  />
+                  <el-input v-else v-model="controlParamValues[paramKey(param)]" :placeholder="param.dataType || 'STRING'" />
+                  <div class="field-hint">数据类型: {{ param.dataType || '-' }} · {{ param.required === false ? '可以不填' : '必填' }}</div>
+                </div>
+              </el-form-item>
+            </div>
+            <div v-else class="empty-inline">当前所选操作无需配置外部参数。</div>
           </div>
-          <div v-else class="empty-inline">当前所选操作无需配置外部参数。</div>
         </el-form>
         <div class="control-action-bar">
           <button
@@ -305,7 +311,20 @@ const activeControlCapability = computed(() => {
   if (!activeControlGroup.value) return null
   return activeControlGroup.value.capabilities.find((capability: any) => capability.capabilityName === controlCapabilityName.value) || null
 })
-const activeControlParams = computed(() => asArray(activeControlCapability.value?.parameters).filter((param: any) => !param.internal))
+const isFixedMapping = (mapping: any) => mapping?.isFixedValue === true || String(mapping?.isFixedValue ?? '').toLowerCase() === 'true'
+const activeControlParams = computed(() => {
+  const capability = activeControlCapability.value
+  const params = asArray(capability?.parameters).filter((param: any) => !param.internal)
+  const mappings = asArray(capability?.parameterMapping)
+  if (!mappings.length) return params
+  const boundNames = new Set(
+    mappings
+      .filter((mapping: any) => !isFixedMapping(mapping))
+      .map((mapping: any) => String(mapping.capabilityParamName || ''))
+      .filter(Boolean)
+  )
+  return params.filter((param: any) => boundNames.has(paramKey(param)))
+})
 const canAbortActiveCapability = computed(() => {
   if (!activeControlGroup.value || !activeControlCapability.value) return false
   const cap = activeControlCapability.value
@@ -327,7 +346,9 @@ const commandDevicePoint = computed(() =>
 const resetControlParams = () => {
   const next: Record<string, any> = {}
   activeControlParams.value.forEach((param: any) => {
-    next[paramKey(param)] = controlParamValues.value[paramKey(param)] ?? defaultValueForType(param.dataType)
+    const key = paramKey(param)
+    const optionalEmpty = param.required === false && !isBooleanType(param.dataType)
+    next[key] = controlParamValues.value[key] ?? (optionalEmpty ? null : defaultValueForType(param.dataType))
   })
   controlParamValues.value = next
 }
@@ -522,11 +543,17 @@ watch(selectedVirtual, (vm) => {
 
 onUnmounted(stopVirtualSnapshotPoll)
 
+const parameterValueEmpty = (param: any, value: any) => {
+  if (isBooleanType(param.dataType)) return value == null
+  return value == null || value === ''
+}
 const buildControlParameters = () => {
   const parameters: Record<string, any> = {}
   activeControlParams.value.forEach((param: any) => {
     const key = paramKey(param)
-    let value = controlParamValues.value[key]
+    const raw = controlParamValues.value[key]
+    if (param.required === false && parameterValueEmpty(param, raw)) return
+    let value = raw
     if (isIntegerType(param.dataType)) value = value === '' || value == null ? 0 : Number.parseInt(String(value), 10)
     else if (isNumberType(param.dataType)) value = value === '' || value == null ? 0 : Number(value)
     parameters[key] = value
@@ -562,6 +589,17 @@ const copyConsoleLogs = async () => {
 
 const sendManualCommand = async () => {
   if (props.retired || !controlCapabilityName.value || !props.instance?.instanceId) return
+  const undeclared = activeControlParams.value.filter((param: any) => param.required !== true && param.required !== false)
+  if (undeclared.length) {
+    ElMessage.error(`能力参数缺少是否必填: ${undeclared.map((param: any) => param.displayName || paramKey(param)).join('、')}`)
+    return
+  }
+  const missing = activeControlParams.value.filter((param: any) =>
+    param.required === true && parameterValueEmpty(param, controlParamValues.value[paramKey(param)]))
+  if (missing.length) {
+    ElMessage.error(`请填写必填参数: ${missing.map((param: any) => param.displayName || paramKey(param)).join('、')}`)
+    return
+  }
   sendingControl.value = true
   const targetInstanceId = activeControlGroup.value?.targetInstanceId || props.instance.instanceId
   const params = buildControlParameters()
@@ -671,9 +709,19 @@ const handleForceResetCommand = async () => {
   overflow: hidden;
 }
 .full-height-workbench { height: 100%; min-height: 0; }
-.control-left-col { display: flex; flex-direction: column; gap: 12px; min-height: 0; height: 100%; }
+.control-left-col {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.control-left-col::-webkit-scrollbar { width: 6px; }
+.control-left-col::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
 .control-card {
-  background: #ffffff;
+  background: var(--sl-bg-surface, #ffffff);
   border: 1px solid var(--sl-border-base, #e2e8f0);
   border-radius: var(--sl-radius-sm, 6px);
   display: flex;
@@ -681,14 +729,14 @@ const handleForceResetCommand = async () => {
   overflow: hidden;
 }
 .control-form-card {
-  flex-shrink: 0;
-  overflow: visible !important;
+  flex: 0 0 auto;
+  overflow: visible;
   position: relative;
-  z-index: 50;
+  z-index: 5;
 }
-.control-meta-card { flex: 1; min-height: 0; }
+.control-meta-card { flex: 0 0 auto; position: relative; z-index: 1; }
 .card-title-bar {
-  padding: 8px 14px;
+  padding: 6px 12px;
   background: #f8fafc;
   border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
   display: flex;
@@ -699,23 +747,31 @@ const handleForceResetCommand = async () => {
 }
 .card-title { font-size: 13px; font-weight: 600; color: var(--sl-text-heading, #0f172a); }
 .target-bar {
-  padding: 8px 12px;
+  padding: 6px 12px;
   border-bottom: 1px solid var(--sl-border-base, #e2e8f0);
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
+  flex-shrink: 0;
 }
 .target-label { font-size: 12px; font-weight: 600; color: var(--sl-text-heading, #0f172a); flex-shrink: 0; }
 .target-select { width: 220px; }
 .target-bar .btn-primary-blue,
 .target-bar .btn-danger-outline { height: 28px; padding: 0 10px; font-size: 12px; }
-.manual-control-form { padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; position: relative; overflow: visible; }
+.manual-control-form {
+  padding: 8px 12px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+  overflow: visible;
+}
 .manual-control-form :deep(.el-form-item) { margin-bottom: 0 !important; }
 .manual-control-form :deep(.el-form-item__label) {
   padding-bottom: 3px !important; font-size: 12px; font-weight: 600; color: var(--sl-text-heading, #0f172a); line-height: 1.2;
 }
-.tree-select-form-item { position: relative; }
+.tree-select-form-item { position: relative; flex: 0 0 auto; }
 .custom-tree-select-trigger {
   width: 100%; height: 32px; min-height: 32px;
   border: 1px solid var(--sl-border-input, #cbd5e1);
@@ -793,15 +849,36 @@ const handleForceResetCommand = async () => {
 .cap-row-left { display: flex; align-items: center; gap: 6px; }
 .cap-bullet { width: 4px; height: 4px; border-radius: 50%; background: var(--sl-border-input, #94a3b8); }
 .tree-cap-row.active .cap-bullet { background: var(--sl-primary, #2563eb); }
-.control-param-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px 12px; }
-.control-param-grid .field-hint { font-size: 10.5px; color: var(--sl-text-secondary, #64748b); margin-top: 1px; line-height: 1.2; }
-.control-action-bar {
-  padding: 8px 12px; background: #f8fafc; border-top: 1px solid var(--sl-border-base, #e2e8f0);
-  display: flex; align-items: center; gap: 8px;
+.control-param-scroll {
+  overflow: visible;
+  padding: 0 0 6px;
 }
-.meta-card-body { flex: 1; padding: 8px 12px; overflow: hidden; display: flex; flex-direction: column; }
+.control-param-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; align-items: start; }
+.control-param-grid :deep(.el-form-item__content) { display: block; line-height: normal; }
+.param-control { display: flex; flex-direction: column; align-items: stretch; gap: 4px; width: 100%; min-width: 0; }
+.bool-field {
+  box-sizing: border-box;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 1px solid var(--sl-border-input, #cbd5e1);
+  border-radius: var(--sl-radius-sm, 6px);
+  background: var(--sl-bg-surface, #ffffff);
+}
+.bool-field-label { font-size: 12px; line-height: 1; color: var(--sl-text-body, #334155); }
+.param-control :deep(.el-input-number),
+.param-control :deep(.el-input) { width: 100%; }
+.param-control :deep(.el-input__wrapper) { min-height: 32px; }
+.control-param-grid .field-hint { font-size: 10.5px; color: var(--sl-text-secondary, #64748b); margin: 0; line-height: 1.2; }
+.control-action-bar {
+  padding: 6px 12px; background: var(--sl-bg-page, #f8fafc); border-top: 1px solid var(--sl-border-base, #e2e8f0);
+  display: flex; align-items: center; gap: 8px; flex-shrink: 0;
+}
+.meta-card-body { padding: 6px 12px 8px; overflow: visible; }
 .meta-descriptions { flex: 1; }
-.meta-descriptions :deep(.el-descriptions__cell) { padding: 5px 8px !important; }
+.meta-descriptions :deep(.el-descriptions__cell) { padding: 3px 8px !important; }
 .topic-inline-code {
   font-size: 10.5px; color: var(--sl-primary, #2563eb); background: var(--sl-primary-light, #eff6ff);
   padding: 1px 5px; border-radius: 3px; word-break: break-all;

@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.context.event.EventListener;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
@@ -27,6 +28,9 @@ public class DeviceConsoleSseHub {
 
     private static final Logger log = LoggerFactory.getLogger(DeviceConsoleSseHub.class);
 
+    /** 不设过期。空闲由心跳维持，断线由发送失败关闭，浏览器据此重连。 */
+    private static final long NO_TIMEOUT = 0L;
+
     private final Map<Long, List<SseEmitter>> emittersByInstanceId = new ConcurrentHashMap<>();
     private final List<SseEmitter> globalEmitters = new CopyOnWriteArrayList<>();
 
@@ -38,8 +42,7 @@ public class DeviceConsoleSseHub {
         if (instanceId == null) {
             throw new IllegalArgumentException("instanceId 不能为空");
         }
-        // 30 分钟保活超时
-        SseEmitter emitter = new SseEmitter(30 * 60 * 1000L);
+        SseEmitter emitter = new SseEmitter(NO_TIMEOUT);
         List<SseEmitter> list = emittersByInstanceId.computeIfAbsent(instanceId, id -> new CopyOnWriteArrayList<>());
         for (SseEmitter old : list) {
             try {
@@ -76,8 +79,7 @@ public class DeviceConsoleSseHub {
      * 注册全局 SSE 终端连接（全系统只需 1 条连接，接收所有设备的状态机信号）。
      */
     public SseEmitter registerGlobal() {
-        // 30 分钟保活超时
-        SseEmitter emitter = new SseEmitter(30 * 60 * 1000L);
+        SseEmitter emitter = new SseEmitter(NO_TIMEOUT);
         globalEmitters.add(emitter);
 
         Runnable cleanup = () -> globalEmitters.remove(emitter);
@@ -117,7 +119,7 @@ public class DeviceConsoleSseHub {
 
         Map<String, Object> data = new LinkedHashMap<>();
         data.put("instanceId", instanceId);
-        String stateName = payload != null && payload.has("stateName") ? payload.path("stateName").asText() : String.valueOf(execCtx.getOrDefault("stateName", ""));
+        String stateName = "CMD_STATE".equals(signalName) && payload != null ? payload.path("stateName").asText("") : "";
         data.put("stateName", stateName);
         data.put("capabilityName", execCtx.getOrDefault("capabilityName", ""));
         data.put("messageId", payload != null && payload.has("messageId") ? payload.path("messageId").asText() : String.valueOf(execCtx.getOrDefault("messageId", "")));
@@ -132,22 +134,48 @@ public class DeviceConsoleSseHub {
 
         if (hasInstanceEmitters) {
             for (SseEmitter emitter : list) {
-                try {
-                    emitter.send(SseEmitter.event().name("signal").data(data));
-                } catch (Exception e) {
-                    list.remove(emitter);
-                }
+                send(instanceId, list, emitter, "signal", data);
             }
         }
 
         if (hasGlobalEmitters) {
             for (SseEmitter emitter : globalEmitters) {
-                try {
-                    emitter.send(SseEmitter.event().name("signal").data(data));
-                } catch (Exception e) {
-                    globalEmitters.remove(emitter);
-                }
+                send(null, globalEmitters, emitter, "signal", data);
             }
+        }
+    }
+
+    /** 空闲时也发出字节，浏览器才能发现连接已死并重连。 */
+    @Scheduled(fixedDelay = 15000, initialDelay = 15000)
+    public void heartbeat() {
+        Map<String, Object> data = Map.of("timestamp", System.currentTimeMillis());
+        for (SseEmitter emitter : List.copyOf(globalEmitters)) {
+            send(null, globalEmitters, emitter, "ping", data);
+        }
+        for (Map.Entry<Long, List<SseEmitter>> entry : emittersByInstanceId.entrySet()) {
+            for (SseEmitter emitter : List.copyOf(entry.getValue())) {
+                send(entry.getKey(), entry.getValue(), emitter, "ping", data);
+            }
+        }
+    }
+
+    private void send(Long instanceId, List<SseEmitter> owner, SseEmitter emitter, String eventName, Map<String, Object> data) {
+        try {
+            emitter.send(SseEmitter.event().name(eventName).data(data));
+        } catch (Exception error) {
+            log.debug("设备控制台连接发送失败，关闭以触发重连: {}", error.toString());
+            drop(instanceId, owner, emitter);
+        }
+    }
+
+    private void drop(Long instanceId, List<SseEmitter> owner, SseEmitter emitter) {
+        owner.remove(emitter);
+        if (instanceId != null && owner.isEmpty()) {
+            emittersByInstanceId.remove(instanceId, owner);
+        }
+        try {
+            emitter.completeWithError(new IOException("设备控制台连接已失效"));
+        } catch (Exception ignored) {
         }
     }
 }

@@ -78,9 +78,26 @@ class ProtocolDictionaryServiceTest {
         ObjectNode heartbeat = JsonNodeSupport.objectNode();
         heartbeat.put("status", "ALIVE");
         heartbeat.put("timestamp", 1719892800L);
+        heartbeat.putArray("points").addObject().put("devicePoint", "Valve00").put("online", true);
         service.validateDefinition("AdapterHeartbeat", heartbeat);
 
         heartbeat.put("status", "DEGRADED");
+        assertThrows(IllegalArgumentException.class, () -> service.validateDefinition("AdapterHeartbeat", heartbeat));
+    }
+
+    @Test
+    void rejectsAdapterHeartbeatWithoutValidPoints() {
+        ObjectNode heartbeat = JsonNodeSupport.objectNode();
+        heartbeat.put("status", "ALIVE");
+        heartbeat.put("timestamp", 1719892800L);
+        assertThrows(IllegalArgumentException.class, () -> service.validateDefinition("AdapterHeartbeat", heartbeat));
+
+        heartbeat.putArray("points").addObject().put("devicePoint", "Valve00").put("online", 1);
+        assertThrows(IllegalArgumentException.class, () -> service.validateDefinition("AdapterHeartbeat", heartbeat));
+
+        heartbeat.putArray("points");
+        heartbeat.withArray("points").addObject().put("devicePoint", "Valve00").put("online", true);
+        heartbeat.withArray("points").addObject().put("devicePoint", "Valve00").put("online", false);
         assertThrows(IllegalArgumentException.class, () -> service.validateDefinition("AdapterHeartbeat", heartbeat));
     }
 

@@ -18,6 +18,8 @@ import com.smartlab.management.service.protocol.AdapterPayloadMapperService;
 import com.smartlab.global.contract.SystemExecutionContract;
 import com.smartlab.engine.statemachine.StateMachineEngine;
 import com.smartlab.management.sse.DeviceConsoleSseHub;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.http.MediaType;
@@ -34,6 +36,8 @@ import java.util.Map;
  * 设备物理实例生命周期与点位绑定控制器。控制物理硬件的网关配对、MQTT点位映射及指令/状态广播下发。
  */
 public class DeviceInstanceController {
+
+    private static final Logger log = LoggerFactory.getLogger(DeviceInstanceController.class);
 
     private final DeviceInstanceService deviceInstanceService;
     private final MqttAdapterMessagingService mqttAdapterMessagingService;
@@ -207,7 +211,12 @@ public class DeviceInstanceController {
             }
             return ApiResponse.ok(result);
         } catch (Exception e) {
-            return ApiResponse.fail(e.getMessage());
+            log.error("设备控制失败 id={} body={}", id, body, e);
+            String message = e.getMessage();
+            if (message == null || message.isBlank()) {
+                message = e.getClass().getSimpleName();
+            }
+            return ApiResponse.fail(message);
         }
     }
 

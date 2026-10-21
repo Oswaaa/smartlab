@@ -129,14 +129,15 @@
         "name": { "type": "string", "description": "节点标识名，在同一工作流模型内唯一" },
         "internalVariables": {
           "type": "array",
-          "description": "节点内部变量空间，生命周期内持久存在的状态量，可通过attributesMapping与设备属性同步，也可作为纯节点内部量供端口或触发器引用",
+          "description": "节点内部变量空间，生命周期内持久存在的状态量。可通过attributesMapping与设备属性同步，可通过stateMapping与设备状态机区域的当前状态同步，也可作为纯节点内部量供端口或触发器引用",
           "items": {
             "type": "object",
             "properties": {
               "name": { "type": "string", "description": "变量标识名，在同一节点内唯一；可作为trigger.condition.object的引用目标" },
               "dataType": { "$ref": "协议规范.json#/definitions/DataType" },
               "initialValue": { "description": "内部变量初始值（可选）；类型须与dataType一致，创建TASK_STEP时写入变量空间，任务变量中已有同名值时不覆盖" },
-              "attributesMapping": { "type": "string", "description": "映射的设备属性名（可选）；填写后运行时自动从设备属性同步值仅对DEV_NODE的变量有意义，关联DeviceModel的属性定义" }
+              "attributesMapping": { "type": "string", "description": "映射的设备属性名（可选）；填写后运行时自动从设备属性同步值仅对DEV_NODE的变量有意义，关联DeviceModel的属性定义" },
+              "stateMapping": { "type": "string", "description": "映射的设备状态机区域名（可选）；填写后运行时自动从该区域的当前状态同步值，仅对DEV_NODE的变量有意义，关联DeviceModel的opStateSpace.regions[].regionName。OPERATIONAL区域的dataType为STRING，值为唯一状态名；EXCEPTION区域的dataType为JSON，值为当前状态名数组。不能与attributesMapping同时填写" }
             },
             "required": [ "name", "dataType" ]
           }

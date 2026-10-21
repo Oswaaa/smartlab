@@ -89,6 +89,7 @@ class WorkflowEngineExecutionTest {
                 operations);
         when(runtime.pollableSteps(task.getId())).thenReturn(List.of(step));
         when(runtime.steps(task.getId())).thenReturn(List.of(step));
+        when(runtime.stepsForRound(eq(task.getId()), org.mockito.ArgumentMatchers.any())).thenReturn(List.of(step));
         when(runtime.task(task.getId())).thenReturn(task);
         when(flowNodes.getById(step.getFlowNodeId())).thenReturn(node);
         when(operations.resolveMappedVariables(task, step, node)).thenReturn(JsonNodeSupport.objectNode());
@@ -141,6 +142,7 @@ class WorkflowEngineExecutionTest {
                 operations);
         when(runtime.pollableSteps(task.getId())).thenReturn(List.of(step));
         when(runtime.steps(task.getId())).thenReturn(List.of(step));
+        when(runtime.stepsForRound(eq(task.getId()), org.mockito.ArgumentMatchers.any())).thenReturn(List.of(step));
         when(runtime.task(task.getId())).thenReturn(task);
         when(flowNodes.getById(step.getFlowNodeId())).thenReturn(node);
         when(operations.resolveMappedVariables(task, step, node)).thenReturn(JsonNodeSupport.objectNode());
@@ -712,6 +714,14 @@ class WorkflowEngineExecutionTest {
     private final WorkflowExecutionOperations operations = mock(WorkflowExecutionOperations.class);
     private final WorkflowService workflows = mock(WorkflowService.class);
     private final FlowNodeService flowNodes = mock(FlowNodeService.class);
+
+    @org.junit.jupiter.api.BeforeEach
+    void stubBatchDefinitions() {
+        when(flowNodes.listByIds(org.mockito.ArgumentMatchers.any())).thenAnswer(call ->
+                call.<java.util.Collection<Long>>getArgument(0).stream()
+                        .map(flowNodes::getById).filter(java.util.Objects::nonNull).toList());
+    }
+
     private final List<String> executionOrder = new ArrayList<>();
     private final WorkflowActionRegistry registry = new WorkflowActionRegistry(List.of(
             executor("UPDATE", WorkflowActionResult.continueWith(JsonNodeSupport.objectNode().put("temperature", 28))),
@@ -945,6 +955,11 @@ class WorkflowEngineExecutionTest {
         verify(runtime, never()).updatePortOutSnapshot(eq(sourceStep), org.mockito.ArgumentMatchers.any());
         verify(runtime, never()).createStep(eq(task), eq(sourceNode), org.mockito.ArgumentMatchers.any(),
                 org.mockito.ArgumentMatchers.anyInt(), org.mockito.ArgumentMatchers.any());
+
+        when(runtime.stepsForRound(eq(task.getId()), org.mockito.ArgumentMatchers.any())).thenReturn(List.of(targetStep));
+        engine.processTask(task);
+        verify(runtime, org.mockito.Mockito.times(1)).steps(task.getId());
+        verify(operations, org.mockito.Mockito.times(2)).resolveMappedVariables(task, sourceStep, sourceNode);
     }
 
     @Test
@@ -1180,6 +1195,7 @@ class WorkflowEngineExecutionTest {
         }
         when(runtime.pollableSteps(task.getId())).thenReturn(List.of(step));
         when(runtime.steps(task.getId())).thenReturn(List.of(step));
+        when(runtime.stepsForRound(eq(task.getId()), org.mockito.ArgumentMatchers.any())).thenReturn(List.of(step));
         when(runtime.task(task.getId())).thenReturn(task);
         when(flowNodes.getById(step.getFlowNodeId())).thenReturn(node);
         when(operations.resolveMappedVariables(task, step, node)).thenReturn(JsonNodeSupport.objectNode());

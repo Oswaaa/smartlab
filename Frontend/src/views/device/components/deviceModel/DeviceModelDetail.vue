@@ -204,6 +204,7 @@
                     <span v-for="(param, pIdx) in row.parameters" :key="param.name" class="param-clean-item">
                       <span class="mono-text text-heading">{{ param.displayName }}</span>
                       <span class="mono-text text-primary" style="margin-left: 3px;">{{ param.dataType }}</span>
+                      <span class="text-secondary" style="margin-left: 3px;">{{ param.required === false ? '可以不填' : '必填' }}</span>
                       <span v-if="pIdx < row.parameters.length - 1" class="param-clean-sep">·</span>
                     </span>
                   </div>
@@ -872,6 +873,13 @@ function openEditDrawer(model) { emit('edit', model) }
 function deleteModel(id) { emit('delete', id) }
 function categoryNameById(id) {
   return props.categories.find(item => String(item.id) === String(id))?.categoryName || ''
+}
+
+function displayCapabilityName(reference, capabilities) {
+  if (!reference) return '-'
+  const capability = asArray(capabilities).find(item => item._key === reference)
+    || asArray(capabilities).find(item => item.capabilityName === reference || item.name === reference)
+  return capability?.displayName || capability?.capabilityName || capability?.name || reference
 }
 
 function cmdStateDescription(stateName) {

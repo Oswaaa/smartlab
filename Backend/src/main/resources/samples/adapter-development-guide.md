@@ -104,7 +104,7 @@ core **禁止**出现：寄存器地址、Modbus 功能码、厂商 HTTP 路径�
 | 主题 | 方向 | 用途 |
 | --- | --- | --- |
 | `smartlab/adapter/register` | Adapter → 系统 | 注册，`AdapterRegisterRequest` |
-| `smartlab/adapter/{adapterName}/heartbeat` | Adapter → 系统 | 心跳，只发 `ALIVE` |
+| `smartlab/adapter/{adapterName}/heartbeat` | Adapter → 系统 | 心跳，`AdapterHeartbeat`：`ALIVE` 加必填 `points` |
 | `smartlab/adapter/{adapterName}/{devicePoint}/command` | 系统 → Adapter | 指令，`CommandMessageFormat` |
 | `smartlab/adapter/{adapterName}/{devicePoint}/telemetry` | Adapter → 系统 | 遥测。生产模式走 `formatType: SINGLE`（单点实时），仿真模式走 `formatType: BATCH`（微批次时序打包） |
 | `smartlab/adapter/{adapterName}/{devicePoint}/event` | Adapter → 系统 | 事件 |
@@ -121,6 +121,30 @@ core **禁止**出现：寄存器地址、Modbus 功能码、厂商 HTTP 路径�
 LEASE 的 `devicePoint` 是物理点名（克隆来源）。RELEASE 的 `devicePoint` 是虚拟点名
 （要拆除的点）。GRANTED / RELEASED 的 `devicePoint` 必须是虚拟点名。LEASE+FAILED
 可以没有 `devicePoint`。LEASE 不得回 `RELEASED`，RELEASE 不得回 `GRANTED`。
+
+### 6.1 心跳与设备在线
+
+心跳只表示适配器进程还活着，并带上各设备点的在线名单。设备在线不从遥测推断，也不再因为收到 `ALIVE` 就把该适配器下的设备全部写成在线。
+
+```json
+{
+  "status": "ALIVE",
+  "timestamp": 1719892800000,
+  "points": [
+    { "devicePoint": "Valve00", "online": true },
+    { "devicePoint": "Valve00_sim_12", "online": true }
+  ]
+}
+```
+
+- `status` 只能是 `ALIVE`。`timestamp` 为纪元毫秒。`points` 必填，允许空数组。
+- `devicePoint` 是物理点或虚拟点。`online` 必须是 JSON 布尔值。同一条心跳里点名不能重复。
+- 物理点是否在线由 `control.heartbeat_points()` 判断，依据是该点南向链路，不是阀门开闭或其他业务状态。同一条南向链路上的多个物理点可以共用一个结果。
+- 虚拟点由 core 追加：租约仍是 `ACTIVE`，且 `simulation.get_device_state` 能取到该点，则 `online` 为 `true`，否则为 `false`。`virtual_leases.json` 只负责重启后恢复这些租约，系统不读这个文件。
+- 周期来自 `runtime.ini` 的 `heartbeatIntervalSec`，默认 10 秒，且不得小于 1 秒。连上 Broker 时立即发一条。LEASE 成功或 RELEASE 成功后立即再发一条，使新虚拟点不用等到下一拍。
+- 系统用适配器名加 `bound_device_point` 更新使用中实例的 `ONLINE_STATUS`。`true` 写成在线，`false` 写成离线。已经绑定且正在使用、但本次数组里没有的实例写成离线。已注销实例不改。数组里没有对应实例的点忽略。物理点和虚拟点用同一条规则。
+- 超过 30 秒没有合格心跳，或适配器被停用，该适配器下使用中的实例全部离线。
+- 缺少 `points`、`online` 不是布尔值、或点名重复时，整条心跳被拒绝，`LAST_HEARTBEAT` 不更新。旧适配器若不带 `points`，会因此被判离线。
 
 ## 7. `core.py`（焊死）
 
@@ -309,8 +333,8 @@ class Simulation(Protocol):
 
     def attach(self, virtual_point: str, physical_point: str, state: dict[str, Any] | None = None) -> None: ...
     def detach(self, virtual_point: str) -> None: ...
-    def get_device_state(self, virtual_point: str) -> dict[str, float] | None: ...
-    def get_all_states(self) -> dict[str, dict[str, float]]: ...
+    def get_device_state(self, virtual_point: str) -> dict[str, Any] | None: ...
+    def get_all_states(self) -> dict[str, dict[str, Any]]: ...
 
     def execute(self, command: SystemCommand) -> None: ...
 
@@ -326,6 +350,7 @@ class LeaseRecord:
     virtual_point: str
     released: bool = False
     status: str = "ACTIVE"
+    state: dict[str, Any] | None = None
 
 
 @dataclass
@@ -521,8 +546,8 @@ class AdapterCore:
             snapshot: dict[str, Any] = {}
             with self._lock:
                 for lid, rec in self._leases.items():
-                    state = None
-                    if self.simulation is not None and hasattr(self.simulation, "get_device_state"):
+                    state = rec.state
+                    if not rec.released and rec.status != "RELEASED" and self.simulation is not None and hasattr(self.simulation, "get_device_state"):
                         state = self.simulation.get_device_state(rec.virtual_point)
                     status = "RELEASED" if (rec.released or rec.status == "RELEASED") else "ACTIVE"
                     snapshot[str(lid)] = {
@@ -637,7 +662,7 @@ class AdapterCore:
                 "timestamp": now_ms(),
             })
             self._has_registered = True
-        self._publish_json(self.heartbeat_topic(), {"status": "ALIVE", "timestamp": now_ms()})
+        self._publish_heartbeat()
 
     def _on_disconnect(self, _client, _userdata, _flags, reason_code, _properties=None) -> None:
         self._connected = False
@@ -718,9 +743,11 @@ class AdapterCore:
             if action == "LEASE":
                 record = self._lease(lease_id, device_point)
                 self._publish_lease_result(lease_id, "LEASE", "GRANTED", record.virtual_point)
+                self._publish_heartbeat()
             elif action == "RELEASE":
                 virtual = self._release(lease_id, device_point)
                 self._publish_lease_result(lease_id, "RELEASE", "RELEASED", virtual)
+                self._publish_heartbeat()
             else:
                 raise ValueError(f"不支持的租约 action: {action}")
         except Exception as error:
@@ -766,6 +793,8 @@ class AdapterCore:
             if virtual_point and virtual_point != record.virtual_point:
                 raise ValueError("RELEASE 的 devicePoint 与租约虚拟点不一致")
             if self.simulation is not None:
+                if hasattr(self.simulation, "get_device_state"):
+                    record.state = self.simulation.get_device_state(record.virtual_point)
                 self.simulation.detach(record.virtual_point)
             topic = self._command_topic(record.virtual_point)
             self._command_topics.pop(topic, None)
@@ -893,7 +922,30 @@ class AdapterCore:
         interval = max(self.runtime.heartbeat_interval_sec, 1.0)
         while not self._stop.wait(interval):
             if self._connected:
-                self._publish_json(self.heartbeat_topic(), {"status": "ALIVE", "timestamp": now_ms()})
+                self._publish_heartbeat()
+
+    def _heartbeat_body(self) -> dict[str, Any]:
+        points: list[dict[str, Any]] = []
+        reporter = getattr(self.control, "heartbeat_points", None)
+        if callable(reporter):
+            reported = reporter()
+            if isinstance(reported, list):
+                points.extend(item for item in reported if isinstance(item, dict))
+        with self._lock:
+            virtual_points = [
+                record.virtual_point
+                for record in self._leases.values()
+                if not record.released and record.status == "ACTIVE"
+            ]
+        for virtual_point in virtual_points:
+            online = False
+            if self.simulation is not None and hasattr(self.simulation, "get_device_state"):
+                online = self.simulation.get_device_state(virtual_point) is not None
+            points.append({"devicePoint": virtual_point, "online": online})
+        return {"status": "ALIVE", "timestamp": now_ms(), "points": points}
+
+    def _publish_heartbeat(self) -> None:
+        self._publish_json(self.heartbeat_topic(), self._heartbeat_body())
 
     def _publish_json(self, topic: str, payload: dict[str, Any]) -> None:
         client = self._client
@@ -973,6 +1025,7 @@ class ControlImpl:
 - 指令生命周期用 `AdapterEvent` 上报 `COMMAND_RECEIVED` / `COMMAND_RUNNING` /
   `COMMAND_COMPLETED` / `COMMAND_FAILED` 等；事件上的 `device_point` 与命令一致；
   `message_id` 必须回传对应命令的 `messageId`。
+- 实现 `heartbeat_points()`，返回全部物理点的 `{"devicePoint", "online"}`。`online` 是布尔值，表示该点南向链路是否在线，不是业务状态。core 会把返回值放进心跳的 `points`，并自行追加虚拟点。
 - 不要把虚拟点写进本模块。core 不会把虚拟点命令交给 `control`；若收到，说明分流或
   core 实现有误，应快速失败而不是按真设备处理。
 
@@ -997,10 +1050,10 @@ class SimulationImpl:
     def detach(self, virtual_point: str) -> None:
         """拆除假设备。重复 detach 视为已拆除。"""
 
-    def get_device_state(self, virtual_point: str) -> dict[str, float] | None:
+    def get_device_state(self, virtual_point: str) -> dict[str, Any] | None:
         """导出单个虚拟设备的状态快照（用于本地持久化）。"""
 
-    def get_all_states(self) -> dict[str, dict[str, float]]:
+    def get_all_states(self) -> dict[str, dict[str, Any]]:
         """导出所有活跃虚拟设备的状态快照。"""
 
     def execute(self, command: SystemCommand) -> None:
@@ -1013,7 +1066,7 @@ class SimulationImpl:
 
 规则：
 
-- 假设备往 handler 送的数据字段必须能对齐 Setup 中声明的物理点属性映射（例如 `raw_temp`, `raw_press`）。
+- 假设备往 handler 送的数据字段必须和该物理点的 `attributeMapping` 一致。物理点上报哪些量，虚拟点就上报哪些量。`get_device_state` 保存的也是这些量。core 只原样写入 `virtual_leases.json`，不得在状态为空时填入其它设备的默认值。释放租约时必须先取出状态，再 `detach`，否则拆掉之后读到的是空状态。
 - 同一 `leaseId` 的 `attach` 由 core 保证幂等；`simulation` 对已存在的
   `virtual_point` 应保持原实例，不要另造一台。
 - core 依据本地持久化记录在重启时调用带 `state` 的 `attach`；`simulation` 须支持
@@ -1224,7 +1277,7 @@ simStepMs = 1000
 * **现象**：系统下发虚拟点命令时，Adapter 报“未知命令主题”或者毫无反应；重启 Adapter 后已有虚拟点无法接收任务。
 * **规范**：
   1. 订阅时**必须注册单层通配符主题**：`smartlab/adapter/{adapterName}/+/command`，兜底所有动态派生的虚拟点；
-  2. Adapter 必须在同级目录维护 `virtual_leases.json`，在启动时自动读盘还原租约，停机时自动写盘保存状态快照。
+  2. Adapter 必须在同级目录维护 `virtual_leases.json`，在启动时自动读盘还原租约，停机时自动写盘保存状态快照。`state` 只能是该设备仿真自己的状态；没有状态时写 `null`，禁止套用其它设备的默认快照。
 
 ### 5. 仿真推流过猛导致后端写库堵死与心跳超时
 * **现象**：开启时间压缩仿真后，Adapter 很快与后端断连，系统提示心跳丢失（`AdapterHeartbeat timeout`）。
@@ -1239,13 +1292,14 @@ simStepMs = 1000
 - [ ] ClientId 采用动态唯一化命名，绝不使用静态固定字符串。
 - [ ] `_on_connect` 对错误码进行了严格校验，未连接成功绝不置 `_connected = True`。
 - [ ] 订阅了通配符指令主题 `smartlab/adapter/{adapterName}/+/command`。
-- [ ] 具备本地租约与物理状态自愈机制（`virtual_leases.json`）。
+- [ ] 具备本地租约与状态自愈机制（`virtual_leases.json`）。`state` 与物理点上报的量一致，不填其它设备的默认值。
 - [ ] 遥测报文双轨制：生产模式上报 `formatType: "SINGLE"`，仿真模式打包上报 `formatType: "BATCH"`。
 - [ ] 仿真时间戳按步长递增推进（虚拟时钟保真），不直接取当前物理时间。
 - [ ] 仿真打包频率与容量符合规范（推流间隔 200ms~1000ms，单包 10~100 个点）。
 - [ ] `_publish_json` 增加了 `self._connected` 守卫，网络断开时不盲目塞队列。
 - [ ] 仅初次启动上线时发一次 `REGISTER_TOPIC`，网络重连时不重复广播大配置。
 - [ ] `control` 模块绝不接收虚拟点命令，绝不处理 LEASE，误收时立即快速失败。
+- [ ] 心跳带必填 `points`：物理点来自 `control.heartbeat_points()`，虚拟点由 core 按生效租约追加；`online` 为布尔值。LEASE/RELEASE 成功后立即再发一条。
 - [ ] 每条 RELEASE 都严格回送 `leaseresult`（RELEASED 或 FAILED+errorMessage），绝不静默丢失。
 - [ ] Setup 契约仅声明物理点，绝不包含 `virtual=true` 或预留虚拟点。
 

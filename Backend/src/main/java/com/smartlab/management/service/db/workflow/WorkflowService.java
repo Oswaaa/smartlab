@@ -367,6 +367,7 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
             }
             validateCapabilityParameters(nodeName, capabilityNode.path("capabilityParameters"), capabilityDefinition.path("parameters"));
             validateAttributeMappings(nodeName, node.path("internalVariables"), model.getAttributes());
+            validateStateMappings(nodeName, node.path("internalVariables"), model.getOpState());
         }
         validateDeviceInterfaceConnections(request.getInterfaceConnections(), modelsById);
     }
@@ -458,6 +459,30 @@ public class WorkflowService extends ManagementCrudService<FlowModels> {
                 String attributeType = attribute.path("dataType").asText("");
                 if (!variableType.equals(attributeType)) {
                     throw configurationError(nodeName, path, "映射变量与设备属性数据类型不一致: " + variableType + " -> " + attributeType);
+                }
+            }
+            position++;
+        }
+    }
+
+    private void validateStateMappings(String nodeName, JsonNode variables, JsonNode opState) {
+        Map<String, String> regionTypes = new LinkedHashMap<>();
+        for (JsonNode region : iterable(opState == null ? null : opState.path("regions"))) {
+            String name = region.path("regionName").asText("");
+            if (!name.isBlank()) regionTypes.put(name, region.path("regionType").asText(""));
+        }
+        int position = 0;
+        for (JsonNode variable : iterable(variables)) {
+            String mapping = variable.path("stateMapping").asText("").trim();
+            if (!mapping.isBlank()) {
+                String path = "internalVariables[" + position + "].stateMapping";
+                String regionType = regionTypes.get(mapping);
+                if (regionType == null) throw configurationError(nodeName, path, "设备模型状态机区域不存在: " + mapping);
+                String expectedType = "EXCEPTION".equals(regionType) ? "JSON" : "STRING";
+                String variableType = variable.path("dataType").asText("");
+                if (!expectedType.equals(variableType)) {
+                    throw configurationError(nodeName, path, "映射" + regionType + "区域的变量数据类型必须为"
+                            + expectedType + ": " + variableType);
                 }
             }
             position++;

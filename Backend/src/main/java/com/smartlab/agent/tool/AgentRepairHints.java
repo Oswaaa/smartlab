@@ -64,6 +64,15 @@ final class AgentRepairHints {
         if (text.contains("attributesMapping只允许出现在DEV_NODE")) {
             return "attributesMapping 只能写在 DEV_NODE 的变量上，用来映射该设备模型属性";
         }
+        if (text.contains("stateMapping只允许出现在DEV_NODE")) {
+            return "stateMapping 只能写在 DEV_NODE 的变量上，值为 get_device_model 返回的 stateRegions[].regionName";
+        }
+        if (text.contains("stateMapping不能与attributesMapping同时填写")) {
+            return "一个变量只能写 attributesMapping 或 stateMapping 其中一个；要同时读属性和状态就声明两个变量";
+        }
+        if (containsAny(text, "设备模型状态机区域不存在", "区域的变量数据类型必须为")) {
+            return "stateMapping 写 get_device_model 返回的 stateRegions[].regionName；OPERATIONAL 区域 dataType 用 STRING，EXCEPTION 区域用 JSON";
+        }
         if (text.contains("子流程必须是ACTIVE才能被引用")) {
             return "SUBFLOW_NODE.subFlowModelId 只能引用 ACTIVE 流程，草稿不能当子流程";
         }

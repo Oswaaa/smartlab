@@ -2,6 +2,7 @@
   <WorkflowStageGraph
     class="runtime-graph"
     :nodes="graph.nodes"
+    :models="models"
     :interface-connections="interfaceConnections"
     :port-connections="workflow?.portConnections || []"
     :selected-node-name="resolvedSelectedName"

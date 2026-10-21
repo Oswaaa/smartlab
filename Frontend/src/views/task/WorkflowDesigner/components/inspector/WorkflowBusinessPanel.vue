@@ -7,7 +7,7 @@
             <h4>设备能力配置</h4>
             <p>选择设备模型提供的业务能力，并配置本次调用参数。</p>
           </div>
-          <span class="param-count-badge">{{ selectedCapability?.parameters?.length || 0 }} 项参数</span>
+          <span class="param-count-badge">{{ inputParameters.length }} 项参数</span>
         </div>
 
         <div class="capability-selector-row">
@@ -33,15 +33,15 @@
 
         <div class="parameter-subheading">
           <strong>能力参数</strong>
-            <span>（已填写的值随流程发布；留空则创建任务时再填）</span>
+            <span>（已填写的值随流程发布）</span>
         </div>
 
-        <div v-if="selectedCapability?.parameters?.length" class="capability-parameter-form">
-          <div v-for="parameter in selectedCapability.parameters" :key="parameter.name" class="parameter-form-row">
+        <div v-if="inputParameters.length" class="capability-parameter-form">
+          <div v-for="parameter in inputParameters" :key="parameter.name" class="parameter-form-row">
             <div class="parameter-description">
               <div class="param-label-group">
                 <strong class="param-name">{{ parameter.displayName || parameter.name }}</strong>
-                <span class="param-desc">{{ parameter.description || '配置该参数在本次能力调用中的取值' }}</span>
+                <span class="param-desc">{{ parameter.required === false ? '可以不写' : '留空则创建任务时填写' }}</span>
               </div>
               <el-tag size="small" type="info" class="param-type-tag">{{ parameter.dataType }}</el-tag>
             </div>
@@ -113,6 +113,7 @@ import WorkflowTypedValueInput from './WorkflowTypedValueInput.vue'
 import WorkflowConfigurationEmpty from './WorkflowConfigurationEmpty.vue'
 import WorkflowExpressionEditor from './WorkflowExpressionEditor.vue'
 import { replaceCapability } from '../../../../../utils/workflowNodeDefinition.js'
+import { capabilityInputParameters } from '../../../../../utils/deviceCapabilityParameters.js'
 
 type Item = Record<string, any>
 const props = withDefaults(defineProps<{ node: Item, readonly?: boolean, contractReady?: boolean, deviceCapabilities?: Item[], guidance?: Item }>(), {
@@ -123,6 +124,7 @@ const props = withDefaults(defineProps<{ node: Item, readonly?: boolean, contrac
 })
 const emit = defineEmits<{ 'update:node': [node: Item] }>()
 const selectedCapability = computed(() => props.deviceCapabilities.find(item => item.capabilityName === props.node.capability?.capabilityName))
+const inputParameters = computed(() => capabilityInputParameters(selectedCapability.value))
 
 function publish(next: Item) { if (!props.readonly) emit('update:node', next) }
 function updateBasic(field: string, value: unknown) { publish({ ...props.node, [field]: value }) }

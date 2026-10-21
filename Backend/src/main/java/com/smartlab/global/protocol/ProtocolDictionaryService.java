@@ -51,7 +51,8 @@ public class ProtocolDictionaryService {
                     "timestamp", "number", "adapterName", "string", "devicePoint", "string", "telemetryData", "object"));
             case "EventMessageFormat" -> objectDefinition(Map.of(
                     "timestamp", "number", "adapterName", "string", "devicePoint", "string", "eventName", "string", "payload", "object"));
-            case "AdapterHeartbeat" -> objectDefinition(Map.of("status", "string", "timestamp", "number"));
+            case "AdapterHeartbeat" -> objectDefinition(Map.of(
+                    "status", "string", "timestamp", "number", "points", "array"));
             case "LeaseRequestFormat" -> objectDefinition(Map.of(
                     "leaseId", "integer", "adapterName", "string", "action", "string", "devicePoint", "string", "timestamp", "number"));
             case "LeaseResultFormat" -> objectDefinition(Map.of(
@@ -176,10 +177,7 @@ public class ProtocolDictionaryService {
                     requireObjectField(payload, "payload");
                 }
             }
-            case "AdapterHeartbeat" -> {
-                requireEnum(payload, "status", List.of("ALIVE", "ONLINE"));
-                requireNumber(payload, "timestamp");
-            }
+            case "AdapterHeartbeat" -> validateAdapterHeartbeat(payload);
             case "LeaseRequestFormat" -> validateLeaseRequest(payload);
             case "LeaseResultFormat" -> validateLeaseResult(payload);
             case "ConstraintExecutePayload" -> {
@@ -246,6 +244,29 @@ public class ProtocolDictionaryService {
         ObjectNode properties = definition.putObject("properties");
         propertyTypes.forEach((name, type) -> properties.putObject(name).put("type", type));
         return definition;
+    }
+
+    private void validateAdapterHeartbeat(JsonNode payload) {
+        requireEnum(payload, "status", List.of("ALIVE"));
+        requireNumber(payload, "timestamp");
+        JsonNode points = payload.get("points");
+        if (points == null || !points.isArray()) {
+            throw new IllegalArgumentException("points 必须是数组");
+        }
+        Set<String> names = new java.util.HashSet<>();
+        for (JsonNode item : points) {
+            if (item == null || !item.isObject()) {
+                throw new IllegalArgumentException("points 元素必须是对象");
+            }
+            String devicePoint = requireText(item, "devicePoint").trim();
+            JsonNode online = item.get("online");
+            if (online == null || !online.isBoolean()) {
+                throw new IllegalArgumentException("online 必须是布尔值");
+            }
+            if (!names.add(devicePoint)) {
+                throw new IllegalArgumentException("points 中 devicePoint 重复: " + devicePoint);
+            }
+        }
     }
 
     private void validateLeaseRequest(JsonNode payload) {

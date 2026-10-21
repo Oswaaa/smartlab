@@ -12,6 +12,8 @@ import com.smartlab.management.entity.resource.device.DeviceModels;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
@@ -101,6 +103,7 @@ class ConstraintRuleServiceTest {
         parameter.put("name", "targetTemp");
         parameter.put("displayName", "目标温度");
         parameter.put("dataType", "DOUBLE");
+        parameter.put("required", true);
         model.setCapabilities(capabilities);
         when(models.selectById(1L)).thenReturn(model);
         ConstraintRuleService service = new ConstraintRuleService(
@@ -132,6 +135,7 @@ class ConstraintRuleServiceTest {
         parameter.put("name", "targetTemp");
         parameter.put("displayName", "目标温度");
         parameter.put("dataType", "DOUBLE");
+        parameter.put("required", true);
         model.setCapabilities(capabilities);
         when(models.selectById(1L)).thenReturn(model);
         ConstraintRuleService service = new ConstraintRuleService(
@@ -147,6 +151,45 @@ class ConstraintRuleServiceTest {
         rule.setViolationActions(JsonNodeSupport.MAPPER.createArrayNode().add(action));
 
         assertDoesNotThrow(() -> service.save(rule));
+    }
+
+    @Test
+    void dropsBlankOptionalCapabilityParameter() {
+        ConstraintRuleMapper rules = mock(ConstraintRuleMapper.class);
+        when(rules.insert(any(ConstraintRule.class))).thenReturn(1);
+        DeviceModelsMapper models = mock(DeviceModelsMapper.class);
+        DeviceModels model = new DeviceModels();
+        model.setId(1L);
+        var capabilities = JsonNodeSupport.arrayNode();
+        var capability = capabilities.addObject();
+        capability.put("capabilityName", "heat");
+        var requiredParameter = capability.putArray("parameters").addObject();
+        requiredParameter.put("name", "targetTemp");
+        requiredParameter.put("displayName", "目标温度");
+        requiredParameter.put("dataType", "DOUBLE");
+        requiredParameter.put("required", true);
+        var optionalParameter = capability.withArray("parameters").addObject();
+        optionalParameter.put("name", "temperature2");
+        optionalParameter.put("displayName", "目标温度2");
+        optionalParameter.put("dataType", "DOUBLE");
+        optionalParameter.put("required", false);
+        model.setCapabilities(capabilities);
+        when(models.selectById(1L)).thenReturn(model);
+        ConstraintRuleService service = new ConstraintRuleService(
+                rules, mock(DeviceInstancesMapper.class), new ConstraintExpressionEvaluator(),
+                event -> { }, null, models);
+        ConstraintRule rule = validRule();
+        ((ObjectNode) rule.getBindings().path("temperature").path("source")).remove("deviceInstanceId");
+        ObjectNode action = JsonNodeSupport.objectNode();
+        action.put("actionType", "DEVICE_CAPABILITY");
+        action.put("deviceModelId", 1);
+        action.put("capabilityName", "heat");
+        action.putObject("parameters").put("targetTemp", 80).putNull("temperature2");
+        rule.setViolationActions(JsonNodeSupport.MAPPER.createArrayNode().add(action));
+
+        assertDoesNotThrow(() -> service.save(rule));
+        assertFalse(action.path("parameters").has("temperature2"));
+        assertEquals(80, action.path("parameters").path("targetTemp").asInt());
     }
 
     @Test

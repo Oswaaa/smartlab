@@ -339,7 +339,7 @@ public class DataRecordService {
         List<DataTemplateDetail> templateFields = loadTemplateFields(index.getDataTemplateId());
         OffsetDateTime recordTime = OffsetDateTime.ofInstant(
                 sourceTime == null ? Instant.now() : sourceTime, ZoneOffset.UTC);
-        int inserted = 0;
+        List<Map<String, Object>> rows = new ArrayList<>(records.size());
         for (Map<String, Object> record : records) {
             Map<String, Object> row = new LinkedHashMap<>(normalizeRecord(record, templateFields));
             if (row.isEmpty()) {
@@ -359,10 +359,10 @@ public class DataRecordService {
             } else {
                 row.put("create_time", recordTime);
             }
-            insertRow(table, row);
-            inserted++;
+            rows.add(row);
         }
-        return inserted;
+        insertRows(table, rows);
+        return rows.size();
     }
 
     /**
@@ -485,13 +485,34 @@ public class DataRecordService {
     /**
      * 执行单行动态插入。
      */
-    private void insertRow(String table, Map<String, Object> row) {
-        List<String> columns = new ArrayList<>(row.keySet());
+    /**
+     * 列集合相同的连续行合成一次 JDBC 批量提交；列集合变化处断开，保持原有写入顺序。
+     */
+    private void insertRows(String table, List<Map<String, Object>> rows) {
+        List<String> columns = null;
+        List<Object[]> batch = new ArrayList<>();
+        for (Map<String, Object> row : rows) {
+            List<String> rowColumns = new ArrayList<>(row.keySet());
+            if (columns != null && !columns.equals(rowColumns)) {
+                flushInsert(table, columns, batch);
+                batch = new ArrayList<>();
+            }
+            columns = rowColumns;
+            batch.add(rowColumns.stream().map(row::get).toArray());
+        }
+        if (columns != null) {
+            flushInsert(table, columns, batch);
+        }
+    }
+
+    private void flushInsert(String table, List<String> columns, List<Object[]> batch) {
+        if (batch.isEmpty()) {
+            return;
+        }
         String columnSql = columns.stream().map(this::quoteIdentifier).collect(Collectors.joining(", "));
         String valuesSql = columns.stream().map(column -> "?").collect(Collectors.joining(", "));
         String sql = "insert into " + table + " (" + columnSql + ") values (" + valuesSql + ")";
-        Object[] values = columns.stream().map(row::get).toArray();
-        jdbcTemplate.update(sql, values);
+        jdbcTemplate.batchUpdate(sql, batch);
     }
 
     /**

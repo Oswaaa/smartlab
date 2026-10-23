@@ -59,6 +59,8 @@ class DeviceDispatcher:
             raise ValueError('One card has only one three-axis arm')
         self.clock, self.emit, self.publish = clock, emit, publish
         self.engine: MotionEngine | None = None
+        self.on_io_error: Callable | None = None
+        self.connection_check: Callable | None = None
         self.pending: dict[str, Request] = {}
         self.by_token: dict[str, Request] = {}
         self.completed: OrderedDict[tuple[str, str], AdapterEvent] = OrderedDict()
@@ -107,6 +109,10 @@ class DeviceDispatcher:
         return event
 
     def _finish(self, request, success, message, **payload):
+        if (success and self.points[request.point]['kind'] != 'vision'
+                and (self.engine is None or not self.engine.connection_valid)):
+            success, message = False, 'Motion card session expired'
+            payload['errorCode'] = 'CARD_OFFLINE'
         self.by_token.pop(request.token, None)
         if self.pending.get(request.point) is request:
             self.pending.pop(request.point)
@@ -129,7 +135,7 @@ class DeviceDispatcher:
         self._published[point] = (now, dict(fields))
         self.publish(DeviceData(point, dict(fields), self.clock.stamp_ms()))
 
-    def execute(self, command):
+    def execute(self, command, expected_engine: MotionEngine | None = None):
         with self._lock:
             point, mid, name = command.device_point, str(command.message_id), command.command_name
             cached = self.completed.get((point, mid))
@@ -150,7 +156,10 @@ class DeviceDispatcher:
             if active and not (kind == 'arm' and name in ('Stop', 'SetGripper')):
                 self._finish(request, False, 'Device point is busy', errorCode='BUSY')
                 return
-            if kind != 'vision' and (self.engine is None or not self.engine.opened):
+            if kind != 'vision' and (self.engine is None or not self.engine.opened
+                                    or not self.engine.connection_valid
+                                    or (expected_engine is not None and expected_engine is not self.engine)
+                                    or (self.connection_check and not self.connection_check())):
                 self._finish(request, False, 'Motion card is offline', errorCode='CARD_OFFLINE')
                 return
             try:
@@ -214,6 +223,8 @@ class DeviceDispatcher:
             except ValueError as error:
                 self._finish(request, False, str(error), errorCode='INVALID_PARAMETERS')
             except OSError as error:
+                if self.on_io_error:
+                    self.on_io_error(error)
                 self._finish(request, False, str(error), errorCode='SDK_ERROR')
 
     def _motion_event(self, kind, token, message):
@@ -254,6 +265,12 @@ class DeviceDispatcher:
     def has_pending(self) -> bool:
         with self._lock:
             return bool(self.pending)
+
+    def probe_card_clock(self) -> float:
+        with self._lock:
+            if self.engine is None:
+                raise OSError('Motion card is offline')
+            return self.engine.card.get_clock()
 
     def pump(self):
         with self._lock:

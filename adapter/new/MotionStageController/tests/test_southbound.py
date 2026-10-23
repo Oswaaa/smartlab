@@ -73,6 +73,7 @@ def _virtual_control(points: tuple[str, ...] | None = None):
     control.dispatcher.clock = clock
     control.engine = motion
     control.dispatcher.bind_engine(motion)
+    control._poll_motion()
     return control, card, clock
 
 

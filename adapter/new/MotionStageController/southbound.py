@@ -36,6 +36,7 @@ logger = logging.getLogger("smartlab.adapter.motionstage.southbound")
 
 MC_LIMIT_POSITIVE = 0
 MC_LIMIT_NEGATIVE = 1
+AXIS_STATUS_ENABLE = 0x00000200
 AXIS_STATUS_RUNNING = 0x00000400
 AXIS_STATUS_ARRIVE = 0x00000800
 _AXIS_STATUS_TEXT = (
@@ -262,6 +263,10 @@ class RealCard:
             c_int,
             this + [ctypes.POINTER(TAllSysStatusDataSX)],
         )
+        # Public API supplies the controller sample clock. MC_GetClock itself is
+        # private in the shipped DLL; do not bind its version-dependent export.
+        self._MC_GetSts = _bind(dll, "?MC_GetSts@MultiCard@@QEAAHFPEAJFPEAK@Z", c_int,
+                               this + [c_short, ctypes.POINTER(c_long), c_short, ctypes.POINTER(c_ulong)])
         self._MC_GetDiRaw = _bind(dll, "?MC_GetDiRaw@MultiCard@@QEAAHFPEAJ@Z", c_int, this + [c_short, ctypes.POINTER(c_long)])
         self._MC_Stop = _bind(dll, "?MC_Stop@MultiCard@@QEAAHJJ@Z", c_int, this + [c_long, c_long])
         self._MC_SetExtDoBit = _bind(dll, "?MC_SetExtDoBit@MultiCard@@QEAAHFFG@Z", c_int, this + [c_short, c_short, c_ushort])
@@ -352,6 +357,12 @@ class RealCard:
         actual = [int(data.lAxisEncPos[i]) for i in range(3)] if self.encoder_feedback else None
         return pos, actual, status
 
+    def get_clock(self) -> float:
+        value = c_ulong()
+        status = (c_long * 3)()
+        self._MC_GetSts(self._this, 1, status, 3, byref(value))
+        return float(value.value)
+
     def get_di_raw(self, di_type: int) -> int:
         value = c_long(0)
         self._MC_GetDiRaw(self._this, di_type, byref(value))
@@ -404,6 +415,7 @@ class VirtualCard:
         self.target = [0.0, 0.0, 0.0]
         self.mode = ["idle", "idle", "idle"]
         self.running = [False, False, False]
+        self.enabled = [False, False, False]
         self._pending_mode = ["idle", "idle", "idle"]
         self._pending_vel = [0.0, 0.0, 0.0]
         self._pending_target = [0.0, 0.0, 0.0]
@@ -463,6 +475,7 @@ class VirtualCard:
 
     def axis_on(self, axis: int) -> None:
         self.calls.append(("MC_AxisOn", axis))
+        self.enabled[axis - 1] = True
 
     def prf_trap(self, axis: int) -> None:
         self.calls.append(("MC_PrfTrap", axis))
@@ -511,7 +524,8 @@ class VirtualCard:
             self._sample_axis(i, now)
         self._refresh_limits()
         pos = [int(round(self.pos[i])) for i in range(3)]
-        status = [AXIS_STATUS_RUNNING if self.running[i] else AXIS_STATUS_ARRIVE for i in range(3)]
+        status = [(AXIS_STATUS_RUNNING if self.running[i] else AXIS_STATUS_ARRIVE)
+                  | (AXIS_STATUS_ENABLE if self.enabled[i] else 0) for i in range(3)]
         return pos, status
 
     def peek_status(self) -> tuple[list[int], list[int]]:
@@ -521,6 +535,9 @@ class VirtualCard:
         pos, status = self.get_status()
         # This is the explicitly ideal simulated encoder, not a real-card fallback.
         return pos, list(pos), status
+
+    def get_clock(self) -> float:
+        return float(self.clock.mono_ms())
 
     def get_di_raw(self, di_type: int) -> int:
         self.calls.append(("MC_GetDiRaw", di_type))
@@ -894,6 +911,8 @@ class MotionEngine:
         self._lock = threading.RLock()
         self._stop = False
         self._thread: threading.Thread | None = None
+        # The watchdog may revoke a session without waiting for the SDK lock.
+        self.connection_valid = True
 
     def initialize(self, local_ip: str, local_port: int, card_ip: str, card_port: int) -> bool:
         with self._lock:
@@ -907,6 +926,10 @@ class MotionEngine:
             self.card.lmt_sns(0)
             for axis in (1, 2, 3):
                 self.card.axis_on(axis)
+            _, _, status = self.card.get_axis_sample()
+            if not all(word & AXIS_STATUS_ENABLE for word in status):
+                raise OSError(f"Axis enable confirmation failed: {status!r}")
+            self.connection_valid = True
             self.opened = True
             return True
 
@@ -945,6 +968,9 @@ class MotionEngine:
 
     def submit(self, operation: str, message_id: str, params: dict[str, Any]) -> None:
         with self._lock:
+            if not self.connection_valid:
+                self._emit('evt_error', message_id, 'Motion card session expired.')
+                return
             self._emit("evt_ack", message_id, "Command parsed: " + operation)
             if self._stop_owed:
                 self._stop_all_axes()
@@ -997,12 +1023,18 @@ class MotionEngine:
                 self._stop_all_axes()
             self._jog_watchdog()
             pos, actual, status = self.card.get_axis_sample()
+            if not self.connection_valid:
+                return
             self._polled = (pos, actual, status)
             neg = self.card.get_di_raw(MC_LIMIT_NEGATIVE)
+            if not self.connection_valid:
+                return
             self._maybe_telemetry(pos, status, actual)
             # 0x4、0x8 是软限位。回零会经过软限位，这两位不作为失败条件。
             if (self.move or self.reset or any(self.jog_running.values())) and any(word & 0x400113 for word in status):
                 self._cancel_motion('Hardware fault during motion.')
+            if (self.move or self.reset or any(self.jog_running.values())) and not all(word & AXIS_STATUS_ENABLE for word in status):
+                self._cancel_motion(f'Axis not enabled during motion: {status!r}')
             if self.reset and self.clock.mono_ms() - self.homing_started_ms >= self.motion.home_timeout_ms:
                 self._cancel_motion('Homing timeout.')
             self._poll_move(pos, status, actual)
@@ -1014,6 +1046,19 @@ class MotionEngine:
             self._homing(neg)
 
     def _dispatch(self, operation: str, message_id: str, params: dict[str, Any]) -> None:
+        if self.opened and operation in ('MoveAbsolute', 'Jog', 'ResetMotion'):
+            _, _, status = self.card.get_axis_sample()
+            if not self.connection_valid:
+                self._emit('evt_error', message_id, 'Motion card session expired.')
+                return
+            axes = (1, 2, 3) if operation == 'ResetMotion' else (_as_int(params, 'axis', 1),)
+            for axis in axes:
+                if 1 <= axis <= 3 and not status[axis - 1] & AXIS_STATUS_ENABLE:
+                    self._emit('evt_error', message_id, f'Axis {axis} not enabled (status=0x{status[axis - 1]:08X}).')
+                    return
+                if 1 <= axis <= 3 and status[axis - 1] & 0x400113:
+                    self._emit('evt_error', message_id, f'Axis {axis} hardware fault (status=0x{status[axis - 1]:08X}).')
+                    return
         if operation == "MoveAbsolute":
             axis = _as_int(params, "axis", 1)
             position = _as_int(params, "position", 0)
@@ -1053,7 +1098,7 @@ class MotionEngine:
                     self.card.prf_jog(axis)
                     self.card.set_jog_prm(axis, self.motion.jog_acc, self.motion.jog_dec, self.motion.jog_smooth)
                     self.card.set_vel(axis, speed if direction == 1 else -speed)
-                    self.card.update(1 << (axis - 1))
+                    self._update_axis(1 << (axis - 1))
                 self._emit("evt_success", message_id, "Jog heartbeat accepted.")
         elif operation == "JogStop":
             axis = _as_int(params, "axis", 1)
@@ -1077,7 +1122,7 @@ class MotionEngine:
         self.card.set_pos(axis, target_pos)
         vel = self.motion.move_speed(axis)
         self.card.set_vel(axis, vel)
-        self.card.update(0x0001 << (axis - 1))
+        self._update_axis(0x0001 << (axis - 1))
         self.move = {"id": message_id, "axis": axis, "target": target_pos}
         pos, actual, status = self.card.get_axis_sample()
         self._poll_move(pos, status, actual)
@@ -1087,21 +1132,32 @@ class MotionEngine:
         self.card.prf_jog(axis)
         self.card.set_jog_prm(axis, m.home_jog_acc, m.home_jog_dec, m.home_jog_smooth)
         self.card.set_vel(axis, vel)
-        self.card.update(1 << (axis - 1))
+        self._update_axis(1 << (axis - 1))
 
     def _home_trap(self, axis: int, pos: int, vel: float, acc: float, dec: float, smooth: int) -> None:
         self.card.prf_trap(axis)
         self.card.set_trap_prm(axis, acc, dec, 0.0, smooth)
         self.card.set_pos(axis, pos)
         self.card.set_vel(axis, vel)
-        self.card.update(1 << (axis - 1))
+        self._update_axis(1 << (axis - 1))
+
+    def _update_axis(self, mask: int) -> None:
+        if not self.connection_valid:
+            raise OSError('Motion card session expired before starting axis')
+        self.card.update(mask)
 
     def _poll_move(self, pos: list[int], status: list[int], actual: list[int] | None) -> None:
-        del status, actual
         move = self.move
         if move is None:
             return
         axis = move["axis"]
+        if not self.connection_valid or not 1 <= axis <= len(status):
+            return
+        word = status[axis - 1]
+        if not word & AXIS_STATUS_ENABLE or word & (AXIS_STATUS_RUNNING | 0x400113):
+            return
+        if actual is not None and abs(actual[axis - 1] - move['target']) >= self.motion.move_arrive_band:
+            return
         current = pos[axis - 1] if 1 <= axis <= len(pos) else 0
         if abs(current - move["target"]) < self.motion.move_arrive_band:
             self.move = None
@@ -1267,6 +1323,8 @@ class MotionEngine:
         return fields
 
     def _emit(self, kind: str, message_id: str, message: str) -> None:
+        if kind in ('evt_success', 'evt_started') and not self.connection_valid:
+            kind, message = 'evt_error', 'Motion card session expired.'
         if self.on_event is not None:
             self.on_event(kind, message_id, message)
 

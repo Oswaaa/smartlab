@@ -285,6 +285,7 @@ class AdapterCore:
         self._connected = False
         self._stopping = False
         self._stop = threading.Event()
+        self._heartbeat_wake = threading.Event()
         self._has_registered = False
         self._unique_client_id = f"{runtime.client_id}_{os.getpid()}_{uuid.uuid4().hex[:4]}"
         self.leases_file = leases_file or (self.setup.path.parent / "virtual_leases.json")
@@ -295,6 +296,9 @@ class AdapterCore:
         }
         self.control.set_data_handler(self._on_backend_data)
         self.control.set_event_handler(self._on_backend_event)
+        health_setter = getattr(self.control, 'set_health_handler', None)
+        if callable(health_setter):
+            health_setter(self._heartbeat_wake.set)
         if self.simulation is not None:
             self.simulation.set_data_handler(self._on_backend_data)
             if hasattr(self.simulation, "set_batch_data_handler"):
@@ -420,6 +424,7 @@ class AdapterCore:
     def stop(self) -> None:
         self._stopping = True
         self._stop.set()
+        self._heartbeat_wake.set()
         self._save_stored_leases()
         if self._client is not None:
             self._client.loop_stop()
@@ -727,7 +732,11 @@ class AdapterCore:
 
     def _heartbeat_loop(self) -> None:
         interval = max(self.runtime.heartbeat_interval_sec, 1.0)
-        while not self._stop.wait(interval):
+        while not self._stop.is_set():
+            self._heartbeat_wake.wait(interval)
+            self._heartbeat_wake.clear()
+            if self._stop.is_set():
+                break
             if self._connected:
                 self._publish_heartbeat()
             if self._leases:

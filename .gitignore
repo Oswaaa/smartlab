@@ -44,6 +44,8 @@ vcpkg_installed/
 *.dll
 *.lib
 *.zip
+# Motion card runtime library used by the Python adapter
+!adapter/new/MotionStageController/MultiCard.dll
 
 # Adapter runtime valve opening; absent file means fully tight
 adapter/new/GetPLCData/valve-travel.json

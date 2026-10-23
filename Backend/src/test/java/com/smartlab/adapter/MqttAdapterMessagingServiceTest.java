@@ -17,8 +17,10 @@ import com.smartlab.management.mapper.resource.device.DeviceInstancesMapper;
 import com.smartlab.management.service.db.resource.adapter.AdapterIndexService;
 import com.smartlab.management.service.protocol.AdapterPayloadMapperService;
 import org.eclipse.paho.client.mqttv3.MqttMessage;
+import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.context.ApplicationEventPublisher;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.util.List;
 import java.util.Map;
@@ -41,6 +43,65 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class MqttAdapterMessagingServiceTest {
+
+    @Test
+    void disconnectedCommandDoesNotConnectOnCallerThread() throws Exception {
+        MqttAdapterMessagingService service = new MqttAdapterMessagingService(
+                mock(AdapterIndexService.class), mock(AdapterPayloadMapperService.class),
+                new ProtocolDictionaryService(), mock(Executor.class));
+        MqttClient client = mock(MqttClient.class);
+        ReflectionTestUtils.setField(service, "client", client);
+        try {
+            ObjectNode command = JsonNodeSupport.objectNode().put("topic", "smartlab/test");
+            command.putObject("payload");
+            org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class, () -> service.publishCommand(command));
+            verify(client, never()).connect(any(org.eclipse.paho.client.mqttv3.MqttConnectOptions.class));
+        } finally { service.stop(); }
+    }
+
+    @Test
+    void rejectedCriticalEventIsNotAcknowledgedOrSwallowed() throws Exception {
+        MqttAdapterMessagingService service = new MqttAdapterMessagingService(
+                mock(AdapterIndexService.class), mock(AdapterPayloadMapperService.class),
+                new ProtocolDictionaryService(), mock(Executor.class));
+        MqttClient client = mock(MqttClient.class);
+        ReflectionTestUtils.setField(service, "client", client);
+        service.stop();
+        MqttMessage message = mqttMessage(JsonNodeSupport.objectNode());
+        message.setQos(1);
+        message.setId(42);
+        org.junit.jupiter.api.Assertions.assertThrows(java.util.concurrent.RejectedExecutionException.class,
+                () -> service.messageArrived("smartlab/adapter/plc/leaseresult", message));
+        verify(client, never()).messageArrivedComplete(42, 1);
+    }
+
+    @Test
+    void leaseBusinessRunsOutsideMqttCallbackAndAcknowledgesAfterCompletion() throws Exception {
+        ApplicationEventPublisher events = mock(ApplicationEventPublisher.class);
+        MqttAdapterMessagingService service = new MqttAdapterMessagingService(
+                mock(AdapterIndexService.class), mock(AdapterPayloadMapperService.class),
+                new ProtocolDictionaryService(), mock(Executor.class));
+        service.setApplicationEventPublisher(events);
+        MqttClient client = mock(MqttClient.class);
+        when(client.isConnected()).thenReturn(true);
+        ReflectionTestUtils.setField(service, "client", client);
+        Thread callbackThread = Thread.currentThread();
+        java.util.concurrent.atomic.AtomicReference<Thread> worker = new java.util.concurrent.atomic.AtomicReference<>();
+        doAnswer(invocation -> { worker.set(Thread.currentThread()); return null; })
+                .when(events).publishEvent(any(AdapterLeaseResultEvent.class));
+        ObjectNode payload = JsonNodeSupport.objectNode().put("leaseId", 11).put("adapterName", "plc")
+                .put("action", "LEASE").put("devicePoint", "Reactor1_sim_11")
+                .put("status", "GRANTED").put("timestamp", 1719892800L);
+        MqttMessage message = mqttMessage(payload);
+        message.setQos(1);
+        message.setId(42);
+        try {
+            service.messageArrived("smartlab/adapter/plc/leaseresult", message);
+            org.awaitility.Awaitility.await().until(() -> worker.get() != null);
+            org.junit.jupiter.api.Assertions.assertNotSame(callbackThread, worker.get());
+            verify(client, org.mockito.Mockito.timeout(2000)).messageArrivedComplete(42, 1);
+        } finally { service.stop(); }
+    }
 
     @Test
     void startAndAbortUseDifferentTransportMessages() {
@@ -226,6 +287,26 @@ class MqttAdapterMessagingServiceTest {
     }
 
     @Test
+    void telemetryFlushLimitsEachDatabaseBurstWithoutLosingLaterSamples() {
+        AdapterPayloadMapperService mapper = mock(AdapterPayloadMapperService.class);
+        TelemetryIngestQueue queue = new TelemetryIngestQueue(mapper);
+        for (int index = 0; index < 257; index++) {
+            queue.enqueue("plc", "point-1", telemetry("plc", "point-1", index + 1L, index));
+        }
+
+        queue.flushAvailable();
+        assertEquals(1, queue.pendingCount());
+        queue.flushAvailable();
+
+        org.mockito.ArgumentCaptor<List<JsonNode>> captured = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(mapper, org.mockito.Mockito.times(2))
+                .applyTelemetrySamples(eq("plc"), eq("point-1"), captured.capture());
+        assertEquals(256, captured.getAllValues().get(0).size());
+        assertEquals(1, captured.getAllValues().get(1).size());
+        assertEquals(0, queue.pendingCount());
+    }
+
+    @Test
     void registerRequestGoesToPendingQueueInsteadOfDatabase() {
         AdapterIndexService adapters = mock(AdapterIndexService.class);
         when(adapters.previewRegisterPayload(any())).thenReturn(registerManifest());
@@ -313,7 +394,7 @@ class MqttAdapterMessagingServiceTest {
 
         service.messageArrived("smartlab/adapter/plc/leaseresult", mqttMessage(payload));
 
-        verify(events).publishEvent(any(AdapterLeaseResultEvent.class));
+        verify(events, org.mockito.Mockito.timeout(2000)).publishEvent(any(AdapterLeaseResultEvent.class));
     }
 
     @Test
@@ -340,6 +421,43 @@ class MqttAdapterMessagingServiceTest {
     }
 
     @Test
+    void subscriptionReconciliationOnlyChangesTopicsInTheDiff() throws Exception {
+        MqttAdapterMessagingService service = new MqttAdapterMessagingService(
+                mock(AdapterIndexService.class), mock(AdapterPayloadMapperService.class),
+                new ProtocolDictionaryService(), mock(Executor.class));
+        MqttClient client = mock(MqttClient.class);
+        when(client.isConnected()).thenReturn(true);
+        ReflectionTestUtils.setField(service, "client", client);
+        service.replaceTrackedSubscriptions(Set.of("keep", "remove"));
+
+        service.applySubscriptionDiff(Set.of("keep", "add"));
+
+        verify(client).unsubscribe("remove");
+        verify(client).subscribe("add", 1);
+        verify(client, never()).subscribe("keep", 1);
+        assertEquals(Set.of("keep", "add"), service.trackedSubscriptions());
+    }
+
+    @Test
+    void heartbeatCallbackCoalescesLatestSnapshotBeforeDatabaseWork() {
+        AdapterIndexService adapters = mock(AdapterIndexService.class);
+        MqttAdapterMessagingService service = new MqttAdapterMessagingService(
+                adapters, mock(AdapterPayloadMapperService.class),
+                new ProtocolDictionaryService(), mock(Executor.class));
+        ObjectNode first = heartbeat("plc", false);
+        ObjectNode latest = heartbeat("plc", true);
+
+        service.messageArrived("smartlab/adapter/plc/heartbeat", mqttMessage(first));
+        service.messageArrived("smartlab/adapter/plc/heartbeat", mqttMessage(latest));
+        verify(adapters, never()).heartbeat(any(), any());
+
+        service.flushQueuedHeartbeats();
+
+        verify(adapters).heartbeat(eq("plc"), argThat(payload ->
+                payload.path("points").get(0).path("online").asBoolean()), any());
+    }
+
+    @Test
     void adapterAndDeviceLifecycleEventsResyncSubscriptions() {
         MqttAdapterMessagingService service = spy(new MqttAdapterMessagingService(
                 mock(AdapterIndexService.class), mock(AdapterPayloadMapperService.class),
@@ -359,6 +477,15 @@ class MqttAdapterMessagingServiceTest {
         payload.put("adapterName", adapterName);
         payload.put("devicePoint", devicePoint);
         payload.putObject("telemetryData").put("temperature", temperature);
+        return payload;
+    }
+
+    private ObjectNode heartbeat(String adapterName, boolean online) {
+        ObjectNode payload = JsonNodeSupport.objectNode();
+        payload.put("timestamp", 1719892800L);
+        payload.put("adapterName", adapterName);
+        payload.put("status", "ALIVE");
+        payload.putArray("points").addObject().put("devicePoint", "point-1").put("online", online);
         return payload;
     }
 

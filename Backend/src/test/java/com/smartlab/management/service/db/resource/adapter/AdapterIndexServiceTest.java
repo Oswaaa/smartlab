@@ -12,6 +12,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.Serializable;
+import java.time.OffsetDateTime;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -96,12 +97,38 @@ class AdapterIndexServiceTest {
     void heartbeatUpdatesCompletedAdapter() {
         AdapterIndex adapter = completedAdapter(8L, "plc");
         when(adapterMapper.selectOne(any())).thenReturn(adapter);
+        AdapterManifestService manifest = mock(AdapterManifestService.class);
+        service = new AdapterIndexService(adapterMapper, manifest, instanceMapper);
 
         AdapterIndex saved = service.heartbeat("plc", aliveHeartbeat());
 
         assertEquals("plc", saved.getAdapterName());
-        verify(adapterMapper).updateById(adapter);
+        verify(adapterMapper).updateHeartbeat(eq(8L), any());
+        verify(adapterMapper, never()).updateById(any(AdapterIndex.class));
+        verify(manifest, never()).validate(any());
         verify(adapterMapper, never()).insert(any(AdapterIndex.class));
+    }
+
+    @Test
+    void delayedHeartbeatRetainsItsReceiveTime() {
+        AdapterIndex adapter = completedAdapter(8L, "plc");
+        when(adapterMapper.selectOne(any())).thenReturn(adapter);
+        OffsetDateTime receivedAt = OffsetDateTime.now().minusSeconds(3);
+
+        service.heartbeat("plc", aliveHeartbeat(), receivedAt);
+
+        verify(adapterMapper).updateHeartbeat(8L, receivedAt);
+        assertEquals(receivedAt, adapter.getLastHeartbeat());
+    }
+
+    @Test
+    void expiredQueuedHeartbeatCannotMarkAdapterOnline() {
+        OffsetDateTime receivedAt = OffsetDateTime.now().minusMinutes(2);
+
+        assertNull(service.heartbeat("plc", aliveHeartbeat(), receivedAt));
+
+        verify(adapterMapper, never()).selectOne(any());
+        verify(adapterMapper, never()).updateHeartbeat(any(), any());
     }
 
     @Test
@@ -151,10 +178,9 @@ class AdapterIndexServiceTest {
 
         service.heartbeat("plc", payload);
 
-        verify(twinMapper).updateOnlineStatus(eq(1L), eq("ONLINE"), any());
-        verify(twinMapper).updateOnlineStatus(eq(2L), eq("OFFLINE"), any());
-        verify(twinMapper).updateOnlineStatus(eq(3L), eq("OFFLINE"), any());
-        verify(twinMapper).updateOnlineStatus(eq(4L), eq("ONLINE"), any());
+        verify(twinMapper).updateOnlineStatusBatch(eq(List.of(1L, 4L)), eq("ONLINE"), any());
+        verify(twinMapper).updateOnlineStatusBatch(eq(List.of(2L, 3L)), eq("OFFLINE"), any());
+        verify(twinMapper, never()).updateOnlineStatus(any(), any(), any());
     }
 
     @Test
@@ -170,6 +196,19 @@ class AdapterIndexServiceTest {
 
         verify(adapterMapper, never()).updateById(any(AdapterIndex.class));
         verify(twinMapper, never()).updateOnlineStatus(any(), any(), any());
+    }
+
+    @Test
+    void expiryScanReadsOnlyExpiredAdapterNames() {
+        DeviceTwinStatesMapper twinMapper = mock(DeviceTwinStatesMapper.class);
+        service = new AdapterIndexService(adapterMapper, new AdapterManifestService(), instanceMapper, null, twinMapper);
+        when(adapterMapper.selectExpiredAdapterNames(any())).thenReturn(List.of("plc", "motion"));
+
+        service.scanAndExpireHeartbeats();
+
+        verify(twinMapper).updateOnlineStatusByAdapter(eq("plc"), eq("OFFLINE"), any());
+        verify(twinMapper).updateOnlineStatusByAdapter(eq("motion"), eq("OFFLINE"), any());
+        verify(adapterMapper, never()).selectList(any());
     }
 
     private ObjectNode aliveHeartbeat() {

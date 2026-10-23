@@ -39,6 +39,7 @@ public class InProcessAdapterSimulator {
     private final StateMachineEngine stateMachineEngine;
     private final Executor executor;
     private final ConcurrentHashMap<Long, String> lastErrors = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, String> probeResults = new ConcurrentHashMap<>();
 
     public InProcessAdapterSimulator(DeviceInstancesMapper deviceInstancesMapper,
                                       DeviceModelsMapper deviceModelsMapper,
@@ -68,9 +69,11 @@ public class InProcessAdapterSimulator {
                 reply(instanceId, event);
             } catch (IllegalStateException error) {
                 recordFailure(instanceId, "SIM_NO_ADAPTER_EVENT", error.getMessage());
+                recordProbeResult(instanceId, event.messageId(), "FAILED");
             } catch (RuntimeException error) {
                 log.warn("进程内 Adapter 模拟失败 instanceId={}: {}", instanceId, error.getMessage());
                 recordFailure(instanceId, "SIM_NO_ADAPTER_EVENT", error.getMessage());
+                recordProbeResult(instanceId, event.messageId(), "FAILED");
             }
         });
     }
@@ -88,6 +91,11 @@ public class InProcessAdapterSimulator {
         return lastErrors.remove(instanceId);
     }
 
+    public String takeProbeResult(Long instanceId, String messageId) {
+        return instanceId == null || messageId == null || messageId.isBlank()
+                ? null : probeResults.remove(instanceId + ":" + messageId);
+    }
+
     private void reply(Long instanceId, StateMachineSendActionEvent event) {
         DeviceInstances instance = deviceInstancesMapper.selectById(instanceId);
         if (instance == null || !DeviceInstanceKind.isTemporary(instance)) {
@@ -100,7 +108,17 @@ public class InProcessAdapterSimulator {
         JsonNode template = parsedTemplate(model);
         if ("CMD_START".equals(event.signalName())) {
             dispatchDeclared(instance, model, template, "SENT", "RUNNING", event);
-            dispatchDeclared(instance, model, template, "RUNNING", "COMPLETED", event);
+            List<ObjectNode> emitted = dispatchDeclared(instance, model, template, "RUNNING", "COMPLETED", event);
+            for (ObjectNode signal : emitted == null ? List.<ObjectNode>of() : emitted) {
+                if (!"CMD_STATE".equals(signal.path("signalName").asText())) continue;
+                JsonNode payload = signal.path("payload");
+                if (event.messageId() != null && event.messageId().equals(payload.path("messageId").asText())) {
+                    String state = payload.path("stateName").asText();
+                    if ("COMPLETED".equals(state) || "FAILED".equals(state) || "ABORTED".equals(state)) {
+                        recordProbeResult(instanceId, event.messageId(), state);
+                    }
+                }
+            }
         } else if ("CMD_ABORT".equals(event.signalName())) {
             dispatchDeclared(instance, model, template, "ABORTING", "ABORTED", event);
         }
@@ -126,7 +144,7 @@ public class InProcessAdapterSimulator {
         return template;
     }
 
-    private void dispatchDeclared(DeviceInstances instance, DeviceModels model, JsonNode template,
+    private List<ObjectNode> dispatchDeclared(DeviceInstances instance, DeviceModels model, JsonNode template,
                                      String from, String to, StateMachineSendActionEvent event) {
         String signal = uniqueTransitionEvent(model, from, to);
         if (!hasCmdEvent(template, signal)) {
@@ -137,7 +155,7 @@ public class InProcessAdapterSimulator {
         if (event.messageId() != null && !event.messageId().isBlank()) {
             message.put("messageId", event.messageId());
         }
-        stateMachineEngine.dispatchAdapterEvent(instance.getId(), signal, message);
+        return stateMachineEngine.dispatchAdapterEvent(instance.getId(), signal, message);
     }
 
     private String uniqueTransitionEvent(DeviceModels model, String fromState, String toState) {
@@ -185,6 +203,12 @@ public class InProcessAdapterSimulator {
         String reason = code + ":" + (message == null ? "流程模拟 Adapter 事件无法回灌" : message);
         lastErrors.put(instanceId, reason);
         log.warn("TEMPORARY 实例 {} 无法回灌 Adapter 事件: {}", instanceId, reason);
+    }
+
+    private void recordProbeResult(Long instanceId, String messageId, String state) {
+        if (instanceId != null && messageId != null && !messageId.isBlank()) {
+            probeResults.put(instanceId + ":" + messageId, state);
+        }
     }
 
     private Iterable<JsonNode> iterable(JsonNode node) {

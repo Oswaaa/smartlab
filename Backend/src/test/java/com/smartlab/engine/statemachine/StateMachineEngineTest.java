@@ -35,6 +35,35 @@ import static org.mockito.Mockito.*;
 class StateMachineEngineTest {
 
     @Test
+    void stateOutputsWaitForCommit() {
+        Fixture fixture = fixture();
+        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+        try {
+            start(fixture, "commit-1", "heat");
+            verify(fixture.publisher(), never()).publishEvent(any(StateMachineInterfaceSignalEvent.class));
+            org.springframework.transaction.support.TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(org.springframework.transaction.support.TransactionSynchronization::afterCommit);
+            verify(fixture.publisher(), timeout(2000).atLeastOnce()).publishEvent(any(StateMachineInterfaceSignalEvent.class));
+        } finally {
+            org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
+    void rolledBackStateOutputsAreNotPublished() {
+        Fixture fixture = fixture();
+        org.springframework.transaction.support.TransactionSynchronizationManager.initSynchronization();
+        try {
+            start(fixture, "rollback-1", "heat");
+            org.springframework.transaction.support.TransactionSynchronizationManager.getSynchronizations()
+                    .forEach(sync -> sync.afterCompletion(org.springframework.transaction.support.TransactionSynchronization.STATUS_ROLLED_BACK));
+            verify(fixture.publisher(), never()).publishEvent(any(StateMachineInterfaceSignalEvent.class));
+        } finally {
+            org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization();
+        }
+    }
+
+    @Test
     void normalStartPersistsSentAndUsesNormalLane() {
         Fixture fixture = fixture();
         List<ObjectNode> emitted = start(fixture, "A-1", "heat");
@@ -51,6 +80,8 @@ class StateMachineEngineTest {
                         "taskId", 9L, "taskStepId", 12L));
 
         ArgumentCaptor<Object> captor = ArgumentCaptor.forClass(Object.class);
+        org.awaitility.Awaitility.await().untilAsserted(() ->
+                verify(fixture.publisher(), atLeastOnce()).publishEvent(any(StateMachineInterfaceSignalEvent.class)));
         verify(fixture.publisher(), atLeastOnce()).publishEvent(captor.capture());
         List<StateMachineInterfaceSignalEvent> cmdStates = captor.getAllValues().stream()
                 .filter(StateMachineInterfaceSignalEvent.class::isInstance)

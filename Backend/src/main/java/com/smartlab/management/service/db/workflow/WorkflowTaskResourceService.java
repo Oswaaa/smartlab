@@ -350,12 +350,14 @@ public class WorkflowTaskResourceService {
         JsonNode capability = findByText(model.getCapabilities(), "capabilityName", capabilityName);
         if (capability == null) return List.of();
         JsonNode modelValues = node.path("capability").path("capabilityParameters");
+        Set<String> inputNames = inputParameterNames(capability);
         List<CapabilityParameterRequirement> result = new ArrayList<>();
         for (JsonNode definition : iterable(capability.path("parameters"))) {
             String name = definition.path("name").asText("");
             if (name.isBlank()) continue;
             JsonNode modelValue = modelValues.get(name);
-            boolean hole = isParameterHole(modelValue);
+            boolean fixedByModel = inputNames != null && !inputNames.contains(name);
+            boolean hole = !fixedByModel && isParameterHole(modelValue);
             JsonNode requiredNode = definition.get("required");
             if (requiredNode == null || !requiredNode.isBoolean()) {
                 throw new IllegalArgumentException("能力参数缺少required: " + name);
@@ -364,11 +366,23 @@ public class WorkflowTaskResourceService {
                     name,
                     definition.path("displayName").asText(name),
                     definition.path("dataType").asText(""),
-                    hole ? JsonNodeSupport.MAPPER.nullNode() : modelValue,
+                    hole || fixedByModel ? JsonNodeSupport.MAPPER.nullNode() : modelValue,
                     hole,
                     requiredNode.booleanValue()));
         }
         return result;
+    }
+
+    private static Set<String> inputParameterNames(JsonNode capability) {
+        JsonNode mappings = capability.path("parameterMapping");
+        if (!mappings.isArray() || mappings.size() == 0) return null;
+        Set<String> names = new LinkedHashSet<>();
+        for (JsonNode mapping : mappings) {
+            if ("true".equalsIgnoreCase(mapping.path("isFixedValue").asText(""))) continue;
+            String name = mapping.path("capabilityParamName").asText("");
+            if (!name.isBlank()) names.add(name);
+        }
+        return names;
     }
 
     private JsonNode mergeCapabilityParameters(FlowNode node, JsonNode slotParameters) {
@@ -389,6 +403,10 @@ public class WorkflowTaskResourceService {
             JsonNode modelValue = modelValues.get(parameter.name());
             if (!isParameterHole(modelValue)) {
                 effective.set(parameter.name(), modelValue.deepCopy());
+                continue;
+            }
+            if (!parameter.hole()) {
+                // 模型固定值参数：设备侧按 capability.parameterMapping 的 fixedValue 自行补全
                 continue;
             }
             JsonNode slotValue = slotParameters == null ? null : slotParameters.get(parameter.name());

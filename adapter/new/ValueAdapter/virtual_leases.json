@@ -1,0 +1,13 @@
+{
+  "31": {
+    "leaseId": 31,
+    "physicalPoint": "Valve00",
+    "virtualPoint": "Valve00_sim_31",
+    "status": "RELEASED",
+    "released": true,
+    "state": {
+      "isOpen": true
+    },
+    "updatedTime": 1791792741829
+  }
+}

@@ -150,6 +150,83 @@ class WorkflowSimulationServiceTest {
         verify(instances).deleteTemporary(90L);
     }
 
+    @Test
+    void budgetCountsEveryInvocationOfNestedSubflowDevices() {
+        WorkflowService workflows = mock(WorkflowService.class);
+        WorkflowSimulationService service = service(workflows, mock(DeviceInstanceService.class),
+                mock(WorkflowStructureWalker.class), 60);
+        when(workflows.compileDefinition(22L)).thenReturn(twoDeviceSubflow());
+
+        assertEquals(90L, service.simulationBudgetSeconds(twoCallsToSubflow()));
+    }
+
+    @Test
+    void budgetKeepsMinimumAndMaximumBounds() {
+        WorkflowSimulationService service = service(mock(WorkflowService.class), mock(DeviceInstanceService.class),
+                mock(WorkflowStructureWalker.class), 60);
+        assertEquals(60L, service.simulationBudgetSeconds(
+                new WorkflowDefinitionCompiler.CompiledWorkflow(Map.of(), Map.of(), Map.of(), Map.of(), 1L, 2L)));
+        Map<Long, com.fasterxml.jackson.databind.JsonNode> manyDevices = new LinkedHashMap<>();
+        for (long id = 1; id <= 50; id++) manyDevices.put(id, device("probe" + id, 7L));
+        Map<Long, List<WorkflowDefinitionCompiler.Connection>> chain = new LinkedHashMap<>();
+        for (long id = 1; id < 50; id++) chain.put(id, List.of(conn(id, "out", id + 1, "in")));
+        chain.put(50L, List.of());
+        assertEquals(600L, service.simulationBudgetSeconds(
+                new WorkflowDefinitionCompiler.CompiledWorkflow(manyDevices, chain, Map.of(), Map.of(), 1L, 50L)));
+    }
+
+    @Test
+    void disconnectedDeviceNodesDoNotConsumeSimulationBudget() {
+        WorkflowSimulationService service = service(mock(WorkflowService.class), mock(DeviceInstanceService.class),
+                mock(WorkflowStructureWalker.class), 60);
+        Map<Long, com.fasterxml.jackson.databind.JsonNode> nodes = new LinkedHashMap<>();
+        nodes.put(1L, func("start", "START"));
+        nodes.put(2L, func("end", "END"));
+        nodes.put(3L, device("unreachable1", 7L));
+        nodes.put(4L, device("unreachable2", 7L));
+        nodes.put(5L, device("unreachable3", 7L));
+        WorkflowDefinitionCompiler.CompiledWorkflow compiled = new WorkflowDefinitionCompiler.CompiledWorkflow(
+                nodes, Map.of(1L, List.of(conn(1, "out", 2, "in")), 2L, List.of()), Map.of(), Map.of(), 1L, 2L);
+
+        assertEquals(60L, service.simulationBudgetSeconds(compiled));
+    }
+
+    private WorkflowDefinitionCompiler.CompiledWorkflow twoCallsToSubflow() {
+        Map<Long, com.fasterxml.jackson.databind.JsonNode> nodes = new LinkedHashMap<>();
+        nodes.put(1L, func("start", "START"));
+        nodes.put(2L, subflow("first", 22L));
+        nodes.put(3L, subflow("second", 22L));
+        nodes.put(4L, func("end", "END"));
+        Map<Long, List<WorkflowDefinitionCompiler.Connection>> outgoing = Map.of(
+                1L, List.of(conn(1, "out", 2, "in")),
+                2L, List.of(conn(2, "out", 3, "in")),
+                3L, List.of(conn(3, "out", 4, "in")),
+                4L, List.of());
+        return new WorkflowDefinitionCompiler.CompiledWorkflow(nodes, outgoing, Map.of(), Map.of(), 1L, 4L);
+    }
+
+    private WorkflowDefinitionCompiler.CompiledWorkflow twoDeviceSubflow() {
+        Map<Long, com.fasterxml.jackson.databind.JsonNode> nodes = new LinkedHashMap<>();
+        nodes.put(1L, func("start", "START"));
+        nodes.put(2L, device("heat", 7L));
+        nodes.put(3L, device("cool", 7L));
+        nodes.put(4L, func("end", "END"));
+        Map<Long, List<WorkflowDefinitionCompiler.Connection>> outgoing = Map.of(
+                1L, List.of(conn(1, "out", 2, "in")),
+                2L, List.of(conn(2, "out", 3, "in")),
+                3L, List.of(conn(3, "out", 4, "in")),
+                4L, List.of());
+        return new WorkflowDefinitionCompiler.CompiledWorkflow(nodes, outgoing, Map.of(), Map.of(), 1L, 4L);
+    }
+
+    private ObjectNode subflow(String name, long id) {
+        ObjectNode node = JsonNodeSupport.objectNode();
+        node.put("name", name);
+        node.put("nodeType", "SUBFLOW_NODE");
+        node.put("subFlowModelId", id);
+        return node;
+    }
+
     private WorkflowSimulationService service(WorkflowService workflows, DeviceInstanceService instances,
                                                WorkflowStructureWalker walker, long timeoutSeconds) {
         return new WorkflowSimulationService(workflows, instances, walker, timeoutSeconds);

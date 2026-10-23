@@ -55,6 +55,12 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executor;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * MQTT bridge for the SmartLab adapter protocol.
@@ -70,11 +76,30 @@ public class MqttAdapterMessagingService implements MqttCallbackExtended {
     private final AdapterIndexService adapterIndexService;
     private final AdapterPayloadMapperService protocolMapperService;
     private final ProtocolDictionaryService protocolDictionaryService;
-    private final Executor executor;
+    private volatile boolean stopping;
+    private volatile boolean connectionCleanupFailed;
+    private final ExecutorService connectionExecutor = Executors.newSingleThreadExecutor(r -> {
+        Thread thread = new Thread(r, "mqtt-connection-manager");
+        thread.setDaemon(true);
+        return thread;
+    });
+    private final AtomicBoolean connectionWorkPending = new AtomicBoolean();
+    private final ExecutorService[] eventWorkers = java.util.stream.IntStream.range(0, 4)
+            .mapToObj(index -> (ExecutorService) new ThreadPoolExecutor(1, 1, 0, TimeUnit.MILLISECONDS,
+                    new ArrayBlockingQueue<>(1024), r -> {
+                        Thread thread = new Thread(r, "mqtt-event-" + index);
+                        thread.setDaemon(true);
+                        return thread;
+                    }, new ThreadPoolExecutor.AbortPolicy()))
+            .toArray(ExecutorService[]::new);
+    private final Set<String> failedEventKeys = ConcurrentHashMap.newKeySet();
     private final TelemetryIngestQueue telemetryIngest;
+    private final HeartbeatIngestQueue heartbeatIngest;
     private DeviceInstancesMapper deviceInstancesMapper;
     private InProcessAdapterSimulator adapterSimulator;
     private ApplicationEventPublisher events;
+    @Autowired(required = false)
+    private com.smartlab.engine.statemachine.StateMachineInterfaceOutputDispatcher stateOutputs;
     private final Set<String> subscribedTopics = ConcurrentHashMap.newKeySet();
     private final Map<String, Map<String, Object>> pendingAdapterRegistrations = new ConcurrentHashMap<>();
     private final List<SseEmitter> registrationEmitters = new CopyOnWriteArrayList<>();
@@ -108,8 +133,8 @@ public class MqttAdapterMessagingService implements MqttCallbackExtended {
         this.adapterIndexService = adapterIndexService;
         this.protocolMapperService = protocolMapperService;
         this.protocolDictionaryService = protocolDictionaryService;
-        this.executor = executor;
         this.telemetryIngest = new TelemetryIngestQueue(protocolMapperService);
+        this.heartbeatIngest = new HeartbeatIngestQueue(adapterIndexService);
     }
 
     @Autowired(required = false)
@@ -134,7 +159,8 @@ public class MqttAdapterMessagingService implements MqttCallbackExtended {
             return;
         }
         telemetryIngest.start();
-        executor.execute(() -> tryStartRegistrationListener(true));
+        heartbeatIngest.start();
+        syncRuntimeSubscriptions();
     }
 
     @Scheduled(fixedDelayString = "${mqtt.reconnect-delay-ms:15000}", initialDelayString = "${mqtt.reconnect-delay-ms:15000}")
@@ -142,31 +168,38 @@ public class MqttAdapterMessagingService implements MqttCallbackExtended {
         if (!autoStart) {
             return;
         }
-        if (!isConnected()) {
-            tryStartRegistrationListener(false);
-            return;
-        }
-        try {
-            reconcileSubscriptions();
-        } catch (Exception e) {
-            log.debug("MQTT 订阅保活失败: {}", e.getMessage());
-        }
+        syncRuntimeSubscriptions();
     }
 
     @PreDestroy
     public void stop() {
-        telemetryIngest.stop();
+        stopping = true;
+        connectionExecutor.shutdownNow();
+        for (ExecutorService worker : eventWorkers) worker.shutdown();
         try {
-            if (client != null && client.isConnected()) {
-                client.disconnect();
+            for (ExecutorService worker : eventWorkers) {
+                if (!worker.awaitTermination(1, TimeUnit.SECONDS)) worker.shutdownNow();
             }
+            if (client != null && client.isConnected()) {
+                client.disconnectForcibly(0, 1000, false);
+            }
+            if (client != null) client.close(true);
         } catch (Exception e) {
             log.warn("断开 MQTT 连接失败: {}", e.getMessage());
+        } finally {
+            connectionExecutor.shutdownNow();
+            for (ExecutorService worker : eventWorkers) worker.shutdown();
+            telemetryIngest.stop();
+            heartbeatIngest.stop();
         }
     }
 
     void flushQueuedTelemetry() {
         telemetryIngest.flushAvailable();
+    }
+
+    void flushQueuedHeartbeats() {
+        heartbeatIngest.flushAvailable();
     }
 
     public Map<String, Object> statusSnapshot() {
@@ -186,6 +219,11 @@ public class MqttAdapterMessagingService implements MqttCallbackExtended {
         Collections.sort(topics);
         status.put("subscribedTopics", topics);
         status.put("pendingRegistrationCount", pendingAdapterRegistrations.size());
+        status.put("pendingHeartbeatAdapterCount", heartbeatIngest.pendingAdapterCount());
+        status.put("pendingTelemetryCount", telemetryIngest.pendingCount());
+        status.put("failedEventTopics", List.copyOf(failedEventKeys));
+        status.put("connectionCleanupFailed", connectionCleanupFailed);
+        status.put("failedStateOutputDevices", stateOutputs == null ? Map.of() : stateOutputs.failedDevices());
         return status;
     }
 
@@ -259,7 +297,7 @@ public class MqttAdapterMessagingService implements MqttCallbackExtended {
     }
 
     public Map<String, Object> reconnectRegistrationListener() {
-        tryStartRegistrationListener(true);
+        syncRuntimeSubscriptions();
         return statusSnapshot();
     }
 
@@ -321,7 +359,10 @@ public class MqttAdapterMessagingService implements MqttCallbackExtended {
             throw new IllegalArgumentException("MQTT topic 不能为空");
         }
         try {
-            connectIfNeeded();
+            if (!isConnected()) {
+                if (autoStart) syncRuntimeSubscriptions();
+                throw new IllegalStateException("MQTT 当前未连接，连接管理线程正在恢复，请稍后重试指令");
+            }
             byte[] body = JsonNodeSupport.MAPPER.writeValueAsBytes(payload == null ? JsonNodeSupport.objectNode() : payload);
             client.publish(topic, body, 1, false);
         } catch (Exception e) {
@@ -343,10 +384,17 @@ public class MqttAdapterMessagingService implements MqttCallbackExtended {
     }
 
     public void syncRuntimeSubscriptions() {
+        if (stopping || connectionCleanupFailed) return;
+        if (!connectionWorkPending.compareAndSet(false, true)) return;
         try {
-            reconcileSubscriptions();
-        } catch (Exception e) {
-            log.warn("MQTT 订阅同步失败: {}", e.getMessage());
+            connectionExecutor.execute(() -> {
+                try { reconcileSubscriptions(); }
+                catch (Exception e) { log.warn("MQTT 订阅同步失败", e); }
+                finally { connectionWorkPending.set(false); }
+            });
+        } catch (RuntimeException e) {
+            connectionWorkPending.set(false);
+            throw e;
         }
     }
 
@@ -372,18 +420,44 @@ public class MqttAdapterMessagingService implements MqttCallbackExtended {
 
     @Override
     public void connectComplete(boolean reconnect, String serverURI) {
-        executor.execute(this::syncRuntimeSubscriptions);
+        syncRuntimeSubscriptions();
     }
 
     @Override
     public void connectionLost(Throwable cause) {
         connectionStatus = "DISCONNECTED";
         lastError = cause == null ? "unknown" : cause.getMessage();
-        log.warn("MQTT 连接断开: {}", lastError);
+        log.warn("MQTT 连接断开: {}", lastError, cause);
     }
 
     @Override
     public void messageArrived(String topic, MqttMessage message) {
+        MqttClient receivedOn = client;
+        int packetId = message.getId();
+        int qos = message.getQos();
+        String type = protocolDictionaryService.matchMqttTopic(topic)
+                .map(ProtocolTopicMatch::topicName).orElse("");
+        if ("eventTopic".equals(type) || "leaseResultTopic".equals(type)) {
+            byte[] body = message.getPayload().clone();
+            // One event topic identifies one device; lease results are ordered per adapter.
+            if (failedEventKeys.contains(topic)) {
+                throw new IllegalStateException("MQTT 业务通道已暂停，需处理先前失败: " + topic);
+            }
+            int shard = Math.floorMod(topic.hashCode(), eventWorkers.length);
+            // Rejection must reach Paho: returning normally would acknowledge a lost event.
+            eventWorkers[shard].execute(() -> {
+                if (failedEventKeys.contains(topic)) return;
+                try {
+                    routeIncomingMessage(topic, JsonNodeSupport.MAPPER.readTree(body));
+                    acknowledge(receivedOn, packetId, qos);
+                } catch (Exception e) {
+                    failedEventKeys.add(topic);
+                    lastError = "MQTT 业务通道暂停: " + topic + ": " + e.getMessage();
+                    log.error("MQTT 关键事件处理失败，保留未确认消息并暂停该通道, topic={}, packetId={}", topic, packetId, e);
+                }
+            });
+            return;
+        }
         try {
             String text = new String(message.getPayload(), StandardCharsets.UTF_8);
             JsonNode payload = text.isBlank() ? JsonNodeSupport.objectNode() : JsonNodeSupport.MAPPER.readTree(text);
@@ -391,21 +465,19 @@ public class MqttAdapterMessagingService implements MqttCallbackExtended {
         } catch (Exception e) {
             log.warn("处理 MQTT 消息失败, topic={}, reason={}", topic, e.getMessage());
         }
+        acknowledge(receivedOn, packetId, qos);
+    }
+
+    private void acknowledge(MqttClient receivedOn, int packetId, int qos) {
+        if (receivedOn == null || qos == 0) return;
+        if (receivedOn != client || !receivedOn.isConnected()) return;
+        try { receivedOn.messageArrivedComplete(packetId, qos); }
+        catch (MqttException e) { log.warn("MQTT 消息确认失败，等待 Broker 重投，packetId={}", packetId, e); }
     }
 
     @Override
     public void deliveryComplete(IMqttDeliveryToken token) {
         // no-op
-    }
-
-    private void tryStartRegistrationListener(boolean warnOnFailure) {
-        try {
-            reconcileSubscriptions();
-        } catch (Exception e) {
-            if (warnOnFailure) {
-                log.warn("MQTT 未连接，系统将继续启动并在首页展示状态: {}", e.getMessage());
-            }
-        }
     }
 
     private void routeIncomingMessage(String topic, JsonNode payload) {
@@ -453,7 +525,7 @@ public class MqttAdapterMessagingService implements MqttCallbackExtended {
         String adapterName = variables.get("adapterName");
         if ("heartbeatTopic".equals(topicMatch.topicName())) {
             protocolDictionaryService.validateDefinition("AdapterHeartbeat", payload);
-            adapterIndexService.heartbeat(adapterName, payload);
+            heartbeatIngest.enqueue(adapterName, payload);
             return;
         }
         if ("telemetryTopic".equals(topicMatch.topicName())) {
@@ -558,7 +630,7 @@ public class MqttAdapterMessagingService implements MqttCallbackExtended {
     record TopicSubscriptionDiff(Set<String> toSubscribe, Set<String> toUnsubscribe) {
     }
 
-    private synchronized void applySubscriptionDiff(Set<String> desired) {
+    synchronized void applySubscriptionDiff(Set<String> desired) {
         if (!isConnected()) {
             return;
         }
@@ -572,7 +644,7 @@ public class MqttAdapterMessagingService implements MqttCallbackExtended {
                 log.warn("MQTT 退订失败, topic={}, reason={}", topic, e.getMessage());
             }
         }
-        for (String topic : desired) {
+        for (String topic : diff.toSubscribe()) {
             try {
                 client.subscribe(topic, 1);
                 subscribedTopics.add(topic);
@@ -592,11 +664,14 @@ public class MqttAdapterMessagingService implements MqttCallbackExtended {
         try {
             if (client == null) {
                 client = new MqttClient(broker, clientId, new MemoryPersistence());
+                client.setManualAcks(true);
+                client.setTimeToWait(10000);
                 client.setCallback(this);
             }
             MqttConnectOptions options = new MqttConnectOptions();
-            options.setAutomaticReconnect(true);
+            options.setAutomaticReconnect(false);
             options.setCleanSession(false);
+            options.setConnectionTimeout(10);
             if (username != null && !username.isBlank()) {
                 options.setUserName(username);
             }
@@ -604,11 +679,29 @@ public class MqttAdapterMessagingService implements MqttCallbackExtended {
                 options.setPassword(password.toCharArray());
             }
             client.connect(options);
+            subscribedTopics.clear();
             connectionStatus = "CONNECTED";
             lastConnectedAt = Instant.now();
             lastError = null;
         } catch (MqttException e) {
             markError(e);
+            // Complete cleanup on the sole connection worker before another attempt.
+            // If cleanup itself blocks, the single-flight gate prevents accumulating retries.
+            if (client != null) {
+                try {
+                    if (client.isConnected()) client.disconnectForcibly(0, 1000, false);
+                } catch (MqttException disconnectFailure) {
+                    e.addSuppressed(disconnectFailure);
+                }
+                try {
+                    client.close(true);
+                    client = null;
+                } catch (MqttException cleanupFailure) {
+                    connectionCleanupFailed = true;
+                    lastError = "旧 MQTT 客户端清理失败，已停止重试，需要检查后重启后端: " + cleanupFailure.getMessage();
+                    e.addSuppressed(cleanupFailure);
+                }
+            }
             throw e;
         }
     }

@@ -7,6 +7,7 @@ import org.apache.ibatis.annotations.Param;
 import org.apache.ibatis.annotations.Update;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 
 @Mapper
 /**
@@ -94,6 +95,7 @@ public interface DeviceTwinStatesMapper extends BaseMapper<DeviceTwinStates> {
                 WHERE bound_adapter_name = #{adapterName}
                   AND lifecycle_status = 'IN_USE'
             )
+              AND (#{onlineStatus} = 'ONLINE' OR online_status IS DISTINCT FROM #{onlineStatus})
             """)
     int updateOnlineStatusByAdapter(@Param("adapterName") String adapterName,
                                    @Param("onlineStatus") String onlineStatus,
@@ -109,5 +111,19 @@ public interface DeviceTwinStatesMapper extends BaseMapper<DeviceTwinStates> {
     int updateOnlineStatus(@Param("instanceId") Long instanceId,
                            @Param("onlineStatus") String onlineStatus,
                            @Param("now") OffsetDateTime now);
+
+    @Update("""
+            <script>
+            UPDATE "DEVICE_TWIN_STATES"
+            SET online_status = #{onlineStatus},
+                last_online_time = CASE WHEN #{onlineStatus} = 'ONLINE' THEN #{now} ELSE last_online_time END,
+                update_time = #{now}
+            WHERE instance_id IN
+            <foreach collection="instanceIds" item="id" open="(" separator="," close=")">#{id}</foreach>
+            </script>
+            """)
+    int updateOnlineStatusBatch(@Param("instanceIds") List<Long> instanceIds,
+                                @Param("onlineStatus") String onlineStatus,
+                                @Param("now") OffsetDateTime now);
 }
 

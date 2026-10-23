@@ -14,10 +14,12 @@ import com.smartlab.management.mapper.resource.device.DeviceModelsMapper;
 import com.smartlab.management.service.db.resource.adapter.AdapterIndexService;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Map;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -86,6 +88,30 @@ class InProcessAdapterSimulatorTest {
 
         verify(engine).dispatchAdapterEvent(eq(8L), eq("COMMAND_RUNNING"), any());
         verify(engine).dispatchAdapterEvent(eq(8L), eq("COMMAND_COMPLETED"), any());
+    }
+
+    @Test
+    void storesCompletedStateByMessageIdAfterStateMachineResets() {
+        DeviceInstancesMapper instances = mock(DeviceInstancesMapper.class);
+        DeviceModelsMapper models = mock(DeviceModelsMapper.class);
+        StateMachineEngine engine = mock(StateMachineEngine.class);
+        AdapterIndexService adapters = mock(AdapterIndexService.class);
+        when(instances.selectById(8L)).thenReturn(temporary(8L, 4L));
+        when(models.selectById(4L)).thenReturn(modelWithTransitions());
+        when(adapters.requireAdapter("TempAdapter")).thenReturn(adapterIndex());
+        ObjectNode completed = JsonNodeSupport.objectNode();
+        completed.put("signalName", "CMD_STATE");
+        completed.putObject("payload").put("messageId", "msg-1").put("stateName", "COMPLETED");
+        when(engine.dispatchAdapterEvent(eq(8L), eq("COMMAND_COMPLETED"), any()))
+                .thenReturn(List.of(completed));
+        InProcessAdapterSimulator simulator = simulator(instances, models, adapters, new AdapterManifestService(),
+                engine, Runnable::run);
+
+        simulator.handleSendAction(startEvent(8L, Map.of()));
+
+        assertEquals("COMPLETED", simulator.takeProbeResult(8L, "msg-1"));
+        assertNull(simulator.takeProbeResult(8L, "msg-1"));
+        assertNull(simulator.takeProbeResult(8L, "another-message"));
     }
 
     @Test

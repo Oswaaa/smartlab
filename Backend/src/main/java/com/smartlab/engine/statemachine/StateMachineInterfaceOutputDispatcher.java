@@ -2,6 +2,11 @@ package com.smartlab.engine.statemachine;
 
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.springframework.stereotype.Component;
+import jakarta.annotation.PreDestroy;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ExecutorService;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -20,6 +25,28 @@ public class StateMachineInterfaceOutputDispatcher {
 
     private final ConcurrentHashMap<Long, DeviceQueue> deviceQueues = new ConcurrentHashMap<>();
     private final AtomicLong sequences = new AtomicLong();
+    private static final Logger log = LoggerFactory.getLogger(StateMachineInterfaceOutputDispatcher.class);
+    private final ExecutorService workers = Executors.newFixedThreadPool(4, runnable -> {
+        Thread thread = new Thread(runnable, "state-output");
+        thread.setDaemon(true);
+        return thread;
+    });
+
+    @PreDestroy
+    public void stop() {
+        workers.shutdown();
+    }
+
+    public Map<Long, String> failedDevices() {
+        Map<Long, String> failures = new LinkedHashMap<>();
+        deviceQueues.forEach((id, queue) -> {
+            queue.lock.lock();
+            try {
+                if (queue.failure != null) failures.put(id, queue.failure.toString());
+            } finally { queue.lock.unlock(); }
+        });
+        return Map.copyOf(failures);
+    }
 
     public void submitBatch(Long instanceId, List<OutputRequest> requests,
                             Consumer<OutputRequest> sender) {
@@ -32,12 +59,25 @@ public class StateMachineInterfaceOutputDispatcher {
             for (OutputRequest request : normalized) {
                 deviceQueue.queue.add(new QueuedOutput(request, priority(request), sequences.incrementAndGet(), sender));
             }
-            drain = !deviceQueue.draining;
+            drain = !deviceQueue.draining && deviceQueue.failure == null;
             if (drain) deviceQueue.draining = true;
         } finally {
             deviceQueue.lock.unlock();
         }
-        if (drain) drain(instanceId, deviceQueue);
+        if (drain) {
+            try {
+                workers.execute(() -> drain(instanceId, deviceQueue));
+            } catch (RuntimeException failure) {
+                deviceQueue.lock.lock();
+                try {
+                    deviceQueue.draining = false;
+                    deviceQueue.failure = failure;
+                } finally {
+                    deviceQueue.lock.unlock();
+                }
+                throw failure;
+            }
+        }
     }
 
     private void drain(Long instanceId, DeviceQueue deviceQueue) {
@@ -48,7 +88,7 @@ public class StateMachineInterfaceOutputDispatcher {
                 next = deviceQueue.queue.poll();
                 if (next == null) {
                     deviceQueue.draining = false;
-                    if (deviceQueue.queue.isEmpty()) deviceQueues.remove(instanceId, deviceQueue);
+                    // Keep a stable queue identity: a producer may already hold this queue reference.
                     return;
                 }
             } finally {
@@ -60,10 +100,16 @@ public class StateMachineInterfaceOutputDispatcher {
                 deviceQueue.lock.lock();
                 try {
                     deviceQueue.draining = false;
+                    deviceQueue.queue.add(next);
+                    deviceQueue.failure = failure;
                 } finally {
                     deviceQueue.lock.unlock();
                 }
-                throw failure;
+                // Delivery may have partially succeeded. Retain it for diagnosis rather than
+                // automatically replaying listeners and possibly advancing a task twice.
+                log.error("状态输出失败，设备队列已暂停，instanceId={}, signal={}", instanceId,
+                        next.request().signal(), failure);
+                return;
             }
         }
     }
@@ -115,6 +161,7 @@ public class StateMachineInterfaceOutputDispatcher {
     }
 
     private static final class DeviceQueue {
+        private RuntimeException failure;
         private final ReentrantLock lock = new ReentrantLock();
         private final PriorityQueue<QueuedOutput> queue = new PriorityQueue<>(
                 Comparator.comparingInt(QueuedOutput::priority).thenComparingLong(QueuedOutput::sequence));

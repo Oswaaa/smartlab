@@ -13,8 +13,10 @@ import com.smartlab.management.dto.workflow.WorkflowIssue;
 import com.smartlab.management.entity.resource.device.DeviceInstances;
 import com.smartlab.management.entity.resource.device.DeviceTwinStates;
 import com.smartlab.management.service.db.resource.device.DeviceTwinStateService;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -27,30 +29,43 @@ import java.util.UUID;
 
 /**
  * 流程模拟结构遍历：只跟 NODE_TO_NODE 连线，不求值分支条件、不启动 {@code WorkflowEngine}。
- * DEV_NODE 用原状态机探测，完成以 CMD COMPLETED（或 COMPLETED 后复位、见到过 RUNNING 的 IDLE）为准。
- * SENT 后直接回到 IDLE（未见 RUNNING/COMPLETED）视为失败，不当成走通。
+ * DEV_NODE 用原状态机探测，优先按本次 messageId 的 CMD COMPLETED 结果判定。
+ * SENT/RUNNING 后回到 IDLE 但没有匹配的完成结果，不能当成走通。
  */
 @Component
 public class WorkflowStructureWalker {
 
     private static final long PROBE_POLL_MS = 20;
+    private static final Duration RESET_RESULT_GRACE = Duration.ofMillis(200);
 
     private final WorkflowService workflowService;
     private final InterfaceConnectionCatalog connectionCatalog;
     private final StateMachineCommandPort stateMachineCommandPort;
     private final DeviceTwinStateService twinStateService;
     private final InProcessAdapterSimulator adapterSimulator;
+    private final Duration probeTimeout;
 
+    @Autowired
     public WorkflowStructureWalker(WorkflowService workflowService,
                                      InterfaceConnectionCatalog connectionCatalog,
                                      StateMachineCommandPort stateMachineCommandPort,
                                      DeviceTwinStateService twinStateService,
                                      InProcessAdapterSimulator adapterSimulator) {
+        this(workflowService, connectionCatalog, stateMachineCommandPort, twinStateService, adapterSimulator,
+                Duration.ofSeconds(WorkflowSimulationService.DEVICE_PROBE_BUDGET_SECONDS));
+    }
+
+    WorkflowStructureWalker(WorkflowService workflowService,
+                            InterfaceConnectionCatalog connectionCatalog,
+                            StateMachineCommandPort stateMachineCommandPort,
+                            DeviceTwinStateService twinStateService,
+                            InProcessAdapterSimulator adapterSimulator, Duration probeTimeout) {
         this.workflowService = workflowService;
         this.connectionCatalog = connectionCatalog;
         this.stateMachineCommandPort = stateMachineCommandPort;
         this.twinStateService = twinStateService;
         this.adapterSimulator = adapterSimulator;
+        this.probeTimeout = probeTimeout;
     }
 
     public WalkResult walk(long flowModelId, Map<Long, DeviceInstances> tempsByModel, Instant deadline) {
@@ -83,6 +98,8 @@ public class WorkflowStructureWalker {
 
     private void visitNode(long flowModelId, long nodeIdRef, WorkflowDefinitionCompiler.CompiledWorkflow compiled,
                             Session session, Set<String> onPath, Set<Long> subflowStack) {
+        session.currentNode = String.join(" → ", session.subflowNames)
+                + (session.subflowNames.isEmpty() ? "" : " → ") + compiled.nodeName(nodeIdRef);
         session.requireTime();
         String pathKey = flowModelId + ":" + nodeIdRef;
         if (!onPath.add(pathKey)) {
@@ -113,8 +130,10 @@ public class WorkflowStructureWalker {
                             compiled.nodeName(nodeIdRef) + ": 子流程递归成环", "去掉子流程互相引用后重试"));
                 }
                 try {
+                    session.subflowNames.add(compiled.nodeName(nodeIdRef));
                     visitFlow(subFlowId, session, subflowStack);
                 } finally {
+                    session.subflowNames.remove(session.subflowNames.size() - 1);
                     subflowStack.remove(subFlowId);
                 }
             }
@@ -176,6 +195,7 @@ public class WorkflowStructureWalker {
         context.put("messageId", UUID.randomUUID().toString());
         context.put("capabilityName", node.path("capability").path("capabilityName").asText(""));
         context.put("parameters", capabilityParameters(node));
+        Instant probeDeadline = Instant.now().plus(probeTimeout);
         List<?> emitted;
         try {
             emitted = stateMachineCommandPort.dispatchInputSignal(
@@ -192,20 +212,39 @@ public class WorkflowStructureWalker {
                     label + ": 状态机未接受 WF_EXECUTE_START",
                     "确认临时实例 CMD 为空闲后再试，或检查设备模型系统转移"));
         }
+        String messageId = String.valueOf(context.get("messageId"));
         boolean seenSent = false;
         boolean seenRunning = false;
-        boolean sawFailed = false;
+        Instant idleSince = null;
         while (true) {
             session.requireTime();
+            if (!Instant.now().isBefore(probeDeadline)) {
+                session.fail(issue("SIM_DEVICE_TIMEOUT", String.valueOf(nodeIdRef),
+                        "设备探测超时：" + session.currentNode + "；已完成 " + session.completedProbes + " 个设备探测",
+                        "检查该设备的模拟 Adapter 完成事件和状态机转移"));
+            }
             String adapterError = adapterSimulator.takeLastError(instanceId);
             if (adapterError != null) {
                 session.fail(issueFromAdapter(nodeIdRef, label, adapterError));
             }
+            String probeResult = adapterSimulator.takeProbeResult(instanceId, messageId);
+            if ("COMPLETED".equals(probeResult)) {
+                session.completedProbes++;
+                return;
+            }
+            if ("FAILED".equals(probeResult) || "ABORTED".equals(probeResult)) {
+                session.fail(issue("SIM_DEVICE_FAILED", String.valueOf(nodeIdRef),
+                        session.currentNode + ": 设备指令以 " + probeResult + " 结束",
+                        "检查 Adapter 解析配置中的完成事件与状态机转移"));
+            }
             String cmd = currentCmdState(instanceId);
             if ("FAILED".equals(cmd) || "ABORTED".equals(cmd)) {
-                sawFailed = true;
+                session.fail(issue("SIM_DEVICE_FAILED", String.valueOf(nodeIdRef),
+                        session.currentNode + ": 设备指令以 " + cmd + " 结束",
+                        "检查 Adapter 解析配置中的完成事件与状态机转移"));
             }
             if ("COMPLETED".equals(cmd)) {
+                session.completedProbes++;
                 return;
             }
             if ("SENT".equals(cmd)) {
@@ -214,18 +253,15 @@ public class WorkflowStructureWalker {
             if ("RUNNING".equals(cmd)) {
                 seenRunning = true;
             }
-            if ("IDLE".equals(cmd) && sawFailed) {
-                session.fail(issue("SIM_DEVICE_FAILED", String.valueOf(nodeIdRef),
-                        label + ": 设备指令以 FAILED/ABORTED 结束",
-                        "检查 Adapter 解析配置中的完成事件与状态机转移"));
-            }
-            if ("IDLE".equals(cmd) && seenRunning) {
-                return;
-            }
-            if ("IDLE".equals(cmd) && seenSent && !seenRunning) {
-                session.fail(issue("SIM_DEVICE_FAILED", String.valueOf(nodeIdRef),
-                        label + ": 设备指令未见到 COMPLETED（SENT 后直接回到 IDLE，可能是发送看门狗超时）",
-                        "检查 Adapter 解析配置中的完成事件与状态机转移；SENT 超时后的 IDLE 不算走通"));
+            if ("IDLE".equals(cmd) && (seenSent || seenRunning)) {
+                if (idleSince == null) idleSince = Instant.now();
+                if (!Instant.now().isBefore(idleSince.plus(RESET_RESULT_GRACE))) {
+                    session.fail(issue("SIM_DEVICE_FAILED", String.valueOf(nodeIdRef),
+                            session.currentNode + ": SENT/RUNNING 后回到 IDLE，但未收到本次指令的 COMPLETED 结果",
+                            "检查 Adapter 完成事件、messageId 和状态机转移；SENT 看门狗复位不算完成"));
+                }
+            } else {
+                idleSince = null;
             }
             sleepPoll();
         }
@@ -334,6 +370,9 @@ public class WorkflowStructureWalker {
         private final Set<String> pathSeen = new LinkedHashSet<>();
         private final List<WorkflowIssue> issues = new ArrayList<>();
         private final Set<String> arrived = new HashSet<>();
+        private final List<String> subflowNames = new ArrayList<>();
+        private String currentNode = "起点";
+        private int completedProbes;
 
         private Session(Map<Long, DeviceInstances> tempsByModel, Instant deadline, long rootFlowModelId,
                         WorkflowDefinitionCompiler.CompiledWorkflow rootCompiled, JsonNode rootConnections) {
@@ -346,8 +385,9 @@ public class WorkflowStructureWalker {
 
         private void requireTime() {
             if (deadline != null && !Instant.now().isBefore(deadline)) {
-                fail(issue("SIM_WALL_TIMEOUT", "", "流程模拟超过时限仍未走完图",
-                        "检查设备状态机是否在看门狗内回到 COMPLETED，或减少本次要探测的设备节点"));
+                fail(issue("SIM_WALL_TIMEOUT", "", "仿真总预算耗尽，当前节点：" + currentNode
+                        + "；已完成 " + completedProbes + " 个设备探测",
+                        "检查当前节点的模拟执行结果，或调整流程中的设备探测数量"));
             }
         }
 

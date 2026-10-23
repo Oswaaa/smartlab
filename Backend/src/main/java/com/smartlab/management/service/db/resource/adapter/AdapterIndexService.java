@@ -23,6 +23,7 @@ import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
 import java.time.OffsetDateTime;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -30,6 +31,7 @@ import java.util.Objects;
 
 import com.smartlab.management.mapper.resource.device.DeviceTwinStatesMapper;
 import org.springframework.scheduling.annotation.Scheduled;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Adapter 索引表服务。
@@ -292,25 +294,37 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
      * 记录已注册 Adapter 的心跳并更新时间戳。
      * 未完成注册的 Adapter 不能因为心跳入库，否则会挡住 MQTT 待审核队列。
      */
+    @Transactional(rollbackFor = Exception.class)
     public AdapterIndex heartbeat(String adapterName, JsonNode payload) {
+        return heartbeat(adapterName, payload, OffsetDateTime.now());
+    }
+
+    @Transactional(rollbackFor = Exception.class)
+    public AdapterIndex heartbeat(String adapterName, JsonNode payload, OffsetDateTime receivedAt) {
+        OffsetDateTime now = receivedAt == null ? OffsetDateTime.now() : receivedAt;
+        if (now.isBefore(OffsetDateTime.now().minusSeconds(heartbeatTimeoutSeconds))) {
+            log.debug("忽略已过期的 Adapter 心跳: {}", adapterName);
+            return null;
+        }
         AdapterIndex adapter = getByName(adapterName);
         if (adapter == null || !hasCompletedRegistration(adapter)) {
             log.debug("忽略未完成注册的 Adapter 心跳: {}", adapterName);
             return null;
         }
         Map<String, Boolean> points = readHeartbeatPoints(payload);
-        if (adapter.getStatus() == null || adapter.getStatus().isBlank()) {
+        boolean defaultStatus = adapter.getStatus() == null || adapter.getStatus().isBlank();
+        if (defaultStatus) {
             adapter.setStatus("ENABLED");
         }
-        OffsetDateTime now = OffsetDateTime.now();
         adapter.setLastHeartbeat(now);
-        AdapterIndex saved = save(adapter);
+        adapter.setUpdateTime(now);
+        mapper.updateHeartbeat(adapter.getId(), now);
         if (deviceTwinStatesMapper != null && deviceInstancesMapper != null
                 && adapterName != null && !adapterName.isBlank()
                 && !"DISABLED".equalsIgnoreCase(adapter.getStatus())) {
             applyHeartbeatPoints(adapterName.trim(), points, now);
         }
-        return saved;
+        return adapter;
     }
 
     private Map<String, Boolean> readHeartbeatPoints(JsonNode payload) {
@@ -339,14 +353,21 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
         List<DeviceInstances> instances = deviceInstancesMapper.selectList(Wrappers.<DeviceInstances>lambdaQuery()
                 .eq(DeviceInstances::getBoundAdapterName, adapterName)
                 .eq(DeviceInstances::getLifecycleStatus, DeviceInstanceLifecycle.IN_USE));
+        List<Long> onlineIds = new ArrayList<>();
+        List<Long> offlineIds = new ArrayList<>();
         for (DeviceInstances instance : instances) {
             if (instance.getId() == null) {
                 continue;
             }
             String devicePoint = instance.getBoundDevicePoint() == null ? "" : instance.getBoundDevicePoint().trim();
             Boolean online = points.get(devicePoint);
-            deviceTwinStatesMapper.updateOnlineStatus(instance.getId(),
-                    Boolean.TRUE.equals(online) ? "ONLINE" : "OFFLINE", now);
+            (Boolean.TRUE.equals(online) ? onlineIds : offlineIds).add(instance.getId());
+        }
+        if (!onlineIds.isEmpty()) {
+            deviceTwinStatesMapper.updateOnlineStatusBatch(onlineIds, "ONLINE", now);
+        }
+        if (!offlineIds.isEmpty()) {
+            deviceTwinStatesMapper.updateOnlineStatusBatch(offlineIds, "OFFLINE", now);
         }
     }
 
@@ -356,16 +377,12 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
     @Scheduled(fixedDelay = 5000)
     public void scanAndExpireHeartbeats() {
         OffsetDateTime threshold = OffsetDateTime.now().minusSeconds(heartbeatTimeoutSeconds);
-        List<AdapterIndex> expiredAdapters = mapper.selectList(
-                Wrappers.<AdapterIndex>lambdaQuery()
-                        .isNotNull(AdapterIndex::getLastHeartbeat)
-                        .lt(AdapterIndex::getLastHeartbeat, threshold)
-        );
+        List<String> expiredAdapters = mapper.selectExpiredAdapterNames(threshold);
         if (expiredAdapters == null || expiredAdapters.isEmpty()) return;
         OffsetDateTime now = OffsetDateTime.now();
-        for (AdapterIndex adapter : expiredAdapters) {
-            if (deviceTwinStatesMapper != null && adapter.getAdapterName() != null) {
-                deviceTwinStatesMapper.updateOnlineStatusByAdapter(adapter.getAdapterName(), "OFFLINE", now);
+        for (String adapterName : expiredAdapters) {
+            if (deviceTwinStatesMapper != null && adapterName != null) {
+                deviceTwinStatesMapper.updateOnlineStatusByAdapter(adapterName, "OFFLINE", now);
             }
         }
     }

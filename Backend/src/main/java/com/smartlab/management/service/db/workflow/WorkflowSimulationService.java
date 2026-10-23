@@ -27,6 +27,10 @@ import java.util.Set;
 @Service
 public class WorkflowSimulationService {
 
+    private static final long STRUCTURE_OVERHEAD_SECONDS = 30;
+    static final long DEVICE_PROBE_BUDGET_SECONDS = 15;
+    private static final long MAX_SIMULATION_SECONDS = 600;
+
     private final WorkflowService workflowService;
     private final DeviceInstanceService deviceInstanceService;
     private final WorkflowStructureWalker structureWalker;
@@ -101,10 +105,11 @@ public class WorkflowSimulationService {
                 temps.add(temp);
             }
 
+            Instant deadline = Instant.now().plusSeconds(simulationBudgetSeconds(compiled));
             WorkflowStructureWalker.WalkResult walked = inMemory
                     ? structureWalker.walk(compiled, interfaceConnections, flowModelId, tempsByModel,
-                    Instant.now().plusSeconds(timeoutSeconds))
-                    : structureWalker.walk(flowModelId, tempsByModel, Instant.now().plusSeconds(timeoutSeconds));
+                    deadline)
+                    : structureWalker.walk(flowModelId, tempsByModel, deadline);
             return toReport(flowModelId, walked);
         } catch (RuntimeException error) {
             return failed(flowModelId, List.of(issue("SIM_FAILED", "", error.getMessage(),
@@ -116,6 +121,44 @@ public class WorkflowSimulationService {
                 } catch (RuntimeException ignored) {
                 }
             }
+        }
+    }
+
+    long simulationBudgetSeconds(WorkflowDefinitionCompiler.CompiledWorkflow compiled) {
+        long probes = countDeviceProbes(compiled, new LinkedHashSet<>());
+        long calculated = STRUCTURE_OVERHEAD_SECONDS + Math.min(probes, MAX_SIMULATION_SECONDS) * DEVICE_PROBE_BUDGET_SECONDS;
+        return Math.min(MAX_SIMULATION_SECONDS, Math.max(timeoutSeconds, calculated));
+    }
+
+    private long countDeviceProbes(WorkflowDefinitionCompiler.CompiledWorkflow compiled, Set<Long> stack) {
+        if (compiled == null || compiled.nodes() == null) return 0;
+        return countNodeProbes(compiled, compiled.startNodeIdRef(), new LinkedHashSet<>(), stack);
+    }
+
+    private long countNodeProbes(WorkflowDefinitionCompiler.CompiledWorkflow compiled, long nodeIdRef,
+                                 Set<Long> onPath, Set<Long> subflowStack) {
+        if (!onPath.add(nodeIdRef)) return 0;
+        try {
+            JsonNode node = compiled.nodes().get(nodeIdRef);
+            if (node == null) return 0;
+            String type = node.path("nodeType").asText();
+            long probes = WorkflowNodeType.DEV_NODE.name().equals(type) ? 1 : 0;
+            if (WorkflowNodeType.SUBFLOW_NODE.name().equals(type)) {
+                long subFlowId = node.path("subFlowModelId").asLong(0);
+                if (subFlowId > 0 && subflowStack.add(subFlowId)) {
+                    try {
+                        probes += countDeviceProbes(workflowService.compileDefinition(subFlowId), subflowStack);
+                    } finally {
+                        subflowStack.remove(subFlowId);
+                    }
+                }
+            }
+            for (WorkflowDefinitionCompiler.Connection edge : compiled.outgoing(nodeIdRef)) {
+                probes += countNodeProbes(compiled, edge.targetNodeIdRef(), onPath, subflowStack);
+            }
+            return probes;
+        } finally {
+            onPath.remove(nodeIdRef);
         }
     }
 

@@ -1,0 +1,353 @@
+{
+  "specVersion" : "smartlab.adapter.config.v1",
+  "adapterName" : "MotionStageAdapter",
+  "adapterDescription" : "三轴机械臂、八路电磁阀、气动矫正器和视觉检测",
+  "rawConfigFormat" : "INI",
+  "registerMeta" : {
+    "rawConfigFormat" : "INI",
+    "specVersion" : "smartlab.adapter.config.v1",
+    "registeredAt" : 1792479820875
+  },
+  "deviceCategories" : [ {
+    "categoryName" : "ThreeAxisArm",
+    "categoryDescription" : "ThreeAxisArm",
+    "deviceTemplate" : {
+      "templateName" : "ArmTemplate",
+      "description" : "三轴整体机构，含第0路夹爪；不包含阀门或视觉命令",
+      "attributes" : [ {
+        "name" : "axis1_pos",
+        "dataType" : "INTEGER",
+        "description" : "1轴位置，脉冲"
+      }, {
+        "name" : "axis1_status",
+        "dataType" : "STRING",
+        "description" : "1轴状态：运动中、到位、急停、报警、限位"
+      }, {
+        "name" : "axis2_pos",
+        "dataType" : "INTEGER",
+        "description" : "2轴位置，脉冲"
+      }, {
+        "name" : "axis2_status",
+        "dataType" : "STRING",
+        "description" : "2轴状态：运动中、到位、急停、报警、限位"
+      }, {
+        "name" : "axis3_pos",
+        "dataType" : "INTEGER",
+        "description" : "3轴位置，脉冲"
+      }, {
+        "name" : "axis3_status",
+        "dataType" : "STRING",
+        "description" : "3轴状态：运动中、到位、急停、报警、限位"
+      }, {
+        "name" : "gripperOpen",
+        "dataType" : "BOOLEAN",
+        "description" : "夹爪开闭状态，true为开，false为关"
+      } ],
+      "commands" : [ {
+        "name" : "MoveAbsolute",
+        "description" : "单轴定位；规划脉冲位置与目标相差不到10个脉冲后完成",
+        "parameters" : [ {
+          "name" : "axis",
+          "dataType" : "INTEGER",
+          "description" : "轴号1到3，缺省1"
+        }, {
+          "name" : "position",
+          "dataType" : "INTEGER",
+          "description" : "目标位置，脉冲，缺省0"
+        } ]
+      }, {
+        "name" : "Jog",
+        "description" : "点动一次。X、Y轴内部速度1脉冲/毫秒，Z轴10脉冲/毫秒，约200毫秒后自行停止",
+        "parameters" : [ {
+          "name" : "axis",
+          "dataType" : "INTEGER",
+          "description" : "轴号1到3，缺省1"
+        }, {
+          "name" : "dir",
+          "dataType" : "INTEGER",
+          "description" : "1正向，0或-1负向"
+        } ]
+      }, {
+        "name" : "Stop",
+        "description" : "停止全部轴并取消定位和回零，等待停稳",
+        "parameters" : [ ]
+      }, {
+        "name" : "ResetMotion",
+        "description" : "按原限位顺序回零，含超时和停止取消",
+        "parameters" : [ ]
+      }, {
+        "name" : "SetGripper",
+        "description" : "开关夹爪。1打开，0闭合，写完回读后完成",
+        "parameters" : [ {
+          "name" : "Value",
+          "dataType" : "INTEGER",
+          "description" : "1打开夹爪，0闭合夹爪"
+        } ]
+      } ],
+      "events" : {
+        "cmdEvents" : [ {
+          "name" : "COMMAND_RECEIVED",
+          "description" : "指令已接收"
+        }, {
+          "name" : "COMMAND_RUNNING",
+          "description" : "指令处理中；不等同于轴正在运动"
+        }, {
+          "name" : "COMMAND_COMPLETED",
+          "description" : "按该能力定义完成"
+        }, {
+          "name" : "COMMAND_FAILED",
+          "description" : "指令失败，payload.errorCode和message说明原因"
+        } ],
+        "opEvents" : [ {
+          "name" : "MOVING",
+          "description" : "移动中"
+        }, {
+          "name" : "STOPPED",
+          "description" : "静止"
+        }, {
+          "name" : "GRIPPER_OPENED",
+          "description" : "夹爪已打开"
+        }, {
+          "name" : "GRIPPER_CLOSED",
+          "description" : "夹爪已关闭"
+        } ]
+      }
+    },
+    "devicePoints" : [ {
+      "devicePoint" : "arm_001",
+      "templateName" : "ArmTemplate",
+      "description" : "",
+      "kind" : "arm",
+      "gripperBit" : 0,
+      "categoryName" : "ThreeAxisArm"
+    } ]
+  }, {
+    "categoryName" : "SolenoidValve",
+    "categoryDescription" : "SolenoidValve",
+    "deviceTemplate" : {
+      "templateName" : "SolenoidValveTemplate",
+      "description" : "第1至8路普通电磁阀；输出回读确认后完成",
+      "attributes" : [ {
+        "name" : "isOpen",
+        "dataType" : "BOOLEAN",
+        "description" : "阀门开闭状态，true为开，false为关"
+      } ],
+      "commands" : [ {
+        "name" : "SetExtDoBit",
+        "description" : "设置本设备点固定输出，回读确认",
+        "parameters" : [ {
+          "name" : "Value",
+          "dataType" : "INTEGER",
+          "description" : "输出电平0或1；机械开关含义由接线决定"
+        } ]
+      } ],
+      "events" : {
+        "cmdEvents" : [ {
+          "name" : "COMMAND_RECEIVED",
+          "description" : "指令已接收"
+        }, {
+          "name" : "COMMAND_RUNNING",
+          "description" : "指令处理中；不等同于轴正在运动"
+        }, {
+          "name" : "COMMAND_COMPLETED",
+          "description" : "按该能力定义完成"
+        }, {
+          "name" : "COMMAND_FAILED",
+          "description" : "指令失败，payload.errorCode和message说明原因"
+        } ],
+        "opEvents" : [ {
+          "name" : "VALVE_OPENED",
+          "description" : "阀门已打开"
+        }, {
+          "name" : "VALVE_CLOSED",
+          "description" : "阀门已关闭"
+        } ]
+      }
+    },
+    "devicePoints" : [ {
+      "devicePoint" : "valve_01",
+      "templateName" : "SolenoidValveTemplate",
+      "description" : "",
+      "kind" : "valve",
+      "bitIndex" : 1,
+      "settleTimeMs" : 0,
+      "categoryName" : "SolenoidValve"
+    }, {
+      "devicePoint" : "valve_02",
+      "templateName" : "SolenoidValveTemplate",
+      "description" : "",
+      "kind" : "valve",
+      "bitIndex" : 2,
+      "settleTimeMs" : 0,
+      "categoryName" : "SolenoidValve"
+    }, {
+      "devicePoint" : "valve_03",
+      "templateName" : "SolenoidValveTemplate",
+      "description" : "",
+      "kind" : "valve",
+      "bitIndex" : 3,
+      "settleTimeMs" : 0,
+      "categoryName" : "SolenoidValve"
+    }, {
+      "devicePoint" : "valve_04",
+      "templateName" : "SolenoidValveTemplate",
+      "description" : "",
+      "kind" : "valve",
+      "bitIndex" : 4,
+      "settleTimeMs" : 0,
+      "categoryName" : "SolenoidValve"
+    }, {
+      "devicePoint" : "valve_05",
+      "templateName" : "SolenoidValveTemplate",
+      "description" : "",
+      "kind" : "valve",
+      "bitIndex" : 5,
+      "settleTimeMs" : 0,
+      "categoryName" : "SolenoidValve"
+    }, {
+      "devicePoint" : "valve_06",
+      "templateName" : "SolenoidValveTemplate",
+      "description" : "",
+      "kind" : "valve",
+      "bitIndex" : 6,
+      "settleTimeMs" : 0,
+      "categoryName" : "SolenoidValve"
+    }, {
+      "devicePoint" : "valve_07",
+      "templateName" : "SolenoidValveTemplate",
+      "description" : "",
+      "kind" : "valve",
+      "bitIndex" : 7,
+      "settleTimeMs" : 0,
+      "categoryName" : "SolenoidValve"
+    }, {
+      "devicePoint" : "valve_08",
+      "templateName" : "SolenoidValveTemplate",
+      "description" : "",
+      "kind" : "valve",
+      "bitIndex" : 8,
+      "settleTimeMs" : 0,
+      "categoryName" : "SolenoidValve"
+    } ]
+  }, {
+    "categoryName" : "PneumaticCorrector",
+    "categoryDescription" : "PneumaticCorrector",
+    "deviceTemplate" : {
+      "templateName" : "PneumaticCorrectorTemplate",
+      "description" : "第9路气动矫正器；切换输出后等待2秒，不自动反向",
+      "attributes" : [ {
+        "name" : "isOpen",
+        "dataType" : "BOOLEAN",
+        "description" : "矫正器开闭状态，true为开，false为关"
+      } ],
+      "commands" : [ {
+        "name" : "SetExtDoBit",
+        "description" : "切换输出并等待配置时间，0和1均等待",
+        "parameters" : [ {
+          "name" : "Value",
+          "dataType" : "INTEGER",
+          "description" : "输出电平0或1；机械开关含义由接线决定"
+        } ]
+      } ],
+      "events" : {
+        "cmdEvents" : [ {
+          "name" : "COMMAND_RECEIVED",
+          "description" : "指令已接收"
+        }, {
+          "name" : "COMMAND_RUNNING",
+          "description" : "指令处理中；不等同于轴正在运动"
+        }, {
+          "name" : "COMMAND_COMPLETED",
+          "description" : "按该能力定义完成"
+        }, {
+          "name" : "COMMAND_FAILED",
+          "description" : "指令失败，payload.errorCode和message说明原因"
+        } ],
+        "opEvents" : [ {
+          "name" : "CORRECTOR_OPENED",
+          "description" : "矫正器已打开"
+        }, {
+          "name" : "CORRECTOR_CLOSED",
+          "description" : "矫正器已关闭"
+        } ]
+      }
+    },
+    "devicePoints" : [ {
+      "devicePoint" : "corrector_001",
+      "templateName" : "PneumaticCorrectorTemplate",
+      "description" : "",
+      "kind" : "corrector",
+      "bitIndex" : 9,
+      "settleTimeMs" : 2000,
+      "categoryName" : "PneumaticCorrector"
+    } ]
+  }, {
+    "categoryName" : "VisionInspection",
+    "categoryDescription" : "VisionInspection",
+    "deviceTemplate" : {
+      "templateName" : "VisionTemplate",
+      "description" : "按视觉服务字符串判断指定管子是否合上",
+      "attributes" : [ {
+        "name" : "tube1_closed",
+        "dataType" : "BOOLEAN",
+        "description" : "第1个管子是否合上"
+      }, {
+        "name" : "tube2_closed",
+        "dataType" : "BOOLEAN",
+        "description" : "第2个管子是否合上"
+      }, {
+        "name" : "tube3_closed",
+        "dataType" : "BOOLEAN",
+        "description" : "第3个管子是否合上"
+      }, {
+        "name" : "tube4_closed",
+        "dataType" : "BOOLEAN",
+        "description" : "第4个管子是否合上"
+      } ],
+      "commands" : [ {
+        "name" : "VisionCheck",
+        "description" : "查询指定管子是否已经合上",
+        "parameters" : [ {
+          "name" : "tube",
+          "dataType" : "INTEGER",
+          "description" : "管子编号，1到4"
+        } ]
+      } ],
+      "events" : {
+        "cmdEvents" : [ {
+          "name" : "COMMAND_RECEIVED",
+          "description" : "指令已接收"
+        }, {
+          "name" : "COMMAND_RUNNING",
+          "description" : "指令处理中；不等同于轴正在运动"
+        }, {
+          "name" : "COMMAND_COMPLETED",
+          "description" : "按该能力定义完成"
+        }, {
+          "name" : "COMMAND_FAILED",
+          "description" : "指令失败，payload.errorCode和message说明原因"
+        } ],
+        "opEvents" : [ {
+          "name" : "TUBE1_CLOSED",
+          "description" : "第1个管子已合上"
+        }, {
+          "name" : "TUBE2_CLOSED",
+          "description" : "第2个管子已合上"
+        }, {
+          "name" : "TUBE3_CLOSED",
+          "description" : "第3个管子已合上"
+        }, {
+          "name" : "TUBE4_CLOSED",
+          "description" : "第4个管子已合上"
+        } ]
+      }
+    },
+    "devicePoints" : [ {
+      "devicePoint" : "vision_001",
+      "templateName" : "VisionTemplate",
+      "description" : "",
+      "kind" : "vision",
+      "categoryName" : "VisionInspection"
+    } ]
+  } ]
+}

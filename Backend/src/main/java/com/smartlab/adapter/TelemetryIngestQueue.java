@@ -13,61 +13,107 @@ import java.util.concurrent.LinkedBlockingDeque;
 import java.util.concurrent.TimeUnit;
 
 /**
- * 遥测离开 MQTT 回调后的入库队列。队列本身不丢弃报文；写库失败的报文按原顺序放回队头，
- * 避免新到的采样先入库。非法报文只记录日志，与回调里原来捕获异常后的处理一致。
+ * 遥测离开 MQTT 回调后按 Adapter 和设备点分片入库。同一设备点始终落在同一队列，
+ * 写库失败的报文按原顺序放回该分片队头。非法报文只记录日志，与回调原有处理一致。
  */
 final class TelemetryIngestQueue {
 
     private static final Logger log = LoggerFactory.getLogger(TelemetryIngestQueue.class);
     private static final long RETRY_PAUSE_MS = 500L;
+    private static final int MAX_BURST_MESSAGES = 256;
+    private static final int DEFAULT_SHARDS = 4;
 
     private final AdapterPayloadMapperService protocolMapperService;
-    private final LinkedBlockingDeque<QueuedTelemetry> queue = new LinkedBlockingDeque<>();
+    private final List<LinkedBlockingDeque<QueuedTelemetry>> queues;
+    private final List<Thread> threads = new ArrayList<>();
     private volatile boolean running;
-    private Thread thread;
 
     TelemetryIngestQueue(AdapterPayloadMapperService protocolMapperService) {
+        this(protocolMapperService, DEFAULT_SHARDS);
+    }
+
+    TelemetryIngestQueue(AdapterPayloadMapperService protocolMapperService, int shardCount) {
         this.protocolMapperService = protocolMapperService;
+        if (shardCount < 1) {
+            throw new IllegalArgumentException("Telemetry shard count must be positive");
+        }
+        queues = new ArrayList<>(shardCount);
+        for (int i = 0; i < shardCount; i++) {
+            queues.add(new LinkedBlockingDeque<>());
+        }
     }
 
     void enqueue(String adapterName, String devicePoint, JsonNode payload) {
-        queue.add(new QueuedTelemetry(adapterName, devicePoint, payload));
+        queues.get(shardFor(adapterName, devicePoint)).add(new QueuedTelemetry(adapterName, devicePoint, payload));
     }
 
-    void start() {
-        if (thread != null) {
+    int shardFor(String adapterName, String devicePoint) {
+        return Math.floorMod(31 * adapterName.hashCode() + devicePoint.hashCode(), queues.size());
+    }
+
+    synchronized void start() {
+        if (!threads.isEmpty()) {
             return;
         }
         running = true;
-        thread = new Thread(this::ingestLoop, "telemetry-ingest");
-        thread.setDaemon(true);
-        thread.start();
+        for (int i = 0; i < queues.size(); i++) {
+            LinkedBlockingDeque<QueuedTelemetry> queue = queues.get(i);
+            Thread thread = new Thread(() -> ingestLoop(queue), "telemetry-ingest-" + i);
+            thread.setDaemon(true);
+            threads.add(thread);
+            thread.start();
+        }
     }
 
-    void stop() {
+    synchronized void stop() {
         running = false;
-        Thread current = thread;
-        if (current != null) {
-            current.interrupt();
+        for (Thread thread : threads) {
+            thread.interrupt();
+        }
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(2);
+        for (Thread thread : threads) {
             try {
-                current.join(2_000L);
+                long remaining = deadline - System.nanoTime();
+                if (remaining > 0) {
+                    thread.join(Math.max(1, TimeUnit.NANOSECONDS.toMillis(remaining)));
+                }
             } catch (InterruptedException error) {
                 Thread.currentThread().interrupt();
+                return;
             }
         }
-        thread = null;
-        flushAvailable();
+        if (threads.stream().anyMatch(Thread::isAlive)) {
+            log.warn("遥测写入线程仍在执行，跳过并发清空队列以避免重复或乱序写入");
+            return;
+        }
+        threads.clear();
+        for (LinkedBlockingDeque<QueuedTelemetry> queue : queues) {
+            while (!queue.isEmpty() && !flushOneBurst(queue)) {
+                // 成功写完一批后继续清空本分片；写库失败则停止，避免无限重试。
+            }
+        }
     }
 
     void flushAvailable() {
-        List<QueuedTelemetry> burst = new ArrayList<>();
-        queue.drainTo(burst);
-        if (!burst.isEmpty()) {
-            dispatch(burst);
+        for (LinkedBlockingDeque<QueuedTelemetry> queue : queues) {
+            flushOneBurst(queue);
         }
     }
 
-    private void ingestLoop() {
+    int pendingCount() {
+        return queues.stream().mapToInt(LinkedBlockingDeque::size).sum();
+    }
+
+    private boolean flushOneBurst(LinkedBlockingDeque<QueuedTelemetry> queue) {
+        List<QueuedTelemetry> burst = new ArrayList<>();
+        queue.drainTo(burst, MAX_BURST_MESSAGES);
+        if (!burst.isEmpty()) {
+            return dispatch(burst, queue);
+        }
+        return false;
+    }
+
+    private void ingestLoop(LinkedBlockingDeque<QueuedTelemetry> queue) {
         while (running) {
             try {
                 QueuedTelemetry first = queue.poll(RETRY_PAUSE_MS, TimeUnit.MILLISECONDS);
@@ -76,8 +122,8 @@ final class TelemetryIngestQueue {
                 }
                 List<QueuedTelemetry> burst = new ArrayList<>();
                 burst.add(first);
-                queue.drainTo(burst);
-                if (dispatch(burst) && running) {
+                queue.drainTo(burst, MAX_BURST_MESSAGES - 1);
+                if (dispatch(burst, queue) && running) {
                     Thread.sleep(RETRY_PAUSE_MS);
                 }
             } catch (InterruptedException error) {
@@ -87,7 +133,7 @@ final class TelemetryIngestQueue {
         }
     }
 
-    private boolean dispatch(List<QueuedTelemetry> burst) {
+    private boolean dispatch(List<QueuedTelemetry> burst, LinkedBlockingDeque<QueuedTelemetry> queue) {
         Map<String, List<QueuedTelemetry>> byDevice = new LinkedHashMap<>();
         for (QueuedTelemetry item : burst) {
             byDevice.computeIfAbsent(item.adapterName + "\n" + item.devicePoint, key -> new ArrayList<>()).add(item);

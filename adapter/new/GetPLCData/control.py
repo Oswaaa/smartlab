@@ -30,13 +30,17 @@ CHROM_ALARM = 277
 CHROM_SET = 278
 MUTE_REG = 293
 HEATSINK_ALARM = {1: 220, 2: 221, 3: 222, 4: 223, 5: 289, 6: 290, 7: 292, 8: 291}
-# 点位表里标成“写”的设定区，外加热阱报警 5～8、消音和两个总阀。
-# 实测、压力、流量反馈不在这里，接管时不写。267 最后单独写。
+# 报警温度先恢复并逐个读回核验；其他设定随后逐个写入、读回核验。
+# 使能位和启动位最后恢复，267 单独处理。
+ALARM_REGISTERS = tuple(range(212, 226)) + (277,) + tuple(range(289, 293))
 PRESERVE_BEFORE_CONTROL = (
-    tuple(range(34, 251))
+    ALARM_REGISTERS
+    + tuple(range(34, 212))
+    + tuple(range(235, 251))
+    + (278,)
+    + tuple(range(293, 296))
+    + tuple(range(226, 235))
     + tuple(range(268, 276))
-    + (277, 278)
-    + tuple(range(289, 296))
 )
 
 
@@ -406,6 +410,8 @@ class ControlImpl:
     ) -> None:
         self.points = tuple(physical_points)
         self.point_fields = point_fields or {}
+        # 命令级互斥：接管和整组设定恢复期间，不让其他 PLC 控制命令插入。
+        self._command_lock = threading.Lock()
         plc = extra.get("plc", {})
         rs485 = extra.get("rs485", {})
         self.temperature_tolerance = float(plc.get("temperatureTolerance", "0"))
@@ -577,7 +583,12 @@ class ControlImpl:
 
     def _run_command(self, command) -> None:
         try:
-            reason = self._dispatch(command)
+            if command.command_name == "stopPressurize":
+                # 停止加压走独立的 485 通道，保留紧急停止的即时性。
+                reason = self._dispatch(command)
+            else:
+                with self._command_lock:
+                    reason = self._dispatch(command)
         except Exception as error:
             logger.exception("命令失败 %s %s", command.device_point, command.command_name)
             reason = str(error)
@@ -782,10 +793,11 @@ class ControlImpl:
         )
 
     def _take_control(self) -> str | None:
-        """每次现场读取当前值，全部读完后写回设定区，最后写 267=1。
+        """读取现场快照，接管后逐个写入并读回核验可写设定。
 
-        这些写寄存器在手动模式下也能读到加热段、报警温度、设定值和阀门。
-        PLC 接管后会把写入区搬去生效。先按刚刚读到的值写一遍，避免搬过去的是 0。
+        写 267=1 会把后续寄存器搬入生效区；搬入的值可能为 0，
+        因此必须先保存现场值并接管，再从快照恢复设定。报警温度先恢复，
+        每项写后立即读回；其余设定也按相同方式核验。
         """
         # 使用本次请求自己的读取结果，不能复用或再次读取轮询缓存。
         snapshot: list[int] = []
@@ -797,15 +809,30 @@ class ControlImpl:
             snapshot.extend(values)
             if start + count < MIRROR_SIZE:
                 time.sleep(self.chunk_gap_sec)
+        if self._write_gate(1):
+            return "PLC_WRITE_FAILED"
         for addr in PRESERVE_BEFORE_CONTROL:
             if addr >= len(snapshot) or snapshot[addr] is None:
-                return "PLC_READ_FAILED"
+                return "PLC_RESTORE_FAILED"
             value = int(snapshot[addr])
+            if addr in ALARM_REGISTERS and value == 0:
+                value = 300
             if not self.plc.write_single_register(addr, value):
-                return "PLC_WRITE_FAILED"
+                return "PLC_RESTORE_WRITE_FAILED"
             self._remember(addr, value)
+            readback = self.plc.read_holding_registers(addr, 1)
+            if readback is None or len(readback) != 1 or int(readback[0]) != value:
+                return "PLC_RESTORE_VERIFY_FAILED"
+            self._remember(addr, int(readback[0]))
             time.sleep(0.01)
-        return self._write_gate(1)
+
+        gate = self.plc.read_holding_registers(MANUAL_REG, 1)
+        if gate is None or len(gate) != 1:
+            return "PLC_CONTROL_VERIFY_FAILED"
+        self._remember(MANUAL_REG, int(gate[0]))
+        if int(gate[0]) != 1:
+            return "PLC_CONTROL_NOT_HELD"
+        return None
 
     def _write_gate(self, value: int) -> str | None:
         if not self.plc.write_single_register(MANUAL_REG, value):

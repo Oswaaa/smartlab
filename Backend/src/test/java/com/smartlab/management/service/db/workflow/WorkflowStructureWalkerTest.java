@@ -13,6 +13,7 @@ import com.smartlab.management.service.db.resource.device.DeviceTwinStateService
 import org.junit.jupiter.api.Test;
 
 import java.time.Instant;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -88,13 +89,18 @@ class WorkflowStructureWalkerTest {
         when(commands.dispatchInputSignal(eq(90L), eq("Interface_workflow_in"), eq("WF_EXECUTE_START"), any()))
                 .thenReturn(List.of(accepted));
         AtomicInteger polls = new AtomicInteger();
+        AtomicInteger resultChecks = new AtomicInteger();
+        when(simulator.takeProbeResult(eq(90L), anyString())).thenAnswer(invocation -> {
+            int n = resultChecks.incrementAndGet();
+            return n == 3 || n == 6 ? "COMPLETED" : null;
+        });
         when(twins.getByInstanceId(90L)).thenAnswer(invocation -> {
             int n = polls.incrementAndGet();
             DeviceTwinStates twin = new DeviceTwinStates();
             twin.setInstanceId(90L);
-            if (n == 1 || n == 4) {
+            if (n == 1 || n == 3) {
                 twin.setCurrentCmdState("SENT");
-            } else if (n == 2 || n == 5) {
+            } else if (n == 2 || n == 4) {
                 twin.setCurrentCmdState("RUNNING");
             } else {
                 twin.setCurrentCmdState("COMPLETED");
@@ -171,7 +177,7 @@ class WorkflowStructureWalkerTest {
     }
 
     @Test
-    void runningThenIdleCountsAsCompletedReset() {
+    void recordedCompletionCountsAfterImmediateIdleReset() {
         WorkflowService workflows = mock(WorkflowService.class);
         InterfaceConnectionCatalog catalog = mock(InterfaceConnectionCatalog.class);
         StateMachineCommandPort commands = mock(StateMachineCommandPort.class);
@@ -182,6 +188,9 @@ class WorkflowStructureWalkerTest {
                 new InterfaceConnectionCatalog.NodeToDeviceRoute("state_out", "Interface_workflow_in", 7L));
         when(commands.dispatchInputSignal(anyLong(), anyString(), anyString(), any()))
                 .thenReturn(List.of(JsonNodeSupport.objectNode()));
+        AtomicInteger resultChecks = new AtomicInteger();
+        when(simulator.takeProbeResult(eq(90L), anyString())).thenAnswer(invocation ->
+                resultChecks.incrementAndGet() == 3 ? "COMPLETED" : null);
         AtomicInteger polls = new AtomicInteger();
         when(twins.getByInstanceId(90L)).thenAnswer(invocation -> {
             int n = polls.incrementAndGet();
@@ -198,6 +207,88 @@ class WorkflowStructureWalkerTest {
 
         assertTrue(result.walkable());
         assertEquals(List.of("start", "heat", "end"), result.pathTaken());
+    }
+
+    @Test
+    void completedResultForMatchingMessageSurvivesImmediateIdleReset() {
+        WorkflowService workflows = mock(WorkflowService.class);
+        InterfaceConnectionCatalog catalog = mock(InterfaceConnectionCatalog.class);
+        StateMachineCommandPort commands = mock(StateMachineCommandPort.class);
+        DeviceTwinStateService twins = mock(DeviceTwinStateService.class);
+        InProcessAdapterSimulator simulator = mock(InProcessAdapterSimulator.class);
+        when(workflows.compileDefinition(1L)).thenReturn(oneDevice());
+        when(catalog.nodeToDevice(any(), any(), anyLong(), any())).thenReturn(
+                new InterfaceConnectionCatalog.NodeToDeviceRoute("state_out", "Interface_workflow_in", 7L));
+        when(commands.dispatchInputSignal(anyLong(), anyString(), anyString(), any()))
+                .thenReturn(List.of(JsonNodeSupport.objectNode()));
+        DeviceTwinStates idle = new DeviceTwinStates();
+        idle.setCurrentCmdState("IDLE");
+        when(twins.getByInstanceId(90L)).thenReturn(idle);
+        when(simulator.takeProbeResult(eq(90L), anyString())).thenReturn("COMPLETED");
+        WorkflowStructureWalker walker = new WorkflowStructureWalker(workflows, catalog, commands, twins, simulator);
+
+        WorkflowStructureWalker.WalkResult result = walker.walk(1L, Map.of(7L, temp(90L)), Instant.now().plusSeconds(5));
+
+        assertTrue(result.walkable());
+    }
+
+    @Test
+    void stalledDeviceFailsAtItsOwnDeadlineWithNodeLocation() {
+        WorkflowService workflows = mock(WorkflowService.class);
+        InterfaceConnectionCatalog catalog = mock(InterfaceConnectionCatalog.class);
+        StateMachineCommandPort commands = mock(StateMachineCommandPort.class);
+        DeviceTwinStateService twins = mock(DeviceTwinStateService.class);
+        InProcessAdapterSimulator simulator = mock(InProcessAdapterSimulator.class);
+        when(workflows.compileDefinition(1L)).thenReturn(subflowParent());
+        when(workflows.compileDefinition(22L)).thenReturn(oneDevice());
+        when(catalog.nodeToDevice(any(), any(), anyLong(), any())).thenReturn(
+                new InterfaceConnectionCatalog.NodeToDeviceRoute("state_out", "Interface_workflow_in", 7L));
+        when(commands.dispatchInputSignal(anyLong(), anyString(), anyString(), any()))
+                .thenReturn(List.of(JsonNodeSupport.objectNode()));
+        DeviceTwinStates running = new DeviceTwinStates();
+        running.setCurrentCmdState("RUNNING");
+        when(twins.getByInstanceId(90L)).thenReturn(running);
+        WorkflowStructureWalker walker = new WorkflowStructureWalker(workflows, catalog, commands, twins, simulator,
+                Duration.ofMillis(60));
+
+        WorkflowStructureWalker.WalkResult result = walker.walk(1L, Map.of(7L, temp(90L)), Instant.now().plusSeconds(30));
+
+        assertFalse(result.walkable());
+        assertEquals("SIM_DEVICE_TIMEOUT", result.issues().get(0).code(), result.issues().toString());
+        assertTrue(result.issues().get(0).message().contains("nested → heat"));
+    }
+
+    @Test
+    void totalDeadlineReportsCurrentNodeAndCompletedCount() {
+        WorkflowService workflows = mock(WorkflowService.class);
+        when(workflows.compileDefinition(1L)).thenReturn(oneDevice());
+        WorkflowStructureWalker walker = new WorkflowStructureWalker(workflows,
+                mock(InterfaceConnectionCatalog.class), mock(StateMachineCommandPort.class),
+                mock(DeviceTwinStateService.class), mock(InProcessAdapterSimulator.class));
+
+        WorkflowStructureWalker.WalkResult result = walker.walk(1L, Map.of(), Instant.now().minusSeconds(1));
+
+        assertFalse(result.walkable());
+        assertEquals("SIM_WALL_TIMEOUT", result.issues().get(0).code());
+        assertTrue(result.issues().get(0).message().contains("当前节点：start"));
+        assertTrue(result.issues().get(0).message().contains("已完成 0 个设备探测"));
+    }
+
+    private WorkflowDefinitionCompiler.CompiledWorkflow subflowParent() {
+        Map<Long, com.fasterxml.jackson.databind.JsonNode> nodes = new LinkedHashMap<>();
+        nodes.put(1L, func("start", "START"));
+        ObjectNode nested = JsonNodeSupport.objectNode();
+        nested.put("name", "nested");
+        nested.put("nodeType", "SUBFLOW_NODE");
+        nested.put("subFlowModelId", 22L);
+        nodes.put(2L, nested);
+        nodes.put(3L, func("end", "END"));
+        Map<Long, List<WorkflowDefinitionCompiler.Connection>> outgoing = Map.of(
+                1L, List.of(conn(1, "out", 2, "in")),
+                2L, List.of(conn(2, "out", 3, "in")),
+                3L, List.of());
+        return new WorkflowDefinitionCompiler.CompiledWorkflow(nodes, outgoing, Map.of(),
+                Map.of("start", 1L, "nested", 2L, "end", 3L), 1L, 3L);
     }
 
     private WorkflowDefinitionCompiler.CompiledWorkflow diamond() {

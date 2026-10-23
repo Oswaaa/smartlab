@@ -886,6 +886,9 @@ async function runValidation() {
     if (report?.walkable) ElMessage.success('校验通过：流程定义与执行推演均已通过')
     else ElMessage.error(report?.issues?.[0]?.message || '执行链路推演未通过')
   } catch (error:any) {
+    const simulationError = error.code === 'ECONNABORTED'
+      ? '执行链路推演等待超过 10 分 30 秒，请检查后端仿真报告与当前设备节点'
+      : error.response?.data?.message || error.message || '校验失败'
     if (checkPhase.value === 'walk') {
       lastCheck.value = {
         fingerprint,
@@ -893,13 +896,13 @@ async function runValidation() {
         issues: definitionIssues,
         simulationReport: {
           walkable: false,
-          issues: [{ code: 'SIM_FAILED', message: error.message || '执行链路推演失败' }],
+          issues: [{ code: 'SIM_FAILED', message: simulationError }],
         },
         walkable: false,
       }
       walkExpanded.value = true
     }
-    ElMessage.error(error.response?.data?.message || error.message || '校验失败')
+    ElMessage.error(simulationError)
   } finally {
     validating.value = false
     simulating.value = false

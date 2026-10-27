@@ -195,7 +195,8 @@ export function normalizeCapabilities(value) {
       name: stringValue(param.name),
       displayName: stringValue(param.displayName),
       dataType: normalizeDataType(param.dataType, 'DOUBLE', attributeDataTypes),
-      required: param.required === true ? true : param.required === false ? false : null
+      required: param.required === true ? true : param.required === false ? false : null,
+      unit: stringValue(param.unit)
     }))
     const parameterMapping = asArray(item.parameterMapping).map(mapping => ({
       _key: mapping._key || makeUiKey('param_map'),
@@ -492,11 +493,13 @@ export function materializeCapabilities(rows, functionMappings = [], commandPara
     const parameters = asArray(item.parameters).filter(param => stringValue(param.name || param.displayName)).map((param, paramIndex) => {
       const name = materializedName(param, 'parameter_' + (paramIndex + 1), usedParamNames)
       paramNames.set(param._key, name)
+      const unit = stringValue(param.unit)
       return {
         name,
         displayName: stringValue(param.displayName || name),
         dataType: normalizeDataType(param.dataType, 'DOUBLE', attributeDataTypes),
-        ...(param.required === true || param.required === false ? { required: param.required } : {})
+        ...(param.required === true || param.required === false ? { required: param.required } : {}),
+        ...(unit ? { unit } : {})
       }
     })
     const isAbort = item.isAbort === true

@@ -65,7 +65,7 @@
             <button class="btn-aliyun" type="button" @click="goToDevicePage">设备中心</button>
           </div>
 
-          <div class="scene-canvas-body">
+          <div ref="canvasBodyRef" class="scene-canvas-body">
             <img
               v-if="currentScene?.scenePicture"
               :src="currentScene.scenePicture"
@@ -76,8 +76,8 @@
               v-for="node in displayDeviceNodes"
               :key="node.instanceId"
               :class="['device-instance-node', { selected: currentDevice?.instanceId === node.instanceId }]"
-              :style="{ left: node.posX + 'px', top: node.posY + 'px' }"
-              @click="selectDevice(node)"
+              :style="{ left: node.posX + 'px', top: node.posY + 'px', width: cardWidth + 'px' }"
+              @click="onCardClick(node)"
             >
               <div class="node-header">
                 <span class="node-title" :title="node.instanceName">{{ node.instanceName }}</span>
@@ -147,6 +147,13 @@
       v-else
       @close="agentStore.closeChat()"
     />
+
+    <InstanceMonitorDialog
+      v-model="monitorVisible"
+      :instance="monitorInstance"
+      :devices="devices"
+      :models="monitorModels"
+    />
   </div>
 </template>
 
@@ -156,6 +163,8 @@ import { useRouter } from 'vue-router'
 import axios from 'axios'
 import { ElMessage } from 'element-plus'
 import WorkflowAgentChat from './components/WorkflowAgentChat.vue'
+import InstanceMonitorDialog from './components/InstanceMonitorDialog.vue'
+import { normalizeModel } from '../device/components/deviceInstance/normalizers'
 import { useAgentConversationStore } from '../../stores/agentConversationStore'
 
 const router = useRouter()
@@ -164,6 +173,7 @@ const agentStore = useAgentConversationStore()
 const currentTime = ref('')
 let timer: number | undefined
 let mqttTimer: number | undefined
+let canvasObserver: ResizeObserver | null = null
 
 // 真实场景主表列表 (SCENE_MAIN)
 const sceneList = ref<any[]>([])
@@ -183,6 +193,11 @@ const mqttStatus = ref<any>(null)
 
 const currentDevice = ref<any>(null)
 const liveSnapshot = ref<any>(null)
+
+/* 居中监控弹窗 */
+const monitorVisible = ref(false)
+const monitorInstance = ref<any>(null)
+const monitorModels = computed(() => Object.values(modelMap.value || {}).map((m: any) => normalizeModel(m)))
 
 const mqttStatusLabel = computed(() => {
   if (mqttStatus.value == null) return '查询中'
@@ -221,6 +236,61 @@ const getModelLabel = (modelId: string | number) => {
   return model ? model.modelName : `模型 #${modelId}`
 }
 
+/* 场景画布网格：每行固定 5 列，卡片宽度跟随画布实际宽度计算 */
+const GRID_COLUMNS = 5
+const GRID_GAP_X = 36
+const GRID_GAP_Y = 24
+const GRID_PADDING = 16
+const CARD_HEIGHT = 58
+const CARD_MIN_WIDTH = 150
+const CARD_MAX_WIDTH = 172
+
+const canvasBodyRef = ref<HTMLElement | null>(null)
+const canvasWidth = ref(0)
+
+const cardWidth = computed(() => {
+  const usable = canvasWidth.value - GRID_PADDING * 2 - GRID_GAP_X * (GRID_COLUMNS - 1)
+  if (usable <= 0) return 164
+  return Math.min(CARD_MAX_WIDTH, Math.max(CARD_MIN_WIDTH, Math.floor(usable / GRID_COLUMNS)))
+})
+
+/* 卡宽被上限约束后，整排在画布中居中，避免右侧空出一大片 */
+const gridOffsetX = computed(() => {
+  const rowWidth = cardWidth.value * GRID_COLUMNS + GRID_GAP_X * (GRID_COLUMNS - 1)
+  const spare = canvasWidth.value - rowWidth
+  return Math.max(GRID_PADDING, Math.floor(spare / 2))
+})
+
+/**
+ * 卡片排序：同模型归为一组（按首次出现顺序），组内按名称末尾数字升序
+ * 例：反应釜#1 → 反应釜#8，热阱#1 → 热阱#8，无编号的排在组尾
+ */
+const nameTailNumber = (name: string) => {
+  const matched = String(name || '').match(/(\d+)\s*$/)
+  return matched ? Number(matched[1]) : Number.MAX_SAFE_INTEGER
+}
+
+const sortDevicesForGrid = (list: any[]) => {
+  const groupOrder: Record<string, number> = {}
+  let cursor = 0
+  list.forEach(item => {
+    const key = String(item.modelId ?? '')
+    if (!(key in groupOrder)) groupOrder[key] = cursor++
+  })
+
+  return [...list].sort((a, b) => {
+    const groupA = groupOrder[String(a.modelId ?? '')]
+    const groupB = groupOrder[String(b.modelId ?? '')]
+    if (groupA !== groupB) return groupA - groupB
+
+    const numA = nameTailNumber(a.instanceName)
+    const numB = nameTailNumber(b.instanceName)
+    if (numA !== numB) return numA - numB
+
+    return String(a.instanceName || '').localeCompare(String(b.instanceName || ''), 'zh-CN')
+  })
+}
+
 /**
  * 真实设备节点在场景中的坐标映射
  * 优先取 SCENE_DETAIL 中的 posX, posY；若无则自动在画布中流式排布
@@ -235,14 +305,14 @@ const displayDeviceNodes = computed(() => {
     }
   })
 
-  return devices.value.map((device, idx) => {
+  return sortDevicesForGrid(devices.value).map((device, idx) => {
     const isOnline = device.isOnline || device.onlineStatus === 'ONLINE'
     const detail = detailMap.get(Number(device.instanceId))
 
-    const col = idx % 2
-    const row = Math.floor(idx / 2)
-    const defaultX = 12 + col * 176
-    const defaultY = 12 + row * 76
+    const col = idx % GRID_COLUMNS
+    const row = Math.floor(idx / GRID_COLUMNS)
+    const defaultX = gridOffsetX.value + col * (cardWidth.value + GRID_GAP_X)
+    const defaultY = GRID_PADDING + row * (CARD_HEIGHT + GRID_GAP_Y)
 
     const posX = detail?.posX != null ? detail.posX : defaultX
     const posY = detail?.posY != null ? detail.posY : defaultY
@@ -268,6 +338,13 @@ const selectDevice = async (device: any) => {
       liveSnapshot.value = res.data.data
     }
   } catch {}
+}
+
+/* 点击卡片：右侧当前设备栏照旧更新，同时弹出居中监控窗口 */
+const onCardClick = (device: any) => {
+  selectDevice(device)
+  monitorInstance.value = device
+  monitorVisible.value = true
 }
 
 /**
@@ -380,11 +457,24 @@ onMounted(() => {
   fetchData()
   fetchMqttStatus()
   mqttTimer = window.setInterval(fetchMqttStatus, 10000)
+
+  if (canvasBodyRef.value) {
+    canvasWidth.value = canvasBodyRef.value.clientWidth
+    canvasObserver = new ResizeObserver(entries => {
+      const width = entries[0]?.contentRect?.width
+      if (typeof width === 'number' && width > 0) canvasWidth.value = width
+    })
+    canvasObserver.observe(canvasBodyRef.value)
+  }
 })
 
 onUnmounted(() => {
   if (timer) window.clearInterval(timer)
   if (mqttTimer) window.clearInterval(mqttTimer)
+  if (canvasObserver) {
+    canvasObserver.disconnect()
+    canvasObserver = null
+  }
 })
 </script>
 
@@ -501,6 +591,8 @@ onUnmounted(() => {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 .status-pill.online { background: #f0fdf4; color: #16a34a; border: 1px solid #bbf7d0; }
 .status-pill.busy { background: #fffbeb; color: #d97706; border: 1px solid #fde68a; }
@@ -755,6 +847,8 @@ onUnmounted(() => {
 }
 
 .node-title {
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: 12px;
   font-weight: 700;
   color: #0f172a;

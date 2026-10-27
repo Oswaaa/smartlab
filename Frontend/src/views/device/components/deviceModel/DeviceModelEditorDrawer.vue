@@ -128,12 +128,14 @@
                       <div class="grid-table-header cap-param-grid-cols">
                         <span class="grid-th">参数名称</span>
                         <span class="grid-th">数据类型</span>
+                        <span class="grid-th">单位</span>
                         <span class="grid-th col-center">必填</span>
                         <span class="grid-th col-center">操作</span>
                       </div>
                       <div v-for="(row, $index) in capability.parameters" :key="$index" class="grid-table-row cap-param-grid-cols">
                         <div class="grid-td"><el-input v-model="row.displayName" size="small" placeholder="例如：目标温度" /></div>
                         <div class="grid-td"><data-type-select v-model="row.dataType" :options="attributeDataTypes" /></div>
+                        <div class="grid-td"><el-input v-model="row.unit" size="small" placeholder="℃ / min" /></div>
                         <div class="grid-td col-center"><el-switch v-model="row.required" /></div>
                         <div class="grid-td col-center"><button class="btn-link danger" type="button" @click="removeCapabilityParameter(capability, $index)">删除</button></div>
                       </div>
@@ -1683,7 +1685,7 @@ function removeCapability(capability) {
   draft.functionMappings = draft.functionMappings.filter(mapping => mapping.capabilityKey !== capability._key)
 }
 function addCapabilityParameter(capability) {
-  ensureArrayField(capability, 'parameters').push({ _key: makeUiKey('param'), name: '', displayName: '', dataType: 'DOUBLE', required: true })
+  ensureArrayField(capability, 'parameters').push({ _key: makeUiKey('param'), name: '', displayName: '', dataType: 'DOUBLE', required: true, unit: '' })
 }
 
 function removeCapabilityParameter(capability, index) {
@@ -2411,7 +2413,7 @@ function summaryText(model) {
 }
 .cap-param-grid-cols {
   display: grid;
-  grid-template-columns: minmax(130px, 1.4fr) minmax(110px, 1fr) 64px 50px;
+  grid-template-columns: minmax(130px, 1.4fr) minmax(110px, 1fr) minmax(90px, 0.8fr) 64px 50px;
   gap: 8px;
   align-items: center;
 }

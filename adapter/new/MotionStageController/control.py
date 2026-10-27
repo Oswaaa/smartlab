@@ -46,6 +46,9 @@ class ControlImpl:
         self.health_timeout_ms = int(card_cfg.get('healthTimeoutMs', '5000'))
         if not 0 < self.health_probe_ms < self.health_timeout_ms:
             raise ValueError('Require 0 < healthProbeIntervalMs < healthTimeoutMs')
+        # 部分固件不维护 MC_GetSts 的采样时钟（恒为 0xCCCCCCCC），此时时钟既不递增
+        # 也不可信；关闭后不读时钟，改由 pump() 内的轴状态/DI 往返体现通信存活。
+        self.clock_health = _enabled(card_cfg.get('clockHealthEnabled', 'true'))
         io_poll_ms = max(1, int(card_cfg.get("ioPollIntervalMs", "1000")))
         self.motion = MotionParams(extra.get("motion", {}))
         self.physical_points = tuple(physical_points)
@@ -242,7 +245,11 @@ class ControlImpl:
             with self._lock:
                 generation = self._io_failure_generation
             now = self.clock.mono_ms()
-            if now >= self._next_probe_ms:
+            if not self.clock_health:
+                # 不做时钟判据：pump() 里的 MC_GetAllSysStatusSX / MC_GetDiRaw 是真往返，
+                # 失败会被 checked 包装抛 OSError，进度仍靠它体现。
+                self._last_progress_ms = self.clock.mono_ms()
+            elif now >= self._next_probe_ms:
                 board_clock = self.dispatcher.probe_card_clock()
                 if not math.isfinite(board_clock):
                     raise OSError('Invalid motion card clock')

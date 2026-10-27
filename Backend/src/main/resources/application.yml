@@ -4,10 +4,11 @@ server:
 spring:
   datasource:
     driver-class-name: org.postgresql.Driver
-    # url: jdbc:postgresql://101.42.50.179:5432/lab
-    url: jdbc:postgresql://192.168.10.240:5432/lab
-    # username: user
-    username: postgres
+    url: jdbc:postgresql://101.42.50.179:5432/lab
+    # url: jdbc:postgresql://192.168.10.240:5432/lab
+    # url: jdbc:postgresql://localhost:5432/lab
+    username: user
+    # username: postgres
     password: 123456
     hikari:
       maximum-pool-size: 10

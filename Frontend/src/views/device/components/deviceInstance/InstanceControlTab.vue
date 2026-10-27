@@ -86,13 +86,16 @@
                   <el-switch v-model="controlParamValues[paramKey(param)]" />
                   <span class="bool-field-label">{{ controlParamValues[paramKey(param)] ? '开启' : '关闭' }}</span>
                 </div>
-                  <el-input-number
-                    v-else-if="isNumberType(param.dataType)"
-                    v-model="controlParamValues[paramKey(param)]"
-                    :precision="isIntegerType(param.dataType) ? 0 : undefined"
-                    :controls="false"
-                  />
-                  <el-input v-else v-model="controlParamValues[paramKey(param)]" :placeholder="param.dataType || 'STRING'" />
+                  <div v-else class="param-input-row">
+                    <el-input-number
+                      v-if="isNumberType(param.dataType)"
+                      v-model="controlParamValues[paramKey(param)]"
+                      :precision="isIntegerType(param.dataType) ? 0 : undefined"
+                      :controls="false"
+                    />
+                    <el-input v-else v-model="controlParamValues[paramKey(param)]" :placeholder="param.dataType || 'STRING'" />
+                    <span v-if="paramUnit(param)" class="param-unit">{{ paramUnit(param) }}</span>
+                  </div>
                   <div class="field-hint">数据类型: {{ param.dataType || '-' }} · {{ param.required === false ? '可以不填' : '必填' }}</div>
                 </div>
               </el-form-item>
@@ -325,6 +328,38 @@ const activeControlParams = computed(() => {
   )
   return params.filter((param: any) => boundNames.has(paramKey(param)))
 })
+const activeControlAttributes = computed(() => {
+  const attrsOf = (model: any) => asArray(model?.capabilitySpec?.attributes || model?.attributes)
+  const key = String(selectedControlEntityKey.value || 'main')
+  if (!key.startsWith('comp_')) return attrsOf(activeInstanceModel.value)
+  const compInstance = props.instances.find(d => String(d.instanceId) === key.slice(5))
+  if (!compInstance) return attrsOf(activeInstanceModel.value)
+  return attrsOf(findModelById(compInstance.modelId, props.models, props.modelOptions))
+})
+
+function unitToken(value: any): string {
+  return String(value || '')
+    .replace(/(目标|设定|设置|当前|实际|实时|报警|上限|下限)/g, '')
+    .replace(/[0-9０-９]+/g, '')
+    .trim()
+}
+
+function paramUnit(param: any): string {
+  const direct = String(param?.unit || '').trim()
+  if (direct) return direct
+  const token = unitToken(param?.displayName || param?.name || param?.paramName)
+  if (!token) return ''
+  const attrs = activeControlAttributes.value
+  const nameOf = (attr: any) => unitToken(attr?.displayName || attr?.attributeName || attr?.name)
+  const exact = attrs.find((attr: any) => nameOf(attr) === token)
+  if (exact?.unit) return String(exact.unit).trim()
+  const loose = attrs.find((attr: any) => {
+    const name = nameOf(attr)
+    return !!name && (name.includes(token) || token.includes(name))
+  })
+  return loose?.unit ? String(loose.unit).trim() : ''
+}
+
 const canAbortActiveCapability = computed(() => {
   if (!activeControlGroup.value || !activeControlCapability.value) return false
   const cap = activeControlCapability.value
@@ -856,6 +891,9 @@ const handleForceResetCommand = async () => {
 .control-param-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; align-items: start; }
 .control-param-grid :deep(.el-form-item__content) { display: block; line-height: normal; }
 .param-control { display: flex; flex-direction: column; align-items: stretch; gap: 4px; width: 100%; min-width: 0; }
+.param-input-row { display: flex; align-items: center; gap: 6px; width: 100%; min-width: 0; }
+.param-input-row :deep(.el-input-number), .param-input-row :deep(.el-input) { flex: 1 1 auto; min-width: 0; }
+.param-unit { flex: 0 0 auto; font-size: 11px; color: #94a3b8; white-space: nowrap; }
 .bool-field {
   box-sizing: border-box;
   height: 32px;

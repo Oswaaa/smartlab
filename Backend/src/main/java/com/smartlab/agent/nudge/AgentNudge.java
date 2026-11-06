@@ -19,6 +19,21 @@ public final class AgentNudge {
                 + String.join("\n\n", cards);
     }
 
+    /**
+     * 设备动作专用催促。
+     *
+     * <p>用户这句话是"某台设备做个动作"，跟画流程无关，但会话历史里可能还留着
+     * "查过设备目录""校验已通过"这些痕迹。沿用流程那套催促，模型就会被赶着去
+     * simulate/save_draft，在自己上一轮的回答上原地打转，轮次直接耗光。
+     */
+    public static String buildDevice() {
+        return "这句话是单台设备的动作，不是设计流程，也不要重复你上一轮说过的话。"
+                + "直接调用 prepare_device_action：instance 填设备名（如 反应釜1），"
+                + "capability 填动作名（如 加热），parameters 用参数原名（如 温度）。"
+                + "拿到卡片或报错后，把结果（设备、参数含单位和来源、或失败原因）说给用户，然后等确认。"
+                + "不要调用 save_draft、validate_workflow、simulate_workflow、list_workflow_catalog。";
+    }
+
     static String nextAction(boolean deviceCatalogFetched, boolean workflowCatalogFetched,
                               Boolean lastValidateClean, Boolean lastSimulateWalkable,
                               String assistantText) {

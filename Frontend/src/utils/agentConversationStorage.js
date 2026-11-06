@@ -23,6 +23,7 @@ export function emptyConversation(id = newAgentId('c')) {
     messages: [],
     logs: [],
     resultState: 'idle',
+    sessionId: null,
   }
 }
 
@@ -46,6 +47,7 @@ export function clipConversation(conversation) {
       payload: clipLogPayload(entry?.payload),
     })),
     resultState,
+    sessionId: conversation.sessionId || null,
   }
 }
 

@@ -67,3 +67,9 @@ Desktop.ini
 .env.*
 application-local.yml
 application-dev.yml
+
+# Local runtime artifacts (kept on disk, just not committed)
+.run/logs/
+.run/frames/
+adapter/*/*/RunTimeLog/
+adapter/*/*/virtual_leases.json

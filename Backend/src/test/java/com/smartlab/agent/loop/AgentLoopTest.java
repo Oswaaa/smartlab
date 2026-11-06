@@ -1,6 +1,7 @@
 package com.smartlab.agent.loop;
 
 import com.smartlab.agent.AgentProperties;
+import com.smartlab.agent.api.AgentInteractionLog;
 import com.smartlab.agent.api.WorkflowGenerateResponse;
 import com.smartlab.agent.catalog.DeviceCatalogAssembler;
 import com.smartlab.agent.catalog.DeviceCatalogItem;
@@ -9,7 +10,15 @@ import com.smartlab.agent.llm.LlmMessage;
 import com.smartlab.agent.llm.LlmToolCall;
 import com.smartlab.agent.llm.MockLlmClient;
 import com.smartlab.agent.nudge.AgentConceptDictionary;
+import com.smartlab.agent.operator.InstanceResolver;
+import com.smartlab.agent.operator.OperatorContext;
+import com.smartlab.agent.operator.OperatorDeviceCatalog;
+import com.smartlab.agent.operator.OperatorSession;
+import com.smartlab.agent.operator.OperatorSessionStore;
+import com.smartlab.agent.operator.OperatorTool;
+import com.smartlab.agent.operator.tool.PrepareDeviceActionTool;
 import com.smartlab.agent.skill.WorkflowGenerationSkill;
+import com.smartlab.agent.tool.AgentTool;
 import com.smartlab.agent.tool.GetDeviceModelTool;
 import com.smartlab.agent.tool.ListDeviceCatalogTool;
 import com.smartlab.agent.tool.ListWorkflowCatalogTool;
@@ -21,16 +30,20 @@ import com.smartlab.management.dto.workflow.WorkflowIssue;
 import com.smartlab.management.dto.workflow.WorkflowModelDocument;
 import com.smartlab.management.dto.workflow.WorkflowPreparationResponse;
 import com.smartlab.management.dto.workflow.WorkflowSimulationReport;
+import com.smartlab.management.entity.resource.device.DeviceModels;
 import com.smartlab.management.service.db.workflow.WorkflowService;
 import com.smartlab.management.service.db.workflow.WorkflowSimulationService;
 import com.smartlab.global.util.JsonNodeSupport;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -89,7 +102,7 @@ class AgentLoopTest {
     }
 
     @Test
-    void savesDraftAfterCatalogAndCleanValidate() throws Exception {
+    void saveDraftBecomesConfirmCardInsteadOfPersisting() throws Exception {
         WorkflowService workflows = mock(WorkflowService.class);
         DeviceCatalogAssembler catalog = mock(DeviceCatalogAssembler.class);
         when(catalog.list(null)).thenReturn(List.of(new DeviceCatalogItem(1L, "加热套", "热工", List.of(), List.of(), null, null)));
@@ -99,13 +112,21 @@ class AgentLoopTest {
         AgentLoop loop = loop(List.of(
                 listCatalogs(),
                 call("validate_workflow", "{\"document\":{\"metadata\":{\"flowModelName\":\"加热\"},\"nodes\":[]}}"),
-                call("save_draft", "{\"document\":{\"metadata\":{\"flowModelName\":\"加热\"},\"nodes\":[]}}")
+                call("save_draft", "{\"document\":{\"metadata\":{\"flowModelName\":\"加热\",\"description\":\"先升温再保温\"},\"nodes\":[]}}")
         ), catalog, workflows);
 
         WorkflowGenerateResponse result = loop.generate("把样品加热到80度");
-        assertEquals("加热", result.definition().flowModelName());
-        assertEquals(9L, result.flowModelId());
-        assertEquals("DRAFT", result.status());
+
+        // 草稿不再直接落库，改成一张待确认卡片
+        assertNull(result.definition());
+        assertNull(result.flowModelId());
+        assertNotNull(result.card());
+        assertEquals("FLOW_DRAFT", result.card().kind());
+        assertTrue(result.card().ready());
+        assertNotNull(result.token());
+        assertTrue(result.card().rows().stream()
+                .anyMatch(row -> "流程名".equals(row.label()) && "加热".equals(row.value())));
+        assertTrue(result.summary().contains("确认后才会保存"));
         assertTrue(result.trace().contains("list_device_catalog"));
         assertTrue(result.trace().contains("list_workflow_catalog"));
         assertTrue(result.trace().contains("validate_workflow"));
@@ -114,10 +135,11 @@ class AgentLoopTest {
         assertTrue(result.logs().stream().anyMatch(item -> "llm_call".equals(item.kind())));
         assertTrue(result.logs().stream().anyMatch(item -> "llm_reply".equals(item.kind())));
         assertTrue(result.logs().stream().anyMatch(item -> "tool_result".equals(item.kind()) && item.title().contains("save_draft")));
+        assertTrue(result.logs().stream().anyMatch(item -> "gate".equals(item.kind()) && "生成确认卡片".equals(item.title())));
         assertTrue(result.logs().stream().anyMatch(item -> "done".equals(item.kind())));
         assertTrue(result.logs().stream().anyMatch(item -> "answer".equals(item.kind()) && item.detail() != null && !item.detail().isBlank()));
-        assertTrue(result.summary() != null && !result.summary().isBlank());
-        verify(workflows).saveDraft(any(WorkflowModelDocument.class));
+        // 关键：整个对话过程一次都没有写库
+        verify(workflows, never()).saveDraft(any());
 
         JsonNode reply = JsonNodeSupport.MAPPER.readTree(result.logs().stream()
                 .filter(item -> "llm_reply".equals(item.kind()))
@@ -246,7 +268,7 @@ class AgentLoopTest {
                 call("save_draft", "{\"document\":{\"metadata\":{\"flowModelName\":\"加热\"},\"nodes\":[]}}")
         ));
 
-        loop(llm, catalog, workflows).generate("加热");
+        loop(llm, catalog, workflows).generate("帮我设计一个加热流程");
 
         String nudge = lastUser(llm.messagesAt(1));
         assertTrue(nudge.contains("list_device_catalog"));
@@ -254,11 +276,96 @@ class AgentLoopTest {
         assertFalse(nudge.contains("不要再整表列出"));
     }
 
-    private AgentLoop loop(List<LlmCompletion> completions, DeviceCatalogAssembler catalog, WorkflowService workflows) {
-        return loop(new MockLlmClient(completions), catalog, workflows);
+    /**
+     * 同一会话里先画过流程、再下设备指令：不能被历史里的流程痕迹拖去 simulate/save_draft。
+     *
+     * <p>复现的是线上那条 12 轮耗尽的路径：restore() 从历史恢复出"查过目录、校验通过"，
+     * 于是设备指令被当成"流程画到一半"，nudge 一路按流程口径催下去。
+     */
+    @Test
+    void deviceCommandAfterFlowTurnGetsDeviceNudgeInsteadOfFlowNudge() {
+        WorkflowService workflows = mock(WorkflowService.class);
+        DeviceCatalogAssembler catalog = mock(DeviceCatalogAssembler.class);
+        when(catalog.list(null)).thenReturn(List.of(new DeviceCatalogItem(1L, "加热套", "热工", List.of(), List.of(), null, null)));
+        when(workflows.validate(any())).thenReturn(cleanPreparation());
+        when(workflows.saveDraft(any())).thenReturn(savedPreparation());
+
+        OperatorDeviceCatalog devices = mock(OperatorDeviceCatalog.class);
+        when(devices.resolver()).thenReturn(new InstanceResolver(List.of()));
+        OperatorSessionStore store = new OperatorSessionStore();
+        OperatorSession session = store.getOrCreate("device-after-flow");
+        OperatorContext context = new OperatorContext(session, null, "tester");
+
+        MockLlmClient llm = new MockLlmClient(List.of(
+                listCatalogs(),
+                call("validate_workflow", "{\"document\":{\"metadata\":{\"flowModelName\":\"加热\"},\"nodes\":[]}}"),
+                call("save_draft", "{\"document\":{\"metadata\":{\"flowModelName\":\"加热\"},\"nodes\":[]}}"),
+                new LlmCompletion("草稿已保存，编号 9。", List.of()),
+                new LlmCompletion("我先看看这个动作要注意什么。", List.of()),
+                call("prepare_device_action", "{\"instance\":\"反应釜1\",\"capability\":\"加热\",\"parameters\":{\"温度\":50}}"),
+                new LlmCompletion("没有找到这台设备，请确认设备名。", List.of())
+        ));
+        AgentLoop loop = loop(llm, catalog, workflows, new PrepareDeviceActionTool(devices, store));
+
+        loop.chat(session, context, "帮我设计一个加热流程", log -> {});
+        WorkflowGenerateResponse second = loop.chat(session, context, "反应釜1加热到50度", log -> {});
+
+        List<AgentInteractionLog> nudges = second.logs().stream()
+                .filter(item -> "nudge".equals(item.kind()))
+                .toList();
+        assertEquals(1, nudges.size());
+        assertTrue(nudges.get(0).detail().contains("直接调用 prepare_device_action"));
+        assertFalse(nudges.get(0).detail().contains("按第 7 步"));
+        assertTrue(second.trace().contains("prepare_device_action"));
+        assertTrue(second.summary().contains("没有找到"));
     }
 
-    private AgentLoop loop(MockLlmClient llm, DeviceCatalogAssembler catalog, WorkflowService workflows) {
+    @Test
+    void flowDraftCardTranslatesCapabilityPlaceholders() throws Exception {
+        WorkflowService workflows = mock(WorkflowService.class);
+        DeviceCatalogAssembler catalog = mock(DeviceCatalogAssembler.class);
+        when(catalog.list(null)).thenReturn(List.of(new DeviceCatalogItem(1L, "反应釜", "热工", List.of(), List.of(), null, null)));
+        when(workflows.validate(any())).thenReturn(cleanPreparation());
+
+        DeviceModels model = new DeviceModels();
+        model.setCapabilities(JsonNodeSupport.MAPPER.readTree("""
+                [{"capabilityName":"capability_1","displayName":"加热",
+                  "parameters":[{"name":"parameter_1","displayName":"目标温度1","unit":"℃"},
+                                {"name":"parameter_2","displayName":"加热时间1","unit":"min"}]}]
+                """));
+        OperatorDeviceCatalog deviceCatalog = mock(OperatorDeviceCatalog.class);
+        when(deviceCatalog.modelOrNull(41L)).thenReturn(model);
+
+        String document = """
+                {"metadata":{"flowModelName":"加热"},
+                 "nodes":[{"name":"开始","nodeType":"FUNC_NODE","functionType":"START"},
+                          {"name":"反应釜加热","nodeType":"DEV_NODE","deviceModelId":41,
+                           "capability":{"capabilityName":"capability_1",
+                                         "capabilityParameters":{"parameter_1":80,"parameter_2":30}}},
+                          {"name":"结束","nodeType":"FUNC_NODE","functionType":"END"}]}
+                """;
+        MockLlmClient llm = new MockLlmClient(List.of(
+                listCatalogs(),
+                call("validate_workflow", "{\"document\":" + document + "}"),
+                call("save_draft", "{\"document\":" + document + "}")
+        ));
+        AgentLoop loop = loopWithDeviceCatalog(llm, catalog, workflows, deviceCatalog);
+
+        WorkflowGenerateResponse result = loop.generate("设计一个反应釜加热流程");
+        List<String> steps = result.card().parameters().stream()
+                .map(row -> row.label() + " / " + row.value())
+                .toList();
+        assertEquals(3, steps.size());
+        // capability_1 / parameter_1 必须翻成人能看懂的名字
+        assertTrue(steps.get(1).contains("加热"), steps.get(1));
+        assertTrue(steps.get(1).contains("目标温度1=80"), steps.get(1));
+        assertTrue(steps.get(1).contains("加热时间1=30"), steps.get(1));
+        assertFalse(steps.get(1).contains("capability_1"), steps.get(1));
+        assertFalse(steps.get(1).contains("parameter_1"), steps.get(1));
+    }
+
+    private AgentLoop loopWithDeviceCatalog(MockLlmClient llm, DeviceCatalogAssembler catalog,
+                                            WorkflowService workflows, OperatorDeviceCatalog deviceCatalog) {
         AgentProperties properties = new AgentProperties();
         properties.setBaseUrl("http://localhost/v1");
         properties.setApiKey("test-key");
@@ -268,14 +375,47 @@ class AgentLoopTest {
         WorkflowSimulationService simulation = mock(WorkflowSimulationService.class);
         when(simulation.simulate(any())).thenReturn(new WorkflowSimulationReport(
                 null, 9L, null, true, List.of(), List.of(), List.of()));
+        List<AgentTool> tools = new ArrayList<>(List.of(
+                new ListDeviceCatalogTool(catalog), new ListWorkflowCatalogTool(workflows),
+                new GetDeviceModelTool(catalog), new ValidateWorkflowTool(workflows),
+                new SimulateWorkflowTool(simulation), new SaveDraftTool(workflows)));
+        return new AgentLoop(llm, tools, List.of(), new WorkflowGenerationSkill(),
+                new AgentConceptDictionary(), properties, deviceCatalog);
+    }
+
+    private AgentLoop loop(List<LlmCompletion> completions, DeviceCatalogAssembler catalog, WorkflowService workflows) {
+        return loop(new MockLlmClient(completions), catalog, workflows);
+    }
+
+    private AgentLoop loop(MockLlmClient llm, DeviceCatalogAssembler catalog, WorkflowService workflows) {
+        return loop(llm, catalog, workflows, null);
+    }
+
+    private AgentLoop loop(MockLlmClient llm, DeviceCatalogAssembler catalog, WorkflowService workflows,
+                           OperatorTool extraTool) {
+        AgentProperties properties = new AgentProperties();
+        properties.setBaseUrl("http://localhost/v1");
+        properties.setApiKey("test-key");
+        properties.setModel("test-model");
+        properties.setMaxRounds(6);
+        when(workflows.list()).thenReturn(List.of());
+        WorkflowSimulationService simulation = mock(WorkflowSimulationService.class);
+        when(simulation.simulate(any())).thenReturn(new WorkflowSimulationReport(
+                null, 9L, null, true, List.of(), List.of(), List.of()));
+        List<AgentTool> flowTools = new ArrayList<>(List.of(
+                new ListDeviceCatalogTool(catalog), new ListWorkflowCatalogTool(workflows),
+                new GetDeviceModelTool(catalog), new ValidateWorkflowTool(workflows),
+                new SimulateWorkflowTool(simulation), new SaveDraftTool(workflows)));
+        List<OperatorTool> operatorTools = new ArrayList<>();
+        if (extraTool != null) operatorTools.add(extraTool);
         return new AgentLoop(
                 llm,
-                List.of(new ListDeviceCatalogTool(catalog), new ListWorkflowCatalogTool(workflows),
-                        new GetDeviceModelTool(catalog), new ValidateWorkflowTool(workflows),
-                        new SimulateWorkflowTool(simulation), new SaveDraftTool(workflows)),
+                flowTools,
+                operatorTools,
                 new WorkflowGenerationSkill(),
                 new AgentConceptDictionary(),
-                properties);
+                properties,
+                null);
     }
 
     private String lastUser(List<LlmMessage> messages) {

@@ -373,17 +373,27 @@ public class AdapterIndexService extends ManagementCrudService<AdapterIndex> {
 
     /**
      * 自动扫描超时未上报心跳的 Adapter（超过 30 秒），联动将其下属设备实例置为 OFFLINE。
+     *
+     * <p>注意：{@code @Scheduled} 方法一旦抛出未捕获异常，后续调度会被永久抑制，
+     * 离线扫描会彻底停摆（设备一直停留在最后一次的 ONLINE 状态）。因此这里必须自行兜住异常。</p>
      */
     @Scheduled(fixedDelay = 5000)
     public void scanAndExpireHeartbeats() {
-        OffsetDateTime threshold = OffsetDateTime.now().minusSeconds(heartbeatTimeoutSeconds);
-        List<String> expiredAdapters = mapper.selectExpiredAdapterNames(threshold);
-        if (expiredAdapters == null || expiredAdapters.isEmpty()) return;
-        OffsetDateTime now = OffsetDateTime.now();
-        for (String adapterName : expiredAdapters) {
-            if (deviceTwinStatesMapper != null && adapterName != null) {
-                deviceTwinStatesMapper.updateOnlineStatusByAdapter(adapterName, "OFFLINE", now);
+        try {
+            OffsetDateTime threshold = OffsetDateTime.now().minusSeconds(heartbeatTimeoutSeconds);
+            List<String> expiredAdapters = mapper.selectExpiredAdapterNames(threshold);
+            if (expiredAdapters == null || expiredAdapters.isEmpty()) {
+                return;
             }
+            OffsetDateTime now = OffsetDateTime.now();
+            for (String adapterName : expiredAdapters) {
+                if (deviceTwinStatesMapper != null && adapterName != null) {
+                    deviceTwinStatesMapper.updateOnlineStatusByAdapter(adapterName, "OFFLINE", now);
+                }
+            }
+        } catch (Exception e) {
+            // 吞掉异常，保证下一轮扫描仍会执行；错误只记录不中断
+            log.error("扫描超时 Adapter 心跳失败，等待下一轮重试", e);
         }
     }
 

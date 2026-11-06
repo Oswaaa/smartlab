@@ -1,0 +1,545 @@
+<template>
+  <div class="operator-dock">
+    <transition name="panel-pop">
+      <aside v-if="open" class="dock-panel">
+        <header class="dock-head">
+          <div class="head-text">
+            <p class="head-title">设备操作助手</p>
+            <p class="head-sub">说一句话即可执行，动作前会先给你确认</p>
+          </div>
+          <div class="head-actions">
+            <button type="button" class="icon-btn" title="清空对话" @click="resetConversation">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14" />
+              </svg>
+            </button>
+            <button type="button" class="icon-btn" title="收起" @click="operatorStore.close()">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+        </header>
+
+        <div ref="bodyRef" class="dock-body">
+          <div v-if="!messages.length" class="empty-state">
+            <p class="empty-title">直接说要做什么</p>
+            <p class="empty-text">支持单台设备的动作下发，以及按流程创建任务。执行前一定会先让你确认。</p>
+            <div class="sample-list">
+              <button
+                v-for="sample in samples"
+                :key="sample"
+                type="button"
+                class="sample-btn"
+                @click="send(sample)"
+              >
+                {{ sample }}
+              </button>
+            </div>
+          </div>
+
+          <div v-for="item in messages" :key="item.id" class="msg-row" :class="item.role">
+            <template v-if="item.role === 'user'">
+              <div class="bubble user">{{ item.text }}</div>
+            </template>
+            <template v-else>
+              <div class="bubble assistant">
+                <p v-if="item.text" class="msg-text">{{ item.text }}</p>
+                <ConfirmCardView
+                  v-if="item.card"
+                  :card="item.card"
+                  :state="item.cardState || 'PENDING'"
+                  :result="item.result || ''"
+                  :detail="item.detail || null"
+                  @confirm="confirmAction(item)"
+                  @cancel="cancelAction(item)"
+                />
+              </div>
+            </template>
+          </div>
+
+          <div v-if="busy" class="thinking">
+            <span class="dot" /><span class="dot" /><span class="dot" />
+            <span class="thinking-text">正在处理</span>
+          </div>
+        </div>
+
+        <footer class="dock-foot">
+          <textarea
+            ref="inputRef"
+            v-model="draft"
+            class="dock-input"
+            rows="1"
+            placeholder="例如：让反应釜1加热到500度"
+            :disabled="busy"
+            @keydown.enter.exact.prevent="send()"
+            @input="autoGrow"
+          />
+          <button type="button" class="send-btn" :disabled="busy || !draft.trim()" @click="send()">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="22" y1="2" x2="11" y2="13" />
+              <polygon points="22 2 15 22 11 13 2 9 22 2" />
+            </svg>
+          </button>
+          </footer>
+      </aside>
+    </transition>
+  </div>
+</template>
+
+<script setup>
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { ElMessage } from 'element-plus'
+import { request } from '../../utils/request'
+import { useAuthStore } from '../../stores/authStore'
+import { useOperatorStore } from '../../stores/operatorStore'
+import ConfirmCardView from './ConfirmCardView.vue'
+
+const auth = useAuthStore()
+const operatorStore = useOperatorStore()
+
+const samples = [
+  '反应釜1现在什么状态',
+  '让反应釜1加热到500度，加热30分钟',
+  '用流程「将1#通道气密连接器打开」建任务，任务名试运行A'
+]
+
+const busy = ref(false)
+const draft = ref('')
+const messages = ref([])
+const sessionId = ref('')
+const bodyRef = ref(null)
+const inputRef = ref(null)
+
+const open = computed(() => operatorStore.isOpen)
+const pendingHint = computed({
+  get: () => operatorStore.hasPending,
+  set: value => operatorStore.setPending(value)
+})
+
+const storageKey = computed(() => `smartlab_operator_${auth.username || 'anon'}`)
+
+function loadState() {
+  try {
+    const raw = localStorage.getItem(storageKey.value)
+    if (!raw) return
+    const saved = JSON.parse(raw)
+    sessionId.value = saved?.sessionId || ''
+    const restored = Array.isArray(saved?.messages) ? saved.messages : []
+    messages.value = restored.map(item => (
+      item?.cardState === 'BUSY'
+        ? { ...item, cardState: 'EXPIRED', result: '刷新时执行结果未知，请检查设备状态后再操作' }
+        : item
+    ))
+    pendingHint.value = messages.value.some(item => item.cardState === 'PENDING')
+  } catch {
+    messages.value = []
+  }
+}
+
+function persist() {
+  try {
+    localStorage.setItem(storageKey.value, JSON.stringify({
+      sessionId: sessionId.value,
+      messages: messages.value.slice(-40)
+    }))
+  } catch {
+    // 超配额时忽略，不影响当前会话
+  }
+}
+
+function scrollToBottom() {
+  nextTick(() => {
+    if (bodyRef.value) bodyRef.value.scrollTop = bodyRef.value.scrollHeight
+  })
+}
+
+function autoGrow() {
+  const el = inputRef.value
+  if (!el) return
+  el.style.height = 'auto'
+  el.style.height = `${Math.min(el.scrollHeight, 96)}px`
+}
+
+function openDock() {
+  scrollToBottom()
+  nextTick(() => inputRef.value?.focus())
+}
+
+watch(open, value => {
+  if (value) openDock()
+})
+
+function pushMessage(message) {
+  messages.value.push({
+    at: Date.now(),
+    ...message,
+    text: message.text ? cleanText(message.text) : ''
+  })
+  persist()
+  scrollToBottom()
+}
+
+function cleanText(text) {
+  return String(text)
+    .replace(/\*\*(.+?)\*\*/g, '$1')
+    .replace(/`{1,3}([^`\n]*)`{1,3}/g, '$1')
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+async function postJson(url, payload, timeoutMs = 180000) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const body = await request(url, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+      signal: controller.signal
+    })
+    return body
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+async function send(text) {
+  const content = (text ?? draft.value).trim()
+  if (!content || busy.value) return
+  draft.value = ''
+  nextTick(autoGrow)
+  pushMessage({ id: `u-${Date.now()}`, role: 'user', text: content })
+  busy.value = true
+  pendingHint.value = false
+  try {
+    const res = await postJson('/api/agent/operator/chat', {
+      sessionId: sessionId.value || null,
+      message: content
+    })
+    if (!res?.success) {
+      const reason = res?.message || '处理失败'
+      pushMessage({ id: `a-${Date.now()}`, role: 'assistant', text: reason })
+      return
+    }
+    const data = res.data || {}
+    if (data.sessionId) sessionId.value = data.sessionId
+    const card = data.card || null
+    const cardState = card ? (card.ready ? 'PENDING' : 'BLOCKED') : null
+    if (cardState === 'PENDING') {
+      messages.value.forEach(item => {
+        if (item.cardState === 'PENDING') {
+          item.cardState = 'EXPIRED'
+          item.result = '已被新的操作取代'
+        }
+      })
+    }
+    pushMessage({
+      id: `a-${Date.now()}`,
+      role: 'assistant',
+      text: data.message || '',
+      card,
+      token: data.token || null,
+      cardState,
+      result: cardState === 'BLOCKED' ? '预检未通过，这条操作现在执行不了' : ''
+    })
+    pendingHint.value = cardState === 'PENDING'
+  } catch (error) {
+    const reason = error?.name === 'AbortError'
+      ? '请求超时，请稍后重试'
+      : (error?.message || '网络异常')
+    pushMessage({ id: `a-${Date.now()}`, role: 'assistant', text: reason })
+  } finally {
+    busy.value = false
+    scrollToBottom()
+  }
+}
+
+async function confirmAction(item) {
+  if (item.cardState !== 'PENDING') return
+  if (!item.token || !sessionId.value) {
+    item.cardState = 'EXPIRED'
+    item.result = '待确认信息已失效，请重新说一遍'
+    persist()
+    return
+  }
+  item.cardState = 'BUSY'
+  persist()
+  try {
+    const res = await postJson('/api/agent/operator/confirm', {
+      sessionId: sessionId.value,
+      token: item.token
+    })
+    if (!res?.success) {
+      item.cardState = 'BLOCKED'
+      item.result = res?.message || '执行失败'
+    } else {
+      const data = res.data || {}
+      const executed = data.status === 'EXECUTED'
+      item.cardState = executed ? 'DONE' : 'BLOCKED'
+      item.result = data.message || (executed ? '已执行' : '执行被拒绝')
+      item.detail = data.detail || null
+    }
+  } catch (error) {
+    item.cardState = 'BLOCKED'
+    item.result = error?.message || '执行失败'
+  } finally {
+    pendingHint.value = false
+    persist()
+    scrollToBottom()
+  }
+}
+
+async function cancelAction(item) {
+  item.cardState = 'CANCELLED'
+  item.result = ''
+  pendingHint.value = false
+  persist()
+  try {
+    await postJson('/api/agent/operator/cancel', { sessionId: sessionId.value }, 15000)
+  } catch {
+    // 取消失败不影响界面状态，后端有 5 分钟 TTL 自动回收
+  }
+}
+
+function resetConversation() {
+  const previousSession = sessionId.value
+  messages.value = []
+  sessionId.value = ''
+  pendingHint.value = false
+  persist()
+  if (previousSession) {
+    postJson('/api/agent/operator/cancel', { sessionId: previousSession }, 15000).catch(() => {})
+  }
+  ElMessage.success('对话已清空')
+}
+
+watch(storageKey, loadState)
+onMounted(loadState)
+</script>
+
+<style scoped>
+.operator-dock {
+  position: relative;
+  z-index: 2200;
+  flex: none;
+  height: 0;
+}
+
+.dock-panel {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  width: 460px;
+  height: min(720px, calc(100vh - 48px));
+  display: flex;
+  flex-direction: column;
+  background: var(--sl-bg-surface);
+  border: 1px solid var(--sl-border-base);
+  border-radius: var(--sl-radius-lg);
+  box-shadow: var(--sl-shadow-dialog);
+  overflow: hidden;
+}
+
+.dock-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--sl-border-base);
+}
+.head-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--sl-text-heading);
+}
+.head-sub {
+  margin: 2px 0 0;
+  font-size: 11.5px;
+  color: var(--sl-text-secondary);
+}
+.head-actions { display: flex; gap: 4px; }
+.icon-btn {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: var(--sl-radius-sm);
+  background: transparent;
+  color: var(--sl-text-secondary);
+  cursor: pointer;
+  transition: var(--sl-ease-smooth);
+}
+.icon-btn:hover {
+  background: var(--sl-bg-hover);
+  color: var(--sl-text-heading);
+}
+
+.dock-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 16px;
+  background: var(--sl-bg-page);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.empty-state {
+  margin: auto 0;
+  padding: 12px 0;
+}
+.empty-title {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--sl-text-heading);
+  text-align: center;
+}
+.empty-text {
+  margin: 0 0 16px;
+  font-size: 12px;
+  color: var(--sl-text-secondary);
+  text-align: center;
+  line-height: 1.6;
+}
+.sample-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sample-btn {
+  text-align: left;
+  padding: 9px 12px;
+  border-radius: var(--sl-radius-sm);
+  border: 1px solid var(--sl-border-base);
+  background: var(--sl-bg-surface);
+  color: var(--sl-text-body);
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: var(--sl-ease-smooth);
+}
+.sample-btn:hover {
+  border-color: var(--sl-primary-border);
+  color: var(--sl-primary);
+  background: var(--sl-primary-light);
+}
+
+.msg-row { display: flex; }
+.msg-row.user { justify-content: flex-end; }
+.msg-row.assistant { justify-content: flex-start; }
+
+.bubble {
+  max-width: 100%;
+  font-size: 13px;
+  line-height: 1.65;
+}
+.bubble.user {
+  max-width: 82%;
+  padding: 8px 12px;
+  border-radius: var(--sl-radius-md);
+  background: var(--sl-primary);
+  color: #fff;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.bubble.assistant {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  color: var(--sl-text-body);
+}
+.msg-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.thinking {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 2px;
+}
+.thinking .dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--sl-text-disabled);
+  animation: blink 1.2s infinite ease-in-out;
+}
+.thinking .dot:nth-child(2) { animation-delay: 0.15s; }
+.thinking .dot:nth-child(3) { animation-delay: 0.3s; }
+.thinking-text {
+  margin-left: 4px;
+  font-size: 11.5px;
+  color: var(--sl-text-secondary);
+}
+@keyframes blink {
+  0%, 80%, 100% { opacity: 0.25; }
+  40% { opacity: 1; }
+}
+
+.dock-foot {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 10px 12px;
+  border-top: 1px solid var(--sl-border-base);
+  background: var(--sl-bg-surface);
+}
+.dock-input {
+  flex: 1;
+  min-height: 34px;
+  max-height: 96px;
+  padding: 8px 10px;
+  border: 1px solid var(--sl-border-input);
+  border-radius: var(--sl-radius-sm);
+  font-family: var(--sl-font-family);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--sl-text-body);
+  resize: none;
+  outline: none;
+  transition: var(--sl-ease-smooth);
+}
+.dock-input:focus { border-color: var(--sl-primary-border); }
+.dock-input:disabled { background: var(--sl-bg-hover); }
+
+.send-btn {
+  width: 34px;
+  height: 34px;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--sl-radius-sm);
+  border: 1px solid var(--sl-primary);
+  background: var(--sl-primary);
+  color: #fff;
+  cursor: pointer;
+  transition: var(--sl-ease-smooth);
+}
+.send-btn:hover:not(:disabled) { background: var(--sl-primary-hover); }
+.send-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.panel-pop-enter-active,
+.panel-pop-leave-active {
+  transition: all 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.panel-pop-enter-from,
+.panel-pop-leave-to {
+  opacity: 0;
+  transform: translateY(10px) scale(0.99);
+}
+</style>

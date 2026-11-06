@@ -35,7 +35,6 @@ class WorkflowGenerationSkillTest {
         assertTrue(prompt.contains("| 种类 | 业务配置 | 节点变量 `internalVariables` | 数据端口 `ports` | 节点 JSON 中的控制接口 `interfaces` |"));
         assertTrue(prompt.contains("| START | 无 | 不写 | `[]` | 不写 |"));
         assertTrue(prompt.contains("禁止冗余/占位节点"));
-        assertTrue(prompt.contains("特别注意“读取/检测/检查”类意图的识别"));
         assertTrue(prompt.contains("禁止占位节点与数据读取复用规约"));
     }
 }

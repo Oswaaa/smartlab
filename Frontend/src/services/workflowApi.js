@@ -74,7 +74,18 @@ export const workflowApi = {
   validate: definition => axios.post('/api/workflow/validate', definition),
   simulate: payload => axios.post('/api/workflow/simulate', payload, { timeout: 630000 }),
   generate: prompt => axios.post('/api/agent/workflow/generate', { prompt }, { timeout: 600000 }),
-  generateStream: async (prompt, onLog) => {
+  /**
+   * 一轮对话（流式）。
+   * @param prompt  用户这一句
+   * @param sessionId 上一轮返回的会话号，首轮传 null；服务端靠它接住"反问 → 回答"
+   * @param onLog   过程日志回调
+   */
+  generateStream: async (prompt, sessionId, onLog) => {
+    // 兼容旧的两参数调用
+    if (typeof sessionId === 'function') {
+      onLog = sessionId
+      sessionId = null
+    }
     const response = await fetch('/api/agent/workflow/generate/stream', {
       method: 'POST',
       headers: {
@@ -82,13 +93,17 @@ export const workflowApi = {
         Accept: 'text/event-stream',
         ...authHeader(),
       },
-      body: JSON.stringify({ prompt }),
+      body: JSON.stringify({ prompt, sessionId: sessionId || null }),
     })
     if (!response.ok) throw Error((await response.text()) || '生成失败')
     const terminal = await readAgentGenerateStream(response, onLog)
     if (!terminal) throw Error('生成中断：未收到完成事件')
     return terminal
   },
+  confirmAction: (sessionId, token, mode) =>
+    axios.post('/api/agent/operator/confirm', { sessionId, token, mode: mode || null }, { timeout: 120000 }),
+  cancelAction: sessionId =>
+    axios.post('/api/agent/operator/cancel', { sessionId }, { timeout: 30000 }),
   publish: definition => axios.post('/api/workflow/publish', definition),
   delete: id => axios.delete(`/api/workflow/delete/${id}`),
   requirements: id => axios.get(`/api/workflow/${id}/requirements`),

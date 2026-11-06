@@ -27,7 +27,7 @@ public class WorkflowGenerationSkill {
     }
 
     public String combinedSystemMessage() {
-        return systemPrompt + "\n\n# 技能：" + skill.id() + "\n\n" + skill.body();
+        return systemPrompt + "\n\n# 流程设计细则\n\n" + skill.body();
     }
 
     private String read(String path) {

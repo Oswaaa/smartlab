@@ -147,6 +147,11 @@ export const useAgentConversationStore = defineStore('agentConversations', () =>
       role: message.role,
       text: message.text,
       ...(message.flowModelId ? { flowModelId: message.flowModelId } : {}),
+      // 待确认卡片随消息一起存，刷新页面后卡片还在（状态会降级成已过期）
+      ...(message.card ? { card: message.card } : {}),
+      ...(message.token ? { token: message.token } : {}),
+      ...(message.cardState ? { cardState: message.cardState } : {}),
+      ...(message.cardResult ? { cardResult: message.cardResult } : {}),
     }
     updateActive(conversation => {
       conversation.messages.push(next)
@@ -155,6 +160,25 @@ export const useAgentConversationStore = defineStore('agentConversations', () =>
       }
     })
     return next
+  }
+
+  /** 就地改一条消息（卡片状态、结果文案）。整条替换才能让 Vue 看到变化。 */
+  function patchMessage(id, patch) {
+    updateActive(conversation => {
+      conversation.messages = conversation.messages.map(item =>
+        item.id === id ? { ...item, ...patch } : item
+      )
+    })
+  }
+
+  /** 新卡片到手时，把还在等确认的旧卡片标成已过期——服务端那边旧 token 也已经作废。 */
+  function supersedePendingCards() {
+    updateActive(conversation => {
+      conversation.messages = conversation.messages.map(item => {
+        if (item.cardState !== 'PENDING') return item
+        return { ...item, cardState: 'EXPIRED', cardResult: '已被新的操作取代' }
+      })
+    })
   }
 
   function beginRun() {
@@ -186,7 +210,10 @@ export const useAgentConversationStore = defineStore('agentConversations', () =>
   }
 
   /**
-   * 全局发起工作流流式生成任务（即使切换页面、组件卸载，流连接与状态接收依然在全局持续执行）
+   * 全局发起一轮对话（即使切换页面、组件卸载，流连接与状态接收依然在全局持续执行）。
+   *
+   * <p>同一个输入框现在既能画流程也能操作设备，靠服务端的工具选择分流：
+   * 返回 {@code card} 就是一张待确认卡片，返回 {@code flowModelId} 就是一张流程草稿。
    */
   async function sendPrompt(prompt: string) {
     const text = prompt.trim()
@@ -199,9 +226,13 @@ export const useAgentConversationStore = defineStore('agentConversations', () =>
     beginRun()
 
     try {
-      const terminal = await workflowApi.generateStream(text, (logEntry: any) => {
-        appendLog(logEntry)
-      })
+      const terminal = await workflowApi.generateStream(
+        text,
+        active.value?.sessionId || null,
+        (logEntry: any) => {
+          appendLog(logEntry)
+        }
+      )
 
       const payload = terminal?.data?.data || terminal?.data || {}
       const curLogs = active.value?.logs || []
@@ -209,11 +240,33 @@ export const useAgentConversationStore = defineStore('agentConversations', () =>
         replaceLogs(Array.isArray(payload?.logs) ? payload.logs : [])
       }
 
+      // 会话号必须存下来，否则"我反问一句、你回一句"下一轮就断线了
+      if (payload?.sessionId) {
+        updateActive(conversation => {
+          conversation.sessionId = payload.sessionId
+        })
+      }
+
       const answerText = payload.summary || latestAnswerTextFromLogs(active.value?.logs || [])
       const rawDraftId = generatedDraftId(payload)
       const flowModelId = rawDraftId ? Number(rawDraftId) : draftIdFromLogs(active.value?.logs || [])
+      const card = payload?.card || null
 
-      if (flowModelId && Number.isInteger(flowModelId) && flowModelId > 0) {
+      if (card) {
+        // 拿到了待确认卡片：这一轮没有执行任何动作，等用户点确认
+        supersedePendingCards()
+        setResultState('pending')
+        appendMessage({
+          role: 'assistant',
+          text: answerText || (card.kind === 'FLOW_DRAFT'
+            ? '流程草稿已整理好，确认后才会保存。'
+            : '已准备好，请确认后再执行。'),
+          card,
+          token: payload?.token || '',
+          cardState: 'PENDING',
+          cardResult: '',
+        })
+      } else if (flowModelId && Number.isInteger(flowModelId) && flowModelId > 0) {
         const name = generatedDraftName(payload)
         const status = payload.status || 'DRAFT'
         setResultState('success')
@@ -249,7 +302,7 @@ export const useAgentConversationStore = defineStore('agentConversations', () =>
       const replyText = textContent || message
       appendMessage({ role: 'assistant', text: replyText })
       ElNotification({
-        title: 'AI 流程推演中断或失败',
+        title: 'AI 处理中断或失败',
         message: replyText,
         type: 'error',
         duration: 5000,
@@ -257,6 +310,84 @@ export const useAgentConversationStore = defineStore('agentConversations', () =>
     } finally {
       generating.value = false
       activePrompt.value = ''
+    }
+  }
+
+  /**
+   * 点确认：真正下发的唯一入口。
+   *
+   * <p>服务端会重新跑一遍预检，所以这里不看前端快照，一切以返回的 status 为准。
+   *
+   * <p>{@code mode = 'SIMULATION'} 是「仿真执行」按钮：设备走点动虚拟机，任务只做流程推演。
+   * 跑完服务端会带回一张新的"正式执行"卡片，这里把它追加到对话里。
+   */
+  async function confirmCard(messageId: string, mode = '') {
+    const conversation = active.value
+    if (!conversation) return
+    const target = (conversation.messages || []).find((item: any) => item.id === messageId)
+    if (!target || target.cardState !== 'PENDING') return
+    if (!conversation.sessionId || !target.token) {
+      patchMessage(messageId, { cardState: 'EXPIRED', cardResult: '待确认信息已失效，请重新说一遍' })
+      return
+    }
+
+    const simulated = mode === 'SIMULATION'
+    patchMessage(messageId, { cardState: 'BUSY', cardAction: simulated ? 'simulate' : 'confirm' })
+    const isFlowDraft = target.card?.kind === 'FLOW_DRAFT'
+    try {
+      const res = await workflowApi.confirmAction(conversation.sessionId, target.token, mode)
+      const body = res?.data || {}
+      const data = body.data || {}
+      if (!body.success) {
+        patchMessage(messageId, { cardState: 'BLOCKED', cardResult: body.message || '执行失败', cardAction: '' })
+        return
+      }
+      const executed = data.status === 'EXECUTED'
+      patchMessage(messageId, {
+        cardState: executed ? 'DONE' : 'BLOCKED',
+        cardResult: data.message || (executed ? (isFlowDraft ? '草稿已保存' : '已执行') : '执行被拒绝'),
+        cardDetail: data.detail || null,
+        cardAction: '',
+      })
+      if (executed) {
+        const followUp = data.detail?.followUpCard
+        const followUpToken = data.detail?.followUpToken
+        if (followUp && followUpToken) {
+          appendMessage({
+            role: 'assistant',
+            text: simulated
+              ? '仿真执行已通过，真机没有任何动作。要正式执行就点下面的确认。'
+              : '这一步已经完成。',
+            card: followUp,
+            token: followUpToken,
+            cardState: 'PENDING',
+          })
+        }
+        ElNotification({
+          title: simulated ? '仿真执行完成' : (isFlowDraft ? '草稿已保存' : '指令已下发'),
+          message: data.message || (simulated ? '真机没有动作' : (isFlowDraft ? '可以到设计器里继续修改' : '执行完成')),
+          type: 'success',
+          duration: 4000,
+        })
+      }
+    } catch (error: any) {
+      patchMessage(messageId, {
+        cardState: 'BLOCKED',
+        cardResult: error?.response?.data?.message || error?.message || '执行失败',
+        cardAction: '',
+      })
+    }
+  }
+
+  async function cancelCard(messageId: string) {
+    const conversation = active.value
+    if (!conversation) return
+    patchMessage(messageId, { cardState: 'CANCELLED', cardResult: '已取消，设备没有任何动作' })
+    if (!conversation.sessionId) return
+    try {
+      await workflowApi.cancelAction(conversation.sessionId)
+    } catch {
+      // 取消失败不影响前端状态：服务端待确认会在 5 分钟后自然过期
     }
   }
 
@@ -274,6 +405,9 @@ export const useAgentConversationStore = defineStore('agentConversations', () =>
     openChat,
     closeChat,
     sendPrompt,
+    confirmCard,
+    cancelCard,
+    patchMessage,
     createConversation,
     selectConversation,
     removeConversation,

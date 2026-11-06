@@ -44,7 +44,7 @@
     <div class="agent-main">
       <header class="agent-stage-header">
         <div class="stage-title-group">
-          <span class="stage-title">SmartLab 流程编排 Agent</span>
+          <span class="stage-title">SmartLab 实验助手</span>
         </div>
         <div class="stage-status-group">
           <span :class="['result-pill', computedResultState]">{{ resultLabel }}</span>
@@ -57,8 +57,8 @@
       <div ref="messageList" class="agent-chat-messages">
         <div class="chat-full-flow">
           <div v-if="!messages.length && !logs.length" class="chat-welcome-state">
-            <h2>SmartLab 流程设计 Agent</h2>
-            <p>使用自然语言描述您的实验流程逻辑，Agent 将实时调用设备检索、模型校验与草稿保存规程，生成符合工业规范的工作流模型。</p>
+            <h2>SmartLab 实验助手</h2>
+            <p>一句话说清要做什么：设计实验流程，或者直接让某台设备动作、按流程建任务。设备动作会先生成确认卡片，你点确认之后才会真正下发。</p>
           </div>
 
           <article
@@ -186,6 +186,20 @@
                 <div class="ai-answer-label">回答</div>
                 <div class="chat-text formatted-text">{{ message.text }}</div>
               </div>
+
+              <!-- 待确认卡片：这里是唯一能触发真正下发的地方 -->
+              <ConfirmCardView
+                v-if="message.card"
+                :card="message.card"
+                :state="message.cardState || 'PENDING'"
+                :result="message.cardResult || ''"
+                :detail="message.cardDetail || null"
+                :busy-action="message.cardAction || ''"
+                class="msg-confirm-card"
+                @confirm="store.confirmCard(message.id)"
+                @simulate="store.confirmCard(message.id, 'SIMULATION')"
+                @cancel="store.cancelCard(message.id)"
+              />
             </div>
           </article>
         </div>
@@ -198,11 +212,11 @@
             v-model="draft"
             :disabled="generating"
             rows="2"
-            placeholder="给 SmartLab Agent 发送消息或修改指令（例如：把加热保持时间延长到 60 秒）..."
+            placeholder="说一句话就能干（例如：让反应釜1加热到500度，加热30分钟 / 设计一个升温降温流程）..."
             @keydown.enter.exact.prevent="sendPrompt"
           />
           <div class="composer-card-bottom">
-            <span class="composer-note">发送将再生成一份草稿，不会改写上一份</span>
+            <span class="composer-note">设备动作会先出确认卡片，点确认才下发</span>
             <button
               class="btn-send-round"
               type="submit"
@@ -217,7 +231,7 @@
             </button>
           </div>
         </div>
-        <div class="composer-bottom-disclaimer">内容由 SmartLab 实验室 AI Agent 规程推演生成，请在流程设计器中确认后发布使用。</div>
+        <div class="composer-bottom-disclaimer">设备动作需要你点确认才会下发；流程草稿请在流程设计器中核对后发布。</div>
       </form>
     </div>
   </section>
@@ -230,6 +244,7 @@ import { ElMessage } from 'element-plus'
 import { useAgentConversationStore } from '../../../stores/agentConversationStore'
 import { workflowApi } from '../../../services/workflowApi.js'
 import { workflowModelId, workflowModelName } from '../../../utils/workflowAuthoring.js'
+import ConfirmCardView from '../../../components/operator/ConfirmCardView.vue'
 
 defineEmits(['close'])
 
@@ -274,10 +289,11 @@ const computedResultState = computed(() => {
 })
 
 const resultLabel = computed(() => {
-  if (generating.value) return '生成中'
+  if (generating.value) return '处理中'
   if (resultState.value === 'success') return '已完成'
   if (resultState.value === 'failure') return '执行失败'
   if (resultState.value === 'replied') return '已回复'
+  if (resultState.value === 'pending') return '待确认'
   return '就绪'
 })
 
@@ -777,6 +793,18 @@ onMounted(() => {
   color: #4d6bfe;
   background: #eff2fe;
   border-color: #bfdbfe;
+}
+.result-pill.pending {
+  color: #ea580c;
+  background: #fff7ed;
+  border-color: #fed7aa;
+}
+
+/* 待确认卡片：跟在回答下面，占满对话宽度 */
+.msg-confirm-card {
+  display: block;
+  width: 100%;
+  margin-top: 12px;
 }
 
 /* 对话流：全宽自适应 */

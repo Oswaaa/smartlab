@@ -1,0 +1,31 @@
+import { ref } from 'vue'
+import { defineStore } from 'pinia'
+
+/**
+ * 设备操作助手的全局开关。
+ *
+ * 放在 store 里而不是组件内部，是因为入口在顶部导航、面板在主布局，
+ * 两者不是父子关系；同时面板关闭时组件不销毁，对话和待确认卡片不会丢。
+ */
+export const useOperatorStore = defineStore('operator', () => {
+  const isOpen = ref(false)
+  const hasPending = ref(false)
+
+  function open() {
+    isOpen.value = true
+  }
+
+  function close() {
+    isOpen.value = false
+  }
+
+  function toggle() {
+    isOpen.value = !isOpen.value
+  }
+
+  function setPending(value: boolean) {
+    hasPending.value = value
+  }
+
+  return { isOpen, hasPending, open, close, toggle, setPending }
+})

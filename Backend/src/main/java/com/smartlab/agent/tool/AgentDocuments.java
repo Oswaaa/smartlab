@@ -9,11 +9,11 @@ import com.smartlab.management.dto.workflow.WorkflowModelDocument;
 import com.smartlab.management.dto.workflow.WorkflowPreparationResponse;
 import com.smartlab.management.dto.workflow.WorkflowSimulationReport;
 
-final class AgentDocuments {
+public final class AgentDocuments {
     private AgentDocuments() {
     }
 
-    static WorkflowModelDocument requireDocument(JsonNode arguments) {
+    public static WorkflowModelDocument requireDocument(JsonNode arguments) {
         JsonNode source = arguments == null ? null : arguments.get("document");
         if (source == null || source.isNull() || source.isMissingNode()) source = arguments;
         if (source == null || !source.isObject() || !source.has("metadata")) {

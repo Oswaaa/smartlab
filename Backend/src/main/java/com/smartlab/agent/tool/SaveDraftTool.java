@@ -22,7 +22,9 @@ public class SaveDraftTool implements AgentTool {
 
     @Override
     public String description() {
-        return "将通过校验的工作流草稿存为 DRAFT。成功时只返回 flowModelId/status，不含完整 definition。";
+        return "把通过校验的工作流草稿交给用户确认：不写库、不返回 flowModelId，"
+                + "只生成一张待确认卡片，用户点「保存草稿」之后才真正存为 DRAFT。"
+                + "调用完用两三句话说明流程就停止，不要说已保存。";
     }
 
     @Override

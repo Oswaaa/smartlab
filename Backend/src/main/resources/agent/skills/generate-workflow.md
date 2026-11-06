@@ -13,7 +13,7 @@
 6. 有 blocking 时按 `issues` 修改工作流草稿，需要重新查看设备或已有流程时可重新调用对应工具，然后再次调用 `validate_workflow`。重复直到校验无 blocking。反复 blocking 无法解决时停止，不调用 `save_draft`。
 7. 无 blocking 之后调用 `simulate_workflow`。在内存编译并走图，不保存草稿。设备节点走真实状态机与进程内 Adapter 模拟器。返回 `walkable`、`pathTaken`、`paths`、`issues`。未走通时按 issues 改稿，从第 5 步再校验；`SIM_NO_ADAPTER_EVENT` 通常改稿走不通，停止并向人说明。不要把走图失败当成引擎该改。
 8. 走图通过之后自行验收：流程是否满足用户需求，数据端口、条件中的节点变量、能力参数、子流程引用等细节是否到位。不到位就改稿再走第 5 步。
-9. 验收通过后调用 `save_draft`。把含糊句的解读留在 `metadata.description`，交给人在设计器里修改。
+9. 验收通过后调用 `save_draft`。它不直接落库，而是生成一张待确认卡片，用户点「保存草稿」之后才写入。把含糊句的解读留在 `metadata.description`，交给人在设计器里修改。**调用完用两三句话说明流程就停**：不要说"已保存"、不要报草稿编号、不要再调工具。
 
 # 工作流模型结构说明
 

@@ -1,0 +1,19 @@
+{
+  "name": "SmartLab 2.0",
+  "install": "bash .cursor/install.sh",
+  "terminals": [
+    {
+      "name": "mqtt-broker",
+      "command": "mosquitto -c .cursor/mosquitto.conf"
+    },
+    {
+      "name": "backend",
+      "command": "cd Backend && mvn -q -DskipTests spring-boot:run"
+    },
+    {
+      "name": "frontend",
+      "command": "cd Frontend && npm run dev -- --host 0.0.0.0"
+    }
+  ],
+  "ports": [5173, 8080, 1883]
+}
